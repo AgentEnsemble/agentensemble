@@ -9,8 +9,8 @@
 ## What's Left to Build
 
 ### Milestone 1: Foundation
-- [ ] Project scaffolding (Gradle build, settings, version catalog)
-- [ ] Design documentation committed
+- [x] Project scaffolding (Gradle build, settings, version catalog) -- PR #21 merged
+- [x] Design documentation committed -- merged to main
 - [ ] Exception hierarchy (7 exception classes)
 
 ### Milestone 2: Domain Model
