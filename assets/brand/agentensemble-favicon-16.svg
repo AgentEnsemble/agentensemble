@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="geometricPrecision">
+  <defs>
+    <linearGradient id="g" x1="1" y1="1" x2="15" y2="15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4FF"/>
+      <stop offset="0.45" stop-color="#4D95FF"/>
+      <stop offset="1" stop-color="#8363F9"/>
+    </linearGradient>
+  </defs>
+  <!-- Simplified mark for tiny sizes -->
+  <g fill="none" stroke="url(#g)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.2 8.1 C 4.6 5.4, 6.2 4.4, 8 4.1 C 9.8 4.4, 11.4 5.4, 12.8 8.1" stroke-width="1.2"/>
+    <path d="M3.8 10.8 C 6.0 11.0, 10.0 11.0, 12.2 10.8" stroke-width="1.2"/>
+    <path d="M4.0 8.0 L 5.6 10.1" stroke-width="1.0"/>
+    <path d="M12.0 8.0 L 10.4 10.1" stroke-width="1.0"/>
+    <path d="M8.0 4.1 L 8.0 6.4" stroke-width="1.0"/>
+  </g>
+  <g fill="url(#g)">
+    <circle cx="8" cy="4.1" r="1.35"/>
+    <circle cx="3.2" cy="8.1" r="1.25"/>
+    <circle cx="12.8" cy="8.1" r="1.25"/>
+    <circle cx="5.6" cy="10.1" r="1.25"/>
+    <circle cx="10.4" cy="10.1" r="1.25"/>
+  </g>
+</svg>

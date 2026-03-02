@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260">
+  <defs>
+    <linearGradient id="aeTextGrad" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4FF"/>
+      <stop offset="0.5" stop-color="#4D95FF"/>
+      <stop offset="1" stop-color="#8363F9"/>
+    </linearGradient>
+  </defs>
+  <text x="0" y="170"
+        font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+        font-size="140"
+        font-weight="650"
+        letter-spacing="-2"
+        fill="url(#aeTextGrad)">AgentEnsemble</text>
+</svg>
