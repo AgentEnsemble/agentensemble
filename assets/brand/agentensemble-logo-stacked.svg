@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="900" viewBox="0 0 800 900" fill="none">
+  <defs>
+    <linearGradient id="aeGrad" x1="180" y1="80" x2="620" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4FF"/>
+      <stop offset="0.45" stop-color="#4D95FF"/>
+      <stop offset="1" stop-color="#8363F9"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="1 0 0 0 0
+                0 1 0 0 0
+                0 0 1 0 0
+                0 0 0 .28 0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Mark -->
+  <g transform="translate(144, 80) scale(1.0)">
+    <g filter="url(#softGlow)" stroke="url(#aeGrad)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M112 252 C 160 160, 208 124, 256 112 C 304 124, 352 160, 400 252" />
+      <path d="M132 352 C 200 356, 312 356, 380 352" />
+      <path d="M140 248 C 190 290, 232 320, 256 336 C 280 320, 322 290, 372 248" />
+      <path d="M176 328 C 206 280, 230 232, 256 196 C 282 232, 306 280, 336 328" />
+      <path d="M112 252 L 176 328" />
+      <path d="M400 252 L 336 328" />
+      <path d="M256 112 L 256 196" />
+      <path d="M140 248 L 256 196" />
+      <path d="M372 248 L 256 196" />
+    </g>
+    <g filter="url(#softGlow)" fill="url(#aeGrad)">
+      <circle cx="256" cy="112" r="32"/>
+      <circle cx="112" cy="252" r="30"/>
+      <circle cx="400" cy="252" r="30"/>
+      <circle cx="176" cy="328" r="30"/>
+      <circle cx="336" cy="328" r="30"/>
+    </g>
+  </g>
+
+  <!-- Wordmark beneath -->
+  <text x="400" y="760"
+        text-anchor="middle"
+        font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+        font-size="110"
+        font-weight="650"
+        letter-spacing="-2"
+        fill="url(#aeGrad)">AgentEnsemble</text>
+
+  <!-- Optional subtle tagline space (kept empty) -->
+</svg>
