@@ -1,13 +1,17 @@
 package io.agentensemble;
 
+import io.agentensemble.config.TemplateResolver;
 import io.agentensemble.ensemble.EnsembleOutput;
 import io.agentensemble.exception.ValidationException;
 import io.agentensemble.workflow.Workflow;
+import io.agentensemble.workflow.WorkflowExecutor;
+import io.agentensemble.workflow.SequentialWorkflowExecutor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * An ensemble of agents collaborating on a sequence of tasks.
@@ -77,10 +82,52 @@ public class Ensemble {
      * @throws ValidationException if the ensemble configuration is invalid
      */
     public EnsembleOutput run(Map<String, String> inputs) {
-        validate();
-        // Template resolution and WorkflowExecutor delegation are wired in Issue #12.
-        throw new UnsupportedOperationException(
-                "Ensemble execution not yet wired. WorkflowExecutor will be connected in Issue #12.");
+        String ensembleId = UUID.randomUUID().toString();
+        MDC.put("ensemble.id", ensembleId);
+
+        try {
+            log.info("Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
+                    workflow, tasks.size(), agents.size());
+            log.debug("Input variables: {}", inputs);
+
+            // Step 1: Validate configuration
+            validate();
+
+            // Step 2: Resolve template variables in task descriptions and expected outputs
+            List<Task> resolvedTasks = resolveTasks(inputs);
+
+            // Step 3: Select and execute WorkflowExecutor
+            WorkflowExecutor executor = selectExecutor();
+            EnsembleOutput output = executor.execute(resolvedTasks, verbose);
+
+            log.info("Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
+                    output.getTotalDuration(), output.getTaskOutputs().size(), output.getTotalToolCalls());
+
+            return output;
+
+        } catch (Exception e) {
+            log.error("Ensemble run failed: {}", e.getMessage());
+            throw e;
+        } finally {
+            MDC.remove("ensemble.id");
+        }
+    }
+
+    private List<Task> resolveTasks(Map<String, String> inputs) {
+        return tasks.stream()
+                .map(task -> task.toBuilder()
+                        .description(TemplateResolver.resolve(task.getDescription(), inputs))
+                        .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), inputs))
+                        .build())
+                .toList();
+    }
+
+    private WorkflowExecutor selectExecutor() {
+        return switch (workflow) {
+            case SEQUENTIAL -> new SequentialWorkflowExecutor();
+            case HIERARCHICAL -> throw new UnsupportedOperationException(
+                    "Hierarchical workflow is not yet implemented. It is planned for Phase 2.");
+        };
     }
 
     // ========================
