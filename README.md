@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/brand/agentensemble-logo-mark.svg" alt="AgentEnsemble" width="120">
+  <img src="assets/brand/agentensemble-logo-horizontal.svg" alt="AgentEnsemble" width="420">
 </p>
-
-<h1 align="center">AgentEnsemble</h1>
 
 <p align="center">An open-source Java 21 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks.</p>
 
