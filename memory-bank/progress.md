@@ -46,13 +46,24 @@
 ### Phase 3: Memory System
 - [x] Issue #16: Memory system -- short-term, long-term, entity (PR #40 merged) -- 251 tests
 
+### Phase 4: Agent Delegation
+- [x] Issue #17: Agent delegation (PR #41 merged) -- 287 tests
+  - DelegationContext, AgentDelegationTool, AgentExecutor 5-arg execute()
+  - Ensemble.maxDelegationDepth, SequentialWorkflowExecutor 2-arg constructor
+  - HierarchicalWorkflowExecutor 4-arg constructor, DelegateTaskTool 5-arg constructor
+  - 36 new tests: DelegationContextTest (16), AgentDelegationToolTest (14),
+    DelegationEnsembleIntegrationTest (10); updated 2 existing test classes
+
+### Documentation
+- [x] Comprehensive user docs (21 files in docs/getting-started/, guides/, reference/, examples/)
+
 ## Current Status
 
-**Phase**: Phase 3 complete -- Issue #16 done, v0.3.0 released
-**Total tests**: 251 passing
-**Current version**: 0.4.0-SNAPSHOT (main)
-**Last release**: v0.3.0 -- net.agentensemble:agentensemble-core:0.3.0
-**Next action**: Issue #17 (Agent delegation) or Issue #18 (Parallel workflow)
+**Phase**: Phase 4 complete -- Issue #17 done, v0.4.0 released
+**Total tests**: 287 passing
+**Current version**: 0.5.0-SNAPSHOT (main)
+**Last release**: v0.4.0 -- net.agentensemble:agentensemble-core:0.4.0
+**Next action**: Issue #18 (Parallel workflow) or Issue #19 (Structured output)
 
 ## Known Issues
 
