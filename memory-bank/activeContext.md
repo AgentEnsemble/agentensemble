@@ -2,23 +2,28 @@
 
 ## Current Work Focus
 
-Building AgentEnsemble Phase 1 from scratch. Currently in the documentation and project setup phase.
+Phase 1 is complete. All 14 Phase 1 issues are done.
 
 ## Recent Changes
 
-- Created comprehensive design specification (13 documents in docs/design/)
-- Established naming conventions (Ensemble, Workflow, etc. -- avoiding competing framework names)
-- Set up memory bank
+- All Phase 1 implementation complete (Issues #1-#14, PRs #21-#36)
+- 126 tests passing
+- Example application: ResearchWriterExample (two-agent research + writing)
+- Comprehensive README with quickstart, API docs, tool guide, error handling, logging
+- All code uses LC4j 1.11.0 API (ChatModel, ChatRequest, ChatResponse)
 
 ## Next Steps
 
-1. Create GitHub issues for the full development roadmap (#1-#20)
-2. Set up Gradle project structure (Issue #1)
-3. Implement exception hierarchy (Issue #3)
-4. Implement domain model (Agent, Task, Ensemble) with TDD (Issues #4-#6)
-5. Implement engine components (TemplateResolver, tools, prompts, executor, workflow) (Issues #7-#11)
-6. Wire Ensemble.run() (Issue #12)
-7. Example application and README (Issues #13-#14)
+1. Tag v0.1.0-SNAPSHOT
+2. Begin Phase 2: Hierarchical workflow (Issue #15)
+3. Memory system (Issue #16)
+4. Agent delegation (Issue #17)
+
+## Important Notes
+
+- LangChain4j 1.11.0 renamed ChatLanguageModel -> ChatModel
+- LangChain4j 1.11.0 uses ChatModel.chat(ChatRequest) -> ChatResponse (not generate())
+- Mockito cannot use argThat with ambiguous ChatModel.chat() overloads -- use any(ChatRequest.class)
 
 ## Active Decisions
 
