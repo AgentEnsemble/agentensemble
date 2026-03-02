@@ -43,13 +43,16 @@
 ### Phase 2: Hierarchical Workflow
 - [x] Issue #15: Hierarchical workflow (PR #38 merged) -- 174 tests
 
+### Phase 3: Memory System
+- [x] Issue #16: Memory system -- short-term, long-term, entity (PR #40 merged) -- 251 tests
+
 ## Current Status
 
-**Phase**: Phase 2 in progress -- Issue #15 complete, v0.2.0 released
-**Total tests**: 174 passing
-**Current version**: 0.3.0-SNAPSHOT (main)
-**Last release**: v0.2.0 -- net.agentensemble:agentensemble-core:0.2.0
-**Next action**: Issue #16 (Memory system) or Issue #17 (Agent delegation)
+**Phase**: Phase 3 complete -- Issue #16 done, v0.3.0 released
+**Total tests**: 251 passing
+**Current version**: 0.4.0-SNAPSHOT (main)
+**Last release**: v0.3.0 -- net.agentensemble:agentensemble-core:0.3.0
+**Next action**: Issue #17 (Agent delegation) or Issue #18 (Parallel workflow)
 
 ## Known Issues
 
