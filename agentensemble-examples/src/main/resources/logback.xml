@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{ensemble.id:-       }] [%X{task.index:-   }] [%X{agent.role:-       }] %-40logger{40} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Reduce noise from LangChain4j internals -->
+    <logger name="dev.langchain4j" level="WARN"/>
+
+    <!-- AgentEnsemble framework -- set to DEBUG to see prompts -->
+    <logger name="io.agentensemble" level="INFO"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>
