@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Build, Publish and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: ${VERSION} (tag: ${TAG})"
+
+      - name: Build and test
+        run: ./gradlew build -Pversion=${{ steps.version.outputs.version }}
+
+      - name: Publish to GitHub Packages
+        run: ./gradlew :agentensemble-core:publish -Pversion=${{ steps.version.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}.jar
+            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-sources.jar
+            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-javadoc.jar
+          body: |
+            ## Installation
+
+            ### Gradle (Kotlin DSL)
+
+            ```kotlin
+            repositories {
+                maven {
+                    url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
+                    credentials {
+                        username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
+                        password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
+                    }
+                }
+            }
+
+            dependencies {
+                implementation("io.agentensemble:agentensemble-core:${{ steps.version.outputs.version }}")
+            }
+            ```
+
+            ### Maven
+
+            ```xml
+            <repository>
+                <id>github</id>
+                <url>https://maven.pkg.github.com/AgentEnsemble/agentensemble</url>
+            </repository>
+
+            <dependency>
+                <groupId>io.agentensemble</groupId>
+                <artifactId>agentensemble-core</artifactId>
+                <version>${{ steps.version.outputs.version }}</version>
+            </dependency>
+            ```
+
+            ---
+

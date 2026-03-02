@@ -1,9 +1,15 @@
 plugins {
     `java-library`
+    `maven-publish`
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
 }
 
 dependencies {
-    // LangChain4j core - exposed as api so users can interact with ChatLanguageModel, etc.
+    // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
 
     // JSON serialization for tool I/O
@@ -26,4 +32,57 @@ dependencies {
     testAnnotationProcessor(libs.lombok)
 
     testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+
+            pom {
+                name = "AgentEnsemble Core"
+                description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
+                url = "https://github.com/AgentEnsemble/agentensemble"
+
+                licenses {
+                    license {
+                        name = "MIT License"
+                        url = "https://opensource.org/licenses/MIT"
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = "agentensemble"
+                        name = "AgentEnsemble"
+                        url = "https://github.com/AgentEnsemble"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/AgentEnsemble/agentensemble.git"
+                    developerConnection = "scm:git:ssh://github.com/AgentEnsemble/agentensemble.git"
+                    url = "https://github.com/AgentEnsemble/agentensemble"
+                }
+
+                issueManagement {
+                    system = "GitHub"
+                    url = "https://github.com/AgentEnsemble/agentensemble/issues"
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                    ?: project.findProperty("gpr.user") as String?
+                password = System.getenv("GITHUB_TOKEN")
+                    ?: project.findProperty("gpr.key") as String?
+            }
+        }
+    }
 }
