@@ -8,6 +8,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.memory.MemoryContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +69,8 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_noDelegation_rawIsManagerOutput() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Direct manager answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Direct manager answer");
     }
@@ -77,7 +79,8 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_noDelegation_taskOutputsContainsOnlyManagerOutput() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Manager answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(1);
         assertThat(output.getTaskOutputs().get(0).getAgentRole()).isEqualTo("Manager");
@@ -90,7 +93,8 @@ class HierarchicalWorkflowExecutorTest {
                 .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
                 .thenReturn(textResponse("Final synthesis"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(2);
         assertThat(output.getTaskOutputs().get(0).getAgentRole()).isEqualTo("Researcher");
@@ -104,7 +108,8 @@ class HierarchicalWorkflowExecutorTest {
                 .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
                 .thenReturn(textResponse("Manager final"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTaskOutputs().getLast().getRaw()).isEqualTo("Manager final");
     }
@@ -116,7 +121,8 @@ class HierarchicalWorkflowExecutorTest {
                 .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
                 .thenReturn(textResponse("Synthesized final answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Synthesized final answer");
     }
@@ -132,7 +138,8 @@ class HierarchicalWorkflowExecutorTest {
                 .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
                 .thenReturn(textResponse("Final synthesis"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTotalToolCalls()).isGreaterThanOrEqualTo(1);
     }
@@ -145,7 +152,8 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_totalDurationIsPositive() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTotalDuration()).isPositive();
     }
@@ -166,7 +174,8 @@ class HierarchicalWorkflowExecutorTest {
         Task task2 = Task.builder().description("Write the report").expectedOutput("A report")
                 .agent(writer).build();
 
-        EnsembleOutput output = executor.execute(List.of(task1, task2), false);
+        EnsembleOutput output = executor.execute(List.of(task1, task2), false,
+                MemoryContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Multi-task answer");
     }
@@ -179,7 +188,8 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_managerAgentHasManagerRole() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTaskOutputs().getLast().getAgentRole())
                 .isEqualTo(HierarchicalWorkflowExecutor.MANAGER_ROLE);
@@ -189,7 +199,8 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_taskOutputsIsImmutable() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        EnsembleOutput output = executor.execute(List.of(researchTask()), false);
+        EnsembleOutput output = executor.execute(List.of(researchTask()), false,
+                MemoryContext.disabled());
 
         assertThat(output.getTaskOutputs()).isUnmodifiable();
     }

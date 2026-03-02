@@ -5,6 +5,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,9 @@ import java.util.List;
  * The Manager uses the delegateTask tool to assign tasks, receives each worker's
  * output as the tool result, and synthesizes a final response. All worker outputs
  * and the manager's final output are included in the EnsembleOutput.
+ *
+ * When a {@link MemoryContext} is active, memory is shared across all
+ * delegations: worker agents read from and write to the same context.
  *
  * Stateless -- all mutable state is held in per-execution local variables.
  */
@@ -68,7 +72,8 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose,
+            MemoryContext memoryContext) {
         Instant startTime = Instant.now();
         MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
 
@@ -76,8 +81,9 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             log.info("Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
                     resolvedTasks.size(), workerAgents.size());
 
-            // 1. Create the stateful DelegateTaskTool (accumulates worker outputs)
-            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor, verbose);
+            // 1. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
+            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor,
+                    verbose, memoryContext);
 
             // 2. Build the virtual Manager agent
             Agent manager = Agent.builder()
@@ -97,8 +103,10 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     .build();
 
             // 4. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
+            // The manager itself does not participate in shared memory (it is a meta-orchestrator)
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
-            TaskOutput managerOutput = agentExecutor.execute(managerTask, List.of(), verbose);
+            TaskOutput managerOutput = agentExecutor.execute(managerTask, List.of(), verbose,
+                    MemoryContext.disabled());
             log.info("Manager agent completed | Delegations: {} | Duration: {}",
                     delegateTool.getDelegatedOutputs().size(), managerOutput.getDuration());
 
