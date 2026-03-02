@@ -3,6 +3,7 @@
 ## Current Work Focus
 
 v0.3.0 released and published to GitHub Packages. Development continues on main at 0.4.0-SNAPSHOT.
+README updated to document hierarchical workflow and memory system.
 
 ## Recent Changes
 

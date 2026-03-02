@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+- README updated to reflect hierarchical workflow (v0.2.0) and memory system (v0.3.0):
+  - Added Memory to Core Concepts table
+  - Updated dependency version to 0.3.0
+  - Added Hierarchical Workflow section with full code example
+  - Added Memory System section covering short-term, long-term, and entity memory with code examples
+  - Added EnsembleMemory configuration table
+  - Updated Ensemble Configuration table with managerLlm, managerMaxIterations, memory fields
+  - Updated Task Configuration table noting context is for sequential workflow
+  - Marked v0.2.0 and v0.3.0 as complete in roadmap
+
 ---
 
 ## [0.3.0] - 2026-03-02
