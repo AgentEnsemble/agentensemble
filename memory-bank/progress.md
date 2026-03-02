@@ -42,10 +42,10 @@
 
 ## Current Status
 
-**Phase**: Phase 1 COMPLETE (v0.1.0-SNAPSHOT)
+**Phase**: Phase 1 COMPLETE -- v0.1.0 released to GitHub Packages
 **Total tests**: 126 passing
-**Release pipeline**: Ready -- push tag `v0.1.0` to cut first release
-**Next action**: Cut v0.1.0, begin Phase 2 (hierarchical workflow)
+**Current version**: 0.2.0-SNAPSHOT (main)
+**Next action**: Begin Phase 2 (hierarchical workflow, Issue #15)
 
 ## Known Issues
 
