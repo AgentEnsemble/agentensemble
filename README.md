@@ -30,7 +30,7 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 **Gradle (Kotlin DSL):**
 ```kotlin
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:0.3.0")
+    implementation("net.agentensemble:agentensemble-core:0.4.0")
 
     // Add your preferred LangChain4j model provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
@@ -254,6 +254,55 @@ EnsembleOutput output = Ensemble.builder()
 
 ---
 
+## Agent Delegation
+
+When an agent has `allowDelegation = true`, a `delegate` tool is automatically injected into its tool list at execution time. The agent can call this tool during its ReAct reasoning loop to hand off a subtask to any other registered agent.
+
+```java
+var leadResearcher = Agent.builder()
+    .role("Lead Researcher")
+    .goal("Coordinate research by delegating specialised subtasks to the right team member")
+    .llm(model)
+    .allowDelegation(true)    // enables the delegate tool
+    .build();
+
+var writer = Agent.builder()
+    .role("Content Writer")
+    .goal("Write clear, engaging content from research notes")
+    .llm(model)
+    .build();
+
+var task = Task.builder()
+    .description("Research AI trends and produce a polished blog post")
+    .expectedOutput("An 800-word blog post about AI trends")
+    .agent(leadResearcher)
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(leadResearcher)
+    .agent(writer)
+    .task(task)
+    .maxDelegationDepth(3)    // prevent infinite recursion (default: 3)
+    .build()
+    .run();
+```
+
+During execution, the `leadResearcher` can call:
+```
+delegate("Content Writer", "Write an 800-word blog post about: [research findings]")
+```
+
+The framework executes the writer, returns the result as the tool output, and the researcher incorporates it into its final answer.
+
+**Guards enforced automatically:**
+- An agent cannot delegate to itself
+- Delegating to an unknown agent role returns an error to the caller
+- Delegation depth is capped at `maxDelegationDepth` (default 3) to prevent infinite chains
+
+See the [Delegation guide](docs/guides/delegation.md) for full details.
+
+---
+
 ## Agent Configuration
 
 | Option | Type | Default | Description |
@@ -263,6 +312,7 @@ EnsembleOutput output = Ensemble.builder()
 | `background` | `String` | `null` | Persona context for the system prompt |
 | `tools` | `List<Object>` | `[]` | Tools the agent can use |
 | `llm` | `ChatModel` | required | Any LangChain4j `ChatModel` |
+| `allowDelegation` | `boolean` | `false` | Auto-injects a `delegate` tool; agent can delegate subtasks to peers |
 | `verbose` | `boolean` | `false` | Log prompts and responses at INFO |
 | `maxIterations` | `int` | `25` | Max tool-call iterations before forcing final answer |
 | `responseFormat` | `String` | `""` | Extra formatting instructions in the system prompt |
@@ -290,6 +340,7 @@ EnsembleOutput output = Ensemble.builder()
 | `managerLlm` | `ChatModel` | first agent's LLM | LLM for the Manager agent (hierarchical workflow only) |
 | `managerMaxIterations` | `int` | `20` | Max tool-call iterations for the Manager agent (hierarchical workflow only) |
 | `memory` | `EnsembleMemory` | `null` | Memory configuration; see [Memory System](#memory-system) |
+| `maxDelegationDepth` | `int` | `3` | Maximum peer-delegation depth when agents have `allowDelegation = true` |
 | `verbose` | `boolean` | `false` | Elevates execution logging to INFO |
 
 ---
@@ -453,13 +504,27 @@ See [`docs/design/`](docs/design/) for full specifications:
 
 ---
 
+## Documentation
+
+Full user documentation is in [`docs/`](docs/):
+
+| Section | Description |
+|---|---|
+| [Getting Started](docs/getting-started/installation.md) | Installation, quickstart, core concepts |
+| [Guides](docs/guides/agents.md) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging |
+| [Reference](docs/reference/ensemble-configuration.md) | Complete configuration field tables |
+| [Examples](docs/examples/research-writer.md) | Annotated example walkthroughs |
+| [Design Specs](docs/design/) | Internal architecture and design documentation |
+
+---
+
 ## What's Next (Roadmap)
 
 | Phase | Features |
 |---|---|
 | ~~v0.2.0~~ | ~~Hierarchical workflow (manager agent delegates)~~ |
 | ~~v0.3.0~~ | ~~Memory system (short-term, long-term, entity)~~ |
-| v0.4.0 | Agent delegation |
+| ~~v0.4.0~~ | ~~Agent delegation~~ |
 | v0.5.0 | Parallel workflow (virtual threads) |
 | v0.6.0 | Structured output (typed output parsing) |
 | v1.0.0 | Callbacks, streaming, guardrails, built-in tools |
