@@ -11,7 +11,7 @@
     <logger name="dev.langchain4j" level="WARN"/>
 
     <!-- AgentEnsemble framework -- set to DEBUG to see prompts -->
-    <logger name="io.agentensemble" level="INFO"/>
+    <logger name="net.agentensemble" level="INFO"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

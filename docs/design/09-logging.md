@@ -22,7 +22,7 @@ This follows standard Java logging conventions and allows fine-grained log level
 
 ### Ensemble.run()
 
-Logger: `io.agentensemble.Ensemble`
+Logger: `net.agentensemble.Ensemble`
 
 ```
 INFO  : "Ensemble run started | Workflow: {workflow} | Tasks: {taskCount} | Agents: {agentCount}"
@@ -36,7 +36,7 @@ ERROR : "Ensemble run failed: {exceptionMessage}"
 
 ### SequentialWorkflowExecutor
 
-Logger: `io.agentensemble.workflow.SequentialWorkflowExecutor`
+Logger: `net.agentensemble.workflow.SequentialWorkflowExecutor`
 
 ```
 INFO  : "Task {index}/{total} starting | Description: {truncated80} | Agent: {role}"
@@ -48,7 +48,7 @@ ERROR : "Task {index}/{total} failed: {exceptionMessage}"
 
 ### AgentExecutor
 
-Logger: `io.agentensemble.agent.AgentExecutor`
+Logger: `net.agentensemble.agent.AgentExecutor`
 
 ```
 INFO  : "Agent '{role}' executing task | Tools: {toolCount}"
@@ -65,7 +65,7 @@ TRACE : "Full LLM response:\n{fullResponse}"
 
 ### AgentPromptBuilder
 
-Logger: `io.agentensemble.agent.AgentPromptBuilder`
+Logger: `net.agentensemble.agent.AgentPromptBuilder`
 
 ```
 DEBUG : "Built system prompt ({charCount} chars) for agent '{role}'"
@@ -74,7 +74,7 @@ DEBUG : "Built user prompt ({charCount} chars) for task '{truncatedDescription}'
 
 ### TemplateResolver
 
-Logger: `io.agentensemble.config.TemplateResolver`
+Logger: `net.agentensemble.config.TemplateResolver`
 
 ```
 DEBUG : "Resolving template ({charCount} chars) with {inputCount} input variables"
@@ -83,7 +83,7 @@ DEBUG : "Resolved {variableCount} variables in template"
 
 ### LangChain4jToolAdapter
 
-Logger: `io.agentensemble.tool.LangChain4jToolAdapter`
+Logger: `net.agentensemble.tool.LangChain4jToolAdapter`
 
 ```
 DEBUG : "Adapted AgentTool '{name}' to LangChain4j ToolSpecification"

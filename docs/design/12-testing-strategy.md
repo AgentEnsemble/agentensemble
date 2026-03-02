@@ -226,13 +226,13 @@ Tests are run via Gradle:
 ./gradlew test
 
 # Run specific test class
-./gradlew test --tests "io.agentensemble.AgentTest"
+./gradlew test --tests "net.agentensemble.AgentTest"
 
 # Run specific test method
-./gradlew test --tests "io.agentensemble.AgentTest.testBuild_withNullRole_throwsValidation"
+./gradlew test --tests "net.agentensemble.AgentTest.testBuild_withNullRole_throwsValidation"
 
 # Run integration tests only
-./gradlew test --tests "io.agentensemble.integration.*"
+./gradlew test --tests "net.agentensemble.integration.*"
 ```
 
 ## Coverage Expectations

@@ -71,7 +71,7 @@ jobs:
             }
 
             dependencies {
-                implementation("io.agentensemble:agentensemble-core:${{ steps.version.outputs.version }}")
+                implementation("net.agentensemble:agentensemble-core:${{ steps.version.outputs.version }}")
             }
             ```
 
@@ -84,7 +84,7 @@ jobs:
             </repository>
 
             <dependency>
-                <groupId>io.agentensemble</groupId>
+                <groupId>net.agentensemble</groupId>
                 <artifactId>agentensemble-core</artifactId>
                 <version>${{ steps.version.outputs.version }}</version>
             </dependency>
