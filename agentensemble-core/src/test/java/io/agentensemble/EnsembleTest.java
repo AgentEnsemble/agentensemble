@@ -1,0 +1,222 @@
+package io.agentensemble;
+
+import dev.langchain4j.model.chat.ChatModel;
+import io.agentensemble.exception.ValidationException;
+import io.agentensemble.workflow.Workflow;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+
+class EnsembleTest {
+
+    private Agent agent(String role) {
+        return Agent.builder()
+                .role(role)
+                .goal("Do the work")
+                .llm(mock(ChatModel.class))
+                .build();
+    }
+
+    private Task task(String description, Agent agent) {
+        return Task.builder()
+                .description(description)
+                .expectedOutput("Expected result")
+                .agent(agent)
+                .build();
+    }
+
+    // ========================
+    // Validation: tasks
+    // ========================
+
+    @Test
+    void testRun_withEmptyTasks_throwsValidation() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("task");
+    }
+
+    // ========================
+    // Validation: agents
+    // ========================
+
+    @Test
+    void testRun_withEmptyAgents_throwsValidation() {
+        var researcher = agent("Researcher");
+        var researchTask = task("Research task", researcher);
+        var ensemble = Ensemble.builder()
+                .task(researchTask)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("agent");
+    }
+
+    // ========================
+    // Validation: agent membership
+    // ========================
+
+    @Test
+    void testRun_withUnregisteredAgent_throwsValidation() {
+        var registeredAgent = agent("Researcher");
+        var unregisteredAgent = agent("Writer");
+        var researchTask = task("Research task", registeredAgent);
+        var writeTask = task("Write task", unregisteredAgent); // unregistered agent
+
+        var ensemble = Ensemble.builder()
+                .agent(registeredAgent)         // only researcher registered
+                .task(researchTask)
+                .task(writeTask)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Writer")
+                .hasMessageContaining("not in the ensemble");
+    }
+
+    // ========================
+    // Validation: circular context
+    // ========================
+
+    @Test
+    void testRun_withMutualContextDependency_throwsValidation() {
+        // With immutable objects, true A->B->A cycles cannot be constructed.
+        // This test verifies that a scenario where two tasks mutually reference
+        // each other (approximated via toBuilder) is caught by context ordering:
+        // taskAWithCircle depends on taskB but appears before taskB in the list.
+        var researcher = agent("Researcher");
+        var taskA = task("Task A", researcher);
+        var taskB = taskA.toBuilder()
+                .description("Task B")
+                .context(List.of(taskA))
+                .build();
+        var taskAWithDep = taskA.toBuilder()
+                .context(List.of(taskB))
+                .build();
+
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .task(taskAWithDep)
+                .task(taskB)
+                .build();
+
+        // taskAWithDep references taskB, but taskB appears later in the list
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("context");
+    }
+
+    // ========================
+    // Validation: context ordering
+    // ========================
+
+    @Test
+    void testRun_withContextOrderViolation_throwsValidation() {
+        var researcher = agent("Researcher");
+        var firstTask = task("First task", researcher);
+        // Second task has context pointing to first, but they're added in wrong order
+        var secondTask = Task.builder()
+                .description("Second task")
+                .expectedOutput("Output")
+                .agent(researcher)
+                .context(List.of(firstTask))
+                .build();
+
+        // Adding secondTask BEFORE firstTask in the list violates ordering
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .task(secondTask)   // second task first -- violation
+                .task(firstTask)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("context")
+                .hasMessageContaining("later");
+    }
+
+    // ========================
+    // Validation: defaults
+    // ========================
+
+    @Test
+    void testDefaultWorkflow_isSequential() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .build();
+
+        assertThat(ensemble.getWorkflow()).isEqualTo(Workflow.SEQUENTIAL);
+    }
+
+    @Test
+    void testDefaultVerbose_isFalse() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .build();
+
+        assertThat(ensemble.isVerbose()).isFalse();
+    }
+
+    // ========================
+    // Validation: valid config still stubs execution
+    // ========================
+
+    @Test
+    void testRun_withValidConfig_completesValidationBeforeExecution() {
+        var researcher = agent("Researcher");
+        var researchTask = task("Research AI trends", researcher);
+
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .task(researchTask)
+                .workflow(Workflow.SEQUENTIAL)
+                .verbose(true)
+                .build();
+
+        // Validation passes; execution is stubbed in Issue #12
+        // No ValidationException thrown means validation succeeded
+        assertThatThrownBy(ensemble::run)
+                .isNotInstanceOf(ValidationException.class);
+    }
+
+    // ========================
+    // Multi-task scenarios
+    // ========================
+
+    @Test
+    void testRun_withTwoTasksInOrder_passesValidation() {
+        var researcher = agent("Researcher");
+        var writer = agent("Writer");
+        var researchTask = task("Research task", researcher);
+        var writeTask = Task.builder()
+                .description("Write task")
+                .expectedOutput("Article")
+                .agent(writer)
+                .context(List.of(researchTask))
+                .build();
+
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .agent(writer)
+                .task(researchTask)   // research first
+                .task(writeTask)      // write second (depends on research)
+                .build();
+
+        // No ValidationException -- ordering is correct
+        assertThatThrownBy(ensemble::run)
+                .isNotInstanceOf(ValidationException.class);
+    }
+}
