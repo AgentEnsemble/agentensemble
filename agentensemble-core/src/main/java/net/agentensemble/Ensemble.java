@@ -4,6 +4,8 @@ import dev.langchain4j.model.chat.ChatModel;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.memory.EnsembleMemory;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
@@ -77,6 +79,13 @@ public class Ensemble {
     private final boolean verbose = false;
 
     /**
+     * Optional memory configuration.
+     * When set, short-term, long-term, and/or entity memory are enabled.
+     * Default: null (no memory).
+     */
+    private final EnsembleMemory memory;
+
+    /**
      * Execute the ensemble's tasks with no input variables.
      *
      * @return EnsembleOutput containing all results
@@ -111,9 +120,21 @@ public class Ensemble {
             // Step 2: Resolve template variables in task descriptions and expected outputs
             List<Task> resolvedTasks = resolveTasks(inputs);
 
-            // Step 3: Select and execute WorkflowExecutor
+            // Step 3: Create memory context for this run (no-op when memory is not configured)
+            MemoryContext memoryContext = memory != null
+                    ? MemoryContext.from(memory)
+                    : MemoryContext.disabled();
+
+            if (memoryContext.isActive()) {
+                log.info("Memory enabled | shortTerm={} longTerm={} entityMemory={}",
+                        memoryContext.hasShortTerm(),
+                        memoryContext.hasLongTerm(),
+                        memoryContext.hasEntityMemory());
+            }
+
+            // Step 4: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();
-            EnsembleOutput output = executor.execute(resolvedTasks, verbose);
+            EnsembleOutput output = executor.execute(resolvedTasks, verbose, memoryContext);
 
             log.info("Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
                     output.getTotalDuration(), output.getTaskOutputs().size(), output.getTotalToolCalls());
