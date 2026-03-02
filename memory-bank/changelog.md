@@ -2,10 +2,15 @@
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-03-02
+
 ### Changed
 - Repackaged from `io.agentensemble` to `net.agentensemble` (agentensemble.net registered; .io was unavailable)
 - Maven group coordinate updated: `net.agentensemble:agentensemble-core`
 - All source directories, package declarations, imports, config files, and docs updated
+- `validateContextOrdering()` in `Ensemble` skips for HIERARCHICAL workflow (manager handles ordering)
 
 ### Added
 - Hierarchical workflow (`Workflow.HIERARCHICAL`): Manager agent delegates tasks to workers via `delegateTask` tool, synthesizes final result
@@ -16,9 +21,7 @@
 - `Ensemble.managerMaxIterations`: configurable manager iteration limit, default 20
 - `-parameters` compiler flag in root `build.gradle.kts` for `@Tool` parameter name reflection
 - 49 new tests: `DelegateTaskToolTest` (16), `ManagerPromptBuilderTest` (14), `HierarchicalWorkflowExecutorTest` (10), `HierarchicalEnsembleIntegrationTest` (9)
-
-### Changed
-- `validateContextOrdering()` in `Ensemble` skips for HIERARCHICAL workflow (manager handles ordering)
+- 174 total tests passing
 
 ---
 
