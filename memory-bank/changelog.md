@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- Repackaged from `io.agentensemble` to `net.agentensemble` (agentensemble.net registered; .io was unavailable)
+- Maven group coordinate updated: `net.agentensemble:agentensemble-core`
+- All source directories, package declarations, imports, config files, and docs updated
+
 ### Added
 - Hierarchical workflow (`Workflow.HIERARCHICAL`): Manager agent delegates tasks to workers via `delegateTask` tool, synthesizes final result
 - `DelegateTaskTool`: `@Tool`-annotated tool for worker delegation, case-insensitive role matching, collects `TaskOutput`s
