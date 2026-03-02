@@ -40,12 +40,15 @@
 - [x] Release workflow: tag-triggered (`v*.*.*`), publishes and creates GitHub Release
 - [x] Enhanced CI: `--continue` flag, test result reporting, dependency-submission job
 
+### Phase 2: Hierarchical Workflow
+- [x] Issue #15: Hierarchical workflow (PR #38 merged) -- 174 tests
+
 ## Current Status
 
-**Phase**: Phase 1 COMPLETE -- v0.1.0 released to GitHub Packages
-**Total tests**: 126 passing
+**Phase**: Phase 2 in progress -- Issue #15 complete
+**Total tests**: 174 passing
 **Current version**: 0.2.0-SNAPSHOT (main)
-**Next action**: Begin Phase 2 (hierarchical workflow, Issue #15)
+**Next action**: Issue #16 (Memory system) or Issue #17 (Agent delegation)
 
 ## Known Issues
 
