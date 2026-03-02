@@ -45,9 +45,10 @@
 
 ## Current Status
 
-**Phase**: Phase 2 in progress -- Issue #15 complete
+**Phase**: Phase 2 in progress -- Issue #15 complete, v0.2.0 released
 **Total tests**: 174 passing
-**Current version**: 0.2.0-SNAPSHOT (main)
+**Current version**: 0.3.0-SNAPSHOT (main)
+**Last release**: v0.2.0 -- net.agentensemble:agentensemble-core:0.2.0
 **Next action**: Issue #16 (Memory system) or Issue #17 (Agent delegation)
 
 ## Known Issues
