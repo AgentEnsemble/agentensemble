@@ -1,0 +1,139 @@
+package io.agentensemble.workflow;
+
+import io.agentensemble.Task;
+import io.agentensemble.agent.AgentExecutor;
+import io.agentensemble.ensemble.EnsembleOutput;
+import io.agentensemble.exception.AgentExecutionException;
+import io.agentensemble.exception.MaxIterationsExceededException;
+import io.agentensemble.exception.TaskExecutionException;
+import io.agentensemble.task.TaskOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Executes tasks one after another in list order.
+ *
+ * Each task's output is stored and made available as context to subsequent tasks
+ * that declare a context dependency on it. MDC values (task.index, agent.role)
+ * are set for the duration of each task execution to enable structured logging.
+ *
+ * Stateless -- all state is held in local variables.
+ */
+public class SequentialWorkflowExecutor implements WorkflowExecutor {
+
+    private static final Logger log = LoggerFactory.getLogger(SequentialWorkflowExecutor.class);
+
+    /** MDC key for the current task position (e.g., "2/5"). */
+    private static final String MDC_TASK_INDEX = "task.index";
+
+    /** MDC key for the current agent's role. */
+    private static final String MDC_AGENT_ROLE = "agent.role";
+
+    /** Truncation length for task description in MDC and logs. */
+    private static final int MDC_DESCRIPTION_MAX_LENGTH = 80;
+
+    private final AgentExecutor agentExecutor;
+
+    public SequentialWorkflowExecutor() {
+        this.agentExecutor = new AgentExecutor();
+    }
+
+    @Override
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose) {
+        Instant ensembleStartTime = Instant.now();
+        int totalTasks = resolvedTasks.size();
+        Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
+
+        for (int i = 0; i < totalTasks; i++) {
+            Task task = resolvedTasks.get(i);
+            int taskIndex = i + 1;
+            String indexLabel = taskIndex + "/" + totalTasks;
+
+            MDC.put(MDC_TASK_INDEX, indexLabel);
+            MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
+
+            try {
+                log.info("Task {}/{} starting | Description: {} | Agent: {}",
+                        taskIndex, totalTasks,
+                        truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
+                        task.getAgent().getRole());
+
+                // Gather context outputs for this task
+                List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
+                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
+
+                // Execute the task
+                TaskOutput taskOutput = agentExecutor.execute(task, contextOutputs, verbose);
+                completedOutputs.put(task, taskOutput);
+
+                log.info("Task {}/{} completed | Duration: {} | Tool calls: {}",
+                        taskIndex, totalTasks, taskOutput.getDuration(), taskOutput.getToolCallCount());
+
+                if (verbose) {
+                    log.info("Task {}/{} output preview: {}",
+                            taskIndex, totalTasks,
+                            truncate(taskOutput.getRaw(), 200));
+                } else {
+                    log.debug("Task {}/{} output preview: {}",
+                            taskIndex, totalTasks,
+                            truncate(taskOutput.getRaw(), 200));
+                }
+
+            } catch (AgentExecutionException | MaxIterationsExceededException e) {
+                log.error("Task {}/{} failed: {}", taskIndex, totalTasks, e.getMessage());
+                throw new TaskExecutionException(
+                        "Task failed: " + task.getDescription(),
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        List.copyOf(completedOutputs.values()),
+                        e);
+            } finally {
+                MDC.remove(MDC_TASK_INDEX);
+                MDC.remove(MDC_AGENT_ROLE);
+            }
+        }
+
+        // Assemble EnsembleOutput
+        Duration totalDuration = Duration.between(ensembleStartTime, Instant.now());
+        List<TaskOutput> allOutputs = List.copyOf(completedOutputs.values());
+        String finalOutput = allOutputs.isEmpty() ? "" : allOutputs.getLast().getRaw();
+        int totalToolCalls = allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+
+        return EnsembleOutput.builder()
+                .raw(finalOutput)
+                .taskOutputs(allOutputs)
+                .totalDuration(totalDuration)
+                .totalToolCalls(totalToolCalls)
+                .build();
+    }
+
+    private List<TaskOutput> gatherContextOutputs(Task task, Map<Task, TaskOutput> completedOutputs) {
+        List<TaskOutput> contextOutputs = new ArrayList<>();
+        for (Task contextTask : task.getContext()) {
+            TaskOutput output = completedOutputs.get(contextTask);
+            if (output == null) {
+                // This should not happen if Ensemble validation passed, but guard defensively
+                throw new TaskExecutionException(
+                        "Context task not yet completed: " + contextTask.getDescription(),
+                        contextTask.getDescription(),
+                        contextTask.getAgent().getRole(),
+                        List.copyOf(completedOutputs.values()));
+            }
+            contextOutputs.add(output);
+        }
+        return contextOutputs;
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null) return "";
+        return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
+    }
+}
