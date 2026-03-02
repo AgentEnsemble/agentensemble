@@ -6,7 +6,7 @@ Two-module Gradle project:
 - `agentensemble-core`: The framework library
 - `agentensemble-examples`: Example applications
 
-Package: `io.agentensemble`
+Package: `net.agentensemble`
 
 ## Key Technical Decisions
 

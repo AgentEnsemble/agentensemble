@@ -1,0 +1,123 @@
+package net.agentensemble.workflow;
+
+import dev.langchain4j.model.chat.ChatModel;
+import net.agentensemble.Agent;
+import net.agentensemble.Task;
+import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.task.TaskOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Executes tasks via a Manager agent that delegates to worker agents.
+ *
+ * The Manager is a virtual agent created at runtime with:
+ * <ul>
+ *   <li>A system prompt listing all available worker agents (via ManagerPromptBuilder)</li>
+ *   <li>A user prompt listing all tasks to complete (via ManagerPromptBuilder)</li>
+ *   <li>The delegateTask tool that dispatches tasks to workers</li>
+ * </ul>
+ *
+ * The Manager uses the delegateTask tool to assign tasks, receives each worker's
+ * output as the tool result, and synthesizes a final response. All worker outputs
+ * and the manager's final output are included in the EnsembleOutput.
+ *
+ * Stateless -- all mutable state is held in per-execution local variables.
+ */
+public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
+
+    private static final Logger log = LoggerFactory.getLogger(HierarchicalWorkflowExecutor.class);
+
+    /** MDC key for the current agent role. */
+    private static final String MDC_AGENT_ROLE = "agent.role";
+
+    /** The role assigned to the automatically created manager agent. */
+    static final String MANAGER_ROLE = "Manager";
+
+    /** The goal assigned to the automatically created manager agent. */
+    private static final String MANAGER_GOAL =
+            "Coordinate worker agents to complete all tasks and synthesize a comprehensive final result";
+
+    /** The expected output for the manager's meta-task. */
+    private static final String MANAGER_EXPECTED_OUTPUT =
+            "A comprehensive final response synthesizing the outputs of all delegated tasks";
+
+    private final ChatModel managerLlm;
+    private final List<Agent> workerAgents;
+    private final int managerMaxIterations;
+    private final AgentExecutor agentExecutor;
+
+    /**
+     * @param managerLlm           LLM for the manager agent
+     * @param workerAgents         the worker agents available for delegation
+     * @param managerMaxIterations maximum number of tool call iterations for the manager
+     */
+    public HierarchicalWorkflowExecutor(ChatModel managerLlm, List<Agent> workerAgents,
+            int managerMaxIterations) {
+        this.managerLlm = managerLlm;
+        this.workerAgents = List.copyOf(workerAgents);
+        this.managerMaxIterations = managerMaxIterations;
+        this.agentExecutor = new AgentExecutor();
+    }
+
+    @Override
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose) {
+        Instant startTime = Instant.now();
+        MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
+
+        try {
+            log.info("Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
+                    resolvedTasks.size(), workerAgents.size());
+
+            // 1. Create the stateful DelegateTaskTool (accumulates worker outputs)
+            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor, verbose);
+
+            // 2. Build the virtual Manager agent
+            Agent manager = Agent.builder()
+                    .role(MANAGER_ROLE)
+                    .goal(MANAGER_GOAL)
+                    .background(ManagerPromptBuilder.buildBackground(workerAgents))
+                    .llm(managerLlm)
+                    .maxIterations(managerMaxIterations)
+                    .tools(List.of(delegateTool))
+                    .build();
+
+            // 3. Build the meta-task that drives the manager
+            Task managerTask = Task.builder()
+                    .description(ManagerPromptBuilder.buildTaskDescription(resolvedTasks))
+                    .expectedOutput(MANAGER_EXPECTED_OUTPUT)
+                    .agent(manager)
+                    .build();
+
+            // 4. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
+            log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
+            TaskOutput managerOutput = agentExecutor.execute(managerTask, List.of(), verbose);
+            log.info("Manager agent completed | Delegations: {} | Duration: {}",
+                    delegateTool.getDelegatedOutputs().size(), managerOutput.getDuration());
+
+            // 5. Assemble output: worker outputs first, manager final output last
+            List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
+            allOutputs.add(managerOutput);
+
+            Duration totalDuration = Duration.between(startTime, Instant.now());
+            int totalToolCalls = allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+
+            return EnsembleOutput.builder()
+                    .raw(managerOutput.getRaw())
+                    .taskOutputs(List.copyOf(allOutputs))
+                    .totalDuration(totalDuration)
+                    .totalToolCalls(totalToolCalls)
+                    .build();
+
+        } finally {
+            MDC.remove(MDC_AGENT_ROLE);
+        }
+    }
+}

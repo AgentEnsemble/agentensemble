@@ -29,7 +29,7 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 **Gradle (Kotlin DSL):**
 ```kotlin
 dependencies {
-    implementation("io.agentensemble:agentensemble-core:0.1.0-SNAPSHOT")
+    implementation("net.agentensemble:agentensemble-core:0.1.0-SNAPSHOT")
 
     // Add your preferred LangChain4j model provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
@@ -241,7 +241,7 @@ AgentEnsemble uses SLF4J. Add your preferred implementation (Logback, Log4j2, et
             <pattern>%d{HH:mm:ss} %-5level [%X{ensemble.id:-}] [%X{task.index:-}] [%X{agent.role:-}] %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <logger name="io.agentensemble" level="INFO"/>
+    <logger name="net.agentensemble" level="INFO"/>
     <root level="INFO"><appender-ref ref="CONSOLE"/></root>
 </configuration>
 ```

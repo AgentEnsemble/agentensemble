@@ -28,35 +28,35 @@ Users add their own LangChain4j model provider as a runtime dependency (e.g., `l
 ## Package Structure
 
 ```
-io.agentensemble
+net.agentensemble
   Agent.java                            # Top-level user-facing domain objects
   Task.java
   Ensemble.java
 
-  io.agentensemble.agent
+  net.agentensemble.agent
     AgentExecutor.java                  # Runs one agent on one task
     AgentPromptBuilder.java             # Constructs system/user prompts
 
-  io.agentensemble.task
+  net.agentensemble.task
     TaskOutput.java                     # Task result value object
 
-  io.agentensemble.ensemble
+  net.agentensemble.ensemble
     EnsembleOutput.java                 # Ensemble result value object
 
-  io.agentensemble.workflow
+  net.agentensemble.workflow
     Workflow.java                       # Enum: SEQUENTIAL, HIERARCHICAL
     WorkflowExecutor.java              # Strategy interface
     SequentialWorkflowExecutor.java    # Runs tasks one-by-one
 
-  io.agentensemble.tool
+  net.agentensemble.tool
     AgentTool.java                      # Framework tool interface
     ToolResult.java                     # Tool execution result
     LangChain4jToolAdapter.java        # Adapts AgentTool to LC4j
 
-  io.agentensemble.config
+  net.agentensemble.config
     TemplateResolver.java               # {variable} substitution
 
-  io.agentensemble.exception
+  net.agentensemble.exception
     AgentEnsembleException.java         # Base exception
     ValidationException.java            # Invalid configuration
     TaskExecutionException.java         # Task-level failure

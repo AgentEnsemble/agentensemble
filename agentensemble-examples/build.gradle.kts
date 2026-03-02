@@ -13,5 +13,5 @@ dependencies {
 }
 
 application {
-    mainClass = "io.agentensemble.examples.ResearchWriterExample"
+    mainClass = "net.agentensemble.examples.ResearchWriterExample"
 }
