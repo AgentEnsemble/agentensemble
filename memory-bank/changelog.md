@@ -2,16 +2,51 @@
 
 ## [Unreleased]
 
-### Changed
-- README updated to reflect hierarchical workflow (v0.2.0) and memory system (v0.3.0):
-  - Added Memory to Core Concepts table
-  - Updated dependency version to 0.3.0
-  - Added Hierarchical Workflow section with full code example
-  - Added Memory System section covering short-term, long-term, and entity memory with code examples
-  - Added EnsembleMemory configuration table
-  - Updated Ensemble Configuration table with managerLlm, managerMaxIterations, memory fields
-  - Updated Task Configuration table noting context is for sequential workflow
-  - Marked v0.2.0 and v0.3.0 as complete in roadmap
+---
+
+## [0.4.0] - 2026-03-02
+
+### Added
+- Agent delegation (`net.agentensemble.delegation` package):
+  - `DelegationContext`: immutable runtime state per delegation chain; `create()` factory
+    (peerAgents, maxDepth, memoryContext, agentExecutor, verbose); `descend()` returns
+    child with depth+1; `isAtLimit()` when currentDepth >= maxDepth
+  - `AgentDelegationTool`: `@Tool`-annotated; auto-injected into agent tool list at
+    execution time when `allowDelegation=true`; guards: depth limit, self-delegation,
+    unknown role; accumulates `delegatedOutputs`; MDC keys `delegation.depth` and
+    `delegation.parent` set during delegated executions
+- `AgentExecutor.execute(Task, List, boolean, MemoryContext, DelegationContext)`:
+  5-arg overload; `buildEffectiveTools()` prepends `AgentDelegationTool` when applicable;
+  4-arg backward-compat overload passes null delegationContext
+- `Ensemble.maxDelegationDepth` field (default 3; validated > 0 at run time)
+- `SequentialWorkflowExecutor(List<Agent>, int maxDelegationDepth)`: 2-arg constructor;
+  creates root `DelegationContext` per run; passes to AgentExecutor
+- `HierarchicalWorkflowExecutor(ChatModel, List<Agent>, int managerMaxIterations, int maxDelegationDepth)`:
+  4-arg constructor; creates `workerDelegationContext` for worker peer delegation;
+  passes to `DelegateTaskTool`
+- `DelegateTaskTool(List<Agent>, AgentExecutor, boolean, MemoryContext, DelegationContext)`:
+  5-arg constructor; threads `delegationContext` to worker `AgentExecutor.execute()` calls
+- 36 new tests: `DelegationContextTest` (16), `AgentDelegationToolTest` (14),
+  `DelegationEnsembleIntegrationTest` (10); updated `DelegateTaskToolTest` and
+  `HierarchicalWorkflowExecutorTest` for new constructors
+- 287 total tests passing
+- Comprehensive user documentation: 21 new files in `docs/`:
+  - `docs/index.md`
+  - `docs/getting-started/`: installation, quickstart, concepts
+  - `docs/guides/`: agents, tasks, workflows, tools, memory, delegation,
+    error-handling, logging, template-variables
+  - `docs/reference/`: agent-configuration, task-configuration, ensemble-configuration,
+    memory-configuration, exceptions
+  - `docs/examples/`: research-writer, hierarchical-team, memory-across-runs
+- README updated: Agent Delegation section, updated Agent/Ensemble config tables with
+  allowDelegation and maxDelegationDepth, docs index section, v0.4.0 marked complete
+
+### Technical Notes
+- Delegation tool method name is `delegate` (not `delegateTask`) -- disambiguated from
+  the Manager's `delegateTask` tool in hierarchical workflow
+- `DelegationContext` is immutable (all-final fields, no setters) -- thread-safe
+- The `SequentialWorkflowExecutor` no-arg constructor is removed; all callers
+  now pass `agents` and `maxDelegationDepth`
 
 ---
 

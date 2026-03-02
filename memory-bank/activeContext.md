@@ -2,38 +2,40 @@
 
 ## Current Work Focus
 
-v0.3.0 released and published to GitHub Packages. Development continues on main at 0.4.0-SNAPSHOT.
-README updated to document hierarchical workflow and memory system.
+v0.4.0 released and published to GitHub Packages. Development continues on main at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
 
-- Issue #16 merged (PR #40): memory system fully implemented
-  - `MemoryEntry`: immutable record of a task output captured for memory
-  - `ShortTermMemory`: per-run list accumulator; unmodifiable view via getEntries()
-  - `LongTermMemory`: interface for cross-run persistence
-  - `EmbeddingStoreLongTermMemory`: LangChain4j EmbeddingStore + EmbeddingModel;
-    embed() returns Response<Embedding> (still uses Response wrapper in 1.11.0)
-  - `EntityMemory`: interface for named entity key-value fact store
-  - `InMemoryEntityMemory`: ConcurrentHashMap-backed; thread-safe
-  - `EnsembleMemory`: config object with field-initializer builder (no @Builder.Default)
-  - `MemoryContext`: runtime state per run; disabled() is a shared no-op singleton;
-    from(config) creates new STM per call (fresh context per run)
-  - `AgentPromptBuilder`: 3-arg buildUserPrompt(Task, List<TaskOutput>, MemoryContext);
-    STM section replaces explicit context when STM active; LTM + entity sections appended
-  - `AgentExecutor`: memory-aware 4-arg execute() overload; backward-compat 3-arg overload
-  - `WorkflowExecutor`: interface updated to execute(List, boolean, MemoryContext)
-  - `SequentialWorkflowExecutor` / `HierarchicalWorkflowExecutor` / `DelegateTaskTool`:
-    all updated to accept and thread MemoryContext through
-  - `Ensemble`: added `memory` field (EnsembleMemory, nullable); creates MemoryContext
-    at start of run(); passes through to WorkflowExecutor
-  - 251 tests passing (was 174, +77 new)
-- v0.3.0 released: tag pushed, GitHub Packages, GitHub Release triggered by CI
+- Issue #17 merged (PR #41): agent delegation fully implemented
+  - `DelegationContext`: immutable runtime state; create() factory; descend() creates
+    child with depth+1; isAtLimit() when currentDepth >= maxDepth
+  - `AgentDelegationTool`: @Tool-annotated; auto-injected by AgentExecutor when
+    allowDelegation=true and delegationContext != null; guards: depth limit, self-
+    delegation, unknown role; accumulates delegatedOutputs
+  - `AgentExecutor`: 5-arg execute(Task, List, boolean, MemoryContext, DelegationContext);
+    buildEffectiveTools() prepends delegation tool when applicable; 4-arg backward-compat
+    delegates to 5-arg with null DelegationContext
+  - `Ensemble`: maxDelegationDepth field (default 3, validated > 0); passes to
+    SequentialWorkflowExecutor(agents, maxDelegationDepth) and
+    HierarchicalWorkflowExecutor(managerLlm, agents, managerMaxIterations, maxDelegationDepth)
+  - `SequentialWorkflowExecutor`: 2-arg constructor; creates DelegationContext per run;
+    passes to agentExecutor.execute(task, contextOutputs, verbose, memoryContext, ctx)
+  - `HierarchicalWorkflowExecutor`: 4-arg constructor; creates workerDelegationContext;
+    passes to DelegateTaskTool(agents, executor, verbose, memoryContext, ctx)
+  - `DelegateTaskTool`: 5-arg constructor adds delegationContext; threads through to
+    agentExecutor.execute() for worker executions
+  - MDC keys: delegation.depth, delegation.parent (set during delegated executions)
+  - 287 tests passing (was 251, +36 new)
+- v0.4.0 released: tag pushed, GitHub Packages, GitHub Release triggered by CI
+- Comprehensive user documentation added: 21 files in docs/
+  (getting-started/, guides/, reference/, examples/) covering all features through v0.4.0
+- README updated: Agent Delegation section, updated config tables, docs index
 
 ## Next Steps
 
-1. Issue #17: Agent delegation (allowDelegation flag, delegation depth limit)
-2. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
-3. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
+1. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
+2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
+3. Issue #20: Advanced features (callbacks, streaming, guardrails, built-in tools)
 
 ## Important Notes
 
