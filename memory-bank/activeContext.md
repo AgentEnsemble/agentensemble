@@ -6,6 +6,9 @@ Phase 2 Issue #15 (Hierarchical Workflow) complete and merged to main (PR #38). 
 
 ## Recent Changes
 
+- Repackaged (PR #39): `io.agentensemble` -> `net.agentensemble` (agentensemble.net registered)
+  - 53 files updated: source trees, package declarations, imports, gradle.properties, docs, CI
+  - Maven group: `net.agentensemble:agentensemble-core`
 - Issue #15 merged (PR #38): hierarchical workflow fully implemented
   - `DelegateTaskTool`: @Tool-annotated tool the manager uses to invoke workers by role
   - `ManagerPromptBuilder`: builds manager system/user prompts from worker list + task list
