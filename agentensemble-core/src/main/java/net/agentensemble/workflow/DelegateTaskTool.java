@@ -5,6 +5,7 @@ import dev.langchain4j.agent.tool.Tool;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
@@ -38,21 +39,24 @@ public class DelegateTaskTool {
     private final AgentExecutor agentExecutor;
     private final boolean verbose;
     private final MemoryContext memoryContext;
+    private final DelegationContext delegationContext;
     private final List<TaskOutput> delegatedOutputs = new ArrayList<>();
 
     /**
-     * @param agents        the worker agents available for delegation
-     * @param agentExecutor the executor to use when running delegated tasks
-     * @param verbose       whether to enable verbose logging for delegated tasks
-     * @param memoryContext runtime memory state for this run; use
-     *                      {@link MemoryContext#disabled()} when memory is not configured
+     * @param agents             the worker agents available for delegation
+     * @param agentExecutor      the executor to use when running delegated tasks
+     * @param verbose            whether to enable verbose logging for delegated tasks
+     * @param memoryContext      runtime memory state for this run; use
+     *                           {@link MemoryContext#disabled()} when memory is not configured
+     * @param delegationContext  peer-delegation context so workers can further delegate if allowed
      */
     public DelegateTaskTool(List<Agent> agents, AgentExecutor agentExecutor, boolean verbose,
-            MemoryContext memoryContext) {
+            MemoryContext memoryContext, DelegationContext delegationContext) {
         this.agents = List.copyOf(agents);
         this.agentExecutor = agentExecutor;
         this.verbose = verbose;
         this.memoryContext = memoryContext;
+        this.delegationContext = delegationContext;
     }
 
     /**
@@ -92,7 +96,8 @@ public class DelegateTaskTool {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose, memoryContext);
+        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose, memoryContext,
+                delegationContext);
         delegatedOutputs.add(output);
 
         log.info("Delegation to '{}' completed | Tool calls: {} | Duration: {}",

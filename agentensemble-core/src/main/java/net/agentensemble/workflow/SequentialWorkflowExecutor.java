@@ -1,7 +1,9 @@
 package net.agentensemble.workflow;
 
+import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
@@ -44,9 +46,19 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     /** Truncation length for task description in MDC and logs. */
     private static final int MDC_DESCRIPTION_MAX_LENGTH = 80;
 
+    private final List<Agent> agents;
+    private final int maxDelegationDepth;
     private final AgentExecutor agentExecutor;
 
-    public SequentialWorkflowExecutor() {
+    /**
+     * Create a SequentialWorkflowExecutor with delegation support.
+     *
+     * @param agents             all agents registered with the ensemble (used to build DelegationContext)
+     * @param maxDelegationDepth maximum allowed delegation depth for agents with allowDelegation=true
+     */
+    public SequentialWorkflowExecutor(List<Agent> agents, int maxDelegationDepth) {
+        this.agents = List.copyOf(agents);
+        this.maxDelegationDepth = maxDelegationDepth;
         this.agentExecutor = new AgentExecutor();
     }
 
@@ -56,6 +68,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
+
+        // Create the delegation context once for the entire run; all agents share it
+        DelegationContext delegationContext = DelegationContext.create(
+                agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
 
         for (int i = 0; i < totalTasks; i++) {
             Task task = resolvedTasks.get(i);
@@ -76,9 +92,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks,
                         contextOutputs.size());
 
-                // Execute the task -- AgentExecutor injects memory and records the output
+                // Execute the task with delegation context -- delegation tool is injected
+                // automatically when the agent has allowDelegation=true
                 TaskOutput taskOutput = agentExecutor.execute(task, contextOutputs, verbose,
-                        memoryContext);
+                        memoryContext, delegationContext);
                 completedOutputs.put(task, taskOutput);
 
                 log.info("Task {}/{} completed | Duration: {} | Tool calls: {}",
