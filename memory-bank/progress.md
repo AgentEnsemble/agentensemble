@@ -33,11 +33,19 @@
 ### GitHub Issues
 - [x] Issues #1-#20 created (Issues #1-14 Phase 1, #15-20 Phase 2+)
 
+## Release Pipeline
+
+- [x] `maven-publish` on `agentensemble-core` with POM metadata, sources JAR, Javadoc JAR
+- [x] GitHub Packages as Maven repository target
+- [x] Release workflow: tag-triggered (`v*.*.*`), publishes and creates GitHub Release
+- [x] Enhanced CI: `--continue` flag, test result reporting, dependency-submission job
+
 ## Current Status
 
 **Phase**: Phase 1 COMPLETE (v0.1.0-SNAPSHOT)
 **Total tests**: 126 passing
-**Next action**: Tag v0.1.0-SNAPSHOT, begin Phase 2 (hierarchical workflow)
+**Release pipeline**: Ready -- push tag `v0.1.0` to cut first release
+**Next action**: Cut v0.1.0, begin Phase 2 (hierarchical workflow)
 
 ## Known Issues
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Release pipeline: tag-triggered GitHub Actions workflow publishes to GitHub Packages
+- `maven-publish` plugin on `agentensemble-core` with full POM metadata (name, description, URL, MIT license, developer, SCM, issue management)
+- Sources JAR and Javadoc JAR generated as part of every build
+- GitHub Packages repository configured (`https://maven.pkg.github.com/AgentEnsemble/agentensemble`)
+- Enhanced CI: `--continue` flag collects all test results on failure, `publish-unit-test-result-action` reports inline on PRs, `dependency-submission` job feeds GitHub dependency graph
+
+### Release Instructions
+To cut a release:
+1. Update `version` in `gradle.properties` (remove `-SNAPSHOT`)
+2. Commit: `git commit -m "chore: release vX.Y.Z"`
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`
+4. Release workflow triggers automatically
+
+---
+
 ## [0.1.0-SNAPSHOT] - 2026-03-02
 
 ### Added
@@ -28,28 +46,3 @@
 - Java 21, Gradle 9.3.1 with Kotlin DSL
 - Version catalog (gradle/libs.versions.toml) for centralized dependency management
 
-## [Unreleased]
-
-### Added
-- Comprehensive design specification (13 documents in docs/design/)
-  - 01-overview.md: Project overview, goals, non-goals
-  - 02-architecture.md: Module structure, dependencies, design principles
-  - 03-domain-model.md: Full API contracts for Agent, Task, Ensemble, outputs
-  - 04-execution-engine.md: Execution flow, SequentialWorkflowExecutor, AgentExecutor
-  - 05-prompt-templates.md: Exact system/user prompt templates
-  - 06-tool-system.md: AgentTool interface, LangChain4j adapter, tool resolution
-  - 07-template-resolver.md: Variable substitution system
-  - 08-error-handling.md: Exception hierarchy and recovery strategies
-  - 09-logging.md: SLF4J logging strategy, MDC, verbose mode
-  - 10-concurrency.md: Thread safety model, Phase 2 considerations
-  - 11-configuration.md: All configurable settings and extension points
-  - 12-testing-strategy.md: Test plan, test cases, mocking approach
-  - 13-future-roadmap.md: Phase 2-7 feature plans
-- Memory bank documentation (projectbrief, productContext, systemPatterns, techContext, activeContext, progress, changelog)
-
-### Decisions
-- Project name: AgentEnsemble
-- Build system: Gradle with Kotlin DSL
-- Java 21 target
-- MIT license
-- Naming conventions established: Ensemble, Workflow, background, run() -- chosen for clarity and distinct identity
