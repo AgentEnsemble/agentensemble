@@ -2,25 +2,16 @@
 
 ## [Unreleased]
 
+---
+
+## [0.1.0] - 2026-03-02
+
 ### Added
 - Release pipeline: tag-triggered GitHub Actions workflow publishes to GitHub Packages
 - `maven-publish` plugin on `agentensemble-core` with full POM metadata (name, description, URL, MIT license, developer, SCM, issue management)
 - Sources JAR and Javadoc JAR generated as part of every build
 - GitHub Packages repository configured (`https://maven.pkg.github.com/AgentEnsemble/agentensemble`)
 - Enhanced CI: `--continue` flag collects all test results on failure, `publish-unit-test-result-action` reports inline on PRs, `dependency-submission` job feeds GitHub dependency graph
-
-### Release Instructions
-To cut a release:
-1. Update `version` in `gradle.properties` (remove `-SNAPSHOT`)
-2. Commit: `git commit -m "chore: release vX.Y.Z"`
-3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`
-4. Release workflow triggers automatically
-
----
-
-## [0.1.0-SNAPSHOT] - 2026-03-02
-
-### Added
 - Phase 1 complete: full sequential multi-agent orchestration framework
 - `Agent`: immutable value object with role, goal, background, tools, llm, verbose, maxIterations, responseFormat
 - `Task`: immutable value object with description, expectedOutput, agent, context

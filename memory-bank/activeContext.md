@@ -2,25 +2,20 @@
 
 ## Current Work Focus
 
-Phase 1 is complete. Build/release pipeline is in place and ready to cut the first release.
+v0.1.0 released and published to GitHub Packages. Development continues on main at 0.2.0-SNAPSHOT.
 
 ## Recent Changes
 
 - All Phase 1 implementation complete (Issues #1-#14, PRs #21-#36), 126 tests passing
-- Example application: ResearchWriterExample (two-agent research + writing)
-- Comprehensive README, 13 design docs, brand assets in assets/brand/
-- Release pipeline added (commit 86c8e13):
-  - `maven-publish` plugin on `agentensemble-core` with full POM metadata + sources/Javadoc JARs
-  - GitHub Packages as Maven repository target
-  - Release workflow (`.github/workflows/release.yml`): tag-triggered (`v*.*.*`), builds+tests, publishes, creates GitHub Release with auto-generated notes
-  - Enhanced CI: `--continue` flag, test result reporting, dependency-submission job
+- Release pipeline: `maven-publish`, GitHub Packages, tag-triggered release workflow, enhanced CI
+- v0.1.0 released: tag pushed, GitHub Actions release workflow triggered (builds, publishes, creates GH Release)
+- Version bumped to 0.2.0-SNAPSHOT on main
 
 ## Next Steps
 
-1. Update `gradle.properties` version to `0.1.0`, commit, tag `v0.1.0`, push -- triggers first release
-2. Begin Phase 2: Hierarchical workflow (Issue #15)
-3. Memory system (Issue #16)
-4. Agent delegation (Issue #17)
+1. Begin Phase 2: Hierarchical workflow (Issue #15)
+2. Memory system (Issue #16)
+3. Agent delegation (Issue #17)
 
 ## Important Notes
 
