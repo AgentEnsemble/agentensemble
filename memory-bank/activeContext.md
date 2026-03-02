@@ -2,20 +2,23 @@
 
 ## Current Work Focus
 
-v0.1.0 released and published to GitHub Packages. Development continues on main at 0.2.0-SNAPSHOT.
+Phase 2 Issue #15 (Hierarchical Workflow) complete and merged to main (PR #38). Development at 0.2.0-SNAPSHOT.
 
 ## Recent Changes
 
-- All Phase 1 implementation complete (Issues #1-#14, PRs #21-#36), 126 tests passing
-- Release pipeline: `maven-publish`, GitHub Packages, tag-triggered release workflow, enhanced CI
-- v0.1.0 released: tag pushed, GitHub Actions release workflow triggered (builds, publishes, creates GH Release)
-- Version bumped to 0.2.0-SNAPSHOT on main
+- Issue #15 merged (PR #38): hierarchical workflow fully implemented
+  - `DelegateTaskTool`: @Tool-annotated tool the manager uses to invoke workers by role
+  - `ManagerPromptBuilder`: builds manager system/user prompts from worker list + task list
+  - `HierarchicalWorkflowExecutor`: manager agent runs via AgentExecutor, delegates to workers
+  - `Ensemble` updated: `managerLlm`, `managerMaxIterations`, wired executor, relaxed context ordering
+  - Build: added `-parameters` compiler flag for @Tool parameter name reflection
+  - 174 tests passing (49 new), 0 failures
+- v0.1.0 released: tag pushed, GitHub Packages, GitHub Release created
 
 ## Next Steps
 
-1. Begin Phase 2: Hierarchical workflow (Issue #15)
-2. Memory system (Issue #16)
-3. Agent delegation (Issue #17)
+1. Phase 2 Issue #16: Memory system (short-term, long-term, entity)
+2. Phase 2 Issue #17: Agent delegation (allowDelegation flag, delegation depth limit)
 
 ## Important Notes
 

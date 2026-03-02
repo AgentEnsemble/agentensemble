@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+- Hierarchical workflow (`Workflow.HIERARCHICAL`): Manager agent delegates tasks to workers via `delegateTask` tool, synthesizes final result
+- `DelegateTaskTool`: `@Tool`-annotated tool for worker delegation, case-insensitive role matching, collects `TaskOutput`s
+- `ManagerPromptBuilder`: builds manager system prompt (worker list) and user prompt (task list)
+- `HierarchicalWorkflowExecutor`: implements `WorkflowExecutor`, creates virtual Manager at runtime
+- `Ensemble.managerLlm`: optional field, defaults to first agent's LLM
+- `Ensemble.managerMaxIterations`: configurable manager iteration limit, default 20
+- `-parameters` compiler flag in root `build.gradle.kts` for `@Tool` parameter name reflection
+- 49 new tests: `DelegateTaskToolTest` (16), `ManagerPromptBuilderTest` (14), `HierarchicalWorkflowExecutorTest` (10), `HierarchicalEnsembleIntegrationTest` (9)
+
+### Changed
+- `validateContextOrdering()` in `Ensemble` skips for HIERARCHICAL workflow (manager handles ordering)
+
 ---
 
 ## [0.1.0] - 2026-03-02
