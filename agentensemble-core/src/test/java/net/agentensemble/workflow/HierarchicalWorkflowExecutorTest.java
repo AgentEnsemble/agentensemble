@@ -32,7 +32,7 @@ class HierarchicalWorkflowExecutorTest {
         workerModel = mock(ChatModel.class);
         worker = Agent.builder().role("Researcher").goal("Research topics")
                 .llm(workerModel).build();
-        executor = new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20);
+        executor = new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3);
     }
 
     private ChatResponse textResponse(String text) {
@@ -168,7 +168,7 @@ class HierarchicalWorkflowExecutorTest {
 
         Agent writer = Agent.builder().role("Writer").goal("Write content")
                 .llm(workerModel).build();
-        executor = new HierarchicalWorkflowExecutor(managerModel, List.of(worker, writer), 20);
+        executor = new HierarchicalWorkflowExecutor(managerModel, List.of(worker, writer), 20, 3);
 
         Task task1 = researchTask();
         Task task2 = Task.builder().description("Write the report").expectedOutput("A report")

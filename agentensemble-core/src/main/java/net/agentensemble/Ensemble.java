@@ -86,6 +86,15 @@ public class Ensemble {
     private final EnsembleMemory memory;
 
     /**
+     * Maximum delegation depth for agent-to-agent delegation.
+     * Prevents infinite recursion when agents have {@code allowDelegation = true}.
+     * Only relevant when at least one agent has {@code allowDelegation = true}.
+     * Default: 3. Must be greater than zero.
+     */
+    @Builder.Default
+    private final int maxDelegationDepth = 3;
+
+    /**
      * Execute the ensemble's tasks with no input variables.
      *
      * @return EnsembleOutput containing all results
@@ -160,9 +169,9 @@ public class Ensemble {
 
     private WorkflowExecutor selectExecutor() {
         return switch (workflow) {
-            case SEQUENTIAL -> new SequentialWorkflowExecutor();
+            case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
-                    resolveManagerLlm(), agents, managerMaxIterations);
+                    resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth);
         };
     }
 
@@ -177,6 +186,7 @@ public class Ensemble {
     private void validate() {
         validateTasksNotEmpty();
         validateAgentsNotEmpty();
+        validateMaxDelegationDepth();
         validateAgentMembership();
         validateNoCircularContextDependencies();
         validateContextOrdering();
@@ -192,6 +202,13 @@ public class Ensemble {
     private void validateAgentsNotEmpty() {
         if (agents == null || agents.isEmpty()) {
             throw new ValidationException("Ensemble must have at least one agent");
+        }
+    }
+
+    private void validateMaxDelegationDepth() {
+        if (maxDelegationDepth <= 0) {
+            throw new ValidationException(
+                    "Ensemble maxDelegationDepth must be > 0, got: " + maxDelegationDepth);
         }
     }
 

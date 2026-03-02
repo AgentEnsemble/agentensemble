@@ -4,6 +4,7 @@ import dev.langchain4j.model.chat.ChatModel;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
@@ -56,18 +57,21 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     private final ChatModel managerLlm;
     private final List<Agent> workerAgents;
     private final int managerMaxIterations;
+    private final int maxDelegationDepth;
     private final AgentExecutor agentExecutor;
 
     /**
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
      * @param managerMaxIterations maximum number of tool call iterations for the manager
+     * @param maxDelegationDepth   maximum peer-delegation depth for worker agents
      */
     public HierarchicalWorkflowExecutor(ChatModel managerLlm, List<Agent> workerAgents,
-            int managerMaxIterations) {
+            int managerMaxIterations, int maxDelegationDepth) {
         this.managerLlm = managerLlm;
         this.workerAgents = List.copyOf(workerAgents);
         this.managerMaxIterations = managerMaxIterations;
+        this.maxDelegationDepth = maxDelegationDepth;
         this.agentExecutor = new AgentExecutor();
     }
 
@@ -81,11 +85,15 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             log.info("Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
                     resolvedTasks.size(), workerAgents.size());
 
-            // 1. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
-            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor,
-                    verbose, memoryContext);
+            // 1. Create delegation context for peer delegation among worker agents
+            DelegationContext workerDelegationContext = DelegationContext.create(
+                    workerAgents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
 
-            // 2. Build the virtual Manager agent
+            // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
+            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor,
+                    verbose, memoryContext, workerDelegationContext);
+
+            // 3. Build the virtual Manager agent
             Agent manager = Agent.builder()
                     .role(MANAGER_ROLE)
                     .goal(MANAGER_GOAL)
@@ -95,14 +103,14 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     .tools(List.of(delegateTool))
                     .build();
 
-            // 3. Build the meta-task that drives the manager
+            // 4. Build the meta-task that drives the manager
             Task managerTask = Task.builder()
                     .description(ManagerPromptBuilder.buildTaskDescription(resolvedTasks))
                     .expectedOutput(MANAGER_EXPECTED_OUTPUT)
                     .agent(manager)
                     .build();
 
-            // 4. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
+            // 5. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
             // The manager itself does not participate in shared memory (it is a meta-orchestrator)
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
             TaskOutput managerOutput = agentExecutor.execute(managerTask, List.of(), verbose,
