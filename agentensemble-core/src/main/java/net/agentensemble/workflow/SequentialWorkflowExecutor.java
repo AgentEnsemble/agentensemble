@@ -6,6 +6,7 @@ import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +25,9 @@ import java.util.Map;
  * Each task's output is stored and made available as context to subsequent tasks
  * that declare a context dependency on it. MDC values (task.index, agent.role)
  * are set for the duration of each task execution to enable structured logging.
+ *
+ * When a {@link MemoryContext} is active, memory injection and recording are
+ * handled transparently by {@link AgentExecutor}.
  *
  * Stateless -- all state is held in local variables.
  */
@@ -47,7 +51,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose,
+            MemoryContext memoryContext) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
@@ -66,16 +71,19 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
                         task.getAgent().getRole());
 
-                // Gather context outputs for this task
+                // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
-                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
+                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks,
+                        contextOutputs.size());
 
-                // Execute the task
-                TaskOutput taskOutput = agentExecutor.execute(task, contextOutputs, verbose);
+                // Execute the task -- AgentExecutor injects memory and records the output
+                TaskOutput taskOutput = agentExecutor.execute(task, contextOutputs, verbose,
+                        memoryContext);
                 completedOutputs.put(task, taskOutput);
 
                 log.info("Task {}/{} completed | Duration: {} | Tool calls: {}",
-                        taskIndex, totalTasks, taskOutput.getDuration(), taskOutput.getToolCallCount());
+                        taskIndex, totalTasks, taskOutput.getDuration(),
+                        taskOutput.getToolCallCount());
 
                 if (verbose) {
                     log.info("Task {}/{} output preview: {}",

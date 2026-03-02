@@ -5,6 +5,7 @@ import dev.langchain4j.agent.tool.Tool;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,10 @@ import java.util.List;
  * delegated task outputs are accumulated and accessible after execution for
  * inclusion in the EnsembleOutput.
  *
+ * When a {@link MemoryContext} is provided, worker agent execution participates
+ * in the shared memory: prior run outputs are injected into the worker's prompt
+ * and the worker's output is recorded into memory after completion.
+ *
  * This class is stateful -- a new instance must be created for each ensemble run.
  */
 public class DelegateTaskTool {
@@ -32,17 +37,22 @@ public class DelegateTaskTool {
     private final List<Agent> agents;
     private final AgentExecutor agentExecutor;
     private final boolean verbose;
+    private final MemoryContext memoryContext;
     private final List<TaskOutput> delegatedOutputs = new ArrayList<>();
 
     /**
-     * @param agents       the worker agents available for delegation
+     * @param agents        the worker agents available for delegation
      * @param agentExecutor the executor to use when running delegated tasks
-     * @param verbose      whether to enable verbose logging for delegated tasks
+     * @param verbose       whether to enable verbose logging for delegated tasks
+     * @param memoryContext runtime memory state for this run; use
+     *                      {@link MemoryContext#disabled()} when memory is not configured
      */
-    public DelegateTaskTool(List<Agent> agents, AgentExecutor agentExecutor, boolean verbose) {
+    public DelegateTaskTool(List<Agent> agents, AgentExecutor agentExecutor, boolean verbose,
+            MemoryContext memoryContext) {
         this.agents = List.copyOf(agents);
         this.agentExecutor = agentExecutor;
         this.verbose = verbose;
+        this.memoryContext = memoryContext;
     }
 
     /**
@@ -82,7 +92,7 @@ public class DelegateTaskTool {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose);
+        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose, memoryContext);
         delegatedOutputs.add(output);
 
         log.info("Delegation to '{}' completed | Tool calls: {} | Duration: {}",

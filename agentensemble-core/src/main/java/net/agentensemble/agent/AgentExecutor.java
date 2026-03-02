@@ -14,6 +14,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.LangChain4jToolAdapter;
@@ -34,6 +35,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Manages the ReAct-style tool-calling loop: the agent reasons, optionally calls
  * tools, incorporates results, and eventually produces a final text answer.
  *
+ * When a {@link MemoryContext} is provided, relevant memories are injected into
+ * the user prompt before execution and the task output is recorded into memory
+ * after execution.
+ *
  * Stateless -- all state is held in local variables during execution.
  */
 public class AgentExecutor {
@@ -47,25 +52,46 @@ public class AgentExecutor {
     private static final int LOG_TRUNCATE_LENGTH = 200;
 
     /**
-     * Execute the given task using the agent specified in the task.
+     * Execute the given task using the agent specified in the task, without memory.
      *
-     * @param task the task to execute
+     * @param task           the task to execute
      * @param contextOutputs outputs from prior tasks to include as context
-     * @param verbose when true, prompts and responses are logged at INFO level
+     * @param verbose        when true, prompts and responses are logged at INFO level
      * @return the task output
-     * @throws AgentExecutionException if the LLM throws an error
+     * @throws AgentExecutionException        if the LLM throws an error
      * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
      */
     public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose) {
+        return execute(task, contextOutputs, verbose, MemoryContext.disabled());
+    }
+
+    /**
+     * Execute the given task using the agent specified in the task.
+     *
+     * When memoryContext is active, relevant memories are injected into the
+     * user prompt before execution and the resulting TaskOutput is recorded
+     * into memory after execution completes.
+     *
+     * @param task           the task to execute
+     * @param contextOutputs outputs from prior tasks to include as context
+     * @param verbose        when true, prompts and responses are logged at INFO level
+     * @param memoryContext  runtime memory state; use {@link MemoryContext#disabled()}
+     *                       when memory is not configured
+     * @return the task output
+     * @throws AgentExecutionException        if the LLM throws an error
+     * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
+     */
+    public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose,
+            MemoryContext memoryContext) {
         Instant startTime = Instant.now();
         Agent agent = task.getAgent();
         boolean effectiveVerbose = verbose || agent.isVerbose();
 
         log.info("Agent '{}' executing task | Tools: {}", agent.getRole(), agent.getTools().size());
 
-        // Build prompts
+        // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
-        String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs);
+        String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, memoryContext);
 
         if (effectiveVerbose) {
             log.info("System prompt:\n{}", systemPrompt);
@@ -113,7 +139,7 @@ public class AgentExecutor {
         int toolCalls = toolCallCounter.get();
         log.debug("Agent '{}' completed | Tool calls: {} | Duration: {}", agent.getRole(), toolCalls, duration);
 
-        return TaskOutput.builder()
+        TaskOutput output = TaskOutput.builder()
                 .raw(finalResponse)
                 .taskDescription(task.getDescription())
                 .agentRole(agent.getRole())
@@ -121,6 +147,11 @@ public class AgentExecutor {
                 .duration(duration)
                 .toolCallCount(toolCalls)
                 .build();
+
+        // Record this output in memory (no-op when memory is disabled)
+        memoryContext.record(output);
+
+        return output;
     }
 
     // ========================

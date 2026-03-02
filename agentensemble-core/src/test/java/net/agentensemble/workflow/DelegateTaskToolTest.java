@@ -6,6 +6,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,8 @@ class DelegateTaskToolTest {
                 .llm(researcherModel).build();
         writer = Agent.builder().role("Writer").goal("Write content")
                 .llm(writerModel).build();
-        tool = new DelegateTaskTool(List.of(researcher, writer), new AgentExecutor(), false);
+        tool = new DelegateTaskTool(List.of(researcher, writer), new AgentExecutor(), false,
+                MemoryContext.disabled());
     }
 
     private ChatResponse textResponse(String text) {
