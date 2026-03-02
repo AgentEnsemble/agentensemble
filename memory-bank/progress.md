@@ -10,33 +10,34 @@
 
 ### Milestone 1: Foundation
 - [x] Project scaffolding (Gradle build, settings, version catalog) -- PR #21 merged
-- [x] Design documentation committed -- merged to main
-- [ ] Exception hierarchy (7 exception classes)
+- [x] CI workflow and Dependabot -- PR #22 merged
+- [x] Exception hierarchy (7 exception classes) -- PR #29 merged
 
 ### Milestone 2: Domain Model
-- [ ] Agent domain object with builder and validation
-- [ ] Task and TaskOutput with builders and validation
-- [ ] Ensemble and EnsembleOutput (structure, run() stubbed)
+- [x] Agent domain object with builder and validation -- PR #30 merged
+- [x] Task and TaskOutput with builders and validation -- PR #31 merged
+- [x] Ensemble and EnsembleOutput (structure, run() stubbed) -- PR #32 merged
 
 ### Milestone 3: Engine
-- [ ] TemplateResolver (variable substitution)
-- [ ] Tool system (AgentTool interface, ToolResult, LangChain4jToolAdapter)
-- [ ] AgentPromptBuilder (system/user prompt construction)
-- [ ] AgentExecutor (core agent execution with LangChain4j, tool loop)
-- [ ] SequentialWorkflowExecutor (sequential task orchestration)
+- [x] TemplateResolver (variable substitution) -- PR #33 merged
+- [x] Tool system (AgentTool interface, ToolResult, LangChain4jToolAdapter) -- PR #34 merged
+- [x] AgentPromptBuilder (system/user prompt construction) -- PR #34 merged
+- [x] AgentExecutor (core agent execution with LangChain4j, tool loop) -- PR #35 merged
+- [x] SequentialWorkflowExecutor (sequential task orchestration) -- PR #36 merged
 
 ### Milestone 4: Integration
-- [ ] Ensemble.run() implementation (wire everything together)
-- [ ] Example application (ResearchWriterExample)
-- [ ] README and documentation
+- [x] Ensemble.run() implementation (wire everything together) -- PR #36 merged
+- [x] Example application (ResearchWriterExample) -- committed
+- [x] README and documentation -- committed
 
 ### GitHub Issues
-- [ ] Create issues #1-#20 for the development roadmap
+- [x] Issues #1-#20 created (Issues #1-14 Phase 1, #15-20 Phase 2+)
 
 ## Current Status
 
-**Phase**: Documentation and project setup
-**Next action**: Create GitHub issues, then set up Gradle project structure
+**Phase**: Phase 1 COMPLETE (v0.1.0-SNAPSHOT)
+**Total tests**: 126 passing
+**Next action**: Tag v0.1.0-SNAPSHOT, begin Phase 2 (hierarchical workflow)
 
 ## Known Issues
 
