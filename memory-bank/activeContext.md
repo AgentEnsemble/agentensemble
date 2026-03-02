@@ -2,7 +2,7 @@
 
 ## Current Work Focus
 
-Phase 2 Issue #15 (Hierarchical Workflow) complete and merged to main (PR #38). Development at 0.2.0-SNAPSHOT.
+v0.2.0 released and published to GitHub Packages. Development continues on main at 0.3.0-SNAPSHOT.
 
 ## Recent Changes
 
@@ -16,12 +16,14 @@ Phase 2 Issue #15 (Hierarchical Workflow) complete and merged to main (PR #38). 
   - `Ensemble` updated: `managerLlm`, `managerMaxIterations`, wired executor, relaxed context ordering
   - Build: added `-parameters` compiler flag for @Tool parameter name reflection
   - 174 tests passing (49 new), 0 failures
+- v0.2.0 released: tag pushed, GitHub Packages, GitHub Release at https://github.com/AgentEnsemble/agentensemble/releases/tag/v0.2.0
 - v0.1.0 released: tag pushed, GitHub Packages, GitHub Release created
 
 ## Next Steps
 
 1. Phase 2 Issue #16: Memory system (short-term, long-term, entity)
 2. Phase 2 Issue #17: Agent delegation (allowDelegation flag, delegation depth limit)
+3. Phase 2 Issue #18: Parallel workflow (concurrent independent tasks)
 
 ## Important Notes
 
