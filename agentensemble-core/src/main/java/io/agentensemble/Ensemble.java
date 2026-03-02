@@ -1,11 +1,13 @@
 package io.agentensemble;
 
+import dev.langchain4j.model.chat.ChatModel;
 import io.agentensemble.config.TemplateResolver;
 import io.agentensemble.ensemble.EnsembleOutput;
 import io.agentensemble.exception.ValidationException;
+import io.agentensemble.workflow.HierarchicalWorkflowExecutor;
+import io.agentensemble.workflow.SequentialWorkflowExecutor;
 import io.agentensemble.workflow.Workflow;
 import io.agentensemble.workflow.WorkflowExecutor;
-import io.agentensemble.workflow.SequentialWorkflowExecutor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
@@ -56,6 +58,19 @@ public class Ensemble {
     /** How tasks are executed. Default: SEQUENTIAL. */
     @Builder.Default
     private final Workflow workflow = Workflow.SEQUENTIAL;
+
+    /**
+     * Optional LLM for the Manager agent in hierarchical workflow.
+     * If not set, defaults to the first registered agent's LLM.
+     */
+    private final ChatModel managerLlm;
+
+    /**
+     * Maximum number of tool call iterations for the Manager agent in hierarchical workflow.
+     * Default: 20. Must be greater than zero.
+     */
+    @Builder.Default
+    private final int managerMaxIterations = 20;
 
     /** When true, elevates execution logging to INFO level. */
     @Builder.Default
@@ -125,9 +140,13 @@ public class Ensemble {
     private WorkflowExecutor selectExecutor() {
         return switch (workflow) {
             case SEQUENTIAL -> new SequentialWorkflowExecutor();
-            case HIERARCHICAL -> throw new UnsupportedOperationException(
-                    "Hierarchical workflow is not yet implemented. It is planned for Phase 2.");
+            case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
+                    resolveManagerLlm(), agents, managerMaxIterations);
         };
+    }
+
+    private ChatModel resolveManagerLlm() {
+        return managerLlm != null ? managerLlm : agents.get(0).getLlm();
     }
 
     // ========================
@@ -212,6 +231,12 @@ public class Ensemble {
     }
 
     private void validateContextOrdering() {
+        // Hierarchical workflow: the Manager agent decides execution order at runtime.
+        // Context ordering is not validated -- the manager handles task sequencing.
+        if (workflow == Workflow.HIERARCHICAL) {
+            return;
+        }
+
         // For sequential workflow: each context task must appear earlier in the tasks list
         List<Task> executedSoFar = new ArrayList<>();
         for (Task task : tasks) {

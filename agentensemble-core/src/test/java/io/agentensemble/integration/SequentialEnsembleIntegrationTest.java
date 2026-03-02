@@ -9,7 +9,6 @@ import io.agentensemble.Ensemble;
 import io.agentensemble.Task;
 import io.agentensemble.exception.TaskExecutionException;
 import io.agentensemble.exception.ValidationException;
-import io.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -230,20 +229,4 @@ class SequentialEnsembleIntegrationTest {
         assertThat(output.getRaw()).isEqualTo("Research result");
     }
 
-    // ========================
-    // Workflow
-    // ========================
-
-    @Test
-    void testHierarchicalWorkflow_throwsUnsupported() {
-        var agent = agentWithResponse("Agent", "result");
-        var task = Task.builder().description("Task").expectedOutput("Out").agent(agent).build();
-
-        assertThatThrownBy(() -> Ensemble.builder()
-                .agent(agent).task(task)
-                .workflow(Workflow.HIERARCHICAL)
-                .build()
-                .run())
-                .isInstanceOf(UnsupportedOperationException.class);
-    }
 }
