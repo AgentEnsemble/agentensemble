@@ -1,13 +1,13 @@
 [versions]
 langchain4j      = "1.11.0"
-lombok           = "1.18.38"
-jackson          = "2.19.0"
+lombok           = "1.18.42"
+jackson          = "2.21.1"
 slf4j            = "2.0.17"
 junit            = "5.12.2"
 junit-platform   = "1.12.2"
-assertj          = "3.27.3"
-mockito          = "5.18.0"
-logback          = "1.5.18"
+assertj          = "3.27.7"
+mockito          = "5.22.0"
+logback          = "1.5.32"
 
 [libraries]
 langchain4j-core          = { group = "dev.langchain4j", name = "langchain4j-core",    version.ref = "langchain4j" }
