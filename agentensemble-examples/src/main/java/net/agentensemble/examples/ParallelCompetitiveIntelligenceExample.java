@@ -2,7 +2,6 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.List;
-import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -138,8 +137,10 @@ public class ParallelCompetitiveIntelligenceExample {
                 .task(swotTask)
                 .task(summaryTask)
                 .workflow(Workflow.PARALLEL)
+                .input("company", company)
+                .input("industry", industry)
                 .build()
-                .run(Map.of("company", company, "industry", industry));
+                .run();
 
         // ========================
         // Display results

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.Map;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
@@ -105,6 +106,49 @@ class EnsembleTest {
                 .onTaskStart(e -> {})
                 .build();
         assertThat(ensemble.getListeners()).hasSize(3);
+    }
+
+    // ========================
+    // Inputs builder
+    // ========================
+
+    @Test
+    void testDefaultInputs_isEmpty() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder().agent(researcher).build();
+        assertThat(ensemble.getInputs()).isEmpty();
+    }
+
+    @Test
+    void testInput_addsSingleEntry() {
+        var researcher = agent("Researcher");
+        var ensemble =
+                Ensemble.builder().agent(researcher).input("topic", "AI agents").build();
+        assertThat(ensemble.getInputs()).containsExactly(Map.entry("topic", "AI agents"));
+    }
+
+    @Test
+    void testMultipleInput_allAccumulate() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .input("company", "Acme")
+                .input("industry", "software")
+                .build();
+        assertThat(ensemble.getInputs())
+                .hasSize(2)
+                .containsEntry("company", "Acme")
+                .containsEntry("industry", "software");
+    }
+
+    @Test
+    void testInputs_bulkAddsAllEntries() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .inputs(Map.of("company", "Acme", "industry", "software"))
+                .build();
+        assertThat(ensemble.getInputs()).containsEntry("company", "Acme").containsEntry("industry", "software");
     }
 
     // ========================

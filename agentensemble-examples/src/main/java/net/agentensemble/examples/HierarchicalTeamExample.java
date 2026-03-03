@@ -1,7 +1,6 @@
 package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -121,8 +120,9 @@ public class HierarchicalTeamExample {
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(powerfulModel)
                 .managerMaxIterations(15)
+                .input("company", company)
                 .build()
-                .run(Map.of("company", company));
+                .run();
 
         // ========================
         // Display results

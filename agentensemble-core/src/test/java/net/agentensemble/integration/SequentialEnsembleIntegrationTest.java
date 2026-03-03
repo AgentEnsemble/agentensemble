@@ -191,6 +191,65 @@ class SequentialEnsembleIntegrationTest {
         assertThat(output.getTaskOutputs().get(0).getTaskDescription()).isEqualTo("Research AI Agents developments");
     }
 
+    @Test
+    void testBuilderInput_resolvedAtRunTime() {
+        var agent = agentWithResponse("Researcher", "Research about AI Agents");
+        var task = Task.builder()
+                .description("Research {topic} developments")
+                .expectedOutput("A report on {topic}")
+                .agent(agent)
+                .build();
+
+        var output = Ensemble.builder()
+                .agent(agent)
+                .task(task)
+                .input("topic", "AI Agents")
+                .build()
+                .run();
+
+        assertThat(output.getTaskOutputs().get(0).getTaskDescription()).isEqualTo("Research AI Agents developments");
+    }
+
+    @Test
+    void testRunTimeInput_overridesBuilderInput_whenKeyConflicts() {
+        var agent = agentWithResponse("Researcher", "Research about Machine Learning");
+        var task = Task.builder()
+                .description("Research {topic} developments")
+                .expectedOutput("A report on {topic}")
+                .agent(agent)
+                .build();
+
+        var output = Ensemble.builder()
+                .agent(agent)
+                .task(task)
+                .input("topic", "AI Agents") // builder default
+                .build()
+                .run(Map.of("topic", "Machine Learning")); // run-time wins
+
+        assertThat(output.getTaskOutputs().get(0).getTaskDescription())
+                .isEqualTo("Research Machine Learning developments");
+    }
+
+    @Test
+    void testRunTimeInput_mergesWithBuilderInputs_whenKeysDiffer() {
+        var agent = agentWithResponse("Researcher", "Research about AI Agents in 2026");
+        var task = Task.builder()
+                .description("Research {topic} developments in {year}")
+                .expectedOutput("A report")
+                .agent(agent)
+                .build();
+
+        var output = Ensemble.builder()
+                .agent(agent)
+                .task(task)
+                .input("year", "2026") // builder provides year
+                .build()
+                .run(Map.of("topic", "AI Agents")); // run-time provides topic
+
+        assertThat(output.getTaskOutputs().get(0).getTaskDescription())
+                .isEqualTo("Research AI Agents developments in 2026");
+    }
+
     // ========================
     // Error handling
     // ========================

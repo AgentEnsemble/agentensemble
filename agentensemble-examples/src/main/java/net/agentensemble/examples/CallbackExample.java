@@ -4,7 +4,6 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
@@ -183,6 +182,7 @@ public class CallbackExample {
                 .task(researchTask)
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)
+                .input("topic", topic)
                 // Full interface listener: collects all metrics
                 .listener(metrics)
                 // Lambda convenience: simple progress indicator
@@ -199,7 +199,7 @@ public class CallbackExample {
 
         System.out.println("\nRunning ensemble with callbacks registered...\n");
 
-        EnsembleOutput output = ensemble.run(Map.of("topic", topic));
+        EnsembleOutput output = ensemble.run();
 
         // ========================
         // Display results

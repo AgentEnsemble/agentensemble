@@ -1,12 +1,12 @@
 # Template Variables
 
-Task descriptions and expected outputs support `{variable}` placeholder substitution. Variables are resolved at run time by calling `ensemble.run(Map<String, String> inputs)`.
+Task descriptions and expected outputs support `{variable}` placeholder substitution. Variables are resolved at run time from inputs configured on the builder or passed to `ensemble.run(Map<String, String>)`.
 
 ---
 
 ## Basic Usage
 
-Use curly braces to define a placeholder:
+Use curly braces to define a placeholder in any task description or expected output:
 
 ```java
 Task task = Task.builder()
@@ -16,18 +16,49 @@ Task task = Task.builder()
     .build();
 ```
 
-Pass values at run time:
+Supply values on the builder with `.input("key", "value")`:
 
 ```java
-EnsembleOutput output = ensemble.run(Map.of(
-    "topic", "quantum computing",
-    "audience", "software engineers"
-));
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher)
+    .task(task)
+    .input("topic", "quantum computing")
+    .input("audience", "software engineers")
+    .build()
+    .run();
 ```
 
 The resolved description becomes:
 ```
 Research the latest developments in quantum computing for the software engineers audience
+```
+
+---
+
+## Multiple Inputs
+
+Chain `.input()` calls -- they accumulate and are all applied at run time:
+
+```java
+Ensemble.builder()
+    .agent(analyst)
+    .task(financialTask)
+    .input("company", "Acme Corp")
+    .input("quarter", "Q4")
+    .input("year", "2025")
+    .build()
+    .run();
+```
+
+To supply a whole map at once, use `.inputs(Map<String, String>)`:
+
+```java
+Ensemble.builder()
+    .agent(analyst)
+    .task(financialTask)
+    .inputs(Map.of("company", "Acme Corp", "quarter", "Q4", "year", "2025"))
+    .build()
+    .run();
 ```
 
 ---
@@ -48,21 +79,56 @@ Task task = Task.builder()
 
 ## No-Variable Runs
 
-When no variables are needed, call `run()` without arguments:
+When no variables are needed, call `run()` without any inputs configured:
 
 ```java
 EnsembleOutput output = ensemble.run();
-// equivalent to ensemble.run(Map.of())
+```
+
+---
+
+## Dynamic Runs: Overriding Inputs at Invocation Time
+
+When you need to run the same ensemble multiple times with different variable values, keep the ensemble instance and pass values to `run(Map<String, String>)`. Run-time values are merged with any builder inputs; **run-time values win** on key conflicts:
+
+```java
+// Create tasks and ensemble once
+Ensemble ensemble = Ensemble.builder()
+    .agent(analyst).agent(advisor)
+    .task(analysisTask).task(recommendationTask)
+    .build();
+
+// Invoke multiple times with different inputs
+ensemble.run(Map.of("week", "2026-01-06"));
+ensemble.run(Map.of("week", "2026-01-13"));
+ensemble.run(Map.of("week", "2026-01-20"));
+```
+
+Merge example -- builder provides a default, run-time call overrides it:
+
+```java
+Ensemble ensemble = Ensemble.builder()
+    .agent(researcher)
+    .task(task)
+    .input("audience", "developers")  // default
+    .build();
+
+// audience = "developers" (builder default)
+ensemble.run(Map.of("topic", "AI agents"));
+
+// audience = "executives" (run-time overrides builder)
+ensemble.run(Map.of("topic", "AI agents", "audience", "executives"));
 ```
 
 ---
 
 ## Missing Variables
 
-If a task description contains a placeholder that is not in the inputs map, a `PromptTemplateException` is thrown before any LLM calls:
+If a task description contains a placeholder that is not supplied by either the builder inputs or the run-time inputs, a `PromptTemplateException` is thrown before any LLM calls:
 
 ```java
 // Task has {topic} and {year} placeholders
+// Builder has no inputs configured
 try {
     ensemble.run(Map.of("topic", "AI"));  // missing "year"
 } catch (PromptTemplateException e) {
@@ -85,7 +151,7 @@ Task task = Task.builder()
     .build();
 ```
 
-With `inputs = Map.of("varName", "userId")`, the resolved description is:
+With `input("varName", "userId")`, the resolved description is:
 ```
 Write a Java method that parses {variable} from a string. Variable name: userId
 ```
@@ -94,7 +160,7 @@ Write a Java method that parses {variable} from a string. Variable name: userId
 
 ## Sharing Variables Across Tasks
 
-All tasks in the ensemble are resolved with the same inputs map. Any variable defined in inputs is available in all task descriptions and expected outputs:
+All tasks in the ensemble are resolved with the same inputs. Any variable defined on the builder is available in all task descriptions and expected outputs:
 
 ```java
 var researchTask = Task.builder()
@@ -110,40 +176,13 @@ var writeTask = Task.builder()
     .context(List.of(researchTask))
     .build();
 
-// Both tasks receive the same variables
-ensemble.run(Map.of("topic", "AI agents"));
-```
-
----
-
-## Dynamic Task Creation
-
-Because template resolution happens at run time, you can create task templates once and reuse them across multiple runs:
-
-```java
-// Create tasks once
-var researchTask = Task.builder()
-    .description("Research {topic}")
-    .expectedOutput("A summary of {topic}")
-    .agent(researcher)
-    .build();
-
-var writeTask = Task.builder()
-    .description("Write about {topic}")
-    .expectedOutput("A blog post about {topic}")
-    .agent(writer)
-    .context(List.of(researchTask))
-    .build();
-
-Ensemble ensemble = Ensemble.builder()
+// Both tasks receive the same variable
+Ensemble.builder()
     .agent(researcher).agent(writer)
     .task(researchTask).task(writeTask)
-    .build();
-
-// Run multiple times with different inputs
-ensemble.run(Map.of("topic", "AI agents"));
-ensemble.run(Map.of("topic", "quantum computing"));
-ensemble.run(Map.of("topic", "blockchain"));
+    .input("topic", "AI agents")
+    .build()
+    .run();
 ```
 
 ---
@@ -168,5 +207,10 @@ Variable names are case-sensitive and can contain letters, digits, and underscor
 Values are always strings. Passing `null` as a value is not permitted by `Map.of()`. Empty strings are allowed but will produce empty substitutions:
 
 ```java
-ensemble.run(Map.of("topic", ""));   // substitutes empty string
+Ensemble.builder()
+    .agent(researcher)
+    .task(task)
+    .input("topic", "")  // substitutes empty string
+    .build()
+    .run();
 ```

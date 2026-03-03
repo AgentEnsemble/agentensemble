@@ -6,6 +6,7 @@ All fields available on `Ensemble.builder()`.
 |---|---|---|---|---|
 | `agents` | `List<Agent>` | Yes | -- | All agents participating in this ensemble. Add with `.agent(a)` (singular) or `.agents(list)`. |
 | `tasks` | `List<Task>` | Yes | -- | All tasks to execute. Add with `.task(t)` (singular) or `.tasks(list)`. |
+| `inputs` | `Map<String, String>` | No | `{}` | Template variable values applied to all task descriptions and expected outputs at run time. Add individual entries with `.input("key", "value")` or a batch with `.inputs(map)`. Run-time values passed to `run(Map)` are merged on top; run-time values win on conflicts. See [Template Variables guide](../guides/template-variables.md). |
 | `workflow` | `Workflow` | No | `SEQUENTIAL` | Execution strategy. `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL`. |
 | `managerLlm` | `ChatModel` | No | First agent's LLM | LLM for the auto-created Manager agent (hierarchical workflow only). |
 | `managerMaxIterations` | `int` | No | `20` | Maximum tool-call iterations for the Manager agent. Must be greater than zero (hierarchical only). |
@@ -64,15 +65,17 @@ EnsembleOutput output = Ensemble.builder()
     .task(writeTask)
     .task(editTask)
     .workflow(Workflow.SEQUENTIAL)
+    .input("topic", "AI agents")
+    .input("audience", "developers")
     .verbose(false)
     .memory(EnsembleMemory.builder().shortTerm(true).build())
     .maxDelegationDepth(2)
     .build()
-    .run(Map.of("topic", "AI agents", "audience", "developers"));
+    .run();
 ```
 
 ---
 
 ## Template Variables
 
-Call `ensemble.run(Map<String, String> inputs)` to resolve `{variable}` placeholders in all task descriptions and expected outputs. See [Template Variables guide](../guides/template-variables.md).
+Use `.input("key", "value")` on the builder to supply `{variable}` placeholder values for all task descriptions and expected outputs. For dynamic multi-run scenarios, pass values to `run(Map<String, String>)` instead; those values are merged on top of any builder inputs. See [Template Variables guide](../guides/template-variables.md).
