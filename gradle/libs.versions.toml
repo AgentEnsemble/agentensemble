@@ -1,5 +1,5 @@
 [versions]
-vanniktech-publish = "0.29.0"
+vanniktech-publish = "0.36.0"
 langchain4j      = "1.11.0"
 lombok           = "1.18.42"
 jackson          = "2.21.1"
