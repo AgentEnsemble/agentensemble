@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/AgentEnsemble/agentensemble/compare/v0.7.0...v0.7.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* resolve javadoc [@link](https://github.com/link) errors and add javadoc to CI ([#66](https://github.com/AgentEnsemble/agentensemble/issues/66)) ([27f472b](https://github.com/AgentEnsemble/agentensemble/commit/27f472b17dad8d1abec840da70fbcfc049c27738))
+
 ## [0.7.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.6.1...v0.7.0) (2026-03-03)
 
 
