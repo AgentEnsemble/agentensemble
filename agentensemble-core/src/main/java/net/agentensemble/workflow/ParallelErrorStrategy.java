@@ -10,16 +10,19 @@ package net.agentensemble.workflow;
 public enum ParallelErrorStrategy {
 
     /**
-     * On the first task failure, cancel all running tasks and throw a
-     * {@link net.agentensemble.exception.TaskExecutionException} immediately.
+     * On the first task failure, stop scheduling any new tasks and, after the
+     * parallel run terminates, throw a
+     * {@link net.agentensemble.exception.TaskExecutionException}.
      *
      * Tasks that have already completed are reported in the exception's
-     * {@code completedTaskOutputs}. Tasks still in progress are interrupted
-     * via thread interruption.
+     * {@code completedTaskOutputs}. Tasks that are already in progress when the
+     * first failure is detected are allowed to finish normally; they are not
+     * cancelled or interrupted by this strategy.
      *
      * This is the default strategy. It mirrors the behaviour of
-     * {@code Workflow.SEQUENTIAL} where the first failure stops the run,
-     * and prevents wasted LLM API calls on tasks whose results will be discarded.
+     * {@code Workflow.SEQUENTIAL} where the first failure stops starting further
+     * tasks, and helps avoid wasted LLM API calls on tasks whose results will be
+     * discarded.
      */
     FAIL_FAST,
 

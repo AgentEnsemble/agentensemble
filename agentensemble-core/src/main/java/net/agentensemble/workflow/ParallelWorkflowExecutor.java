@@ -22,6 +22,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,7 +49,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *       subsequent unstarted tasks are skipped and a {@link TaskExecutionException}
  *       is thrown after all currently-running tasks complete.</li>
  *   <li>{@link ParallelErrorStrategy#CONTINUE_ON_ERROR}: independent tasks continue
- *       running after a failure. Tasks that depend on a failed task are skipped.
+ *       running after a failure. Tasks that depend on a failed task are skipped;
+ *       transitive dependents (tasks that depend on a skipped task) are also skipped.
  *       A {@link ParallelExecutionException} is thrown at the end if any tasks failed.</li>
  * </ul>
  *
@@ -120,6 +122,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         Map<Task, Throwable> failedTaskCauses =
                 Collections.synchronizedMap(new IdentityHashMap<>());
 
+        // Tasks that were skipped (CONTINUE_ON_ERROR: dep failed or dep was skipped).
+        // Tracked separately from failedTaskCauses so that transitive dependents of a
+        // skipped task are also correctly skipped rather than being submitted for execution.
+        Set<Task> skippedTasks = Collections.synchronizedSet(
+                Collections.newSetFromMap(new IdentityHashMap<>()));
+
         // Per-task: count of in-graph dependencies that have not yet resolved.
         // When this reaches 0, the task can be submitted or skipped.
         Map<Task, AtomicInteger> pendingDepCounts = new IdentityHashMap<>();
@@ -154,7 +162,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             // Submit all root tasks (no in-graph dependencies) immediately
             for (Task root : graph.getRoots()) {
                 submitTask(root, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        pendingDepCounts, firstFailureRef, latch, delegationContext,
+                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
                         verbose, memoryContext, executor, completionOrder);
             }
 
@@ -226,6 +234,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             Map<String, String> callerMdc,
             Map<Task, TaskOutput> completedOutputs,
             Map<Task, Throwable> failedTaskCauses,
+            Set<Task> skippedTasks,
             Map<Task, AtomicInteger> pendingDepCounts,
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
@@ -295,7 +304,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
                 // Propagate resolution to dependents: some may now be ready to run or skip
                 resolveDependent(task, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        pendingDepCounts, firstFailureRef, latch, delegationContext,
+                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
                         verbose, memoryContext, executor, completionOrder);
             }
         });
@@ -306,8 +315,9 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
      *
      * For each dependent, decrement its pending dependency count. If the count reaches 0,
      * either submit the task (if all deps succeeded and no FAIL_FAST failure is pending)
-     * or skip it (if a dep failed or FAIL_FAST applies). Skipped tasks cascade their
-     * resolution to their own dependents recursively.
+     * or skip it (if a dep failed or was skipped, or FAIL_FAST applies). Skipped tasks
+     * cascade their resolution to their own dependents recursively, and are added to
+     * {@code skippedTasks} so that transitive dependents are also correctly skipped.
      *
      * <p>This method is called from within a virtual thread's finally block (after that
      * thread's own latch.countDown()). It may itself call latch.countDown() for skipped
@@ -319,6 +329,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             Map<String, String> callerMdc,
             Map<Task, TaskOutput> completedOutputs,
             Map<Task, Throwable> failedTaskCauses,
+            Set<Task> skippedTasks,
             Map<Task, AtomicInteger> pendingDepCounts,
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
@@ -336,22 +347,26 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             }
 
             // All of this dependent's dependencies have been resolved
-            boolean shouldSkip = shouldSkip(dependent, graph, failedTaskCauses, firstFailureRef);
+            boolean shouldSkip = shouldSkip(dependent, graph, failedTaskCauses,
+                    skippedTasks, firstFailureRef);
 
             if (shouldSkip) {
                 log.debug("Task skipped (parallel) | Agent: {} | Description: {}",
                         dependent.getAgent().getRole(),
                         truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
 
+                // Track this task as skipped so its own transitive dependents are also skipped
+                skippedTasks.add(dependent);
+
                 // Count this task as resolved (skipped) and cascade to its dependents
                 latch.countDown();
                 resolveDependent(dependent, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        pendingDepCounts, firstFailureRef, latch, delegationContext,
+                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
                         verbose, memoryContext, executor, completionOrder);
             } else {
                 // All deps succeeded and no blocking failure -- submit this task
                 submitTask(dependent, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        pendingDepCounts, firstFailureRef, latch, delegationContext,
+                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
                         verbose, memoryContext, executor, completionOrder);
             }
         }
@@ -360,10 +375,18 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
     /**
      * Determine whether a task should be skipped based on the current failure state.
      *
+     * For {@link ParallelErrorStrategy#CONTINUE_ON_ERROR}, a task is skipped if any
+     * of its in-graph dependencies either failed (present in {@code failedTaskCauses})
+     * or was itself skipped (present in {@code skippedTasks}). Checking both sets is
+     * required to correctly propagate skips transitively through chains: if A fails,
+     * B (depends on A) is skipped, and C (depends on B) must also be skipped even
+     * though B is not in {@code failedTaskCauses}.
+     *
      * @return true if the task should be skipped rather than submitted for execution
      */
     private boolean shouldSkip(Task task, TaskDependencyGraph graph,
             Map<Task, Throwable> failedTaskCauses,
+            Set<Task> skippedTasks,
             AtomicReference<TaskExecutionException> firstFailureRef) {
 
         if (errorStrategy == ParallelErrorStrategy.FAIL_FAST && firstFailureRef.get() != null) {
@@ -372,10 +395,13 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         }
 
         if (errorStrategy == ParallelErrorStrategy.CONTINUE_ON_ERROR) {
-            // Skip only if one or more of this task's in-graph dependencies failed
+            // Skip if any in-graph dependency either failed OR was itself skipped.
+            // Both checks are required: failed tasks appear in failedTaskCauses;
+            // skipped tasks appear in skippedTasks (not in failedTaskCauses).
             return task.getContext().stream()
                     .filter(graph::isInGraph)
-                    .anyMatch(failedTaskCauses::containsKey);
+                    .anyMatch(dep -> failedTaskCauses.containsKey(dep)
+                            || skippedTasks.contains(dep));
         }
 
         return false;

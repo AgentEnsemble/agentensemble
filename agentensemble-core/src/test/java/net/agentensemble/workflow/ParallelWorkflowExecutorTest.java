@@ -307,6 +307,33 @@ class ParallelWorkflowExecutorTest {
     }
 
     @Test
+    void testContinueOnError_transitiveDependentOfFailed_isSkipped() {
+        // Root fails, Middle depends on Root, Tail depends on Middle.
+        // Both Middle and Tail must be skipped -- not just the direct dependent.
+        var badRoot = agentThatFails("Root");
+        var middle = agentWithResponse("Middle", "Middle result");
+        var tail = agentWithResponse("Tail", "Tail result");
+        var tRoot = task("Task Root", badRoot);
+        var tMiddle = taskWithContext("Task Middle", middle, List.of(tRoot));
+        var tTail = taskWithContext("Task Tail", tail, List.of(tMiddle));
+
+        assertThatThrownBy(() ->
+                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(
+                        List.of(tRoot, tMiddle, tTail), false, MemoryContext.disabled()))
+                .isInstanceOf(ParallelExecutionException.class)
+                .satisfies(ex -> {
+                    var pe = (ParallelExecutionException) ex;
+                    // Only the root task should appear in failed causes;
+                    // Middle and Tail are skipped, not failed
+                    assertThat(pe.getFailedCount()).isEqualTo(1);
+                    assertThat(pe.getFailedTaskCauses()).containsKey("Task Root");
+                    assertThat(pe.getFailedTaskCauses())
+                            .doesNotContainKeys("Task Middle", "Task Tail");
+                    assertThat(pe.getCompletedTaskOutputs()).isEmpty();
+                });
+    }
+
+    @Test
     void testContinueOnError_multipleFailures_allReported() {
         var bad1 = agentThatFails("Bad1");
         var bad2 = agentThatFails("Bad2");
