@@ -7,17 +7,21 @@ Development continues at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
 
-- Maven Central publishing pipeline configured and release-please added:
-  - `com.vanniktech.maven.publish` 0.29.0 applied to `agentensemble-core`
-  - `mavenPublishing {}` targets `SonatypeHost.CENTRAL_PORTAL` with `signAllPublications()`
-  - `release-please-action@v4` (simple release type): watches main for Conventional
-    Commits, opens Release PRs with CHANGELOG, creates tag + GitHub Release on merge
-  - `.release-please-manifest.json` bootstrapped at `0.4.0`
-  - `release.yml`: publishes to Maven Central + GitHub Packages, uploads JARs to
-    GitHub Release via `gh release upload`, then auto-bumps `gradle.properties`
-    to next patch SNAPSHOT and pushes to main `[skip ci]`
+- Maven Central publishing fully operational -- v0.4.2 successfully released:
+  - `com.vanniktech.maven.publish` 0.29.0 with `SonatypeHost.CENTRAL_PORTAL` + `signAllPublications()`
+  - `publishAndReleaseToMavenCentral` handles full upload + auto-promotion lifecycle
+  - `publishAllPublicationsToGitHubPackagesRepository` also gets signing env vars
+  - Build step runs `:agentensemble-core:mavenPlainJavadocJar` to generate javadoc JAR
+    (vanniktech generates `maven-javadoc-{v}-javadoc.jar`; upload step copies it to
+    `agentensemble-core-{v}-javadoc.jar` before attaching to GitHub Release)
+  - SNAPSHOT bump is version-aware: only bumps gradle.properties if the next patch
+    version is higher than the current development SNAPSHOT
+  - `release-please-action@v4` (simple type) requires `ORG_RELEASE_PLEASE_TOKEN` PAT
+    secret to create/approve PRs (org-level GITHUB_TOKEN PR restriction is in effect)
+  - `.release-please-manifest.json` is at `0.4.2` (last release)
   - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
     `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
+  - Pending: `ORG_RELEASE_PLEASE_TOKEN` PAT (repo scope) for release-please PR creation
 
 - PR #43 second commit (3064533): addressed 4 Copilot inline comments on PR #43
   - Ensemble.java: validateContextOrdering() now uses identity-based sets
