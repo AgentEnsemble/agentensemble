@@ -1,15 +1,18 @@
 package net.agentensemble.memory;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * In-memory store for task outputs produced during a single ensemble run.
  *
  * Short-term memory is scoped to one call to {@code Ensemble.run()} -- a new
  * instance is created at the start of each run and discarded when the run
- * completes. It is not thread-safe; sequential workflow execution is assumed.
+ * completes.
+ *
+ * Thread-safe: uses a {@link CopyOnWriteArrayList} so concurrent task completions
+ * (in {@code Workflow.PARALLEL}) can safely write entries while other threads read.
+ * Reads return a stable snapshot at the time of the call; they do not block writers.
  *
  * When short-term memory is enabled, all task outputs from the current run
  * are accumulated here and injected into subsequent agents' prompts,
@@ -17,7 +20,7 @@ import java.util.List;
  */
 public class ShortTermMemory {
 
-    private final List<MemoryEntry> entries = new ArrayList<>();
+    private final List<MemoryEntry> entries = new CopyOnWriteArrayList<>();
 
     /**
      * Add a memory entry to short-term memory.
@@ -32,12 +35,15 @@ public class ShortTermMemory {
     }
 
     /**
-     * Return all entries in the order they were recorded.
+     * Return a snapshot of all entries in the order they were recorded.
      *
-     * @return unmodifiable view of all entries
+     * Returns an immutable copy so callers receive a stable list that does not
+     * reflect subsequent writes from concurrent tasks.
+     *
+     * @return immutable snapshot of all entries
      */
     public List<MemoryEntry> getEntries() {
-        return Collections.unmodifiableList(entries);
+        return List.copyOf(entries);
     }
 
     /**

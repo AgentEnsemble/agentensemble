@@ -4,6 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -83,16 +87,95 @@ class ShortTermMemoryTest {
     }
 
     @Test
-    void testGetEntries_addAfterGet_viewReflectsNewEntries() {
+    void testGetEntries_isSnapshot_doesNotReflectSubsequentWrites() {
         MemoryEntry e1 = entry("first", "A");
         memory.add(e1);
-        var entries = memory.getEntries();
+        List<MemoryEntry> snapshot = memory.getEntries();
 
         MemoryEntry e2 = entry("second", "B");
         memory.add(e2);
 
-        // The unmodifiable view is backed by the live list
-        assertThat(entries).hasSize(2);
+        // getEntries() returns a snapshot (List.copyOf); adding after the call does not affect it
+        assertThat(snapshot).hasSize(1).containsExactly(e1);
+        // A fresh call reflects the new entry
+        assertThat(memory.getEntries()).hasSize(2);
+    }
+
+    // ========================
+    // Thread safety
+    // ========================
+
+    @Test
+    void testConcurrentAdd_allEntriesRecorded() throws InterruptedException {
+        int threadCount = 20;
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threadCount);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < threadCount; i++) {
+                final int idx = i;
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        memory.add(entry("entry-" + idx, "Agent-" + idx));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            done.await();
+        }
+
+        assertThat(memory.size()).isEqualTo(threadCount);
+        assertThat(memory.getEntries()).hasSize(threadCount);
+    }
+
+    @Test
+    void testConcurrentAddAndRead_noExceptionThrown() throws InterruptedException {
+        int threadCount = 10;
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threadCount * 2);
+        List<Exception> errors = new ArrayList<>();
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            // Writer threads
+            for (int i = 0; i < threadCount; i++) {
+                final int idx = i;
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        memory.add(entry("entry-" + idx, "Agent-" + idx));
+                    } catch (Exception e) {
+                        errors.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            // Reader threads
+            for (int i = 0; i < threadCount; i++) {
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        // Reading while writers are active must not throw
+                        memory.getEntries();
+                        memory.size();
+                        memory.isEmpty();
+                    } catch (Exception e) {
+                        errors.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            done.await();
+        }
+
+        assertThat(errors).isEmpty();
     }
 
     // ========================
