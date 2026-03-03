@@ -1,7 +1,6 @@
 package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -121,14 +120,14 @@ public class ResearchWriterExample {
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)
                 .verbose(false)
+                .input("topic", topic)
                 .build();
 
         log.info("Running ensemble with 2 agents and 2 tasks...");
         log.info("Topic: {}", topic);
         System.out.println("\n" + "=".repeat(60));
 
-        // Run with template variable substitution
-        EnsembleOutput output = ensemble.run(Map.of("topic", topic));
+        EnsembleOutput output = ensemble.run();
 
         // ========================
         // Display results

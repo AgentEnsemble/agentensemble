@@ -2,7 +2,6 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.List;
-import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -134,8 +133,9 @@ public class StructuredOutputExample {
                 .task(plainResearchTask)
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)
+                .input("topic", topic)
                 .build()
-                .run(Map.of("topic", topic));
+                .run();
 
         System.out.println(markdownOutput.getRaw());
 
