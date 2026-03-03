@@ -26,7 +26,7 @@ class GuardrailResultTest {
     }
 
     @Test
-    void failure_carresMessage() {
+    void failure_carriesMessage() {
         GuardrailResult result = GuardrailResult.failure("blocked: contains PII");
         assertThat(result.getMessage()).isEqualTo("blocked: contains PII");
     }

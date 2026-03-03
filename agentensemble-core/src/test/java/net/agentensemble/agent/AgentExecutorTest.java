@@ -478,4 +478,101 @@ class AgentExecutorTest {
                     assertThat(e.getViolationMessage()).isEqualTo("first output blocker");
                 });
     }
+
+    // ========================
+    // Guardrail exception safety
+    // ========================
+
+    @Test
+    void testExecute_inputGuardrailThrows_wrappedAsAgentExecutionException() {
+        var mockLlm = mock(ChatModel.class);
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write something")
+                .expectedOutput("Output")
+                .agent(agent)
+                .inputGuardrails(List.of(input -> {
+                    throw new RuntimeException("guardrail broken");
+                }))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(net.agentensemble.exception.AgentExecutionException.class)
+                .satisfies(ex -> {
+                    var e = (net.agentensemble.exception.AgentExecutionException) ex;
+                    assertThat(e.getAgentRole()).isEqualTo("Writer");
+                    assertThat(e.getMessage()).contains("Input guardrail threw an exception");
+                    assertThat(e.getCause()).hasMessage("guardrail broken");
+                });
+
+        // LLM must not have been called
+        verify(mockLlm, org.mockito.Mockito.never()).chat(any(ChatRequest.class));
+    }
+
+    @Test
+    void testExecute_inputGuardrailReturnsNull_wrappedAsAgentExecutionException() {
+        var mockLlm = mock(ChatModel.class);
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write something")
+                .expectedOutput("Output")
+                .agent(agent)
+                .inputGuardrails(List.of(input -> null))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(net.agentensemble.exception.AgentExecutionException.class)
+                .satisfies(ex -> {
+                    var e = (net.agentensemble.exception.AgentExecutionException) ex;
+                    assertThat(e.getMessage()).contains("returned null");
+                });
+    }
+
+    @Test
+    void testExecute_outputGuardrailThrows_wrappedAsAgentExecutionException() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("response text"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write something")
+                .expectedOutput("Output")
+                .agent(agent)
+                .outputGuardrails(List.of(output -> {
+                    throw new RuntimeException("output guardrail broken");
+                }))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(net.agentensemble.exception.AgentExecutionException.class)
+                .satisfies(ex -> {
+                    var e = (net.agentensemble.exception.AgentExecutionException) ex;
+                    assertThat(e.getAgentRole()).isEqualTo("Writer");
+                    assertThat(e.getMessage()).contains("Output guardrail threw an exception");
+                    assertThat(e.getCause()).hasMessage("output guardrail broken");
+                });
+    }
+
+    @Test
+    void testExecute_outputGuardrailReturnsNull_wrappedAsAgentExecutionException() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("response text"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write something")
+                .expectedOutput("Output")
+                .agent(agent)
+                .outputGuardrails(List.of(output -> null))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(net.agentensemble.exception.AgentExecutionException.class)
+                .satisfies(ex -> {
+                    var e = (net.agentensemble.exception.AgentExecutionException) ex;
+                    assertThat(e.getMessage()).contains("returned null");
+                });
+    }
 }

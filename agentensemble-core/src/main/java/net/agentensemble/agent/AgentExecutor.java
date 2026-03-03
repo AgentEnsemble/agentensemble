@@ -347,7 +347,23 @@ public class AgentExecutor {
                 new GuardrailInput(task.getDescription(), task.getExpectedOutput(), contextOutputs, agent.getRole());
 
         for (InputGuardrail guardrail : guardrails) {
-            GuardrailResult result = guardrail.validate(input);
+            GuardrailResult result;
+            try {
+                result = guardrail.validate(input);
+            } catch (Exception e) {
+                throw new AgentExecutionException(
+                        "Input guardrail threw an exception for agent '" + agent.getRole() + "': " + e.getMessage(),
+                        agent.getRole(),
+                        task.getDescription(),
+                        e);
+            }
+            if (result == null) {
+                throw new AgentExecutionException(
+                        "Input guardrail returned null for agent '" + agent.getRole() + "'",
+                        agent.getRole(),
+                        task.getDescription(),
+                        new IllegalStateException("GuardrailResult must not be null"));
+            }
             if (!result.isSuccess()) {
                 log.warn(
                         "Input guardrail blocked agent '{}' task '{}': {}",
@@ -380,7 +396,23 @@ public class AgentExecutor {
         GuardrailOutput output = new GuardrailOutput(rawResponse, parsedOutput, task.getDescription(), agent.getRole());
 
         for (OutputGuardrail guardrail : guardrails) {
-            GuardrailResult result = guardrail.validate(output);
+            GuardrailResult result;
+            try {
+                result = guardrail.validate(output);
+            } catch (Exception e) {
+                throw new AgentExecutionException(
+                        "Output guardrail threw an exception for agent '" + agent.getRole() + "': " + e.getMessage(),
+                        agent.getRole(),
+                        task.getDescription(),
+                        e);
+            }
+            if (result == null) {
+                throw new AgentExecutionException(
+                        "Output guardrail returned null for agent '" + agent.getRole() + "'",
+                        agent.getRole(),
+                        task.getDescription(),
+                        new IllegalStateException("GuardrailResult must not be null"));
+            }
             if (!result.isSuccess()) {
                 log.warn(
                         "Output guardrail blocked agent '{}' task '{}': {}",
