@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed (PR #66 -- fix/javadoc-link-error-add-to-ci)
+- `Ensemble.java`: three `{@link}` references pointing to Lombok `@Singular`-generated
+  builder methods (`listener(EnsembleListener)`, `listeners(Collection)`) replaced with
+  `{@code}`. Javadoc runs against raw source before annotation processing; those methods
+  are invisible to it, producing "error: reference not found" and failing the release workflow.
+  Affected lines: field-level comment (2 occurrences) and `EnsembleBuilder` class-level comment.
+- `ci.yml`: added `:agentensemble-core:javadoc` to the CI build step
+  (`./gradlew build :agentensemble-core:javadoc --continue`) so javadoc errors are caught
+  on every PR, not only at release time. Previously the javadoc task was only executed in
+  the release workflow.
+- Issue #65 created to track the 92 remaining javadoc warnings (missing `@param`, `@return`,
+  field/constructor comments across exception and tool classes).
+
+
 ### Changed (Class-size refactoring -- 2026-03-03)
 - `Ensemble.java` (523 -> 342 lines): all validation logic extracted to package-private
   `EnsembleValidator`; `Ensemble.run()` delegates via `new EnsembleValidator(this).validate()`
