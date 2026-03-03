@@ -9,12 +9,14 @@ import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,14 +64,20 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
 
         // Create the delegation context once for the entire run; all agents share it
-        DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+        DelegationContext delegationContext = DelegationContext.create(
+                agents,
+                maxDelegationDepth,
+                executionContext.getMemoryContext(),
+                agentExecutor,
+                executionContext.isVerbose());
+
+        boolean verbose = executionContext.isVerbose();
 
         for (int i = 0; i < totalTasks; i++) {
             Task task = resolvedTasks.get(i);
@@ -87,6 +95,9 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
                         task.getAgent().getRole());
 
+                executionContext.fireTaskStart(new TaskStartEvent(
+                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
+
                 // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
                 log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
@@ -94,7 +105,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 // Execute the task with delegation context -- delegation tool is injected
                 // automatically when the agent has allowDelegation=true
                 TaskOutput taskOutput =
-                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
+                        agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
                 completedOutputs.put(task, taskOutput);
 
                 log.info(
@@ -103,6 +114,14 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         totalTasks,
                         taskOutput.getDuration(),
                         taskOutput.getToolCallCount());
+
+                executionContext.fireTaskComplete(new TaskCompleteEvent(
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        taskOutput,
+                        taskOutput.getDuration(),
+                        taskIndex,
+                        totalTasks));
 
                 if (verbose) {
                     log.info(

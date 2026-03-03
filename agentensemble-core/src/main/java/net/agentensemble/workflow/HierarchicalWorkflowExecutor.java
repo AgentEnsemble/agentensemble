@@ -8,11 +8,14 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
@@ -78,7 +81,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         Instant startTime = Instant.now();
         MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
 
@@ -89,12 +92,20 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     workerAgents.size());
 
             // 1. Create delegation context for peer delegation among worker agents
-            DelegationContext workerDelegationContext =
-                    DelegationContext.create(workerAgents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+            DelegationContext workerDelegationContext = DelegationContext.create(
+                    workerAgents,
+                    maxDelegationDepth,
+                    executionContext.getMemoryContext(),
+                    agentExecutor,
+                    executionContext.isVerbose());
 
             // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
-            DelegateTaskTool delegateTool =
-                    new DelegateTaskTool(workerAgents, agentExecutor, verbose, memoryContext, workerDelegationContext);
+            DelegateTaskTool delegateTool = new DelegateTaskTool(
+                    workerAgents,
+                    agentExecutor,
+                    executionContext.isVerbose(),
+                    executionContext.getMemoryContext(),
+                    workerDelegationContext);
 
             // 3. Build the virtual Manager agent
             Agent manager = Agent.builder()
@@ -113,12 +124,19 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     .agent(manager)
                     .build();
 
-            // 5. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
+            // 5. Fire TaskStartEvent for the hierarchical run (represented as manager task)
+            executionContext.fireTaskStart(new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
+
+            // 6. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
             // The manager itself does not participate in shared memory (it is a meta-orchestrator)
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
             TaskOutput managerOutput;
             try {
-                managerOutput = agentExecutor.execute(managerTask, List.of(), verbose, MemoryContext.disabled());
+                managerOutput = agentExecutor.execute(
+                        managerTask,
+                        List.of(),
+                        ExecutionContext.of(executionContext.isVerbose(), MemoryContext.disabled()),
+                        null);
             } catch (AgentExecutionException | MaxIterationsExceededException e) {
                 // Wrap with partial outputs so callers can recover completed worker results
                 List<TaskOutput> partial = delegateTool.getDelegatedOutputs();
@@ -135,13 +153,17 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     delegateTool.getDelegatedOutputs().size(),
                     managerOutput.getDuration());
 
-            // 6. Assemble output: worker outputs first, manager final output last
+            // 7. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
             allOutputs.add(managerOutput);
 
             Duration totalDuration = Duration.between(startTime, Instant.now());
             int totalToolCalls =
                     allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+
+            // 8. Fire TaskCompleteEvent for the hierarchical run
+            executionContext.fireTaskComplete(new TaskCompleteEvent(
+                    managerTask.getDescription(), MANAGER_ROLE, managerOutput, totalDuration, 1, 1));
 
             return EnsembleOutput.builder()
                     .raw(managerOutput.getRaw())

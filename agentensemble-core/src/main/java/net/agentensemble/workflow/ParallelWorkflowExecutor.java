@@ -17,11 +17,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ParallelExecutionException;
 import net.agentensemble.exception.TaskExecutionException;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,7 +97,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         if (resolvedTasks.isEmpty()) {
             return EnsembleOutput.builder()
                     .raw("")
@@ -132,6 +134,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             pendingDepCounts.put(task, new AtomicInteger(inGraphDeps));
         }
 
+        // Build a stable task-index map for event firing (position in the resolved list, 1-based)
+        IdentityHashMap<Task, Integer> taskIndexMap = new IdentityHashMap<>();
+        for (int i = 0; i < resolvedTasks.size(); i++) {
+            taskIndexMap.put(resolvedTasks.get(i), i + 1);
+        }
+
         // FAIL_FAST: holds the first TaskExecutionException to throw after all threads finish
         AtomicReference<TaskExecutionException> firstFailureRef = new AtomicReference<>();
 
@@ -146,8 +154,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         }
 
         // Delegation context shared across all tasks in this run
-        DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+        DelegationContext delegationContext = DelegationContext.create(
+                agents,
+                maxDelegationDepth,
+                executionContext.getMemoryContext(),
+                agentExecutor,
+                executionContext.isVerbose());
 
         // Task outputs in topological completion order (append-only; synchronized for safe concurrent add)
         List<TaskOutput> completionOrder = Collections.synchronizedList(new ArrayList<>());
@@ -163,11 +175,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         failedTaskCauses,
                         skippedTasks,
                         pendingDepCounts,
+                        taskIndexMap,
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
                         executor,
                         completionOrder);
             }
@@ -246,11 +258,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             Map<Task, Throwable> failedTaskCauses,
             Set<Task> skippedTasks,
             Map<Task, AtomicInteger> pendingDepCounts,
+            Map<Task, Integer> taskIndexMap,
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
             DelegationContext delegationContext,
-            boolean verbose,
-            MemoryContext memoryContext,
+            ExecutionContext executionContext,
             ExecutorService executor,
             List<TaskOutput> completionOrder) {
 
@@ -260,11 +272,17 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             MDC.setContextMap(callerMdc);
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
+            int taskIndex = taskIndexMap.getOrDefault(task, 0);
+            int totalTasks = taskIndexMap.size();
+
             try {
                 log.info(
                         "Task starting (parallel) | Agent: {} | Description: {}",
                         task.getAgent().getRole(),
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+
+                executionContext.fireTaskStart(new TaskStartEvent(
+                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
 
                 // Collect outputs from completed in-graph dependencies as context
                 List<TaskOutput> contextOutputs = new ArrayList<>();
@@ -277,8 +295,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     }
                 }
 
-                TaskOutput output =
-                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
+                TaskOutput output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
 
                 completedOutputs.put(task, output);
                 completionOrder.add(output);
@@ -288,6 +305,14 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         task.getAgent().getRole(),
                         output.getDuration(),
                         output.getToolCallCount());
+
+                executionContext.fireTaskComplete(new TaskCompleteEvent(
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        output,
+                        output.getDuration(),
+                        taskIndex,
+                        totalTasks));
 
             } catch (Exception e) {
                 log.error(
@@ -330,11 +355,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         failedTaskCauses,
                         skippedTasks,
                         pendingDepCounts,
+                        taskIndexMap,
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
                         executor,
                         completionOrder);
             }
@@ -362,11 +387,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             Map<Task, Throwable> failedTaskCauses,
             Set<Task> skippedTasks,
             Map<Task, AtomicInteger> pendingDepCounts,
+            Map<Task, Integer> taskIndexMap,
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
             DelegationContext delegationContext,
-            boolean verbose,
-            MemoryContext memoryContext,
+            ExecutionContext executionContext,
             ExecutorService executor,
             List<TaskOutput> completionOrder) {
 
@@ -399,11 +424,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         failedTaskCauses,
                         skippedTasks,
                         pendingDepCounts,
+                        taskIndexMap,
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
                         executor,
                         completionOrder);
             } else {
@@ -416,11 +441,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         failedTaskCauses,
                         skippedTasks,
                         pendingDepCounts,
+                        taskIndexMap,
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
                         executor,
                         completionOrder);
             }

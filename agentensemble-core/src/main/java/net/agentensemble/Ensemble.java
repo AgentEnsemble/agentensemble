@@ -11,12 +11,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
+import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskStartEvent;
+import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
@@ -47,7 +53,7 @@ import org.slf4j.MDC;
  *     .run();
  * </pre>
  */
-@Builder
+@Builder(toBuilder = true)
 @Getter
 public class Ensemble {
 
@@ -107,6 +113,15 @@ public class Ensemble {
     private final ParallelErrorStrategy parallelErrorStrategy = ParallelErrorStrategy.FAIL_FAST;
 
     /**
+     * Listeners that observe execution lifecycle events such as task start/complete and
+     * tool calls. Registered via the builder using {@code listener(myListener)}, or at
+     * runtime using the {@link #onTaskStart}, {@link #onTaskComplete}, and
+     * {@link #onToolCall} convenience methods.
+     */
+    @Singular
+    private final List<EnsembleListener> listeners;
+
+    /**
      * Execute the ensemble's tasks with no input variables.
      *
      * @return EnsembleOutput containing all results
@@ -155,9 +170,12 @@ public class Ensemble {
                         memoryContext.hasEntityMemory());
             }
 
-            // Step 4: Select and execute WorkflowExecutor
+            // Step 4: Build execution context (bundles verbose, memory, and listeners)
+            ExecutionContext executionContext = ExecutionContext.of(verbose, memoryContext, listeners);
+
+            // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();
-            EnsembleOutput output = executor.execute(resolvedTasks, verbose, memoryContext);
+            EnsembleOutput output = executor.execute(resolvedTasks, executionContext);
 
             log.info(
                     "Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
@@ -176,6 +194,66 @@ public class Ensemble {
         } finally {
             MDC.remove("ensemble.id");
         }
+    }
+
+    /**
+     * Add a listener that is called immediately before each task starts.
+     *
+     * Creates and returns a new {@code Ensemble} with the listener added. The original
+     * ensemble is not modified.
+     *
+     * @param handler consumer invoked with task-start details
+     * @return a new Ensemble with the listener registered
+     */
+    public Ensemble onTaskStart(Consumer<TaskStartEvent> handler) {
+        return toBuilder()
+                .listener(new EnsembleListener() {
+                    @Override
+                    public void onTaskStart(TaskStartEvent event) {
+                        handler.accept(event);
+                    }
+                })
+                .build();
+    }
+
+    /**
+     * Add a listener that is called immediately after each task completes.
+     *
+     * Creates and returns a new {@code Ensemble} with the listener added. The original
+     * ensemble is not modified.
+     *
+     * @param handler consumer invoked with task-complete details and output
+     * @return a new Ensemble with the listener registered
+     */
+    public Ensemble onTaskComplete(Consumer<TaskCompleteEvent> handler) {
+        return toBuilder()
+                .listener(new EnsembleListener() {
+                    @Override
+                    public void onTaskComplete(TaskCompleteEvent event) {
+                        handler.accept(event);
+                    }
+                })
+                .build();
+    }
+
+    /**
+     * Add a listener that is called after each tool invocation during agent execution.
+     *
+     * Creates and returns a new {@code Ensemble} with the listener added. The original
+     * ensemble is not modified.
+     *
+     * @param handler consumer invoked with tool-call details
+     * @return a new Ensemble with the listener registered
+     */
+    public Ensemble onToolCall(Consumer<ToolCallEvent> handler) {
+        return toBuilder()
+                .listener(new EnsembleListener() {
+                    @Override
+                    public void onToolCall(ToolCallEvent event) {
+                        handler.accept(event);
+                    }
+                })
+                .build();
     }
 
     /**

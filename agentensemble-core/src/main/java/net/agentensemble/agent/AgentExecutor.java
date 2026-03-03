@@ -19,11 +19,13 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.OutputParsingException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.output.JsonSchemaGenerator;
 import net.agentensemble.output.ParseResult;
@@ -102,6 +104,35 @@ public class AgentExecutor {
      *
      * @param task              the task to execute
      * @param contextOutputs    outputs from prior tasks to include as context
+     * @param executionContext  runtime context bundling verbose flag, memory state, and listeners
+     * @param delegationContext delegation state for this run; pass {@code null} when
+     *                          delegation is not enabled for this ensemble
+     * @return the task output
+     * @throws AgentExecutionException        if the LLM throws an error
+     * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
+     */
+    public TaskOutput execute(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            ExecutionContext executionContext,
+            DelegationContext delegationContext) {
+        if (executionContext == null) {
+            executionContext = ExecutionContext.of(false, MemoryContext.disabled());
+        }
+        return executeInternal(task, contextOutputs, executionContext, delegationContext);
+    }
+
+    /**
+     * Execute the given task using the agent specified in the task, with optional
+     * agent delegation support.
+     *
+     * When {@code delegationContext} is non-null and the agent has
+     * {@code allowDelegation = true}, an {@link AgentDelegationTool} is auto-injected
+     * into the agent's effective tool list for this execution. The tool allows the agent
+     * to delegate subtasks to peer agents during its ReAct loop.
+     *
+     * @param task              the task to execute
+     * @param contextOutputs    outputs from prior tasks to include as context
      * @param verbose           when true, prompts and responses are logged at INFO level
      * @param memoryContext     runtime memory state; use {@link MemoryContext#disabled()}
      *                          when memory is not configured
@@ -117,11 +148,17 @@ public class AgentExecutor {
             boolean verbose,
             MemoryContext memoryContext,
             DelegationContext delegationContext) {
-        // Normalize null memoryContext to disabled -- callers should prefer MemoryContext.disabled()
-        // but defensive normalization here prevents NPE if null is passed directly.
-        if (memoryContext == null) {
-            memoryContext = MemoryContext.disabled();
-        }
+        return executeInternal(task, contextOutputs, ExecutionContext.of(verbose, memoryContext), delegationContext);
+    }
+
+    private TaskOutput executeInternal(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            ExecutionContext executionContext,
+            DelegationContext delegationContext) {
+
+        MemoryContext memoryContext = executionContext.getMemoryContext();
+        boolean verbose = executionContext.isVerbose();
 
         Instant startTime = Instant.now();
         Agent agent = task.getAgent();
@@ -156,7 +193,8 @@ public class AgentExecutor {
 
         try {
             if (resolvedTools.hasTools()) {
-                finalResponse = executeWithTools(agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter);
+                finalResponse = executeWithTools(
+                        agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter, executionContext);
             } else {
                 finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt);
                 log.debug("Agent '{}' completed (no tools)", agent.getRole());
@@ -253,7 +291,8 @@ public class AgentExecutor {
             String systemPrompt,
             String userPrompt,
             ResolvedTools resolvedTools,
-            AtomicInteger toolCallCounter) {
+            AtomicInteger toolCallCounter,
+            ExecutionContext executionContext) {
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
@@ -298,7 +337,8 @@ public class AgentExecutor {
                         toolCallCounter.incrementAndGet();
                         Instant toolStart = Instant.now();
                         String toolResult = resolvedTools.execute(toolRequest);
-                        long toolMs = Duration.between(toolStart, Instant.now()).toMillis();
+                        Duration toolDuration = Duration.between(toolStart, Instant.now());
+                        long toolMs = toolDuration.toMillis();
 
                         if (toolResult != null && toolResult.startsWith("Error:")) {
                             log.warn(
@@ -315,6 +355,13 @@ public class AgentExecutor {
                                     truncate(toolResult, LOG_TRUNCATE_LENGTH),
                                     toolMs);
                         }
+
+                        executionContext.fireToolCall(new ToolCallEvent(
+                                toolRequest.name(),
+                                toolRequest.arguments(),
+                                toolResult,
+                                agent.getRole(),
+                                toolDuration));
 
                         messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResult));
                     }
