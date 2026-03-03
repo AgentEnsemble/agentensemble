@@ -2,134 +2,109 @@
 
 ## Current Work Focus
 
-Issue #20 (Advanced Features) has been planned and decomposed into 5 sub-issues with
-individual release targets. Next implementation target is #57 (Callbacks/Event Listeners
-+ ExecutionContext refactor) targeting v0.7.0. 440 tests passing on main.
+Issue #57 (Callbacks/Event Listeners + ExecutionContext refactor) is COMPLETE.
+Committed on `feature/57-callbacks-execution-context` (6477ad6). 499 tests passing.
+Next: open PR -> merge -> v0.7.0 release.
 
 ## Recent Changes
 
-- Issue #19 (Structured Output) merged via PR #48 (squash commit 1d69c5c):
+- Issue #57 (Callbacks + ExecutionContext refactor) implemented on feature branch:
 
-  **New classes:**
-  - `net.agentensemble.output.ParseResult<T>`: success/failure result container for
-    parse attempts; `success(T)` / `failure(String)` factory methods; public (accessed
-    from `AgentExecutor` across packages).
-  - `net.agentensemble.output.JsonSchemaGenerator`: reflection-based schema generator;
-    `generate(Class<?>)` produces human-readable JSON-like schema for prompt injection;
-    supports records, POJOs, String, numeric types, boolean, List<T>, Map<K,V>, enums,
-    nested objects; max nesting depth 5; rejects primitives, void, top-level arrays;
-    `topLevelScalarOrCollectionSchema()` handles scalars before field introspection.
-  - `net.agentensemble.output.StructuredOutputParser`: JSON extraction and Jackson
-    deserialization; `parse(String, Class<T>)` returns `ParseResult<T>`;
-    `extractJson(String)` tries markdown fences first (non-greedy regex), then trimmed
-    full response, then regex scan for first embedded JSON block; scalar fallback in
-    `parse()` attempts direct Jackson parse when no object/array found.
-  - `net.agentensemble.exception.OutputParsingException`: extends `AgentEnsembleException`;
-    fields: `rawOutput` (last bad response), `outputType`, `parseErrors` (immutable list),
-    `attemptCount`. Thrown after all retries exhausted.
+  **New packages and classes:**
+  - `net.agentensemble.execution.ExecutionContext`: immutable value bundling `MemoryContext`,
+    `verbose` flag, and `List<EnsembleListener>`. Factory methods: `of(mc, verbose, listeners)`,
+    `of(mc, verbose)`, `disabled()`. Fire methods (`fireTaskStart`, `fireTaskComplete`,
+    `fireTaskFailed`, `fireToolCall`) catch per-listener exceptions and log at WARN without
+    aborting execution or blocking subsequent listeners.
+  - `net.agentensemble.callback.EnsembleListener`: interface with 4 default no-op methods:
+    `onTaskStart`, `onTaskComplete`, `onTaskFailed`, `onToolCall`.
+  - `net.agentensemble.callback.TaskStartEvent`: record(taskDescription, agentRole, taskIndex, totalTasks)
+  - `net.agentensemble.callback.TaskCompleteEvent`: record(taskDescription, agentRole, taskOutput, duration, taskIndex, totalTasks)
+  - `net.agentensemble.callback.TaskFailedEvent`: record(taskDescription, agentRole, cause, duration, taskIndex, totalTasks)
+  - `net.agentensemble.callback.ToolCallEvent`: record(toolName, toolArguments, toolResult, agentRole, duration)
+  - `net.agentensemble.agent.ToolResolver`: package-private class extracted from AgentExecutor;
+    `resolve(List<Object>)` -> `ResolvedTools` nested record with `hasTools()` and `execute(request)`.
 
   **Changes to existing classes:**
-  - `Task`: added `Class<?> outputType` (default null) and `int maxOutputRetries` (default 3);
-    builder validation: outputType cannot be primitive/void/array; maxOutputRetries >= 0.
-  - `TaskOutput`: added `Object parsedOutput` (nullable) and `Class<?> outputType` (nullable);
-    added `getParsedOutput(Class<T>)` typed accessor (throws IllegalStateException when null
-    or type mismatch).
-  - `AgentPromptBuilder`: injects `## Output Format` section with JSON schema and JSON-only
-    instructions ("ONLY valid JSON matching this schema (object, array, or scalar as appropriate)")
-    when `task.getOutputType() != null`.
-  - `AgentExecutor`: after main execution (tool loop or direct), calls `parseStructuredOutput()`
-    when `task.getOutputType() != null`; retry loop sends correction prompt to LLM with error
-    message and schema; on exhaustion throws `OutputParsingException` with `currentResponse`
-    (last bad response, not initial); correction prompt updated to say "valid JSON" not "JSON object".
+  - `WorkflowExecutor.execute()`: signature changed from `(List<Task>, boolean, MemoryContext)` to
+    `(List<Task>, ExecutionContext)`.
+  - `AgentExecutor`: 3 overloads collapsed to 2: `execute(task, ctx, ExecutionContext)` and
+    `execute(task, ctx, ExecutionContext, DelegationContext)`. Fires `ToolCallEvent` after each
+    tool execution in the ReAct loop. `ToolResolver` replaces inline `resolveTools()` and
+    `ResolvedTools` inner record.
+  - `DelegationContext`: replaced separate `memoryContext` + `verbose` fields with single
+    `ExecutionContext executionContext`. `create()` signature: `(peers, maxDepth, executionContext,
+    executor)`. `getExecutionContext()` replaces `getMemoryContext()` + `isVerbose()`.
+  - `DelegateTaskTool`: constructor changed from `(agents, executor, verbose, memoryContext, dc)` to
+    `(agents, executor, executionContext, dc)`.
+  - `AgentDelegationTool.delegate()`: uses `delegationContext.getExecutionContext()` for execute call.
+  - `SequentialWorkflowExecutor.execute()`: fires `TaskStartEvent` before each task, `TaskCompleteEvent`
+    after success, `TaskFailedEvent` in catch block before re-throwing.
+  - `ParallelWorkflowExecutor.execute()`: same event firing pattern; parallel taskIndex=0 (unordered).
+  - `HierarchicalWorkflowExecutor.execute()`: same event firing for manager meta-task; manager runs
+    with `ExecutionContext.of(MemoryContext.disabled(), verbose, listeners)` (disabled memory, same listeners).
+  - `Ensemble`: added `@Singular List<EnsembleListener> listeners` field; custom `EnsembleBuilder`
+    inner class with convenience methods `onTaskStart(Consumer)`, `onTaskComplete(Consumer)`,
+    `onTaskFailed(Consumer)`, `onToolCall(Consumer)` -- each wraps the Consumer in an anonymous
+    `EnsembleListener` and delegates to Lombok-generated `listener(EnsembleListener)`.
+    `run()` builds `ExecutionContext.of(memoryContext, verbose, listeners)`.
 
-  **Copilot review fixes (commit 71bf58c, squashed into 1d69c5c):**
-  - `OutputParsingException.rawOutput`: uses `currentResponse` (last bad response)
-  - `JSON_BLOCK_PATTERN`: non-greedy (`.*?`) to find first block not oversized span
-  - `StructuredOutputParser.parse()`: scalar fallback for Boolean/Integer/String
-  - `JsonSchemaGenerator.generate()`: `topLevelScalarOrCollectionSchema()` short-circuits
-    before `generateObject()` for String.class, Boolean.class, etc.
-  - Prompt wording: "valid JSON value" not "JSON object" throughout
-  - Docs: tasks.md and task-configuration.md accurately describe scalar support
+  **Updated test files:**
+  - `AgentExecutorTest`: 8 call sites -> `ExecutionContext.disabled()`
+  - `DelegationContextTest`: rewritten with `ExecutionContext` (removed memoryContext/verbose params)
+  - `AgentDelegationToolTest`: `execute()` mock updated, `DelegationContext.create()` updated
+  - `DelegateTaskToolTest`: constructor and create() updated
+  - `ParallelWorkflowExecutorTest`: `execute()` calls + memory test updated; imports updated
+  - `HierarchicalWorkflowExecutorTest`: `execute()` calls updated; imports updated
+  - `EnsembleTest`: 7 listener builder tests added
 
-  **Tests:** 358 -> 440 (+82 new)
-  - `JsonSchemaGeneratorTest`: 23 (records, POJOs, enums, nested, Maps, Lists,
-    scalar top-level types, validation)
-  - `StructuredOutputParserTest`: 20 (extractJson strategies, parse success/failure,
-    scalar types, non-greedy multi-block)
-  - `ExceptionHierarchyTest`: +5 (OutputParsingException hierarchy and fields)
-  - `TaskTest`: +12 (outputType/maxOutputRetries defaults, validation, toBuilder)
-  - `TaskOutputTest`: +7 (parsedOutput, outputType fields, getParsedOutput typed access)
-  - `AgentPromptBuilderTest`: +4 (output format section present/absent, schema content)
-  - `StructuredOutputIntegrationTest`: 11 (happy path, markdown fence, retry, zero retries,
-    all-retries-exhausted, backward compat, mixed tasks, parallel workflow)
+  **New test files:** 499 total (up from 440 baseline)
+  - `ExecutionContextTest`: 20 tests (factory methods, immutability, fire-method exception safety)
+  - `EnsembleListenerTest`: 10 tests (default no-ops, event record fields, override patterns)
+  - `ToolResolverTest`: 10 tests (AgentTool resolution, @Tool resolution, dispatch, unknown tool)
+  - `CallbackIntegrationTest`: 14 tests (full lifecycle via mocked LLMs)
 
   **Documentation:**
-  - `docs/guides/tasks.md`: Structured Output section with typed/Markdown examples and retry docs
-  - `docs/reference/task-configuration.md`: outputType/maxOutputRetries fields + validation
-  - `docs/getting-started/concepts.md`: outputType and maxOutputRetries in Task concept
-  - `docs/examples/structured-output.md`: new; two full examples (typed JSON + Markdown output)
-  - `docs/design/03-domain-model.md`: Task and TaskOutput specs updated
-  - `docs/design/13-future-roadmap.md`: Phase 6 marked COMPLETE with implementation notes
-  - `README.md`: Structured Output section, updated Task Configuration table, roadmap updated
+  - `docs/guides/callbacks.md`: new guide covering quick start, event types, full interface impl,
+    multiple listeners, exception safety, thread safety, practical examples
+  - `docs/design/13-future-roadmap.md`: Phase 7 marked COMPLETE with implementation notes;
+    old Phase 7 advanced features section renamed Phase 8
+  - `mkdocs.yml`: Callbacks guide added to Guides nav section
 
 ## Next Steps
 
-1. Release v0.6.0 (structured output milestone, via release-please)
-2. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput
-3. Issue #57 (v0.7.0): Callbacks/Event Listeners + ExecutionContext refactor (first Phase 7 sub-issue)
+1. Open PR for `feature/57-callbacks-execution-context` -> main, get review + merge
+2. Release v0.7.0 (callbacks milestone, via release-please)
+3. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput (v0.7.x)
 4. Issue #58 + #59 (v0.8.0): Guardrails + Rate Limiting
 5. Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
 6. Issue #61 (v1.0.0): Streaming Output
-7. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
-
-## Issue #20 Phase 7 Sub-Issues
-
-| Issue | Feature | Release |
-|-------|---------|---------|
-| #57 | Callbacks/Event Listeners + ExecutionContext refactor | v0.7.0 |
-| #58 | Guardrails: Pre/post execution validation | v0.8.0 |
-| #59 | Rate Limiting: Per-agent/per-LLM | v0.8.0 |
-| #60 | Built-in Tool Library: agentensemble-tools module | v0.9.0 |
-| #61 | Streaming Output: Token-by-token via StreamingChatLanguageModel | v1.0.0 |
-
-**Key architecture decisions for Phase 7:**
-- ExecutionContext (#57): consolidates MemoryContext + verbose + listeners into one object passed
-  through WorkflowExecutor.execute() and AgentExecutor.execute() -- prerequisite for all other features
-- Streaming (#61): decorator pattern; Agent.streamingLlm optional field; tool-loop uses standard
-  ChatModel, only final response is streamed via TokenEvent callbacks
-- Rate Limiting (#59): pure decorator (RateLimitedChatModel wraps any ChatModel); zero changes
-  to execution paths; Agent.rateLimit() optional builder convenience
-- Built-in tools (#60): separate agentensemble-tools module; code execution deferred
 
 ## Important Notes
 
 - LangChain4j 1.11.0: EmbeddingModel.embed(String) returns Response<Embedding>
-  (NOT dropped the Response wrapper unlike ChatModel.chat())
 - EmbeddingStore.add(Embedding, TextSegment) -- store method with explicit embedding
-- Metadata.from(key, value) -- static factory on dev.langchain4j.data.document.Metadata
+- Metadata.from(key, value) -- static factory
 - EmbeddingSearchRequest.builder().queryEmbedding(e).maxResults(n).minScore(0.0).build()
-- EmbeddingSearchResult.matches() -> List<EmbeddingMatch<TextSegment>>
-- EmbeddingMatch.embedded() -> TextSegment
 - Lombok @Builder.Default + custom build() causes static context errors -- always
   use field initializers in the inner builder class instead
+- Custom builder methods: declare inner `public static class EnsembleBuilder` and add methods
+  that delegate to Lombok-generated @Singular methods. Lombok fills in the rest.
 
 ## Active Decisions
 
+- **ExecutionContext threading**: created once per Ensemble.run(), threaded through entire
+  execution stack (WorkflowExecutor -> AgentExecutor -> DelegationContext -> tools)
+- **Fire method exception safety**: catch per-listener, log WARN, continue to next listener
+- **DelegationContext.getMemoryContext()/isVerbose() removed**: callers use
+  `delegationContext.getExecutionContext().memoryContext()` and `.isVerbose()`
+- **HierarchicalWorkflowExecutor manager context**: disabled memory + same listeners
+  (manager is meta-orchestrator, shouldn't record to shared memory)
+- **Parallel taskIndex**: 0 (meaningless for parallel -- order not guaranteed)
+- **ToolResolver visibility**: package-private (implementation detail of agent package)
 - **ParseResult visibility**: public (accessed from AgentExecutor in different package)
 - **Schema generation**: prompt-based JSON schema (not LangChain4j ResponseFormat.JSON)
-  to work universally across all LLM providers without capability detection
-- **JSON extraction priority**: markdown fences first (non-greedy, most LLMs wrap in
-  ```json```), then full trimmed response, then regex scan for first embedded JSON block
-- **Scalar fallback**: `parse()` attempts direct Jackson parse when extractJson returns null
-- **rawOutput in OutputParsingException**: carries currentResponse (last bad response)
-  not initialResponse (first response), to aid debugging of retry failures
-- **Top-level array rejection**: JsonSchemaGenerator.generate() and Task.outputType
-  both reject array types; workaround: wrap in record (e.g., record Results(List<T> items))
 - **Parallel execution**: `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21)
-  NOT `StructuredTaskScope` (preview API, unstable across versions)
-- **Error strategy default**: FAIL_FAST (mirrors SEQUENTIAL behavior)
-- **Memory architecture**: MemoryContext is created fresh per run() call; LTM and
-  entity memory are shared across runs (user controls their lifecycle)
 
 ## Important Patterns and Preferences
 
@@ -139,3 +114,4 @@ individual release targets. Next implementation target is #57 (Callbacks/Event L
 - No emoji/unicode in code or developer docs
 - Production-grade quality, not prototype
 - Lombok @Builder + custom builder class: use field initializers, NOT @Builder.Default
+- ExecutionContext.disabled() is the backward-compat factory for tests and internal uses

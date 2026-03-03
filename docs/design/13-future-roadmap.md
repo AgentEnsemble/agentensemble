@@ -177,15 +177,64 @@ ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
 
 ---
 
-## Phase 7: Advanced Features
+## Phase 7: Callbacks and Observability (COMPLETE -- v0.7.0)
 
-### Callbacks and Event Listeners
+**Implemented**: `ExecutionContext`, `EnsembleListener`, `TaskStartEvent`, `TaskCompleteEvent`,
+`TaskFailedEvent`, `ToolCallEvent`, `ToolResolver`, and Ensemble builder convenience methods.
+
+### How It Works
+
+- `ExecutionContext` is an immutable value object bundling `MemoryContext`, `verbose` flag, and
+  `List<EnsembleListener>`. It is created once per `Ensemble.run()` and threaded through the
+  entire execution stack, replacing the previously separate `verbose` and `MemoryContext` parameters.
+- `EnsembleListener` is an interface with default no-op implementations of all four event methods,
+  so implementors only override the events they care about.
+- Events are fired by workflow executors (`SequentialWorkflowExecutor`, `ParallelWorkflowExecutor`,
+  `HierarchicalWorkflowExecutor`) and `AgentExecutor`. Exceptions from listeners are caught and
+  logged without aborting execution or blocking subsequent listeners.
+- `ToolResolver` was extracted from `AgentExecutor` as a package-private helper class, reducing
+  `AgentExecutor`'s complexity and making tool resolution independently testable.
+- `AgentExecutor` overloads were consolidated from 3 to 2: `execute(task, contextOutputs, ExecutionContext)`
+  and `execute(task, contextOutputs, ExecutionContext, DelegationContext)`.
+- `DelegationContext` was refactored to hold `ExecutionContext` instead of separate
+  `memoryContext` + `verbose` fields.
+
+### Implemented API
 
 ```java
-ensemble.onTaskStart(event -> log.info("Starting: {}", event.taskDescription()));
-ensemble.onTaskComplete(event -> log.info("Done: {} in {}", event.taskDescription(), event.duration()));
-ensemble.onToolCall(event -> log.info("Tool: {}", event.toolName()));
+// Full interface implementation
+ensemble.listener(new MyMetricsListener())
+
+// Lambda convenience methods
+Ensemble.builder()
+    .agent(researcher)
+    .task(researchTask)
+    .onTaskStart(event -> log.info("Starting: {}", event.agentRole()))
+    .onTaskComplete(event -> metrics.record(event.duration()))
+    .onTaskFailed(event -> alerts.notify(event.cause()))
+    .onToolCall(event -> metrics.increment("tool." + event.toolName()))
+    .build()
+    .run();
 ```
+
+### Event Types
+
+| Event | When Fired | Key Fields |
+|-------|-----------|-----------|
+| `TaskStartEvent` | Before task execution begins | taskDescription, agentRole, taskIndex, totalTasks |
+| `TaskCompleteEvent` | After successful task execution | taskOutput, duration, taskIndex, totalTasks |
+| `TaskFailedEvent` | After task failure (before exception propagates) | cause, duration, taskIndex, totalTasks |
+| `ToolCallEvent` | After each tool execution in the ReAct loop | toolName, toolArguments, toolResult, agentRole, duration |
+
+### Thread Safety
+
+`ExecutionContext` is immutable. Fire methods may be called concurrently from parallel workflow
+virtual threads. Listener implementations must be thread-safe when registered with a
+`Workflow.PARALLEL` ensemble.
+
+---
+
+## Phase 8: Advanced Features
 
 ### Streaming Output
 
@@ -227,6 +276,7 @@ A separate module `agentensemble-tools` providing common tools:
 | Phase 4 | v0.4.0 | Agent delegation |
 | Phase 5 | v0.5.0 | Parallel workflow |
 | Phase 6 | v0.6.0 | Structured output |
-| Phase 7 | v1.0.0 | Callbacks, streaming, guardrails, built-in tools |
+| Phase 7 | v0.7.0 | Callbacks and observability (COMPLETE) |
+| Phase 8 | v1.0.0 | Streaming, guardrails, built-in tools |
 
 Each phase should be backward-compatible with previous phases. The API is designed with future phases in mind -- builder methods can be added without breaking existing code.

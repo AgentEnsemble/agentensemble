@@ -78,6 +78,7 @@ nav:
     - Memory: guides/memory.md
     - Delegation: guides/delegation.md
     - Error Handling: guides/error-handling.md
+    - Callbacks: guides/callbacks.md
     - Logging: guides/logging.md
     - Template Variables: guides/template-variables.md
   - Reference:
