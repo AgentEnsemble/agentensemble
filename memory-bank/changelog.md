@@ -31,6 +31,60 @@
 
 ---
 
+## [0.5.0] - 2026-03-02 (Issue #18, PR #45)
+
+### Added
+- `Workflow.PARALLEL`: DAG-based concurrent task execution using Java 21 virtual threads
+  (`Executors.newVirtualThreadPerTaskExecutor()` -- stable API, no preview flags)
+- `TaskDependencyGraph`: identity-based DAG from task context declarations;
+  `getRoots()`, `getReadyTasks(completed)`, `getDependents(task)`, `isInGraph(task)`,
+  `getAllTasks()`, `size()`; immutable (all state built in constructor)
+- `ParallelWorkflowExecutor`: event-driven scheduler; `CountDownLatch(totalTasks)` for
+  synchronization; MDC propagated from calling thread to each virtual thread;
+  `skippedTasks` Set tracks transitively-skipped tasks for CONTINUE_ON_ERROR correctness
+- `ParallelErrorStrategy` enum: `FAIL_FAST` (default) and `CONTINUE_ON_ERROR`
+- `ParallelExecutionException`: thrown by CONTINUE_ON_ERROR for partial failures;
+  carries `completedTaskOutputs` (List) + `failedTaskCauses` (Map<String,Throwable>)
+- `Ensemble.parallelErrorStrategy` field (default `FAIL_FAST`); validated at run()
+- `Ensemble.validateParallelErrorStrategy()`: fails if null and workflow is PARALLEL
+- `Ensemble.validateContextOrdering()`: skips for PARALLEL (DAG drives order)
+- Task list order is irrelevant for PARALLEL (unlike SEQUENTIAL)
+- 61 new tests (297->358): TaskDependencyGraphTest (21), ParallelWorkflowExecutorTest (+17),
+  ParallelEnsembleIntegrationTest (16), ShortTermMemoryTest (+3), ExceptionHierarchyTest (+5)
+
+### Fixed
+- `Ensemble.resolveTasks()`: pass-2 now updates `originalToResolved` when creating a
+  context-rewritten Task so downstream tasks receive the final reference (fixes diamond
+  pattern A->B->D, A->C->D producing stale object references in D's context list)
+- `ParallelWorkflowExecutor.shouldSkip()` CONTINUE_ON_ERROR: added `skippedTasks` Set;
+  check now includes both `failedTaskCauses` AND `skippedTasks` so transitive dependents
+  in chains (A fails -> B skipped -> C was incorrectly run, now skipped) are correctly
+  handled
+- `ParallelErrorStrategy.FAIL_FAST` Javadoc: corrected inaccurate "cancel/interrupt
+  running tasks" text; actual behavior is running tasks finish normally, only new tasks
+  are not scheduled
+
+### Changed
+- `ShortTermMemory`: backing list changed from `ArrayList` to `CopyOnWriteArrayList`
+  for thread-safe concurrent writes from parallel tasks
+- `ShortTermMemory.getEntries()`: returns `List.copyOf(entries)` (immutable snapshot)
+  instead of `Collections.unmodifiableList(entries)` (live view)
+- `MemoryContext` Javadoc: updated to reflect thread-safe status
+
+### Documentation
+- `docs/guides/workflows.md`: PARALLEL section (DAG explanation, error strategies,
+  thread safety, task list order, diamond pattern, choosing a workflow table updated)
+- `docs/reference/ensemble-configuration.md`: added `parallelErrorStrategy` row
+- `docs/design/10-concurrency.md`: full concurrent execution model; replaced
+  "Phase 2+ considerations" with actual implementation details and JMM guarantees
+- `docs/design/13-future-roadmap.md`: Phase 5 marked complete with implementation notes
+- `docs/examples/parallel-workflow.md`: new competitive intelligence example
+  (market research + financial analysis in parallel -> SWOT -> executive summary)
+- `README.md`: Parallel Workflow section; updated Ensemble Configuration table;
+  roadmap updated (v0.5.0 struck through)
+
+---
+
 ## [0.5.0-SNAPSHOT] - 2026-03-02 (PR #43, fix/copilot-review-feedback)
 
 ### Fixed (Copilot PR #43 review -- commit 3064533)
