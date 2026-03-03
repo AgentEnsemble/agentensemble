@@ -2,28 +2,12 @@
 
 ## Current Work Focus
 
-PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow implementation.
-358 tests passing (was 297, +61). Copilot review addressed. Awaiting merge.
+PR #45 merged to main (squash commit 7535576). Issue #18 Parallel Workflow complete.
+Development continues at 0.5.0-SNAPSHOT. 358 tests passing on main.
 
 ## Recent Changes
 
-- Maven Central publishing fully operational -- v0.4.2 successfully released:
-  - `com.vanniktech.maven.publish` 0.29.0 with `SonatypeHost.CENTRAL_PORTAL` + `signAllPublications()`
-  - `publishAndReleaseToMavenCentral` handles full upload + auto-promotion lifecycle
-  - `publishAllPublicationsToGitHubPackagesRepository` also gets signing env vars
-  - Build step runs `:agentensemble-core:mavenPlainJavadocJar` to generate javadoc JAR
-    (vanniktech generates `maven-javadoc-{v}-javadoc.jar`; upload step copies it to
-    `agentensemble-core-{v}-javadoc.jar` before attaching to GitHub Release)
-  - SNAPSHOT bump is version-aware: only bumps gradle.properties if the next patch
-    version is higher than the current development SNAPSHOT
-  - `release-please-action@v4` (simple type) requires `ORG_RELEASE_PLEASE_TOKEN` PAT
-    secret to create/approve PRs (org-level GITHUB_TOKEN PR restriction is in effect)
-  - `.release-please-manifest.json` is at `0.4.2` (last release)
-  - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
-    `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
-  - Pending: `ORG_RELEASE_PLEASE_TOKEN` PAT (repo scope) for release-please PR creation
-
-- Issue #18 (Parallel Workflow) implementation on feature/parallel-workflow:
+- Issue #18 (Parallel Workflow) merged via PR #45 (squash commit 7535576):
 
   **New classes:**
   - `TaskDependencyGraph`: identity-based DAG from task context declarations;
@@ -51,8 +35,7 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
   **Bug fixes:**
   - `Ensemble.resolveTasks()` pass-2 was not updating `originalToResolved` after
     creating finalized context-rewritten tasks. Diamond-pattern dependencies
-    (A -> B -> D, A -> C -> D) produced stale object references. Fixed by adding
-    `originalToResolved.put(original, finalTask)` in pass-2.
+    (A -> B -> D, A -> C -> D) produced stale object references. Fixed.
   - `ParallelWorkflowExecutor.shouldSkip()` CONTINUE_ON_ERROR only checked
     `failedTaskCauses`; skipped tasks in a chain were not propagated. Fixed by
     adding `skippedTasks` Set and checking both sets in `shouldSkip()`.
@@ -74,12 +57,20 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
   - docs/examples/parallel-workflow.md: new competitive intelligence example
   - README.md: Parallel Workflow section, updated tables and roadmap
 
+- Maven Central publishing fully operational -- v0.4.2 successfully released:
+  - `com.vanniktech.maven.publish` 0.29.0 with `SonatypeHost.CENTRAL_PORTAL` + `signAllPublications()`
+  - `publishAndReleaseToMavenCentral` handles full upload + auto-promotion lifecycle
+  - `.release-please-manifest.json` is at `0.4.2` (last release)
+  - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
+    `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
+  - Pending: `ORG_RELEASE_PLEASE_TOKEN` PAT (repo scope) for release-please PR creation
+
 - Issue #44 (backlog): Interactive execution graph visualization -- created
   - Depends on Issue #18 (TaskDependencyGraph) and Issue #42 (ExecutionMetrics)
 
 ## Next Steps
 
-1. Merge PR #45 (parallel workflow), release v0.5.0
+1. Release v0.5.0 (parallel workflow milestone)
 2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
 3. Issue #42: Execution metrics (ExecutionMetrics on EnsembleOutput)
 4. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)

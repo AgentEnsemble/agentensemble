@@ -61,16 +61,25 @@
 - [x] Comprehensive user docs (21 files in docs/getting-started/, guides/, reference/, examples/)
 
 ### Copilot Review Feedback
-- [ ] PR #43 (fix/copilot-review-feedback): address all Copilot feedback from PRs #21-#41
-  - 29 files changed, 483 insertions, 78 deletions; 297 tests (10 new)
+- [x] PR #43 (fix/copilot-review-feedback): address all Copilot feedback from PRs #21-#41 -- MERGED
+
+### Phase 5: Parallel Workflow
+- [x] Issue #18: Parallel workflow (PR #45 merged, squash commit 7535576) -- 358 tests (+61)
+  - New: TaskDependencyGraph, ParallelWorkflowExecutor, ParallelErrorStrategy, ParallelExecutionException
+  - Workflow.PARALLEL enum value; Ensemble.parallelErrorStrategy field (default FAIL_FAST)
+  - ShortTermMemory thread-safe (CopyOnWriteArrayList + snapshot semantics)
+  - Bug fix: resolveTasks() pass-2 updates originalToResolved (fixes diamond-pattern deps)
+  - Bug fix: shouldSkip() tracks skippedTasks Set for transitive CONTINUE_ON_ERROR propagation
+  - Documentation: workflows.md, ensemble-configuration.md, concurrency.md, roadmap, examples
+  - Copilot review: 3 comments addressed (transitive skip bug, new test, FAIL_FAST Javadoc)
 
 ## Current Status
 
-**Phase**: Phase 4 complete -- Issue #17 done, v0.4.0 released; PR #43 in review
-**Total tests**: 297 passing (main has 287; +10 on PR #43)
+**Phase**: Phase 5 complete -- Issue #18 done, PR #45 merged; v0.5.0 pending release
+**Total tests**: 358 passing on main
 **Current version**: 0.5.0-SNAPSHOT (main)
-**Last release**: v0.4.0 -- net.agentensemble:agentensemble-core:0.4.0
-**Next action**: Merge PR #43, then Issue #18 (Parallel workflow)
+**Last release**: v0.4.2 -- Maven Central + GitHub Packages
+**Next action**: Release v0.5.0, then Issue #19 (Structured Output) or Issue #42 (Metrics)
 
 ## Known Issues
 
