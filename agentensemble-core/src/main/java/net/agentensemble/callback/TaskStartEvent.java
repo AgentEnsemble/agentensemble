@@ -8,8 +8,4 @@ package net.agentensemble.callback;
  * @param taskIndex       1-based index of this task within the current workflow run
  * @param totalTasks      total number of tasks in the current workflow run
  */
-public record TaskStartEvent(
-        String taskDescription,
-        String agentRole,
-        int taskIndex,
-        int totalTasks) {}
+public record TaskStartEvent(String taskDescription, String agentRole, int taskIndex, int totalTasks) {}

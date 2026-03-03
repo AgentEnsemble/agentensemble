@@ -231,8 +231,8 @@ class ParallelWorkflowExecutorTest {
         var bad = agentThatFails("Bad");
         var tBad = task("Failing task", bad);
 
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
-                        .execute(List.of(tBad), ExecutionContext.disabled()))
+        assertThatThrownBy(() ->
+                        executor(ParallelErrorStrategy.FAIL_FAST).execute(List.of(tBad), ExecutionContext.disabled()))
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
@@ -252,8 +252,8 @@ class ParallelWorkflowExecutorTest {
         var tb = task("Task B", b);
 
         // No exception should be thrown when all tasks succeed
-        var output = executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                .execute(List.of(ta, tb), ExecutionContext.disabled());
+        var output =
+                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(List.of(ta, tb), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(2);
     }

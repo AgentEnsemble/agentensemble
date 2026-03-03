@@ -216,13 +216,12 @@ class HierarchicalWorkflowExecutorTest {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
         List<TaskStartEvent> events = new ArrayList<>();
-        ExecutionContext ec = ExecutionContext.of(
-                MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-                    @Override
-                    public void onTaskStart(TaskStartEvent event) {
-                        events.add(event);
-                    }
-                }));
+        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
+            @Override
+            public void onTaskStart(TaskStartEvent event) {
+                events.add(event);
+            }
+        }));
 
         executor.execute(List.of(researchTask()), ec);
 
@@ -237,13 +236,12 @@ class HierarchicalWorkflowExecutorTest {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Final answer"));
 
         List<TaskCompleteEvent> events = new ArrayList<>();
-        ExecutionContext ec = ExecutionContext.of(
-                MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-                    @Override
-                    public void onTaskComplete(TaskCompleteEvent event) {
-                        events.add(event);
-                    }
-                }));
+        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
+            @Override
+            public void onTaskComplete(TaskCompleteEvent event) {
+                events.add(event);
+            }
+        }));
 
         executor.execute(List.of(researchTask()), ec);
 
@@ -258,13 +256,12 @@ class HierarchicalWorkflowExecutorTest {
         when(managerModel.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("LLM failure"));
 
         List<TaskFailedEvent> events = new ArrayList<>();
-        ExecutionContext ec = ExecutionContext.of(
-                MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-                    @Override
-                    public void onTaskFailed(TaskFailedEvent event) {
-                        events.add(event);
-                    }
-                }));
+        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
+            @Override
+            public void onTaskFailed(TaskFailedEvent event) {
+                events.add(event);
+            }
+        }));
 
         assertThatThrownBy(() -> executor.execute(List.of(researchTask()), ec))
                 .isInstanceOf(TaskExecutionException.class);
@@ -280,13 +277,12 @@ class HierarchicalWorkflowExecutorTest {
         when(managerModel.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("LLM failure"));
 
         List<TaskCompleteEvent> events = new ArrayList<>();
-        ExecutionContext ec = ExecutionContext.of(
-                MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-                    @Override
-                    public void onTaskComplete(TaskCompleteEvent event) {
-                        events.add(event);
-                    }
-                }));
+        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
+            @Override
+            public void onTaskComplete(TaskCompleteEvent event) {
+                events.add(event);
+            }
+        }));
 
         assertThatThrownBy(() -> executor.execute(List.of(researchTask()), ec))
                 .isInstanceOf(TaskExecutionException.class);
@@ -314,13 +310,12 @@ class HierarchicalWorkflowExecutorTest {
     void testExecute_listenerException_doesNotAbortExecution() {
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        ExecutionContext ec = ExecutionContext.of(
-                MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-                    @Override
-                    public void onTaskStart(TaskStartEvent event) {
-                        throw new RuntimeException("Listener boom");
-                    }
-                }));
+        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
+            @Override
+            public void onTaskStart(TaskStartEvent event) {
+                throw new RuntimeException("Listener boom");
+            }
+        }));
 
         EnsembleOutput output = executor.execute(List.of(researchTask()), ec);
 

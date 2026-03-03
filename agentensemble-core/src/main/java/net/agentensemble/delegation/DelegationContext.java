@@ -64,10 +64,7 @@ public final class DelegationContext {
      * @throws IllegalArgumentException if any required argument is null or maxDepth is not positive
      */
     public static DelegationContext create(
-            List<Agent> peerAgents,
-            int maxDepth,
-            ExecutionContext executionContext,
-            AgentExecutor agentExecutor) {
+            List<Agent> peerAgents, int maxDepth, ExecutionContext executionContext, AgentExecutor agentExecutor) {
         if (peerAgents == null) {
             throw new IllegalArgumentException("peerAgents must not be null");
         }

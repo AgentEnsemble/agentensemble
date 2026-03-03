@@ -274,8 +274,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
                 // taskIndex is not meaningful for parallel -- use 0 to indicate "unordered"
-                executionContext.fireTaskStart(
-                        new TaskStartEvent(task.getDescription(), task.getAgent().getRole(), 0, totalTasks));
+                executionContext.fireTaskStart(new TaskStartEvent(
+                        task.getDescription(), task.getAgent().getRole(), 0, totalTasks));
 
                 // Collect outputs from completed in-graph dependencies as context
                 List<TaskOutput> contextOutputs = new ArrayList<>();
@@ -288,8 +288,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     }
                 }
 
-                TaskOutput output =
-                        agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                TaskOutput output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
 
                 completedOutputs.put(task, output);
                 completionOrder.add(output);
@@ -301,12 +300,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         output.getToolCallCount());
 
                 executionContext.fireTaskComplete(new TaskCompleteEvent(
-                        task.getDescription(),
-                        task.getAgent().getRole(),
-                        output,
-                        output.getDuration(),
-                        0,
-                        totalTasks));
+                        task.getDescription(), task.getAgent().getRole(), output, output.getDuration(), 0, totalTasks));
 
             } catch (Exception e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());

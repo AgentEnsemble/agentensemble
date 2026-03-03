@@ -118,16 +118,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
                 if (executionContext.isVerbose()) {
                     log.info(
-                            "Task {}/{} output preview: {}",
-                            taskIndex,
-                            totalTasks,
-                            truncate(taskOutput.getRaw(), 200));
+                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
                 } else {
                     log.debug(
-                            "Task {}/{} output preview: {}",
-                            taskIndex,
-                            totalTasks,
-                            truncate(taskOutput.getRaw(), 200));
+                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
                 }
 
                 // Fire TaskCompleteEvent

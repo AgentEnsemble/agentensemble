@@ -231,17 +231,13 @@ class AgentDelegationToolTest {
         AgentExecutor capturingExecutor = new AgentExecutor() {
             @Override
             public TaskOutput execute(
-                    Task task,
-                    List<TaskOutput> contextOutputs,
-                    ExecutionContext ctx,
-                    DelegationContext dc) {
+                    Task task, List<TaskOutput> contextOutputs, ExecutionContext ctx, DelegationContext dc) {
                 capturedContext[0] = dc;
                 return output;
             }
         };
 
-        DelegationContext rootCtx =
-                DelegationContext.create(List.of(writer), 3, executionContext, capturingExecutor);
+        DelegationContext rootCtx = DelegationContext.create(List.of(writer), 3, executionContext, capturingExecutor);
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", rootCtx);
         tool.delegate("Writer", "Write something");

@@ -106,8 +106,7 @@ public class AgentExecutor {
 
         // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
-        String userPrompt =
-                AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
+        String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
 
         if (effectiveVerbose) {
             log.info("System prompt:\n{}", systemPrompt);

@@ -128,8 +128,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
 
             // Fire TaskStartEvent for the manager meta-task
-            executionContext.fireTaskStart(
-                    new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
+            executionContext.fireTaskStart(new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
 
             Instant managerStart = Instant.now();
             TaskOutput managerOutput;

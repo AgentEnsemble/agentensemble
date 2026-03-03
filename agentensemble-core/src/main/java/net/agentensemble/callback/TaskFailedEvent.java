@@ -17,9 +17,4 @@ import java.time.Duration;
  * @param totalTasks      total number of tasks in the current workflow run
  */
 public record TaskFailedEvent(
-        String taskDescription,
-        String agentRole,
-        Throwable cause,
-        Duration duration,
-        int taskIndex,
-        int totalTasks) {}
+        String taskDescription, String agentRole, Throwable cause, Duration duration, int taskIndex, int totalTasks) {}

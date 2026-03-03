@@ -105,7 +105,8 @@ class EnsembleListenerTest {
     @Test
     void toolCallEvent_fieldsAccessible() {
         Duration duration = Duration.ofMillis(500);
-        ToolCallEvent event = new ToolCallEvent("web_search", "{\"query\":\"AI\"}", "results...", "Researcher", duration);
+        ToolCallEvent event =
+                new ToolCallEvent("web_search", "{\"query\":\"AI\"}", "results...", "Researcher", duration);
         assertThat(event.toolName()).isEqualTo("web_search");
         assertThat(event.toolArguments()).isEqualTo("{\"query\":\"AI\"}");
         assertThat(event.toolResult()).isEqualTo("results...");

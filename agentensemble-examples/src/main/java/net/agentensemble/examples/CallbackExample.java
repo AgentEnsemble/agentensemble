@@ -59,7 +59,8 @@ public class CallbackExample {
 
         @Override
         public void onTaskStart(TaskStartEvent event) {
-            System.out.printf("[METRICS] Task %d/%d started | Agent: %s%n",
+            System.out.printf(
+                    "[METRICS] Task %d/%d started | Agent: %s%n",
                     event.taskIndex(), event.totalTasks(), event.agentRole());
         }
 
@@ -67,22 +68,27 @@ public class CallbackExample {
         public void onTaskComplete(TaskCompleteEvent event) {
             completedTasks.add(event.agentRole() + " - " + truncate(event.taskDescription(), 40));
             totalTaskDuration = totalTaskDuration.plus(event.duration());
-            System.out.printf("[METRICS] Task %d/%d completed | Agent: %s | Duration: %s%n",
+            System.out.printf(
+                    "[METRICS] Task %d/%d completed | Agent: %s | Duration: %s%n",
                     event.taskIndex(), event.totalTasks(), event.agentRole(), event.duration());
         }
 
         @Override
         public void onTaskFailed(TaskFailedEvent event) {
             failedTasks.add(event.agentRole() + " - " + truncate(event.taskDescription(), 40));
-            System.out.printf("[METRICS] Task %d/%d FAILED | Agent: %s | Error: %s%n",
-                    event.taskIndex(), event.totalTasks(), event.agentRole(),
+            System.out.printf(
+                    "[METRICS] Task %d/%d FAILED | Agent: %s | Error: %s%n",
+                    event.taskIndex(),
+                    event.totalTasks(),
+                    event.agentRole(),
                     event.cause().getMessage());
         }
 
         @Override
         public void onToolCall(ToolCallEvent event) {
             toolsCalled.add(event.toolName() + " (" + event.agentRole() + ")");
-            System.out.printf("[METRICS] Tool called: %s | Agent: %s | Duration: %s%n",
+            System.out.printf(
+                    "[METRICS] Tool called: %s | Agent: %s | Duration: %s%n",
                     event.toolName(), event.agentRole(), event.duration());
         }
 
@@ -124,8 +130,7 @@ public class CallbackExample {
         String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
-                    "OPENAI_API_KEY environment variable is not set. "
-                            + "Please set it to your OpenAI API key.");
+                    "OPENAI_API_KEY environment variable is not set. " + "Please set it to your OpenAI API key.");
         }
 
         var model = OpenAiChatModel.builder()
@@ -158,7 +163,8 @@ public class CallbackExample {
                 .build();
 
         var writeTask = Task.builder()
-                .description("Based on the research, write a 150-word introduction paragraph for a blog post about {topic}.")
+                .description(
+                        "Based on the research, write a 150-word introduction paragraph for a blog post about {topic}.")
                 .expectedOutput("A compelling 150-word opening paragraph.")
                 .agent(writer)
                 .context(List.of(researchTask))
@@ -186,8 +192,8 @@ public class CallbackExample {
                 // Lambda convenience: simple progress indicator
                 .onTaskStart(event -> {
                     taskStartCount.incrementAndGet();
-                    System.out.printf("%n[PROGRESS] Starting task %d of %d...%n",
-                            event.taskIndex(), event.totalTasks());
+                    System.out.printf(
+                            "%n[PROGRESS] Starting task %d of %d...%n", event.taskIndex(), event.totalTasks());
                 })
                 // Lambda convenience: alert on failure (would notify external system in production)
                 .onTaskFailed(event -> System.out.printf(
@@ -216,7 +222,7 @@ public class CallbackExample {
         metrics.printSummary();
 
         System.out.printf("%nTotal tasks started (lambda counter): %d%n", taskStartCount.get());
-        System.out.printf("Total duration: %s | Total tool calls: %d%n",
-                output.getTotalDuration(), output.getTotalToolCalls());
+        System.out.printf(
+                "Total duration: %s | Total tool calls: %d%n", output.getTotalDuration(), output.getTotalToolCalls());
     }
 }

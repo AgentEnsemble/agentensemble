@@ -12,8 +12,4 @@ import java.time.Duration;
  * @param duration      elapsed time for the tool execution
  */
 public record ToolCallEvent(
-        String toolName,
-        String toolArguments,
-        String toolResult,
-        String agentRole,
-        Duration duration) {}
+        String toolName, String toolArguments, String toolResult, String agentRole, Duration duration) {}

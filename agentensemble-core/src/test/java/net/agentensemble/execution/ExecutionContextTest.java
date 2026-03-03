@@ -3,8 +3,11 @@ package net.agentensemble.execution;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
@@ -13,10 +16,6 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.Test;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.concurrent.atomic.AtomicInteger;
 
 class ExecutionContextTest {
 
@@ -130,11 +129,15 @@ class ExecutionContextTest {
         AtomicInteger callCount = new AtomicInteger(0);
         EnsembleListener l1 = new EnsembleListener() {
             @Override
-            public void onTaskStart(TaskStartEvent event) { callCount.incrementAndGet(); }
+            public void onTaskStart(TaskStartEvent event) {
+                callCount.incrementAndGet();
+            }
         };
         EnsembleListener l2 = new EnsembleListener() {
             @Override
-            public void onTaskStart(TaskStartEvent event) { callCount.incrementAndGet(); }
+            public void onTaskStart(TaskStartEvent event) {
+                callCount.incrementAndGet();
+            }
         };
 
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l1, l2));
@@ -148,7 +151,9 @@ class ExecutionContextTest {
     void fireTaskStart_listenerExceptionDoesNotPropagate() {
         EnsembleListener throwing = new EnsembleListener() {
             @Override
-            public void onTaskStart(TaskStartEvent event) { throw new RuntimeException("listener boom"); }
+            public void onTaskStart(TaskStartEvent event) {
+                throw new RuntimeException("listener boom");
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
         TaskStartEvent event = new TaskStartEvent("task", "Agent", 1, 1);
@@ -162,11 +167,15 @@ class ExecutionContextTest {
         AtomicInteger callCount = new AtomicInteger(0);
         EnsembleListener throwing = new EnsembleListener() {
             @Override
-            public void onTaskStart(TaskStartEvent event) { throw new RuntimeException("boom"); }
+            public void onTaskStart(TaskStartEvent event) {
+                throw new RuntimeException("boom");
+            }
         };
         EnsembleListener counting = new EnsembleListener() {
             @Override
-            public void onTaskStart(TaskStartEvent event) { callCount.incrementAndGet(); }
+            public void onTaskStart(TaskStartEvent event) {
+                callCount.incrementAndGet();
+            }
         };
 
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing, counting));
@@ -180,7 +189,9 @@ class ExecutionContextTest {
         AtomicInteger callCount = new AtomicInteger(0);
         EnsembleListener l = new EnsembleListener() {
             @Override
-            public void onTaskComplete(TaskCompleteEvent event) { callCount.incrementAndGet(); }
+            public void onTaskComplete(TaskCompleteEvent event) {
+                callCount.incrementAndGet();
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
 
@@ -201,7 +212,9 @@ class ExecutionContextTest {
     void fireTaskComplete_listenerExceptionDoesNotPropagate() {
         EnsembleListener throwing = new EnsembleListener() {
             @Override
-            public void onTaskComplete(TaskCompleteEvent event) { throw new RuntimeException("boom"); }
+            public void onTaskComplete(TaskCompleteEvent event) {
+                throw new RuntimeException("boom");
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
         TaskOutput output = TaskOutput.builder()
@@ -222,7 +235,9 @@ class ExecutionContextTest {
         AtomicInteger callCount = new AtomicInteger(0);
         EnsembleListener l = new EnsembleListener() {
             @Override
-            public void onTaskFailed(TaskFailedEvent event) { callCount.incrementAndGet(); }
+            public void onTaskFailed(TaskFailedEvent event) {
+                callCount.incrementAndGet();
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
 
@@ -236,7 +251,9 @@ class ExecutionContextTest {
     void fireTaskFailed_listenerExceptionDoesNotPropagate() {
         EnsembleListener throwing = new EnsembleListener() {
             @Override
-            public void onTaskFailed(TaskFailedEvent event) { throw new RuntimeException("meta-boom"); }
+            public void onTaskFailed(TaskFailedEvent event) {
+                throw new RuntimeException("meta-boom");
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
 
@@ -250,7 +267,9 @@ class ExecutionContextTest {
         AtomicInteger callCount = new AtomicInteger(0);
         EnsembleListener l = new EnsembleListener() {
             @Override
-            public void onToolCall(ToolCallEvent event) { callCount.incrementAndGet(); }
+            public void onToolCall(ToolCallEvent event) {
+                callCount.incrementAndGet();
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
 
@@ -263,7 +282,9 @@ class ExecutionContextTest {
     void fireToolCall_listenerExceptionDoesNotPropagate() {
         EnsembleListener throwing = new EnsembleListener() {
             @Override
-            public void onToolCall(ToolCallEvent event) { throw new RuntimeException("boom"); }
+            public void onToolCall(ToolCallEvent event) {
+                throw new RuntimeException("boom");
+            }
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
 

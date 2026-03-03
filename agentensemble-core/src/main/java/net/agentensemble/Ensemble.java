@@ -175,8 +175,8 @@ public class Ensemble {
             }
 
             // Step 4: Build execution context -- bundles memory, verbosity, and listeners
-            ExecutionContext executionContext = ExecutionContext.of(
-                    memoryContext, verbose, listeners != null ? listeners : List.of());
+            ExecutionContext executionContext =
+                    ExecutionContext.of(memoryContext, verbose, listeners != null ? listeners : List.of());
 
             // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();

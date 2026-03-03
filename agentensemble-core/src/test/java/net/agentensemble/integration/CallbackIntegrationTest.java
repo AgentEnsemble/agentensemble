@@ -104,12 +104,7 @@ class CallbackIntegrationTest {
         var t = task("Research AI trends", agent);
 
         List<TaskStartEvent> events = new ArrayList<>();
-        Ensemble.builder()
-                .agent(agent)
-                .task(t)
-                .onTaskStart(events::add)
-                .build()
-                .run();
+        Ensemble.builder().agent(agent).task(t).onTaskStart(events::add).build().run();
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).taskDescription()).isEqualTo("Research AI trends");
@@ -324,7 +319,9 @@ class CallbackIntegrationTest {
         var output = Ensemble.builder()
                 .agent(agent)
                 .task(t)
-                .onTaskStart(event -> { throw new RuntimeException("Listener boom"); })
+                .onTaskStart(event -> {
+                    throw new RuntimeException("Listener boom");
+                })
                 .onTaskStart(event -> secondListenerCalled.set(true))
                 .build()
                 .run();

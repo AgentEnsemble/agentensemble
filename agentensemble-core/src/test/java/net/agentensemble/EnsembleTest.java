@@ -291,14 +291,16 @@ class EnsembleTest {
     @Test
     void testOnTaskComplete_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).onTaskComplete(e -> {}).build();
+        var ensemble =
+                Ensemble.builder().agent(researcher).onTaskComplete(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
     @Test
     void testOnTaskFailed_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).onTaskFailed(e -> {}).build();
+        var ensemble =
+                Ensemble.builder().agent(researcher).onTaskFailed(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
