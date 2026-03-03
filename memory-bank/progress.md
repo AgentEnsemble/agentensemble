@@ -114,11 +114,17 @@
 
 ### Phase 7: Advanced Features (Issue #20 -- decomposed into sub-issues)
 
-- [ ] Issue #57 (v0.7.0): Callbacks/Event Listeners + ExecutionContext refactor
-  - ExecutionContext bundles MemoryContext + verbose + listeners
-  - WorkflowExecutor.execute() refactored to accept ExecutionContext
-  - EnsembleListener interface: onTaskStart, onTaskComplete, onToolCall
-  - Event records: TaskStartEvent, TaskCompleteEvent, ToolCallEvent
+- [x] Issue #57 (v0.7.0): Callbacks/Event Listeners + ExecutionContext refactor -- feature/57-callbacks-execution-context (499 tests, +59)
+  - `ExecutionContext`: immutable value bundling MemoryContext + verbose + listeners
+  - `WorkflowExecutor.execute()`: accepts `ExecutionContext` instead of `(boolean, MemoryContext)`
+  - `AgentExecutor`: 3 overloads -> 2; fires `ToolCallEvent` after each tool call
+  - `ToolResolver`: extracted from `AgentExecutor` (package-private)
+  - `DelegationContext`: replaced memoryContext+verbose with `ExecutionContext`
+  - `EnsembleListener` interface: onTaskStart, onTaskComplete, onTaskFailed, onToolCall
+  - Event records: `TaskStartEvent`, `TaskCompleteEvent`, `TaskFailedEvent`, `ToolCallEvent`
+  - `Ensemble` builder: `.listener()`, `.onTaskStart()`, `.onTaskComplete()`, `.onTaskFailed()`, `.onToolCall()`
+  - New tests: ExecutionContextTest(20), EnsembleListenerTest(10), ToolResolverTest(10), CallbackIntegrationTest(14)
+  - Docs: `guides/callbacks.md`, roadmap Phase 7 COMPLETE, mkdocs.yml updated
 - [ ] Issue #58 (v0.8.0): Guardrails: Pre/post execution validation
   - InputGuardrail / OutputGuardrail functional interfaces
   - GuardrailResult, GuardrailViolationException
@@ -140,11 +146,11 @@
 
 ## Current Status
 
-**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged; examples now runnable; Issue #20 planned
-**Total tests**: 440 passing on main
-**Current version**: 0.6.0-SNAPSHOT (main)
+**Phase**: Phase 7 in progress -- Issue #57 (callbacks) done on feature branch; PR pending
+**Total tests**: 499 passing on feature/57-callbacks-execution-context (440 on main)
+**Current version**: 0.6.0-SNAPSHOT (main); v0.7.0 targeting after PR merge
 **Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
-**Next action**: Release v0.6.0, then Issue #42 (Execution Metrics), then Issue #57 (v0.7.0)
+**Next action**: PR for Issue #57, then v0.7.0 release, then Issue #42 (Execution Metrics)
 
 ## Known Issues
 

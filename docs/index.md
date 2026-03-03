@@ -20,11 +20,12 @@ AgentEnsemble is an open-source Java 21 framework for orchestrating teams of AI 
 |---|---|
 | [Agents](guides/agents.md) | Create and configure agents |
 | [Tasks](guides/tasks.md) | Define tasks, expected outputs, and context |
-| [Workflows](guides/workflows.md) | Sequential and hierarchical execution strategies |
+| [Workflows](guides/workflows.md) | Sequential, hierarchical, and parallel execution strategies |
 | [Tools](guides/tools.md) | Extend agents with custom tools |
 | [Memory](guides/memory.md) | Short-term, long-term, and entity memory |
 | [Delegation](guides/delegation.md) | Agent-to-agent delegation |
 | [Error Handling](guides/error-handling.md) | Exceptions, partial results, recovery patterns |
+| [Callbacks](guides/callbacks.md) | Task and tool lifecycle event listeners |
 | [Logging](guides/logging.md) | SLF4J logging, MDC keys, and configuration |
 | [Template Variables](guides/template-variables.md) | Dynamic task descriptions |
 
@@ -48,7 +49,10 @@ AgentEnsemble is an open-source Java 21 framework for orchestrating teams of AI 
 |---|---|
 | [Research and Writer](examples/research-writer.md) | Sequential two-agent research and writing pipeline |
 | [Hierarchical Team](examples/hierarchical-team.md) | Manager-led team with automatic task delegation |
+| [Parallel Workflow](examples/parallel-workflow.md) | Concurrent independent tasks with a dependency graph |
 | [Memory Across Runs](examples/memory-across-runs.md) | Long-term memory persisted across ensemble runs |
+| [Structured Output](examples/structured-output.md) | Typed JSON output parsed into Java records |
+| [Callbacks](examples/callbacks.md) | Observing task and tool lifecycle events |
 
 ---
 

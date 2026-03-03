@@ -29,6 +29,7 @@ application {
 //   ./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla"
 //   ./gradlew :agentensemble-examples:runMemoryAcrossRuns
 //   ./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
+//   ./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -36,6 +37,7 @@ mapOf(
     "runParallelWorkflow" to "net.agentensemble.examples.ParallelCompetitiveIntelligenceExample",
     "runMemoryAcrossRuns" to "net.agentensemble.examples.MemoryAcrossRunsExample",
     "runStructuredOutput" to "net.agentensemble.examples.StructuredOutputExample",
+    "runCallbacks" to "net.agentensemble.examples.CallbackExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

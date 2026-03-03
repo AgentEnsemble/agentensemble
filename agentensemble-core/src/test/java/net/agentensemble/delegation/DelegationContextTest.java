@@ -8,7 +8,7 @@ import dev.langchain4j.model.chat.ChatModel;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +18,8 @@ class DelegationContextTest {
     private Agent agentA;
     private Agent agentB;
     private AgentExecutor executor;
-    private MemoryContext memoryContext;
+    private ExecutionContext executionContext;
+    private ExecutionContext verboseContext;
 
     @BeforeEach
     void setUp() {
@@ -30,7 +31,8 @@ class DelegationContextTest {
                 .build();
         agentB = Agent.builder().role("Writer").goal("Write things").llm(model).build();
         executor = mock(AgentExecutor.class);
-        memoryContext = MemoryContext.disabled();
+        executionContext = ExecutionContext.disabled();
+        verboseContext = ExecutionContext.of(executionContext.memoryContext(), true);
     }
 
     // ========================
@@ -40,61 +42,59 @@ class DelegationContextTest {
     @Test
     void create_setsAllFields() {
         List<Agent> peers = List.of(agentA, agentB);
-        DelegationContext ctx = DelegationContext.create(peers, 3, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(peers, 3, executionContext, executor);
 
         assertThat(ctx.getPeerAgents()).containsExactly(agentA, agentB);
         assertThat(ctx.getMaxDepth()).isEqualTo(3);
         assertThat(ctx.getCurrentDepth()).isEqualTo(0);
-        assertThat(ctx.getMemoryContext()).isSameAs(memoryContext);
+        assertThat(ctx.getExecutionContext()).isSameAs(executionContext);
         assertThat(ctx.getAgentExecutor()).isSameAs(executor);
-        assertThat(ctx.isVerbose()).isFalse();
     }
 
     @Test
-    void create_withVerboseTrue() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 2, memoryContext, executor, true);
-        assertThat(ctx.isVerbose()).isTrue();
+    void create_withVerboseContext_executionContextIsVerbose() {
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 2, verboseContext, executor);
+        assertThat(ctx.getExecutionContext().isVerbose()).isTrue();
     }
 
     @Test
     void create_copysPeerList_immutably() {
         List<Agent> peers = List.of(agentA);
-        DelegationContext ctx = DelegationContext.create(peers, 2, memoryContext, executor, false);
-        // The returned list must not be the same mutable reference
+        DelegationContext ctx = DelegationContext.create(peers, 2, executionContext, executor);
         assertThat(ctx.getPeerAgents()).containsExactly(agentA);
     }
 
     @Test
     void create_throwsWhenPeerListIsNull() {
-        assertThatThrownBy(() -> DelegationContext.create(null, 3, memoryContext, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(null, 3, executionContext, executor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("peerAgents");
     }
 
     @Test
     void create_throwsWhenExecutorIsNull() {
-        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, memoryContext, null, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, executionContext, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("agentExecutor");
     }
 
     @Test
-    void create_throwsWhenMemoryContextIsNull() {
-        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, null, executor, false))
+    void create_throwsWhenExecutionContextIsNull() {
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, null, executor))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("memoryContext");
+                .hasMessageContaining("executionContext");
     }
 
     @Test
     void create_throwsWhenMaxDepthIsZero() {
-        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 0, memoryContext, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 0, executionContext, executor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxDepth");
     }
 
     @Test
     void create_throwsWhenMaxDepthIsNegative() {
-        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), -1, memoryContext, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), -1, executionContext, executor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxDepth");
     }
@@ -105,20 +105,20 @@ class DelegationContextTest {
 
     @Test
     void isAtLimit_falseWhenDepthBelowMax() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 3, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 3, executionContext, executor);
         assertThat(ctx.isAtLimit()).isFalse();
     }
 
     @Test
     void isAtLimit_trueWhenDepthEqualsMax() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 1, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 1, executionContext, executor);
         DelegationContext descended = ctx.descend();
         assertThat(descended.isAtLimit()).isTrue();
     }
 
     @Test
     void isAtLimit_trueWhenDepthExceedsMax() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 1, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 1, executionContext, executor);
         DelegationContext descended = ctx.descend();
         // Another descend beyond limit still reports at limit (depth = 2, max = 1)
         DelegationContext deeper = descended.descend();
@@ -131,7 +131,7 @@ class DelegationContextTest {
 
     @Test
     void descend_incrementsDepthByOne() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 3, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 3, executionContext, executor);
         DelegationContext child = ctx.descend();
 
         assertThat(child.getCurrentDepth()).isEqualTo(1);
@@ -141,19 +141,19 @@ class DelegationContextTest {
     @Test
     void descend_preservesAllOtherFields() {
         List<Agent> peers = List.of(agentA, agentB);
-        DelegationContext ctx = DelegationContext.create(peers, 5, memoryContext, executor, true);
+        DelegationContext ctx = DelegationContext.create(peers, 5, verboseContext, executor);
         DelegationContext child = ctx.descend();
 
         assertThat(child.getPeerAgents()).containsExactlyElementsOf(peers);
         assertThat(child.getMaxDepth()).isEqualTo(5);
-        assertThat(child.getMemoryContext()).isSameAs(memoryContext);
+        assertThat(child.getExecutionContext()).isSameAs(verboseContext);
         assertThat(child.getAgentExecutor()).isSameAs(executor);
-        assertThat(child.isVerbose()).isTrue();
+        assertThat(child.getExecutionContext().isVerbose()).isTrue();
     }
 
     @Test
     void descend_chainedThreeTimes_depthIsThree() {
-        DelegationContext ctx = DelegationContext.create(List.of(agentA), 5, memoryContext, executor, false);
+        DelegationContext ctx = DelegationContext.create(List.of(agentA), 5, executionContext, executor);
         DelegationContext three = ctx.descend().descend().descend();
         assertThat(three.getCurrentDepth()).isEqualTo(3);
     }

@@ -79,6 +79,43 @@
 
 ---
 
+## [0.7.0] - 2026-03-03 (Issue #57, feature/57-callbacks-execution-context)
+
+### Added
+- `net.agentensemble.execution.ExecutionContext`: immutable value bundling `MemoryContext`,
+  `verbose`, and `List<EnsembleListener>`; factory methods `of(mc, verbose, listeners)`,
+  `of(mc, verbose)`, `disabled()`; fire methods catch per-listener exceptions at WARN
+- `net.agentensemble.callback` package: `EnsembleListener` interface (4 default no-op methods),
+  `TaskStartEvent`, `TaskCompleteEvent`, `TaskFailedEvent`, `ToolCallEvent` records
+- `net.agentensemble.agent.ToolResolver`: package-private class extracted from `AgentExecutor`;
+  resolves mixed `AgentTool` + `@Tool`-annotated object lists into `ResolvedTools`
+- `Ensemble.listeners` field (`@Singular List<EnsembleListener>`); builder convenience
+  methods `onTaskStart(Consumer)`, `onTaskComplete(Consumer)`, `onTaskFailed(Consumer)`,
+  `onToolCall(Consumer)` -- each wraps lambda in anonymous `EnsembleListener`
+- `docs/guides/callbacks.md`: new guide (quick start, event types, thread safety, examples)
+- 59 new tests (440 -> 499): `ExecutionContextTest` (20), `EnsembleListenerTest` (10),
+  `ToolResolverTest` (10), `CallbackIntegrationTest` (14), `EnsembleTest` (+7 listener builder)
+
+### Changed
+- `WorkflowExecutor.execute()`: `(List<Task>, boolean, MemoryContext)` -> `(List<Task>, ExecutionContext)`
+- `AgentExecutor`: 3 overloads -> 2; fires `ToolCallEvent` after each tool execution in ReAct loop
+- `DelegationContext`: replaced `memoryContext` + `verbose` with `ExecutionContext`;
+  `create()`: `(peers, maxDepth, executionContext, executor)`; `getExecutionContext()` replaces old getters
+- `DelegateTaskTool` constructor: `(agents, executor, executionContext, delegationContext)`
+- `AgentDelegationTool.delegate()`: uses `delegationContext.getExecutionContext()` for execute call
+- `SequentialWorkflowExecutor`, `ParallelWorkflowExecutor`, `HierarchicalWorkflowExecutor`:
+  accept `ExecutionContext`; fire `TaskStartEvent`/`TaskCompleteEvent`/`TaskFailedEvent`
+- `docs/design/13-future-roadmap.md`: Phase 7 marked COMPLETE; renamed old Phase 7 to Phase 8
+- `mkdocs.yml`: Callbacks guide added to Guides nav
+
+### Technical Notes
+- `ExecutionContext.disabled()` is the backward-compat factory for tests and internal callsites
+- `HierarchicalWorkflowExecutor` manager uses disabled memory + same listeners (meta-orchestrator)
+- `ToolResolver` is package-private in `net.agentensemble.agent` (not part of public API)
+- Parallel workflow `TaskStartEvent.taskIndex` is 0 (ordering not guaranteed in parallel)
+
+---
+
 ## [Planned] Issue #20 Advanced Features -- Phase 7 Sub-Issues Created 2026-03-03
 
 ### Architecture Decisions Recorded

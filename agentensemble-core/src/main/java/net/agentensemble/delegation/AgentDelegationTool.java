@@ -141,12 +141,7 @@ public class AgentDelegationTool {
 
             TaskOutput output = delegationContext
                     .getAgentExecutor()
-                    .execute(
-                            delegatedTask,
-                            List.of(),
-                            delegationContext.isVerbose(),
-                            delegationContext.getMemoryContext(),
-                            childCtx);
+                    .execute(delegatedTask, List.of(), delegationContext.getExecutionContext(), childCtx);
 
             delegatedOutputs.add(output);
 

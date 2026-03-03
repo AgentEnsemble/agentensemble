@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
 import java.util.List;
+import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
@@ -259,6 +260,101 @@ class EnsembleTest {
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("not in the ensemble");
+    }
+
+    // ========================
+    // Listener builder
+    // ========================
+
+    @Test
+    void testDefaultListeners_isEmpty() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder().agent(researcher).build();
+        assertThat(ensemble.getListeners()).isEmpty();
+    }
+
+    @Test
+    void testListener_addsToList() {
+        var researcher = agent("Researcher");
+        EnsembleListener listener = new EnsembleListener() {};
+        var ensemble = Ensemble.builder().agent(researcher).listener(listener).build();
+        assertThat(ensemble.getListeners()).containsExactly(listener);
+    }
+
+    @Test
+    void testOnTaskStart_addsListenerToList() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder().agent(researcher).onTaskStart(e -> {}).build();
+        assertThat(ensemble.getListeners()).hasSize(1);
+    }
+
+    @Test
+    void testOnTaskComplete_addsListenerToList() {
+        var researcher = agent("Researcher");
+        var ensemble =
+                Ensemble.builder().agent(researcher).onTaskComplete(e -> {}).build();
+        assertThat(ensemble.getListeners()).hasSize(1);
+    }
+
+    @Test
+    void testOnTaskFailed_addsListenerToList() {
+        var researcher = agent("Researcher");
+        var ensemble =
+                Ensemble.builder().agent(researcher).onTaskFailed(e -> {}).build();
+        assertThat(ensemble.getListeners()).hasSize(1);
+    }
+
+    @Test
+    void testOnToolCall_addsListenerToList() {
+        var researcher = agent("Researcher");
+        var ensemble = Ensemble.builder().agent(researcher).onToolCall(e -> {}).build();
+        assertThat(ensemble.getListeners()).hasSize(1);
+    }
+
+    @Test
+    void testMultipleListeners_allAccumulate() {
+        var researcher = agent("Researcher");
+        EnsembleListener l1 = new EnsembleListener() {};
+        EnsembleListener l2 = new EnsembleListener() {};
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .listener(l1)
+                .listener(l2)
+                .onTaskStart(e -> {})
+                .build();
+        assertThat(ensemble.getListeners()).hasSize(3);
+    }
+
+    // ========================
+    // Null handler guard tests
+    // ========================
+
+    @Test
+    void testOnTaskStart_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskStart(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnTaskComplete_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskComplete(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnTaskFailed_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskFailed(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnToolCall_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onToolCall(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
     }
 
     // ========================
