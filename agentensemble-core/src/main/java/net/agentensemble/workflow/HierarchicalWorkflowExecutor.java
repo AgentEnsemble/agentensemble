@@ -13,8 +13,6 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.exception.AgentExecutionException;
-import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
@@ -134,7 +132,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             TaskOutput managerOutput;
             try {
                 managerOutput = agentExecutor.execute(managerTask, List.of(), managerContext);
-            } catch (AgentExecutionException | MaxIterationsExceededException e) {
+            } catch (Exception e) {
                 Duration managerDuration = Duration.between(managerStart, Instant.now());
                 // Wrap with partial outputs so callers can recover completed worker results
                 List<TaskOutput> partial = delegateTool.getDelegatedOutputs();

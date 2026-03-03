@@ -326,6 +326,38 @@ class EnsembleTest {
     }
 
     // ========================
+    // Null handler guard tests
+    // ========================
+
+    @Test
+    void testOnTaskStart_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskStart(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnTaskComplete_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskComplete(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnTaskFailed_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onTaskFailed(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    @Test
+    void testOnToolCall_nullHandler_throwsNullPointerException() {
+        assertThatThrownBy(() -> Ensemble.builder().onToolCall(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("handler");
+    }
+
+    // ========================
     // Multi-task scenarios
     // ========================
 

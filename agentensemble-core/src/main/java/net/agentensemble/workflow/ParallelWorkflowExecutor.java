@@ -155,6 +155,13 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         DelegationContext delegationContext =
                 DelegationContext.create(agents, maxDelegationDepth, executionContext, agentExecutor);
 
+        // Pre-compute 1-based task indices so events carry a stable, deterministic index
+        // that listeners can use to correlate start/complete/fail events per task.
+        IdentityHashMap<Task, Integer> taskIndexMap = new IdentityHashMap<>();
+        for (int i = 0; i < resolvedTasks.size(); i++) {
+            taskIndexMap.put(resolvedTasks.get(i), i + 1);
+        }
+
         // Task outputs in topological completion order (append-only; synchronized for safe concurrent add)
         List<TaskOutput> completionOrder = Collections.synchronizedList(new ArrayList<>());
 
@@ -175,7 +182,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         executionContext,
                         totalTasks,
                         executor,
-                        completionOrder);
+                        completionOrder,
+                        taskIndexMap);
             }
 
             // Wait for all tasks to resolve (complete, fail, or be skipped)
@@ -258,7 +266,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             ExecutionContext executionContext,
             int totalTasks,
             ExecutorService executor,
-            List<TaskOutput> completionOrder) {
+            List<TaskOutput> completionOrder,
+            Map<Task, Integer> taskIndexMap) {
 
         var unused = executor.submit(() -> {
             // Restore caller's MDC in this virtual thread, then add task-specific keys
@@ -266,6 +275,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             MDC.setContextMap(callerMdc);
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
+            int taskIndex = taskIndexMap.getOrDefault(task, 0);
             Instant taskStart = Instant.now();
             try {
                 log.info(
@@ -273,9 +283,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         task.getAgent().getRole(),
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
-                // taskIndex is not meaningful for parallel -- use 0 to indicate "unordered"
                 executionContext.fireTaskStart(new TaskStartEvent(
-                        task.getDescription(), task.getAgent().getRole(), 0, totalTasks));
+                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
 
                 // Collect outputs from completed in-graph dependencies as context
                 List<TaskOutput> contextOutputs = new ArrayList<>();
@@ -300,7 +309,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         output.getToolCallCount());
 
                 executionContext.fireTaskComplete(new TaskCompleteEvent(
-                        task.getDescription(), task.getAgent().getRole(), output, output.getDuration(), 0, totalTasks));
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        output,
+                        output.getDuration(),
+                        taskIndex,
+                        totalTasks));
 
             } catch (Exception e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
@@ -314,7 +328,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
                 // Fire TaskFailedEvent before recording the failure
                 executionContext.fireTaskFailed(new TaskFailedEvent(
-                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, 0, totalTasks));
+                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, taskIndex, totalTasks));
 
                 if (errorStrategy == ParallelErrorStrategy.FAIL_FAST) {
                     // Record the first failure; subsequent failures are ignored
@@ -354,7 +368,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         executionContext,
                         totalTasks,
                         executor,
-                        completionOrder);
+                        completionOrder,
+                        taskIndexMap);
             }
         });
     }
@@ -386,7 +401,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             ExecutionContext executionContext,
             int totalTasks,
             ExecutorService executor,
-            List<TaskOutput> completionOrder) {
+            List<TaskOutput> completionOrder,
+            Map<Task, Integer> taskIndexMap) {
 
         for (Task dependent : graph.getDependents(resolvedTask)) {
             int remaining = pendingDepCounts.get(dependent).decrementAndGet();
@@ -423,7 +439,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         executionContext,
                         totalTasks,
                         executor,
-                        completionOrder);
+                        completionOrder,
+                        taskIndexMap);
             } else {
                 // All deps succeeded and no blocking failure -- submit this task
                 submitTask(
@@ -440,7 +457,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         executionContext,
                         totalTasks,
                         executor,
-                        completionOrder);
+                        completionOrder,
+                        taskIndexMap);
             }
         }
     }

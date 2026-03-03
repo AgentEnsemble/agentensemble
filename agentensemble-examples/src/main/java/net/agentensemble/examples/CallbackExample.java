@@ -16,8 +16,6 @@ import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.workflow.Workflow;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Demonstrates the callback and event listener API.
@@ -37,8 +35,6 @@ import org.slf4j.LoggerFactory;
  *   ./gradlew :agentensemble-examples:runCallbacks --args="quantum computing"
  */
 public class CallbackExample {
-
-    private static final Logger log = LoggerFactory.getLogger(CallbackExample.class);
 
     // ========================
     // Full listener implementation

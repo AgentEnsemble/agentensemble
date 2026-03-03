@@ -197,7 +197,14 @@ Ensemble.builder()
 
 ### Collecting Metrics
 
+The example below uses `ArrayList`, which is safe for `Workflow.SEQUENTIAL` and
+`Workflow.HIERARCHICAL`. For `Workflow.PARALLEL`, callbacks fire from concurrent virtual
+threads -- use thread-safe collections instead (see the [Thread Safety](#thread-safety)
+section above).
+
 ```java
+// Safe for sequential/hierarchical workflows. For parallel, replace ArrayList
+// with ConcurrentLinkedQueue or CopyOnWriteArrayList.
 List<Duration> taskDurations = new ArrayList<>();
 List<String> toolsUsed = new ArrayList<>();
 

@@ -203,7 +203,12 @@ ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
 
 ```java
 // Full interface implementation
-ensemble.listener(new MyMetricsListener())
+Ensemble.builder()
+    .agent(researcher)
+    .task(researchTask)
+    .listener(new MyMetricsListener())
+    .build()
+    .run();
 
 // Lambda convenience methods
 Ensemble.builder()

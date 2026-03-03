@@ -9,6 +9,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -462,6 +463,7 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder onTaskStart(Consumer<TaskStartEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
             return listener(new EnsembleListener() {
                 @Override
                 public void onTaskStart(TaskStartEvent event) {
@@ -477,6 +479,7 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder onTaskComplete(Consumer<TaskCompleteEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
             return listener(new EnsembleListener() {
                 @Override
                 public void onTaskComplete(TaskCompleteEvent event) {
@@ -492,6 +495,7 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder onTaskFailed(Consumer<TaskFailedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
             return listener(new EnsembleListener() {
                 @Override
                 public void onTaskFailed(TaskFailedEvent event) {
@@ -507,6 +511,7 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder onToolCall(Consumer<ToolCallEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
             return listener(new EnsembleListener() {
                 @Override
                 public void onToolCall(ToolCallEvent event) {
