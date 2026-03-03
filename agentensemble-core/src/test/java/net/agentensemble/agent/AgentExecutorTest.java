@@ -17,6 +17,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
@@ -59,7 +60,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = executor.execute(task, List.of(), false);
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Research findings here.");
         assertThat(output.getAgentRole()).isEqualTo("Researcher");
@@ -81,7 +82,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        executor.execute(task, List.of(), false);
+        executor.execute(task, List.of(), ExecutionContext.disabled());
 
         verify(mockLlm).chat(any(ChatRequest.class));
     }
@@ -115,7 +116,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = executor.execute(task, List.of(), false);
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Based on search: Top AI trends 2026...");
         assertThat(output.getToolCallCount()).isEqualTo(1);
@@ -147,7 +148,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = executor.execute(task, List.of(), false);
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
 
         // Execution should NOT throw -- error fed back to LLM as tool result
         assertThat(output.getRaw()).contains("best answer");
@@ -182,7 +183,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        assertThatThrownBy(() -> executor.execute(task, List.of(), false))
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
                 .isInstanceOf(MaxIterationsExceededException.class)
                 .satisfies(ex -> {
                     var e = (MaxIterationsExceededException) ex;
@@ -211,7 +212,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        assertThatThrownBy(() -> executor.execute(task, List.of(), false))
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
                 .isInstanceOf(AgentExecutionException.class)
                 .satisfies(ex -> {
                     var e = (AgentExecutionException) ex;
@@ -237,7 +238,7 @@ class AgentExecutorTest {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = executor.execute(task, List.of(), false);
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
 
         assertThat(output.getRaw()).isEmpty();
     }
@@ -270,7 +271,7 @@ class AgentExecutorTest {
                 .toolCallCount(0)
                 .build();
 
-        TaskOutput output = executor.execute(task, List.of(contextOutput), false);
+        TaskOutput output = executor.execute(task, List.of(contextOutput), ExecutionContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Article written.");
         // Context is passed to LLM -- verified by the ChatRequest containing context

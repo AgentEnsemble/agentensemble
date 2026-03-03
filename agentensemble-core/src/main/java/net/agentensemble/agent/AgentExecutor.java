@@ -1,8 +1,6 @@
 package net.agentensemble.agent;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -13,24 +11,21 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.OutputParsingException;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.output.JsonSchemaGenerator;
 import net.agentensemble.output.ParseResult;
 import net.agentensemble.output.StructuredOutputParser;
 import net.agentensemble.task.TaskOutput;
-import net.agentensemble.tool.AgentTool;
-import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,9 +35,12 @@ import org.slf4j.LoggerFactory;
  * Manages the ReAct-style tool-calling loop: the agent reasons, optionally calls
  * tools, incorporates results, and eventually produces a final text answer.
  *
- * When a {@link MemoryContext} is provided, relevant memories are injected into
- * the user prompt before execution and the task output is recorded into memory
- * after execution.
+ * When the {@link ExecutionContext} carries an active {@link net.agentensemble.memory.MemoryContext},
+ * relevant memories are injected into the user prompt before execution and the task output
+ * is recorded into memory after execution.
+ *
+ * When the {@link ExecutionContext} carries {@link net.agentensemble.callback.EnsembleListener}
+ * instances, a {@link ToolCallEvent} is fired after each tool execution in the ReAct loop.
  *
  * Stateless -- all state is held in local variables during execution.
  */
@@ -57,38 +55,18 @@ public class AgentExecutor {
     private static final int LOG_TRUNCATE_LENGTH = 200;
 
     /**
-     * Execute the given task using the agent specified in the task, without memory.
-     *
-     * @param task           the task to execute
-     * @param contextOutputs outputs from prior tasks to include as context
-     * @param verbose        when true, prompts and responses are logged at INFO level
-     * @return the task output
-     * @throws AgentExecutionException        if the LLM throws an error
-     * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
-     */
-    public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose) {
-        return execute(task, contextOutputs, verbose, MemoryContext.disabled());
-    }
-
-    /**
      * Execute the given task using the agent specified in the task.
      *
-     * When memoryContext is active, relevant memories are injected into the
-     * user prompt before execution and the resulting TaskOutput is recorded
-     * into memory after execution completes.
-     *
-     * @param task           the task to execute
-     * @param contextOutputs outputs from prior tasks to include as context
-     * @param verbose        when true, prompts and responses are logged at INFO level
-     * @param memoryContext  runtime memory state; use {@link MemoryContext#disabled()}
-     *                       when memory is not configured
+     * @param task             the task to execute
+     * @param contextOutputs   outputs from prior tasks to include as context
+     * @param executionContext execution context bundling memory, verbose flag, and listeners;
+     *                         if null, {@link ExecutionContext#disabled()} is used
      * @return the task output
      * @throws AgentExecutionException        if the LLM throws an error
      * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
      */
-    public TaskOutput execute(
-            Task task, List<TaskOutput> contextOutputs, boolean verbose, MemoryContext memoryContext) {
-        return execute(task, contextOutputs, verbose, memoryContext, null);
+    public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, ExecutionContext executionContext) {
+        return execute(task, contextOutputs, executionContext, null);
     }
 
     /**
@@ -97,14 +75,12 @@ public class AgentExecutor {
      *
      * When {@code delegationContext} is non-null and the agent has
      * {@code allowDelegation = true}, an {@link AgentDelegationTool} is auto-injected
-     * into the agent's effective tool list for this execution. The tool allows the agent
-     * to delegate subtasks to peer agents during its ReAct loop.
+     * into the agent's effective tool list for this execution.
      *
      * @param task              the task to execute
      * @param contextOutputs    outputs from prior tasks to include as context
-     * @param verbose           when true, prompts and responses are logged at INFO level
-     * @param memoryContext     runtime memory state; use {@link MemoryContext#disabled()}
-     *                          when memory is not configured
+     * @param executionContext  execution context bundling memory, verbose flag, and listeners;
+     *                          if null, {@link ExecutionContext#disabled()} is used
      * @param delegationContext delegation state for this run; pass {@code null} when
      *                          delegation is not enabled for this ensemble
      * @return the task output
@@ -114,14 +90,15 @@ public class AgentExecutor {
     public TaskOutput execute(
             Task task,
             List<TaskOutput> contextOutputs,
-            boolean verbose,
-            MemoryContext memoryContext,
+            ExecutionContext executionContext,
             DelegationContext delegationContext) {
-        // Normalize null memoryContext to disabled -- callers should prefer MemoryContext.disabled()
-        // but defensive normalization here prevents NPE if null is passed directly.
-        if (memoryContext == null) {
-            memoryContext = MemoryContext.disabled();
+
+        // Normalize null executionContext defensively
+        if (executionContext == null) {
+            executionContext = ExecutionContext.disabled();
         }
+
+        boolean verbose = executionContext.isVerbose();
 
         Instant startTime = Instant.now();
         Agent agent = task.getAgent();
@@ -129,7 +106,8 @@ public class AgentExecutor {
 
         // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
-        String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, memoryContext);
+        String userPrompt =
+                AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
 
         if (effectiveVerbose) {
             log.info("System prompt:\n{}", systemPrompt);
@@ -149,14 +127,15 @@ public class AgentExecutor {
                 agent.isAllowDelegation());
 
         // Resolve tools
-        ResolvedTools resolvedTools = resolveTools(effectiveTools);
+        ToolResolver.ResolvedTools resolvedTools = ToolResolver.resolve(effectiveTools);
         AtomicInteger toolCallCounter = new AtomicInteger(0);
 
         String finalResponse;
 
         try {
             if (resolvedTools.hasTools()) {
-                finalResponse = executeWithTools(agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter);
+                finalResponse = executeWithTools(
+                        agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter, executionContext);
             } else {
                 finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt);
                 log.debug("Agent '{}' completed (no tools)", agent.getRole());
@@ -207,7 +186,7 @@ public class AgentExecutor {
                 .build();
 
         // Record this output in memory (no-op when memory is disabled)
-        memoryContext.record(output);
+        executionContext.memoryContext().record(output);
 
         return output;
     }
@@ -252,8 +231,9 @@ public class AgentExecutor {
             Task task,
             String systemPrompt,
             String userPrompt,
-            ResolvedTools resolvedTools,
-            AtomicInteger toolCallCounter) {
+            ToolResolver.ResolvedTools resolvedTools,
+            AtomicInteger toolCallCounter,
+            ExecutionContext executionContext) {
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
@@ -298,7 +278,7 @@ public class AgentExecutor {
                         toolCallCounter.incrementAndGet();
                         Instant toolStart = Instant.now();
                         String toolResult = resolvedTools.execute(toolRequest);
-                        long toolMs = Duration.between(toolStart, Instant.now()).toMillis();
+                        Duration toolDuration = Duration.between(toolStart, Instant.now());
 
                         if (toolResult != null && toolResult.startsWith("Error:")) {
                             log.warn(
@@ -306,15 +286,23 @@ public class AgentExecutor {
                                     toolRequest.name(),
                                     truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
                                     truncate(toolResult, LOG_TRUNCATE_LENGTH),
-                                    toolMs);
+                                    toolDuration.toMillis());
                         } else {
                             log.info(
                                     "Tool call: {}({}) -> {} [{}ms]",
                                     toolRequest.name(),
                                     truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
                                     truncate(toolResult, LOG_TRUNCATE_LENGTH),
-                                    toolMs);
+                                    toolDuration.toMillis());
                         }
+
+                        // Fire ToolCallEvent to all registered listeners
+                        executionContext.fireToolCall(new ToolCallEvent(
+                                toolRequest.name(),
+                                toolRequest.arguments(),
+                                toolResult,
+                                agent.getRole(),
+                                toolDuration));
 
                         messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResult));
                     }
@@ -324,64 +312,6 @@ public class AgentExecutor {
                 // LLM produced a text response -- we're done
                 return aiMessage.text();
             }
-        }
-    }
-
-    // ========================
-    // Tool resolution
-    // ========================
-
-    private ResolvedTools resolveTools(List<Object> tools) {
-        Map<String, AgentTool> agentToolMap = new HashMap<>();
-        Map<String, Object> annotatedObjectMap = new HashMap<>();
-        List<ToolSpecification> allSpecs = new ArrayList<>();
-
-        for (Object tool : tools) {
-            if (tool instanceof AgentTool agentTool) {
-                agentToolMap.put(agentTool.name(), agentTool);
-                allSpecs.add(LangChain4jToolAdapter.toSpecification(agentTool));
-            } else {
-                // @Tool-annotated object
-                List<ToolSpecification> specs = ToolSpecifications.toolSpecificationsFrom(tool);
-                for (ToolSpecification spec : specs) {
-                    annotatedObjectMap.put(spec.name(), tool);
-                }
-                allSpecs.addAll(specs);
-            }
-        }
-
-        return new ResolvedTools(agentToolMap, annotatedObjectMap, allSpecs);
-    }
-
-    // ========================
-    // Inner helper class
-    // ========================
-
-    private record ResolvedTools(
-            Map<String, AgentTool> agentToolMap,
-            Map<String, Object> annotatedObjectMap,
-            List<ToolSpecification> allSpecifications) {
-
-        boolean hasTools() {
-            return !agentToolMap.isEmpty() || !annotatedObjectMap.isEmpty();
-        }
-
-        String execute(ToolExecutionRequest request) {
-            String toolName = request.name();
-
-            // Check AgentTool map first
-            AgentTool agentTool = agentToolMap.get(toolName);
-            if (agentTool != null) {
-                return LangChain4jToolAdapter.execute(agentTool, request.arguments());
-            }
-
-            // Check @Tool-annotated objects
-            Object annotatedObj = annotatedObjectMap.get(toolName);
-            if (annotatedObj != null) {
-                return LangChain4jToolAdapter.executeAnnotatedTool(annotatedObj, toolName, request.arguments());
-            }
-
-            return "Error: Unknown tool '" + toolName + "'";
         }
     }
 
@@ -396,10 +326,10 @@ public class AgentExecutor {
      * is shown the parse error and the required JSON schema and asked to produce a
      * corrected response. If all attempts fail, {@link OutputParsingException} is thrown.
      *
-     * @param agent         the agent that produced the response (used for retry LLM calls)
-     * @param task          the task containing outputType and maxOutputRetries
+     * @param agent           the agent that produced the response (used for retry LLM calls)
+     * @param task            the task containing outputType and maxOutputRetries
      * @param initialResponse the raw LLM response from the main execution path
-     * @param systemPrompt  the system prompt used during the original execution
+     * @param systemPrompt    the system prompt used during the original execution
      * @return the parsed object (never null on success)
      * @throws OutputParsingException if all parse attempts are exhausted
      */

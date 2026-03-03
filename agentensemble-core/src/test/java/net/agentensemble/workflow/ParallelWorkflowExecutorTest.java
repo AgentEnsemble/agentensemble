@@ -18,6 +18,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.ParallelExecutionException;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +93,7 @@ class ParallelWorkflowExecutorTest {
         var agent = agentWithResponse("Worker", "Single task result");
         var t1 = task("Task 1", agent);
 
-        var output = executor().execute(List.of(t1), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(t1), ExecutionContext.disabled());
 
         assertThat(output.getRaw()).isEqualTo("Single task result");
         assertThat(output.getTaskOutputs()).hasSize(1);
@@ -109,7 +110,7 @@ class ParallelWorkflowExecutorTest {
         var t2 = task("Task 2", a2);
         var t3 = task("Task 3", a3);
 
-        var output = executor().execute(List.of(t1, t2, t3), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(t1, t2, t3), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(3);
         assertThat(output.getTaskOutputs())
@@ -126,7 +127,7 @@ class ParallelWorkflowExecutorTest {
         var t2 = taskWithContext("Task B", a2, List.of(t1));
         var t3 = taskWithContext("Task C", a3, List.of(t2));
 
-        var output = executor().execute(List.of(t1, t2, t3), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(t1, t2, t3), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(3);
         // All three tasks must have completed
@@ -146,7 +147,7 @@ class ParallelWorkflowExecutorTest {
         var tc = taskWithContext("Task C", c, List.of(ta));
         var td = taskWithContext("Task D", d, List.of(tb, tc));
 
-        var output = executor().execute(List.of(ta, tb, tc, td), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(ta, tb, tc, td), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(4);
         assertThat(output.getTaskOutputs())
@@ -166,7 +167,7 @@ class ParallelWorkflowExecutorTest {
         var tc = taskWithContext("Task C", c, List.of(ta));
         var td = taskWithContext("Task D", d, List.of(tb, tc));
 
-        var output = executor().execute(List.of(ta, tb, tc, td), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(ta, tb, tc, td), ExecutionContext.disabled());
 
         List<String> roles =
                 output.getTaskOutputs().stream().map(TaskOutput::getAgentRole).toList();
@@ -185,7 +186,7 @@ class ParallelWorkflowExecutorTest {
         var ta = task("Task A", a);
         var tb = taskWithContext("Task B", b, List.of(ta));
 
-        var output = executor().execute(List.of(ta, tb), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
         // The "final" output is the last completed task in topological order
         assertThat(output.getRaw()).isEqualTo("B result");
@@ -198,7 +199,7 @@ class ParallelWorkflowExecutorTest {
         var ta = task("Task A", a);
         var tb = task("Task B", b);
 
-        var output = executor().execute(List.of(ta, tb), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
         // Both tasks run with no tool calls
         assertThat(output.getTotalToolCalls()).isZero();
@@ -216,7 +217,7 @@ class ParallelWorkflowExecutorTest {
         var tBad = task("Bad task", bad);
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
-                        .execute(List.of(tGood, tBad), false, MemoryContext.disabled()))
+                        .execute(List.of(tGood, tBad), ExecutionContext.disabled()))
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
@@ -231,7 +232,7 @@ class ParallelWorkflowExecutorTest {
         var tBad = task("Failing task", bad);
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
-                        .execute(List.of(tBad), false, MemoryContext.disabled()))
+                        .execute(List.of(tBad), ExecutionContext.disabled()))
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
@@ -252,7 +253,7 @@ class ParallelWorkflowExecutorTest {
 
         // No exception should be thrown when all tasks succeed
         var output = executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                .execute(List.of(ta, tb), false, MemoryContext.disabled());
+                .execute(List.of(ta, tb), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(2);
     }
@@ -265,7 +266,7 @@ class ParallelWorkflowExecutorTest {
         var tBad = task("Bad task", bad);
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(tGood, tBad), false, MemoryContext.disabled()))
+                        .execute(List.of(tGood, tBad), ExecutionContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -288,7 +289,7 @@ class ParallelWorkflowExecutorTest {
         var tSkip = taskWithContext("Task Skip", skip, List.of(tBad));
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(ta, tBad, tSkip), false, MemoryContext.disabled()))
+                        .execute(List.of(ta, tBad, tSkip), ExecutionContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -314,7 +315,7 @@ class ParallelWorkflowExecutorTest {
         var tTail = taskWithContext("Task Tail", tail, List.of(tMiddle));
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(tRoot, tMiddle, tTail), false, MemoryContext.disabled()))
+                        .execute(List.of(tRoot, tMiddle, tTail), ExecutionContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -335,7 +336,7 @@ class ParallelWorkflowExecutorTest {
         var t2 = task("Fail 2", bad2);
 
         assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(t1, t2), false, MemoryContext.disabled()))
+                        .execute(List.of(t1, t2), ExecutionContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -358,7 +359,7 @@ class ParallelWorkflowExecutorTest {
         var ta = task("Task A", a);
         var tb = taskWithContext("Task B", b, List.of(ta));
 
-        var output = executor().execute(List.of(ta, tb), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
         // Both tasks ran
         assertThat(output.getTaskOutputs()).hasSize(2);
@@ -386,7 +387,7 @@ class ParallelWorkflowExecutorTest {
         when(memoryContext.queryLongTerm(any())).thenReturn(List.of());
         when(memoryContext.getEntityFacts()).thenReturn(Map.of());
 
-        var output = executor().execute(List.of(ta, tb), false, memoryContext);
+        var output = executor().execute(List.of(ta, tb), ExecutionContext.of(memoryContext, false));
         assertThat(output.getTaskOutputs()).hasSize(2);
     }
 
@@ -419,7 +420,7 @@ class ParallelWorkflowExecutorTest {
         var t1 = task("Task 1", a1);
         var t2 = task("Task 2", a2);
 
-        var output = executor().execute(List.of(t1, t2), false, MemoryContext.disabled());
+        var output = executor().execute(List.of(t1, t2), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(2);
         // Both tasks were invoked

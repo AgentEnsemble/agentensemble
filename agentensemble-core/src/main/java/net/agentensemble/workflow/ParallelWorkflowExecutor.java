@@ -17,11 +17,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ParallelExecutionException;
 import net.agentensemble.exception.TaskExecutionException;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,15 +55,18 @@ import org.slf4j.MDC;
  *       A {@link ParallelExecutionException} is thrown at the end if any tasks failed.</li>
  * </ul>
  *
+ * <strong>Event callbacks:</strong> {@link TaskStartEvent}, {@link TaskCompleteEvent}, and
+ * {@link TaskFailedEvent} are fired via the {@link ExecutionContext}. Listener exceptions
+ * are caught and logged without aborting execution.
+ *
  * <strong>MDC propagation:</strong> The MDC context of the calling thread is captured
  * before tasks are submitted and restored in each virtual thread for consistent structured
  * logging. Each task additionally sets {@code agent.role} in MDC for its duration.
  *
  * <strong>Thread safety:</strong> Virtual threads created by
  * {@link Executors#newVirtualThreadPerTaskExecutor()} are lightweight and do not block
- * OS threads during LLM HTTP calls. Shared state ({@link MemoryContext},
- * {@link DelegationContext}) is accessed concurrently -- see their respective Javadocs
- * for thread-safety guarantees.
+ * OS threads during LLM HTTP calls. {@link ExecutionContext} is immutable. Listener
+ * implementations must be thread-safe when registered with a parallel workflow.
  *
  * Stateless -- all execution state is held in per-invocation local variables.
  */
@@ -95,7 +101,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         if (resolvedTasks.isEmpty()) {
             return EnsembleOutput.builder()
                     .raw("")
@@ -147,7 +153,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Delegation context shared across all tasks in this run
         DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+                DelegationContext.create(agents, maxDelegationDepth, executionContext, agentExecutor);
 
         // Task outputs in topological completion order (append-only; synchronized for safe concurrent add)
         List<TaskOutput> completionOrder = Collections.synchronizedList(new ArrayList<>());
@@ -166,8 +172,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
+                        totalTasks,
                         executor,
                         completionOrder);
             }
@@ -249,8 +255,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
             DelegationContext delegationContext,
-            boolean verbose,
-            MemoryContext memoryContext,
+            ExecutionContext executionContext,
+            int totalTasks,
             ExecutorService executor,
             List<TaskOutput> completionOrder) {
 
@@ -260,11 +266,16 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             MDC.setContextMap(callerMdc);
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
+            Instant taskStart = Instant.now();
             try {
                 log.info(
                         "Task starting (parallel) | Agent: {} | Description: {}",
                         task.getAgent().getRole(),
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+
+                // taskIndex is not meaningful for parallel -- use 0 to indicate "unordered"
+                executionContext.fireTaskStart(
+                        new TaskStartEvent(task.getDescription(), task.getAgent().getRole(), 0, totalTasks));
 
                 // Collect outputs from completed in-graph dependencies as context
                 List<TaskOutput> contextOutputs = new ArrayList<>();
@@ -278,7 +289,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                 }
 
                 TaskOutput output =
-                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
+                        agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
 
                 completedOutputs.put(task, output);
                 completionOrder.add(output);
@@ -289,7 +300,16 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         output.getDuration(),
                         output.getToolCallCount());
 
+                executionContext.fireTaskComplete(new TaskCompleteEvent(
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        output,
+                        output.getDuration(),
+                        0,
+                        totalTasks));
+
             } catch (Exception e) {
+                Duration taskDuration = Duration.between(taskStart, Instant.now());
                 log.error(
                         "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
                         task.getAgent().getRole(),
@@ -297,6 +317,10 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         e.getMessage());
 
                 failedTaskCauses.put(task, e);
+
+                // Fire TaskFailedEvent before recording the failure
+                executionContext.fireTaskFailed(new TaskFailedEvent(
+                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, 0, totalTasks));
 
                 if (errorStrategy == ParallelErrorStrategy.FAIL_FAST) {
                     // Record the first failure; subsequent failures are ignored
@@ -333,8 +357,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
+                        totalTasks,
                         executor,
                         completionOrder);
             }
@@ -365,8 +389,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             AtomicReference<TaskExecutionException> firstFailureRef,
             CountDownLatch latch,
             DelegationContext delegationContext,
-            boolean verbose,
-            MemoryContext memoryContext,
+            ExecutionContext executionContext,
+            int totalTasks,
             ExecutorService executor,
             List<TaskOutput> completionOrder) {
 
@@ -402,8 +426,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
+                        totalTasks,
                         executor,
                         completionOrder);
             } else {
@@ -419,8 +443,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                         firstFailureRef,
                         latch,
                         delegationContext,
-                        verbose,
-                        memoryContext,
+                        executionContext,
+                        totalTasks,
                         executor,
                         completionOrder);
             }

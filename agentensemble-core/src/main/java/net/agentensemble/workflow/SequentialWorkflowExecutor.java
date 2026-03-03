@@ -9,12 +9,15 @@ import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +30,12 @@ import org.slf4j.MDC;
  * that declare a context dependency on it. MDC values (task.index, agent.role)
  * are set for the duration of each task execution to enable structured logging.
  *
- * When a {@link MemoryContext} is active, memory injection and recording are
- * handled transparently by {@link AgentExecutor}.
+ * When the {@link ExecutionContext} carries an active memory context, memory
+ * injection and recording are handled transparently by {@link AgentExecutor}.
+ *
+ * When the {@link ExecutionContext} carries registered {@link net.agentensemble.callback.EnsembleListener}
+ * instances, {@link TaskStartEvent}, {@link TaskCompleteEvent}, and {@link TaskFailedEvent}
+ * are fired at the appropriate points in the execution lifecycle.
  *
  * Stateless -- all state is held in local variables.
  */
@@ -62,14 +69,14 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
 
         // Create the delegation context once for the entire run; all agents share it
         DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+                DelegationContext.create(agents, maxDelegationDepth, executionContext, agentExecutor);
 
         for (int i = 0; i < totalTasks; i++) {
             Task task = resolvedTasks.get(i);
@@ -79,6 +86,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             MDC.put(MDC_TASK_INDEX, indexLabel);
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
+            Instant taskStart = Instant.now();
             try {
                 log.info(
                         "Task {}/{} starting | Description: {} | Agent: {}",
@@ -87,6 +95,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
                         task.getAgent().getRole());
 
+                // Fire TaskStartEvent
+                executionContext.fireTaskStart(new TaskStartEvent(
+                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
+
                 // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
                 log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
@@ -94,7 +106,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 // Execute the task with delegation context -- delegation tool is injected
                 // automatically when the agent has allowDelegation=true
                 TaskOutput taskOutput =
-                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
+                        agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
                 completedOutputs.put(task, taskOutput);
 
                 log.info(
@@ -104,16 +116,37 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         taskOutput.getDuration(),
                         taskOutput.getToolCallCount());
 
-                if (verbose) {
+                if (executionContext.isVerbose()) {
                     log.info(
-                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
+                            "Task {}/{} output preview: {}",
+                            taskIndex,
+                            totalTasks,
+                            truncate(taskOutput.getRaw(), 200));
                 } else {
                     log.debug(
-                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
+                            "Task {}/{} output preview: {}",
+                            taskIndex,
+                            totalTasks,
+                            truncate(taskOutput.getRaw(), 200));
                 }
 
+                // Fire TaskCompleteEvent
+                executionContext.fireTaskComplete(new TaskCompleteEvent(
+                        task.getDescription(),
+                        task.getAgent().getRole(),
+                        taskOutput,
+                        taskOutput.getDuration(),
+                        taskIndex,
+                        totalTasks));
+
             } catch (AgentExecutionException | MaxIterationsExceededException e) {
+                Duration taskDuration = Duration.between(taskStart, Instant.now());
                 log.error("Task {}/{} failed: {}", taskIndex, totalTasks, e.getMessage());
+
+                // Fire TaskFailedEvent before propagating
+                executionContext.fireTaskFailed(new TaskFailedEvent(
+                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, taskIndex, totalTasks));
+
                 throw new TaskExecutionException(
                         "Task failed: " + task.getDescription(),
                         task.getDescription(),

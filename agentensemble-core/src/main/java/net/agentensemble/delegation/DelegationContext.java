@@ -3,7 +3,7 @@ package net.agentensemble.delegation;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 
 /**
  * Immutable runtime state for an agent delegation chain.
@@ -16,19 +16,19 @@ import net.agentensemble.memory.MemoryContext;
  * depth incremented by one, preserving all other fields.
  *
  * This class is immutable, but it holds references to other runtime components
- * (such as {@link MemoryContext} and {@link AgentExecutor}) whose thread-safety
- * characteristics must be considered separately. {@link MemoryContext} in particular
- * is documented as not thread-safe, so the overall delegation runtime state should
- * not be shared across threads unless all referenced components are thread-safe.
+ * (such as {@link ExecutionContext} and {@link AgentExecutor}) whose thread-safety
+ * characteristics must be considered separately. {@link net.agentensemble.memory.MemoryContext}
+ * in particular is documented as not thread-safe, so the overall delegation runtime
+ * state should not be shared across threads unless all referenced components are thread-safe.
  *
  * Example:
  * <pre>
  * DelegationContext ctx = DelegationContext.create(
- *     ensemble.getAgents(), 3, memoryContext, agentExecutor, verbose);
+ *     ensemble.getAgents(), 3, executionContext, agentExecutor);
  *
  * // In AgentDelegationTool:
  * DelegationContext childCtx = ctx.descend();
- * agentExecutor.execute(task, List.of(), verbose, memoryContext, childCtx);
+ * agentExecutor.execute(task, List.of(), ctx.getExecutionContext(), childCtx);
  * </pre>
  */
 public final class DelegationContext {
@@ -36,55 +36,51 @@ public final class DelegationContext {
     private final List<Agent> peerAgents;
     private final int maxDepth;
     private final int currentDepth;
-    private final MemoryContext memoryContext;
+    private final ExecutionContext executionContext;
     private final AgentExecutor agentExecutor;
-    private final boolean verbose;
 
     private DelegationContext(
             List<Agent> peerAgents,
             int maxDepth,
             int currentDepth,
-            MemoryContext memoryContext,
-            AgentExecutor agentExecutor,
-            boolean verbose) {
+            ExecutionContext executionContext,
+            AgentExecutor agentExecutor) {
         this.peerAgents = peerAgents;
         this.maxDepth = maxDepth;
         this.currentDepth = currentDepth;
-        this.memoryContext = memoryContext;
+        this.executionContext = executionContext;
         this.agentExecutor = agentExecutor;
-        this.verbose = verbose;
     }
 
     /**
      * Create a root delegation context (depth = 0).
      *
-     * @param peerAgents    agents available for delegation; must not be null
-     * @param maxDepth      maximum delegation depth allowed; must be greater than zero
-     * @param memoryContext runtime memory state for this run; must not be null
-     * @param agentExecutor executor used to run delegated tasks; must not be null
-     * @param verbose       whether to enable verbose logging for delegated tasks
+     * @param peerAgents       agents available for delegation; must not be null
+     * @param maxDepth         maximum delegation depth allowed; must be greater than zero
+     * @param executionContext  execution context bundling memory, verbosity, and listeners;
+     *                          must not be null
+     * @param agentExecutor    executor used to run delegated tasks; must not be null
      * @return a new root-level delegation context
      * @throws IllegalArgumentException if any required argument is null or maxDepth is not positive
      */
     public static DelegationContext create(
             List<Agent> peerAgents,
             int maxDepth,
-            MemoryContext memoryContext,
-            AgentExecutor agentExecutor,
-            boolean verbose) {
+            ExecutionContext executionContext,
+            AgentExecutor agentExecutor) {
         if (peerAgents == null) {
             throw new IllegalArgumentException("peerAgents must not be null");
         }
         if (maxDepth <= 0) {
             throw new IllegalArgumentException("maxDepth must be > 0, got: " + maxDepth);
         }
-        if (memoryContext == null) {
-            throw new IllegalArgumentException("memoryContext must not be null");
+        if (executionContext == null) {
+            throw new IllegalArgumentException("executionContext must not be null");
         }
         if (agentExecutor == null) {
             throw new IllegalArgumentException("agentExecutor must not be null");
         }
-        return new DelegationContext(List.copyOf(peerAgents), maxDepth, 0, memoryContext, agentExecutor, verbose);
+        return new DelegationContext(List.copyOf(peerAgents), maxDepth, 0, executionContext, agentExecutor);
     }
 
     /**
@@ -96,7 +92,7 @@ public final class DelegationContext {
      * @return a new {@code DelegationContext} with depth incremented by one
      */
     public DelegationContext descend() {
-        return new DelegationContext(peerAgents, maxDepth, currentDepth + 1, memoryContext, agentExecutor, verbose);
+        return new DelegationContext(peerAgents, maxDepth, currentDepth + 1, executionContext, agentExecutor);
     }
 
     /**
@@ -126,18 +122,13 @@ public final class DelegationContext {
         return currentDepth;
     }
 
-    /** @return the shared memory context for this run */
-    public MemoryContext getMemoryContext() {
-        return memoryContext;
+    /** @return the execution context for this run */
+    public ExecutionContext getExecutionContext() {
+        return executionContext;
     }
 
     /** @return the agent executor used to run delegated tasks */
     public AgentExecutor getAgentExecutor() {
         return agentExecutor;
-    }
-
-    /** @return true if verbose logging is enabled */
-    public boolean isVerbose() {
-        return verbose;
     }
 }

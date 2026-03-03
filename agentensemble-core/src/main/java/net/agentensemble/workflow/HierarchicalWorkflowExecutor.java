@@ -8,11 +8,15 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
@@ -33,8 +37,10 @@ import org.slf4j.MDC;
  * output as the tool result, and synthesizes a final response. All worker outputs
  * and the manager's final output are included in the EnsembleOutput.
  *
- * When a {@link MemoryContext} is active, memory is shared across all
- * delegations: worker agents read from and write to the same context.
+ * When the {@link ExecutionContext} carries an active memory context, memory is shared
+ * across all delegations: worker agents read from and write to the same context. The
+ * Manager itself runs with disabled memory (it is a meta-orchestrator) but still
+ * participates in event callbacks.
  *
  * Stateless -- all mutable state is held in per-execution local variables.
  */
@@ -78,7 +84,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
         Instant startTime = Instant.now();
         MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
 
@@ -88,13 +94,14 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     resolvedTasks.size(),
                     workerAgents.size());
 
-            // 1. Create delegation context for peer delegation among worker agents
+            // 1. Create delegation context for peer delegation among worker agents.
+            //    Workers share the full executionContext (memory + listeners).
             DelegationContext workerDelegationContext =
-                    DelegationContext.create(workerAgents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+                    DelegationContext.create(workerAgents, maxDelegationDepth, executionContext, agentExecutor);
 
             // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
             DelegateTaskTool delegateTool =
-                    new DelegateTaskTool(workerAgents, agentExecutor, verbose, memoryContext, workerDelegationContext);
+                    new DelegateTaskTool(workerAgents, agentExecutor, executionContext, workerDelegationContext);
 
             // 3. Build the virtual Manager agent
             Agent manager = Agent.builder()
@@ -113,16 +120,31 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     .agent(manager)
                     .build();
 
-            // 5. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
-            // The manager itself does not participate in shared memory (it is a meta-orchestrator)
+            // 5. The manager uses disabled memory (it is a meta-orchestrator) but still
+            //    participates in listeners (taskIndex=1, totalTasks=1 for the meta-task).
+            ExecutionContext managerContext = ExecutionContext.of(
+                    MemoryContext.disabled(), executionContext.isVerbose(), executionContext.listeners());
+
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
+
+            // Fire TaskStartEvent for the manager meta-task
+            executionContext.fireTaskStart(
+                    new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
+
+            Instant managerStart = Instant.now();
             TaskOutput managerOutput;
             try {
-                managerOutput = agentExecutor.execute(managerTask, List.of(), verbose, MemoryContext.disabled());
+                managerOutput = agentExecutor.execute(managerTask, List.of(), managerContext);
             } catch (AgentExecutionException | MaxIterationsExceededException e) {
+                Duration managerDuration = Duration.between(managerStart, Instant.now());
                 // Wrap with partial outputs so callers can recover completed worker results
                 List<TaskOutput> partial = delegateTool.getDelegatedOutputs();
                 log.error("Manager agent failed after {} delegations: {}", partial.size(), e.getMessage(), e);
+
+                // Fire TaskFailedEvent before propagating
+                executionContext.fireTaskFailed(
+                        new TaskFailedEvent(managerTask.getDescription(), MANAGER_ROLE, e, managerDuration, 1, 1));
+
                 throw new TaskExecutionException(
                         "Hierarchical workflow manager failed: " + e.getMessage(),
                         managerTask.getDescription(),
@@ -130,10 +152,15 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                         partial,
                         e);
             }
+
             log.info(
                     "Manager agent completed | Delegations: {} | Duration: {}",
                     delegateTool.getDelegatedOutputs().size(),
                     managerOutput.getDuration());
+
+            // Fire TaskCompleteEvent for the manager meta-task
+            executionContext.fireTaskComplete(new TaskCompleteEvent(
+                    managerTask.getDescription(), MANAGER_ROLE, managerOutput, managerOutput.getDuration(), 1, 1));
 
             // 6. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
