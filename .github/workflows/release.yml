@@ -38,8 +38,16 @@ jobs:
       - name: Build and test
         run: ./gradlew build -Pversion=${{ steps.version.outputs.version }}
 
+      - name: Publish to Maven Central
+        run: ./gradlew :agentensemble-core:publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.ORG_MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.ORG_MAVEN_CENTRAL_PASSWORD }}
+
       - name: Publish to GitHub Packages
-        run: ./gradlew :agentensemble-core:publish -Pversion=${{ steps.version.outputs.version }}
+        run: ./gradlew :agentensemble-core:publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -60,16 +68,6 @@ jobs:
             ### Gradle (Kotlin DSL)
 
             ```kotlin
-            repositories {
-                maven {
-                    url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
-                    credentials {
-                        username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
-                        password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
-                    }
-                }
-            }
-
             dependencies {
                 implementation("net.agentensemble:agentensemble-core:${{ steps.version.outputs.version }}")
             }
@@ -78,11 +76,6 @@ jobs:
             ### Maven
 
             ```xml
-            <repository>
-                <id>github</id>
-                <url>https://maven.pkg.github.com/AgentEnsemble/agentensemble</url>
-            </repository>
-
             <dependency>
                 <groupId>net.agentensemble</groupId>
                 <artifactId>agentensemble-core</artifactId>
@@ -91,4 +84,3 @@ jobs:
             ```
 
             ---
-

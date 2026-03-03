@@ -2,11 +2,18 @@
 
 ## Current Work Focus
 
-PR #43 merged to main (squash commit ecd7625). Branch fix/copilot-review-feedback deleted.
-All Copilot review feedback from PRs #21-#41 and PR #43 itself is now on main.
+PR #43 merged to main (squash commit ecd7625). Maven Central publishing pipeline configured.
 Development continues at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
+
+- Maven Central publishing pipeline configured:
+  - `com.vanniktech.maven.publish` 0.29.0 applied to `agentensemble-core`
+  - `mavenPublishing {}` targets `SonatypeHost.CENTRAL_PORTAL` with `signAllPublications()`
+  - Release workflow split into `publishAndReleaseToMavenCentral` (GPG + Sonatype secrets)
+    and `publishAllPublicationsToGitHubPackagesRepository` as separate steps
+  - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
+    `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
 
 - PR #43 second commit (3064533): addressed 4 Copilot inline comments on PR #43
   - Ensemble.java: validateContextOrdering() now uses identity-based sets
@@ -38,37 +45,11 @@ Development continues at 0.5.0-SNAPSHOT.
   - CI: skipped-guard on automerge; dependabot groups for github-actions
   - 297 tests passing
 
-- Issue #17 merged (PR #41): agent delegation fully implemented
-  - `DelegationContext`: immutable runtime state; create() factory; descend() creates
-    child with depth+1; isAtLimit() when currentDepth >= maxDepth
-  - `AgentDelegationTool`: @Tool-annotated; auto-injected by AgentExecutor when
-    allowDelegation=true and delegationContext != null; guards: depth limit, self-
-    delegation, unknown role; accumulates delegatedOutputs
-  - `AgentExecutor`: 5-arg execute(Task, List, boolean, MemoryContext, DelegationContext);
-    buildEffectiveTools() prepends delegation tool when applicable; 4-arg backward-compat
-    delegates to 5-arg with null DelegationContext
-  - `Ensemble`: maxDelegationDepth field (default 3, validated > 0); passes to
-    SequentialWorkflowExecutor(agents, maxDelegationDepth) and
-    HierarchicalWorkflowExecutor(managerLlm, agents, managerMaxIterations, maxDelegationDepth)
-  - `SequentialWorkflowExecutor`: 2-arg constructor; creates DelegationContext per run;
-    passes to agentExecutor.execute(task, contextOutputs, verbose, memoryContext, ctx)
-  - `HierarchicalWorkflowExecutor`: 4-arg constructor; creates workerDelegationContext;
-    passes to DelegateTaskTool(agents, executor, verbose, memoryContext, ctx)
-  - `DelegateTaskTool`: 5-arg constructor adds delegationContext; threads through to
-    agentExecutor.execute() for worker executions
-  - MDC keys: delegation.depth, delegation.parent (set during delegated executions)
-  - 287 tests passing (was 251, +36 new)
-- v0.4.0 released: tag pushed, GitHub Packages, GitHub Release triggered by CI
-- Comprehensive user documentation added: 21 files in docs/
-  (getting-started/, guides/, reference/, examples/) covering all features through v0.4.0
-- README updated: Agent Delegation section, updated config tables, docs index
-
 ## Next Steps
 
-1. Merge PR #43 -- DONE (ecd7625 on main)
-2. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
-3. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
-4. Issue #20: Advanced features (callbacks, streaming, guardrails, built-in tools)
+1. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
+2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
+3. Issue #20: Advanced features (callbacks, streaming, guardrails, built-in tools)
 
 ## Important Notes
 

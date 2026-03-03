@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed
+- Replaced manual `maven-publish` + `publishing {}` block in `agentensemble-core/build.gradle.kts`
+  with `com.vanniktech.maven.publish` 0.29.0 (vanniktech plugin)
+- `mavenPublishing {}` block targets `SonatypeHost.CENTRAL_PORTAL` with `signAllPublications()`
+- Sources JAR and Javadoc JAR now generated automatically by the plugin (removed explicit `java { withSourcesJar(); withJavadocJar() }`)
+- GitHub Packages repository retained as an additional publish target alongside Maven Central
+- Release workflow updated: `publishAndReleaseToMavenCentral` task (auto-upload + auto-release)
+  and `publishAllPublicationsToGitHubPackagesRepository` are now separate steps
+- Release notes body simplified: no longer requires a custom Maven repository block since
+  Maven Central is the default for both Gradle and Maven consumers
+- Added `[plugins]` section to `gradle/libs.versions.toml` with `vanniktech-publish` entry
+
+### Required Secrets (add to GitHub repo settings before first Maven Central release)
+- `ORG_GPG_SIGNING_KEY`: ASCII-armored GPG private key (`gpg --armor --export-secret-keys KEY_ID`)
+- `ORG_GPG_SIGNING_PASSWORD`: GPG key passphrase
+- `ORG_MAVEN_CENTRAL_USERNAME`: Sonatype Central Portal user token username
+- `ORG_MAVEN_CENTRAL_PASSWORD`: Sonatype Central Portal user token password
+
 ---
 
 ## [0.5.0-SNAPSHOT] - 2026-03-02 (PR #43, fix/copilot-review-feedback)
