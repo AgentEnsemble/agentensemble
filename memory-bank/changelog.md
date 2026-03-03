@@ -52,6 +52,56 @@
 
 ---
 
+## [0.6.0] - 2026-03-03 (Issue #19, PR #48)
+
+### Added
+- `Task.outputType(Class<?>)`: optional field; when set, agent is instructed to produce
+  JSON matching the schema derived from the class; output is automatically parsed after execution
+- `Task.maxOutputRetries(int)`: number of retry attempts when structured output parsing fails;
+  default 3; must be >= 0; 0 disables retries
+- `TaskOutput.parsedOutput`: the parsed Java object (null when no outputType set)
+- `TaskOutput.outputType`: the Class used for parsing (null when no outputType set)
+- `TaskOutput.getParsedOutput(Class<T>)`: typed accessor; throws `IllegalStateException` when
+  null or type mismatch
+- `net.agentensemble.output.ParseResult<T>`: success/failure result container for parse attempts;
+  public class; `success(T)`, `failure(String)`, `isSuccess()`, `getValue()`, `getErrorMessage()`
+- `net.agentensemble.output.JsonSchemaGenerator`: reflection-based JSON-like schema description
+  generator; `generate(Class<?>)`; supports records, POJOs, String, numeric wrappers, Boolean,
+  List<T>, Map<K,V>, enums, nested objects; max nesting depth 5; scalar short-circuit via
+  `topLevelScalarOrCollectionSchema()` (avoids introspecting JDK internals)
+- `net.agentensemble.output.StructuredOutputParser`: JSON extraction (markdown fences first with
+  non-greedy regex, then plain trimmed response, then first embedded block) and Jackson
+  deserialization; scalar fallback in `parse()` for Boolean/Integer/String; `FAIL_ON_UNKNOWN_PROPERTIES=false`
+- `net.agentensemble.exception.OutputParsingException`: extends `AgentEnsembleException`; thrown
+  when all retries exhausted; carries `rawOutput` (last bad response), `outputType`, `parseErrors`
+  (immutable list of per-attempt errors), `attemptCount`
+- `AgentPromptBuilder`: `## Output Format` section injected into user prompt when outputType is set;
+  prompt says "ONLY valid JSON matching this schema (object, array, or scalar as appropriate)"
+- `AgentExecutor.parseStructuredOutput()`: retry loop after main execution; sends correction prompt
+  to LLM on failure showing parse error and schema; throws `OutputParsingException` on exhaustion
+- 82 new tests (358 -> 440): JsonSchemaGeneratorTest (23), StructuredOutputParserTest (20),
+  ExceptionHierarchyTest (+5), TaskTest (+12), TaskOutputTest (+7), AgentPromptBuilderTest (+4),
+  StructuredOutputIntegrationTest (11)
+- `docs/examples/structured-output.md`: new two-example walkthrough (typed JSON + Markdown output)
+
+### Changed
+- `docs/guides/tasks.md`: Structured Output section (typed/Markdown examples, retry docs,
+  supported types with scalar caveats)
+- `docs/reference/task-configuration.md`: outputType/maxOutputRetries fields + validation table
+- `docs/getting-started/concepts.md`: Task concept updated with outputType/maxOutputRetries
+- `docs/design/03-domain-model.md`: Task and TaskOutput specs updated
+- `docs/design/13-future-roadmap.md`: Phase 6 marked COMPLETE with implementation notes
+- `README.md`: Structured Output section, Task Configuration table, roadmap updated
+
+### Technical Notes
+- Scalar support: Boolean/Integer/Long/Double respond with bare JSON values (e.g., `true`, `42`);
+  String requires JSON-quoted output (e.g., `"text"`)
+- JSON block extraction: non-greedy pattern finds first embedded block, not oversized span
+- `OutputParsingException.rawOutput` carries the *last* bad response (currentResponse after retries),
+  not the initial response -- enables effective debugging of retry chains
+
+---
+
 ## [0.5.0] - 2026-03-02 (Issue #18, PR #45)
 
 ### Added
