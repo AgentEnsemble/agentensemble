@@ -436,6 +436,62 @@ report.findings().forEach(System.out::println);
 
 ---
 
+## Callbacks and Event Listeners
+
+Observe task and tool execution lifecycle events without modifying your agent or workflow configuration. Register lambda handlers directly on the builder, or implement the full `EnsembleListener` interface for reusable, multi-event listeners.
+
+```java
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher)
+    .agent(writer)
+    .task(researchTask)
+    .task(writeTask)
+    .onTaskStart(event -> System.out.printf(
+        "[%d/%d] Starting: %s%n",
+        event.taskIndex(), event.totalTasks(), event.agentRole()))
+    .onTaskComplete(event -> System.out.printf(
+        "[%d/%d] Completed in %s%n",
+        event.taskIndex(), event.totalTasks(), event.duration()))
+    .onTaskFailed(event -> alertService.notify(event.cause()))
+    .onToolCall(event -> metrics.increment("tool." + event.toolName()))
+    .build()
+    .run();
+```
+
+For reusable listeners that handle multiple event types, implement `EnsembleListener` directly:
+
+```java
+public class MetricsListener implements EnsembleListener {
+    @Override
+    public void onTaskComplete(TaskCompleteEvent event) {
+        metrics.recordDuration(event.agentRole(), event.duration());
+    }
+    @Override
+    public void onToolCall(ToolCallEvent event) {
+        metrics.increment("tool." + event.toolName());
+    }
+    // onTaskStart and onTaskFailed default to no-ops
+}
+
+Ensemble.builder()
+    .agent(researcher)
+    .task(researchTask)
+    .listener(new MetricsListener())   // full interface
+    .onTaskFailed(e -> alertPager())   // lambda adds on top
+    .build()
+    .run();
+```
+
+**Events:** `TaskStartEvent`, `TaskCompleteEvent`, `TaskFailedEvent` (fired before exception propagates), `ToolCallEvent`.
+
+**Exception safety:** if a listener throws, the exception is caught and logged. Execution continues and subsequent listeners are still called.
+
+**Thread safety:** for `Workflow.PARALLEL`, listener methods may be called concurrently. Listener implementations must be thread-safe.
+
+**Full documentation:** [Callbacks Guide](https://docs.agentensemble.net/guides/callbacks/) | [Callbacks Example](https://docs.agentensemble.net/examples/callbacks/)
+
+---
+
 ## Task Configuration
 
 | Option | Type | Default | Description |
@@ -464,6 +520,11 @@ report.findings().forEach(System.out::println);
 | `memory` | `EnsembleMemory` | `null` | Memory configuration; see [Memory System](#memory-system) |
 | `maxDelegationDepth` | `int` | `3` | Maximum peer-delegation depth when agents have `allowDelegation = true` |
 | `verbose` | `boolean` | `false` | Elevates execution logging to INFO |
+| `listener` | `EnsembleListener` | -- | Register a full listener implementation (repeatable) |
+| `onTaskStart` | `Consumer<TaskStartEvent>` | -- | Lambda: fired before each task starts (repeatable) |
+| `onTaskComplete` | `Consumer<TaskCompleteEvent>` | -- | Lambda: fired after each successful task (repeatable) |
+| `onTaskFailed` | `Consumer<TaskFailedEvent>` | -- | Lambda: fired on task failure, before exception propagates (repeatable) |
+| `onToolCall` | `Consumer<ToolCallEvent>` | -- | Lambda: fired after each tool call in the ReAct loop (repeatable) |
 
 **Full documentation:** [Ensemble Configuration Reference](https://docs.agentensemble.net/reference/ensemble-configuration/)
 
@@ -620,6 +681,10 @@ export OPENAI_API_KEY=your-api-key
 # Structured output -- typed JSON + formatted Markdown
 ./gradlew :agentensemble-examples:runStructuredOutput
 ./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
+
+# Callbacks -- event listeners observing task and tool lifecycle
+./gradlew :agentensemble-examples:runCallbacks
+./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
 ```
 
 **Full documentation:** [Examples](https://docs.agentensemble.net/examples/research-writer/)
@@ -678,7 +743,8 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v0.4.0~~ | ~~Agent delegation~~ |
 | ~~v0.5.0~~ | ~~Parallel workflow (virtual threads)~~ |
 | ~~v0.6.0~~ | ~~Structured output (typed output parsing)~~ |
-| v1.0.0 | Callbacks, streaming, guardrails, built-in tools |
+| ~~v0.7.0~~ | ~~Callbacks and event listeners~~ |
+| v1.0.0 | Streaming, guardrails, built-in tools |
 
 ---
 

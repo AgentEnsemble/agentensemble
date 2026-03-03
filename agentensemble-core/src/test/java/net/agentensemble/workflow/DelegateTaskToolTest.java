@@ -14,7 +14,7 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
-import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,9 +45,9 @@ class DelegateTaskToolTest {
 
         AgentExecutor executor = new AgentExecutor();
         DelegationContext delegationContext =
-                DelegationContext.create(List.of(researcher, writer), 3, MemoryContext.disabled(), executor, false);
+                DelegationContext.create(List.of(researcher, writer), 3, ExecutionContext.disabled(), executor);
         tool = new DelegateTaskTool(
-                List.of(researcher, writer), executor, false, MemoryContext.disabled(), delegationContext);
+                List.of(researcher, writer), executor, ExecutionContext.disabled(), delegationContext);
     }
 
     private ChatResponse textResponse(String text) {
