@@ -18,9 +18,12 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -150,21 +153,56 @@ public class Ensemble {
 
             return output;
 
+        } catch (ValidationException e) {
+            log.warn("Ensemble validation failed: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.error("Ensemble run failed: {}", e.getMessage());
+            log.error("Ensemble run failed", e);
             throw e;
         } finally {
             MDC.remove("ensemble.id");
         }
     }
 
+    /**
+     * Resolve template variables in task descriptions and expected outputs.
+     *
+     * Two-pass approach: first resolve descriptions/expectedOutputs and build an
+     * original-to-resolved mapping, then rewrite context lists so they reference the
+     * resolved Task instances. Without the second pass, context lookups in
+     * SequentialWorkflowExecutor would fail when a task with a template variable is
+     * also referenced by another task's context list (value equality would not match
+     * the original and resolved copies).
+     */
     private List<Task> resolveTasks(Map<String, String> inputs) {
-        return tasks.stream()
-                .map(task -> task.toBuilder()
-                        .description(TemplateResolver.resolve(task.getDescription(), inputs))
-                        .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), inputs))
-                        .build())
-                .toList();
+        // Pass 1: resolve description and expectedOutput; build original -> resolved map.
+        // Use identity-based map because Task uses value equality and two pre-resolution
+        // tasks with different descriptions must be treated as distinct keys.
+        Map<Task, Task> originalToResolved = new IdentityHashMap<>();
+        for (Task task : tasks) {
+            Task resolved = task.toBuilder()
+                    .description(TemplateResolver.resolve(task.getDescription(), inputs))
+                    .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), inputs))
+                    .build();
+            originalToResolved.put(task, resolved);
+        }
+
+        // Pass 2: rewrite context lists to reference resolved instances.
+        List<Task> result = new ArrayList<>(tasks.size());
+        for (Task original : tasks) {
+            Task resolvedBase = originalToResolved.get(original);
+            List<Task> originalContext = original.getContext();
+            if (originalContext.isEmpty()) {
+                result.add(resolvedBase);
+            } else {
+                List<Task> resolvedContext = new ArrayList<>(originalContext.size());
+                for (Task ctxTask : originalContext) {
+                    resolvedContext.add(originalToResolved.getOrDefault(ctxTask, ctxTask));
+                }
+                result.add(resolvedBase.toBuilder().context(resolvedContext).build());
+            }
+        }
+        return result;
     }
 
     private WorkflowExecutor selectExecutor() {
@@ -187,7 +225,9 @@ public class Ensemble {
         validateTasksNotEmpty();
         validateAgentsNotEmpty();
         validateMaxDelegationDepth();
+        validateManagerMaxIterations();
         validateAgentMembership();
+        validateHierarchicalRoles();
         validateNoCircularContextDependencies();
         validateContextOrdering();
         warnUnusedAgents();
@@ -212,9 +252,19 @@ public class Ensemble {
         }
     }
 
+    private void validateManagerMaxIterations() {
+        if (workflow == Workflow.HIERARCHICAL && managerMaxIterations <= 0) {
+            throw new ValidationException(
+                    "Ensemble managerMaxIterations must be > 0 for HIERARCHICAL workflow, got: "
+                    + managerMaxIterations);
+        }
+    }
+
     private void validateAgentMembership() {
-        // Build identity set of registered agents
-        Set<Agent> registeredAgents = new HashSet<>(agents);
+        // Use identity-based lookup per design spec (docs/design/03-domain-model.md):
+        // two Agent objects with identical field values must be treated as distinct agents.
+        Set<Agent> registeredAgents = Collections.newSetFromMap(new IdentityHashMap<>());
+        registeredAgents.addAll(agents);
 
         for (Task task : tasks) {
             if (!registeredAgents.contains(task.getAgent())) {
@@ -222,6 +272,31 @@ public class Ensemble {
                         "Task '" + task.getDescription()
                         + "' references agent '" + task.getAgent().getRole()
                         + "' which is not in the ensemble's agent list");
+            }
+        }
+    }
+
+    /**
+     * For HIERARCHICAL workflow: validate that no registered agent uses the reserved
+     * "Manager" role (which is auto-assigned to the virtual manager agent), and that
+     * all agent roles are unique (case-insensitively) to avoid ambiguous delegation.
+     */
+    private void validateHierarchicalRoles() {
+        if (workflow != Workflow.HIERARCHICAL) {
+            return;
+        }
+        Set<String> seenRoles = new HashSet<>();
+        for (Agent agent : agents) {
+            String role = agent.getRole();
+            if ("Manager".equalsIgnoreCase(role)) {
+                throw new ValidationException(
+                        "Agent role 'Manager' is reserved for the virtual manager in HIERARCHICAL "
+                        + "workflow. Choose a different role for agent '" + role + "'.");
+            }
+            if (!seenRoles.add(role.toLowerCase(Locale.ROOT))) {
+                throw new ValidationException(
+                        "Duplicate agent role '" + role + "' detected in HIERARCHICAL workflow. "
+                        + "All agent roles must be unique (case-insensitive) to avoid ambiguous delegation.");
             }
         }
     }
@@ -275,16 +350,28 @@ public class Ensemble {
             return;
         }
 
-        // For sequential workflow: each context task must appear earlier in the tasks list
-        List<Task> executedSoFar = new ArrayList<>();
+        // Use identity-based membership to be consistent with resolveTasks() and
+        // validateAgentMembership(): two Task objects with identical field values must
+        // be treated as distinct tasks. A value-equal but identity-distinct context task
+        // would pass equals()-based validation but then fail remapping in resolveTasks().
+        Set<Task> executedSoFar = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Task> ensureTaskSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        ensureTaskSet.addAll(tasks);
+
         for (Task task : tasks) {
             for (Task contextTask : task.getContext()) {
                 if (!executedSoFar.contains(contextTask)) {
-                    throw new ValidationException(
-                            "Task '" + task.getDescription()
-                            + "' references context task '" + contextTask.getDescription()
-                            + "' which appears later in the task list. "
-                            + "Context tasks must be executed before the tasks that reference them.");
+                    boolean inEnsembleTasks = ensureTaskSet.contains(contextTask);
+                    String message = inEnsembleTasks
+                            ? "Task '" + task.getDescription()
+                              + "' references context task '" + contextTask.getDescription()
+                              + "' which appears later in the task list. "
+                              + "Context tasks must be executed before the tasks that reference them."
+                            : "Task '" + task.getDescription()
+                              + "' references context task '" + contextTask.getDescription()
+                              + "' which is not in the ensemble's task list. "
+                              + "All context tasks must be included in the ensemble before they can be referenced.";
+                    throw new ValidationException(message);
                 }
             }
             executedSoFar.add(task);

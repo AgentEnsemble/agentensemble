@@ -31,11 +31,12 @@ public final class ToolResult {
     /**
      * Create a failure tool result.
      *
-     * @param errorMessage description of what went wrong
+     * @param errorMessage description of what went wrong; null is normalized to a default message
      * @return a failed ToolResult
      */
     public static ToolResult failure(String errorMessage) {
-        return new ToolResult("", false, errorMessage);
+        return new ToolResult("", false,
+                errorMessage != null ? errorMessage : "Tool execution failed with no message");
     }
 
     /** The text output from the tool. Empty string if the tool failed. */

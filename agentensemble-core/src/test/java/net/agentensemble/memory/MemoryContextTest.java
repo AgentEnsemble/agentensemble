@@ -13,7 +13,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -178,13 +177,22 @@ class MemoryContextTest {
     }
 
     @Test
-    void testRecord_withoutLongTerm_doesNotCallStore() {
-        LongTermMemory ltm = mock(LongTermMemory.class);
-        MemoryContext ctx = MemoryContext.disabled();
+    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
+        // A MemoryContext configured with short-term only must not route records to any
+        // long-term store. Assert on the observable state rather than using an unwired mock,
+        // which would make verify(mock, never()) vacuously true regardless of behavior.
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        // No long-term memory is configured
+        assertThat(ctx.hasLongTerm()).isFalse();
 
         ctx.record(taskOutput("Content", "Agent", "Task"));
 
-        verify(ltm, never()).store(any(MemoryEntry.class));
+        // Short-term was recorded
+        assertThat(ctx.getShortTermEntries()).hasSize(1);
+        // Long-term query returns empty (no long-term store)
+        assertThat(ctx.queryLongTerm("Content")).isEmpty();
     }
 
     // ========================

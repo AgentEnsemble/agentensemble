@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TaskOutputTest {
 
@@ -58,5 +59,63 @@ class TaskOutputTest {
 
         // @Value ensures no setters exist -- verified via compilation
         assertThat(output).isNotNull();
+    }
+
+    // ========================
+    // Null field validation (@NonNull enforced by Lombok @Builder)
+    // ========================
+
+    @Test
+    void testBuild_withNullRaw_throwsNullPointerException() {
+        // TaskOutput declares @NonNull on raw -- Lombok @Builder rejects null at build time.
+        assertThatThrownBy(() -> TaskOutput.builder()
+                .raw(null)
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build())
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void testBuild_withNullTaskDescription_throwsNullPointerException() {
+        assertThatThrownBy(() -> TaskOutput.builder()
+                .raw("output")
+                .taskDescription(null)
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build())
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void testBuild_withNullAgentRole_throwsNullPointerException() {
+        assertThatThrownBy(() -> TaskOutput.builder()
+                .raw("output")
+                .taskDescription("task")
+                .agentRole(null)
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build())
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void testBuild_defaultToolCallCount_isZero() {
+        // When toolCallCount is not set, it defaults to 0 (primitive int default)
+        var output = TaskOutput.builder()
+                .raw("output")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .build();
+
+        assertThat(output.getToolCallCount()).isZero();
     }
 }

@@ -167,7 +167,8 @@ class AgentDelegationToolTest {
         AgentDelegationTool tool = new AgentDelegationTool("Caller", delegationContext);
 
         String result = tool.delegate(null, "some task");
-        assertThat(result).containsIgnoringCase("not found");
+        // Null role is now caught early and returns a descriptive error before agent lookup
+        assertThat(result).containsIgnoringCase("null or blank");
     }
 
     // ========================

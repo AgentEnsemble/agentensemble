@@ -81,7 +81,7 @@ public final class LangChain4jToolAdapter {
                 return "Error: " + result.getErrorMessage();
             }
         } catch (Exception e) {
-            log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage());
+            log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
             return "Error: " + e.getMessage();
         }
     }
@@ -169,6 +169,11 @@ public final class LangChain4jToolAdapter {
 
     private static Object convertToType(Object value, Class<?> targetType) {
         if (value == null) {
+            // Return primitive defaults to avoid NPE from Method.invoke auto-unboxing
+            if (targetType == int.class) return 0;
+            if (targetType == long.class) return 0L;
+            if (targetType == double.class) return 0.0;
+            if (targetType == boolean.class) return false;
             return null;
         }
         if (targetType == String.class) {

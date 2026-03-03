@@ -63,12 +63,16 @@ jobs:
     name: Dependabot Auto-Merge
     runs-on: ubuntu-latest
     needs: [build]
+    # Guard against 'skipped' in addition to 'failure'/'cancelled'. Without this guard,
+    # a skipped build (where tests never ran) would still satisfy the condition and could
+    # allow auto-merge to proceed without any CI validation.
     if: |
       always() &&
       github.actor == 'dependabot[bot]' &&
       github.event_name == 'pull_request' &&
       !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled')
+      !contains(needs.*.result, 'cancelled') &&
+      !contains(needs.*.result, 'skipped')
     permissions:
       pull-requests: write
       contents: write
@@ -86,6 +90,10 @@ jobs:
         run: |
           gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
           echo "Auto-merge enabled for ${{ steps.metadata.outputs.update-type }} update"
+          # NOTE: gh pr merge --auto only waits for required status checks when branch
+          # protection rules with required checks are configured on main. Without branch
+          # protection, the PR may merge immediately. Ensure branch protection is configured
+          # on main with the 'build' job as a required check.
           echo "Will merge automatically when all required checks pass"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
