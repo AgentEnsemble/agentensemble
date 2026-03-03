@@ -2,9 +2,9 @@
 
 ## Current Work Focus
 
-PR #43 open: all Copilot review feedback addressed (two rounds of commits).
-Development continues on branch fix/copilot-review-feedback at 0.5.0-SNAPSHOT.
-All 297 tests pass. Ready to merge.
+PR #43 merged to main (squash commit ecd7625). Branch fix/copilot-review-feedback deleted.
+All Copilot review feedback from PRs #21-#41 and PR #43 itself is now on main.
+Development continues at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
 
@@ -65,9 +65,10 @@ All 297 tests pass. Ready to merge.
 
 ## Next Steps
 
-1. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
-2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
-3. Issue #20: Advanced features (callbacks, streaming, guardrails, built-in tools)
+1. Merge PR #43 -- DONE (ecd7625 on main)
+2. Issue #18: Parallel workflow (concurrent independent tasks, Java 21 virtual threads)
+3. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
+4. Issue #20: Advanced features (callbacks, streaming, guardrails, built-in tools)
 
 ## Important Notes
 
