@@ -112,13 +112,39 @@
   "Running the Examples" section updated with all 5 named tasks; "Documentation" table links to
   hosted docs site
 
+### Phase 7: Advanced Features (Issue #20 -- decomposed into sub-issues)
+
+- [ ] Issue #57 (v0.7.0): Callbacks/Event Listeners + ExecutionContext refactor
+  - ExecutionContext bundles MemoryContext + verbose + listeners
+  - WorkflowExecutor.execute() refactored to accept ExecutionContext
+  - EnsembleListener interface: onTaskStart, onTaskComplete, onToolCall
+  - Event records: TaskStartEvent, TaskCompleteEvent, ToolCallEvent
+- [ ] Issue #58 (v0.8.0): Guardrails: Pre/post execution validation
+  - InputGuardrail / OutputGuardrail functional interfaces
+  - GuardrailResult, GuardrailViolationException
+  - Task.inputGuardrails / Task.outputGuardrails builder fields
+  - AgentExecutor invokes guardrails before/after execution
+- [ ] Issue #59 (v0.8.0): Rate Limiting: Per-agent/per-LLM
+  - RateLimitedChatModel decorator (token-bucket, thread-safe)
+  - RateLimit value object with factory methods
+  - Agent.rateLimit() optional builder convenience
+- [ ] Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
+  - New Gradle module: agentensemble-tools
+  - 7 tools: CalculatorTool, DateTimeTool, FileReadTool, FileWriteTool,
+    WebSearchTool, WebScraperTool, JsonParserTool
+  - Code execution deferred (security complexity)
+- [ ] Issue #61 (v1.0.0): Streaming Output
+  - Agent.streamingLlm optional field (StreamingChatLanguageModel)
+  - TokenEvent added to EnsembleListener
+  - Final response streamed; tool-loop remains non-streaming
+
 ## Current Status
 
-**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged; examples now runnable
+**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged; examples now runnable; Issue #20 planned
 **Total tests**: 440 passing on main
 **Current version**: 0.6.0-SNAPSHOT (main)
 **Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
-**Next action**: Release v0.6.0, then Issue #42 (Execution Metrics) or Issue #20 (v1.0.0 features)
+**Next action**: Release v0.6.0, then Issue #42 (Execution Metrics), then Issue #57 (v0.7.0)
 
 ## Known Issues
 
