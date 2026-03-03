@@ -2,12 +2,8 @@
 
 ## Current Work Focus
 
-PR #66 open on `fix/javadoc-link-error-add-to-ci`: fixes the broken javadoc `{@link}`
-references that caused the v0.7.0 release workflow to fail, and adds `:agentensemble-core:javadoc`
-to the CI workflow so the same class of error is caught pre-merge.
-
-Full javadoc cleanup (92 remaining warnings) is tracked in issue #65.
-Next after #66 merges: Issue #42 (Execution Metrics) or Issue #58 (Guardrails).
+Feature branch `feature/58-guardrails` implements Issue #58 (Guardrails: pre/post execution
+validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
 
 ## Recent Changes
 

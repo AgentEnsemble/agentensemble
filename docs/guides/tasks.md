@@ -201,6 +201,40 @@ Unsupported: **primitives** (`int.class`, etc.), **void**, and **top-level array
 
 ---
 
+## Guardrails
+
+Guardrails are validation hooks that run before and after task execution. Configure them with `inputGuardrails` and `outputGuardrails`:
+
+```java
+InputGuardrail noPiiGuardrail = input -> {
+    if (input.taskDescription().contains("SSN")) {
+        return GuardrailResult.failure("Task description contains PII");
+    }
+    return GuardrailResult.success();
+};
+
+OutputGuardrail lengthGuardrail = output -> {
+    if (output.rawResponse().length() > 5000) {
+        return GuardrailResult.failure("Response exceeds 5000 characters");
+    }
+    return GuardrailResult.success();
+};
+
+var task = Task.builder()
+    .description("Summarize the article")
+    .expectedOutput("A concise summary")
+    .agent(writer)
+    .inputGuardrails(List.of(noPiiGuardrail))
+    .outputGuardrails(List.of(lengthGuardrail))
+    .build();
+```
+
+Input guardrails fire before the LLM is called; if any fails, `GuardrailViolationException` is thrown immediately. Output guardrails fire after the response (and after structured output parsing when `outputType` is set).
+
+See the [Guardrails guide](guardrails.md) for full documentation.
+
+---
+
 ## Tasks Are Immutable
 
 Tasks are immutable value objects. The builder produces a new instance on each call to `build()`. Use `toBuilder()` to create modified copies:

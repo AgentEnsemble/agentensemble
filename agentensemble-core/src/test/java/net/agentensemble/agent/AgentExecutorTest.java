@@ -18,6 +18,8 @@ import net.agentensemble.Task;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.execution.ExecutionContext;
+import net.agentensemble.guardrail.GuardrailResult;
+import net.agentensemble.guardrail.GuardrailViolationException;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
@@ -276,5 +278,204 @@ class AgentExecutorTest {
         assertThat(output.getRaw()).isEqualTo("Article written.");
         // Context is passed to LLM -- verified by the ChatRequest containing context
         verify(mockLlm).chat(any(ChatRequest.class));
+    }
+
+    // ========================
+    // Input guardrails
+    // ========================
+
+    @Test
+    void testExecute_inputGuardrailPasses_executionProceeds() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Result text"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write a report")
+                .expectedOutput("Report")
+                .agent(agent)
+                .inputGuardrails(List.of(input -> GuardrailResult.success()))
+                .build();
+
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
+
+        assertThat(output.getRaw()).isEqualTo("Result text");
+        verify(mockLlm).chat(any(ChatRequest.class));
+    }
+
+    @Test
+    void testExecute_inputGuardrailFails_throwsBeforeLlmCall() {
+        var mockLlm = mock(ChatModel.class);
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write a report about SSN 123-45-6789")
+                .expectedOutput("Report")
+                .agent(agent)
+                .inputGuardrails(List.of(input -> GuardrailResult.failure("contains PII")))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(GuardrailViolationException.class)
+                .satisfies(ex -> {
+                    var e = (GuardrailViolationException) ex;
+                    assertThat(e.getGuardrailType()).isEqualTo(GuardrailViolationException.GuardrailType.INPUT);
+                    assertThat(e.getViolationMessage()).isEqualTo("contains PII");
+                    assertThat(e.getAgentRole()).isEqualTo("Writer");
+                    assertThat(e.getTaskDescription()).isEqualTo("Write a report about SSN 123-45-6789");
+                });
+
+        // LLM must NOT have been called
+        verify(mockLlm, org.mockito.Mockito.never()).chat(any(ChatRequest.class));
+    }
+
+    @Test
+    void testExecute_multipleInputGuardrails_firstFailureWins() {
+        var mockLlm = mock(ChatModel.class);
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write something")
+                .expectedOutput("Output")
+                .agent(agent)
+                .inputGuardrails(List.of(
+                        input -> GuardrailResult.failure("first blocker"),
+                        input -> GuardrailResult.failure("second blocker")))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(GuardrailViolationException.class)
+                .satisfies(ex -> {
+                    var e = (GuardrailViolationException) ex;
+                    assertThat(e.getViolationMessage()).isEqualTo("first blocker");
+                });
+    }
+
+    @Test
+    void testExecute_inputGuardrailReceivesCorrectContext() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("ok"));
+
+        var agent = Agent.builder().role("Analyst").goal("Analyze").llm(mockLlm).build();
+
+        // Capture the GuardrailInput for assertion
+        var capturedInput = new net.agentensemble.guardrail.GuardrailInput[] {null};
+        var task = Task.builder()
+                .description("Analyze this data")
+                .expectedOutput("Analysis output")
+                .agent(agent)
+                .inputGuardrails(List.of(input -> {
+                    capturedInput[0] = input;
+                    return GuardrailResult.success();
+                }))
+                .build();
+
+        executor.execute(task, List.of(), ExecutionContext.disabled());
+
+        assertThat(capturedInput[0]).isNotNull();
+        assertThat(capturedInput[0].taskDescription()).isEqualTo("Analyze this data");
+        assertThat(capturedInput[0].expectedOutput()).isEqualTo("Analysis output");
+        assertThat(capturedInput[0].agentRole()).isEqualTo("Analyst");
+    }
+
+    // ========================
+    // Output guardrails
+    // ========================
+
+    @Test
+    void testExecute_outputGuardrailPasses_returnsOutput() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Short response"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write a summary")
+                .expectedOutput("Summary")
+                .agent(agent)
+                .outputGuardrails(List.of(output -> GuardrailResult.success()))
+                .build();
+
+        TaskOutput result = executor.execute(task, List.of(), ExecutionContext.disabled());
+
+        assertThat(result.getRaw()).isEqualTo("Short response");
+    }
+
+    @Test
+    void testExecute_outputGuardrailFails_throwsAfterLlmCall() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class)))
+                .thenReturn(textResponse("A very very long response that is too long"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write a summary")
+                .expectedOutput("Summary")
+                .agent(agent)
+                .outputGuardrails(List.of(output -> output.rawResponse().length() > 10
+                        ? GuardrailResult.failure("response exceeds limit")
+                        : GuardrailResult.success()))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(GuardrailViolationException.class)
+                .satisfies(ex -> {
+                    var e = (GuardrailViolationException) ex;
+                    assertThat(e.getGuardrailType()).isEqualTo(GuardrailViolationException.GuardrailType.OUTPUT);
+                    assertThat(e.getViolationMessage()).isEqualTo("response exceeds limit");
+                    assertThat(e.getAgentRole()).isEqualTo("Writer");
+                });
+
+        // LLM was called before the guardrail ran
+        verify(mockLlm).chat(any(ChatRequest.class));
+    }
+
+    @Test
+    void testExecute_outputGuardrailReceivesCorrectContext() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("agent response here"));
+
+        var agent = Agent.builder().role("Analyst").goal("Analyze").llm(mockLlm).build();
+
+        var capturedOutput = new net.agentensemble.guardrail.GuardrailOutput[] {null};
+        var task = Task.builder()
+                .description("Analyze data")
+                .expectedOutput("Analysis")
+                .agent(agent)
+                .outputGuardrails(List.of(output -> {
+                    capturedOutput[0] = output;
+                    return GuardrailResult.success();
+                }))
+                .build();
+
+        executor.execute(task, List.of(), ExecutionContext.disabled());
+
+        assertThat(capturedOutput[0]).isNotNull();
+        assertThat(capturedOutput[0].rawResponse()).isEqualTo("agent response here");
+        assertThat(capturedOutput[0].agentRole()).isEqualTo("Analyst");
+        assertThat(capturedOutput[0].taskDescription()).isEqualTo("Analyze data");
+        assertThat(capturedOutput[0].parsedOutput()).isNull();
+    }
+
+    @Test
+    void testExecute_multipleOutputGuardrails_firstFailureWins() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("response"));
+
+        var agent = Agent.builder().role("Writer").goal("Write").llm(mockLlm).build();
+        var task = Task.builder()
+                .description("Write")
+                .expectedOutput("Output")
+                .agent(agent)
+                .outputGuardrails(List.of(
+                        output -> GuardrailResult.failure("first output blocker"),
+                        output -> GuardrailResult.failure("second output blocker")))
+                .build();
+
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(GuardrailViolationException.class)
+                .satisfies(ex -> {
+                    var e = (GuardrailViolationException) ex;
+                    assertThat(e.getViolationMessage()).isEqualTo("first output blocker");
+                });
     }
 }
