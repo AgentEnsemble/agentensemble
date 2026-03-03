@@ -1,12 +1,11 @@
 package net.agentensemble.output;
 
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
 
 class JsonSchemaGeneratorTest {
 
@@ -39,9 +38,7 @@ class JsonSchemaGeneratorTest {
     @Test
     void testGenerate_multipleStringFields() {
         String schema = JsonSchemaGenerator.generate(StringOnlyRecord.class);
-        assertThat(schema)
-                .contains("\"name\": \"string\"")
-                .contains("\"description\": \"string\"");
+        assertThat(schema).contains("\"name\": \"string\"").contains("\"description\": \"string\"");
     }
 
     record ListRecord(String title, List<String> findings) {}
@@ -49,9 +46,7 @@ class JsonSchemaGeneratorTest {
     @Test
     void testGenerate_listOfString_producesArraySchema() {
         String schema = JsonSchemaGenerator.generate(ListRecord.class);
-        assertThat(schema)
-                .contains("\"findings\"")
-                .contains("[\"string\"]");
+        assertThat(schema).contains("\"findings\"").contains("[\"string\"]");
     }
 
     record NumericRecord(int intVal, long longVal, double doubleVal, float floatVal) {}
@@ -82,7 +77,11 @@ class JsonSchemaGeneratorTest {
     // Enum support
     // ========================
 
-    enum Status { ACTIVE, INACTIVE, PENDING }
+    enum Status {
+        ACTIVE,
+        INACTIVE,
+        PENDING
+    }
 
     record RecordWithEnum(String name, Status status) {}
 
@@ -102,6 +101,7 @@ class JsonSchemaGeneratorTest {
     // ========================
 
     record Address(String street, String city) {}
+
     record PersonRecord(String name, Address address) {}
 
     @Test
@@ -257,15 +257,9 @@ class JsonSchemaGeneratorTest {
     @Test
     void testGenerate_multipleFields_commasOnAllButLast() {
         String schema = JsonSchemaGenerator.generate(SimpleRecord.class);
-        // "active" is the last field -- no trailing comma
-        int activePos = schema.indexOf("\"active\"");
-        int trailingCommaPos = schema.indexOf(",", activePos);
-        // The only comma after "active" should be from "boolean\"," or "}" -- but there
-        // should be no comma on the active line itself
-        String activeLine = schema.lines()
-                .filter(l -> l.contains("\"active\""))
-                .findFirst()
-                .orElse("");
+        // "active" is the last field -- no trailing comma on that line
+        String activeLine =
+                schema.lines().filter(l -> l.contains("\"active\"")).findFirst().orElse("");
         assertThat(activeLine).doesNotEndWith(",");
     }
 }

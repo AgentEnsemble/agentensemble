@@ -1,10 +1,9 @@
 package net.agentensemble.memory;
 
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 class MemoryEntryTest {
 
@@ -26,9 +25,7 @@ class MemoryEntryTest {
 
     @Test
     void testBuilder_partialFields_nullsForOmitted() {
-        MemoryEntry entry = MemoryEntry.builder()
-                .content("Some content")
-                .build();
+        MemoryEntry entry = MemoryEntry.builder().content("Some content").build();
 
         assertThat(entry.getContent()).isEqualTo("Some content");
         assertThat(entry.getAgentRole()).isNull();
@@ -67,10 +64,8 @@ class MemoryEntryTest {
 
     @Test
     void testToString_containsContent() {
-        MemoryEntry entry = MemoryEntry.builder()
-                .content("test content")
-                .agentRole("Agent")
-                .build();
+        MemoryEntry entry =
+                MemoryEntry.builder().content("test content").agentRole("Agent").build();
 
         assertThat(entry.toString()).contains("test content");
     }

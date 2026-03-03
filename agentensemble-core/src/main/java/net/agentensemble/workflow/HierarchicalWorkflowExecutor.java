@@ -1,6 +1,10 @@
 package net.agentensemble.workflow;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
@@ -14,11 +18,6 @@ import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Executes tasks via a Manager agent that delegates to worker agents.
@@ -69,8 +68,8 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
      * @param managerMaxIterations maximum number of tool call iterations for the manager
      * @param maxDelegationDepth   maximum peer-delegation depth for worker agents
      */
-    public HierarchicalWorkflowExecutor(ChatModel managerLlm, List<Agent> workerAgents,
-            int managerMaxIterations, int maxDelegationDepth) {
+    public HierarchicalWorkflowExecutor(
+            ChatModel managerLlm, List<Agent> workerAgents, int managerMaxIterations, int maxDelegationDepth) {
         this.managerLlm = managerLlm;
         this.workerAgents = List.copyOf(workerAgents);
         this.managerMaxIterations = managerMaxIterations;
@@ -79,22 +78,23 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose,
-            MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
         Instant startTime = Instant.now();
         MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
 
         try {
-            log.info("Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
-                    resolvedTasks.size(), workerAgents.size());
+            log.info(
+                    "Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
+                    resolvedTasks.size(),
+                    workerAgents.size());
 
             // 1. Create delegation context for peer delegation among worker agents
-            DelegationContext workerDelegationContext = DelegationContext.create(
-                    workerAgents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+            DelegationContext workerDelegationContext =
+                    DelegationContext.create(workerAgents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
 
             // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
-            DelegateTaskTool delegateTool = new DelegateTaskTool(workerAgents, agentExecutor,
-                    verbose, memoryContext, workerDelegationContext);
+            DelegateTaskTool delegateTool =
+                    new DelegateTaskTool(workerAgents, agentExecutor, verbose, memoryContext, workerDelegationContext);
 
             // 3. Build the virtual Manager agent
             Agent manager = Agent.builder()
@@ -118,13 +118,11 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
             TaskOutput managerOutput;
             try {
-                managerOutput = agentExecutor.execute(managerTask, List.of(), verbose,
-                        MemoryContext.disabled());
+                managerOutput = agentExecutor.execute(managerTask, List.of(), verbose, MemoryContext.disabled());
             } catch (AgentExecutionException | MaxIterationsExceededException e) {
                 // Wrap with partial outputs so callers can recover completed worker results
                 List<TaskOutput> partial = delegateTool.getDelegatedOutputs();
-                log.error("Manager agent failed after {} delegations: {}",
-                        partial.size(), e.getMessage(), e);
+                log.error("Manager agent failed after {} delegations: {}", partial.size(), e.getMessage(), e);
                 throw new TaskExecutionException(
                         "Hierarchical workflow manager failed: " + e.getMessage(),
                         managerTask.getDescription(),
@@ -132,15 +130,18 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                         partial,
                         e);
             }
-            log.info("Manager agent completed | Delegations: {} | Duration: {}",
-                    delegateTool.getDelegatedOutputs().size(), managerOutput.getDuration());
+            log.info(
+                    "Manager agent completed | Delegations: {} | Duration: {}",
+                    delegateTool.getDelegatedOutputs().size(),
+                    managerOutput.getDuration());
 
             // 6. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
             allOutputs.add(managerOutput);
 
             Duration totalDuration = Duration.between(startTime, Instant.now());
-            int totalToolCalls = allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+            int totalToolCalls =
+                    allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
             return EnsembleOutput.builder()
                     .raw(managerOutput.getRaw())

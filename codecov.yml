@@ -1,0 +1,17 @@
+coverage:
+  status:
+    project:
+      default:
+        # Allow up to 1% drop from the historical project average before failing.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        # Require new code introduced in a PR to be at least 80% covered.
+        target: 80%
+        threshold: 5%
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false

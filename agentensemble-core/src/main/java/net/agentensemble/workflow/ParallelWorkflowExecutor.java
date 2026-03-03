@@ -1,5 +1,19 @@
 package net.agentensemble.workflow;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
@@ -12,22 +26,6 @@ import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Executes independent tasks concurrently using Java 21 virtual threads.
@@ -89,8 +87,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
      * @param maxDelegationDepth maximum allowed peer-delegation depth
      * @param errorStrategy      how to respond when a task fails during parallel execution
      */
-    public ParallelWorkflowExecutor(List<Agent> agents, int maxDelegationDepth,
-            ParallelErrorStrategy errorStrategy) {
+    public ParallelWorkflowExecutor(List<Agent> agents, int maxDelegationDepth, ParallelErrorStrategy errorStrategy) {
         this.agents = List.copyOf(agents);
         this.maxDelegationDepth = maxDelegationDepth;
         this.errorStrategy = errorStrategy != null ? errorStrategy : ParallelErrorStrategy.FAIL_FAST;
@@ -98,12 +95,13 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose,
-            MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
         if (resolvedTasks.isEmpty()) {
             return EnsembleOutput.builder()
-                    .raw("").taskOutputs(List.of())
-                    .totalDuration(Duration.ZERO).totalToolCalls(0)
+                    .raw("")
+                    .taskOutputs(List.of())
+                    .totalDuration(Duration.ZERO)
+                    .totalToolCalls(0)
                     .build();
         }
 
@@ -117,24 +115,20 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Thread-safe shared state -- IdentityHashMap for identity-based task lookup,
         // wrapped with Collections.synchronizedMap to allow concurrent access.
-        Map<Task, TaskOutput> completedOutputs =
-                Collections.synchronizedMap(new IdentityHashMap<>());
-        Map<Task, Throwable> failedTaskCauses =
-                Collections.synchronizedMap(new IdentityHashMap<>());
+        Map<Task, TaskOutput> completedOutputs = Collections.synchronizedMap(new IdentityHashMap<>());
+        Map<Task, Throwable> failedTaskCauses = Collections.synchronizedMap(new IdentityHashMap<>());
 
         // Tasks that were skipped (CONTINUE_ON_ERROR: dep failed or dep was skipped).
         // Tracked separately from failedTaskCauses so that transitive dependents of a
         // skipped task are also correctly skipped rather than being submitted for execution.
-        Set<Task> skippedTasks = Collections.synchronizedSet(
-                Collections.newSetFromMap(new IdentityHashMap<>()));
+        Set<Task> skippedTasks = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
         // Per-task: count of in-graph dependencies that have not yet resolved.
         // When this reaches 0, the task can be submitted or skipped.
-        Map<Task, AtomicInteger> pendingDepCounts = new IdentityHashMap<>();
+        IdentityHashMap<Task, AtomicInteger> pendingDepCounts = new IdentityHashMap<>();
         for (Task task : resolvedTasks) {
-            int inGraphDeps = (int) task.getContext().stream()
-                    .filter(graph::isInGraph)
-                    .count();
+            int inGraphDeps =
+                    (int) task.getContext().stream().filter(graph::isInGraph).count();
             pendingDepCounts.put(task, new AtomicInteger(inGraphDeps));
         }
 
@@ -152,18 +146,30 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         }
 
         // Delegation context shared across all tasks in this run
-        DelegationContext delegationContext = DelegationContext.create(
-                agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+        DelegationContext delegationContext =
+                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
 
         // Task outputs in topological completion order (append-only; synchronized for safe concurrent add)
-        List<TaskOutput> completionOrder = Collections.synchronizedList(new LinkedList<>());
+        List<TaskOutput> completionOrder = Collections.synchronizedList(new ArrayList<>());
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             // Submit all root tasks (no in-graph dependencies) immediately
             for (Task root : graph.getRoots()) {
-                submitTask(root, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
-                        verbose, memoryContext, executor, completionOrder);
+                submitTask(
+                        root,
+                        graph,
+                        callerMdc,
+                        completedOutputs,
+                        failedTaskCauses,
+                        skippedTasks,
+                        pendingDepCounts,
+                        firstFailureRef,
+                        latch,
+                        delegationContext,
+                        verbose,
+                        memoryContext,
+                        executor,
+                        completionOrder);
             }
 
             // Wait for all tasks to resolve (complete, fail, or be skipped)
@@ -172,17 +178,17 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new TaskExecutionException(
-                    "Parallel workflow interrupted",
-                    "multiple", "multiple",
-                    List.copyOf(completedOutputs.values()), e);
+                    "Parallel workflow interrupted", "multiple", "multiple", List.copyOf(completedOutputs.values()), e);
         }
         // try-with-resources calls executor.close(), which awaits all running threads
 
         // Handle FAIL_FAST failure
         TaskExecutionException firstFailure = firstFailureRef.get();
         if (firstFailure != null) {
-            log.error("Parallel workflow failed (FAIL_FAST) | Completed: {} | Failed: {}",
-                    completedOutputs.size(), failedTaskCauses.size());
+            log.error(
+                    "Parallel workflow failed (FAIL_FAST) | Completed: {} | Failed: {}",
+                    completedOutputs.size(),
+                    failedTaskCauses.size());
             throw firstFailure;
         }
 
@@ -195,22 +201,26 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     namedFailures.put(entry.getKey().getDescription(), entry.getValue());
                 }
             }
-            log.error("Parallel workflow partial failure (CONTINUE_ON_ERROR) | Completed: {} | Failed: {}",
-                    successOutputs.size(), namedFailures.size());
+            log.error(
+                    "Parallel workflow partial failure (CONTINUE_ON_ERROR) | Completed: {} | Failed: {}",
+                    successOutputs.size(),
+                    namedFailures.size());
             throw new ParallelExecutionException(
-                    namedFailures.size() + " of " + totalTasks + " tasks failed",
-                    successOutputs,
-                    namedFailures);
+                    namedFailures.size() + " of " + totalTasks + " tasks failed", successOutputs, namedFailures);
         }
 
         // All tasks succeeded -- assemble output in topological completion order
         List<TaskOutput> allOutputs = List.copyOf(completionOrder);
         Duration totalDuration = Duration.between(startTime, Instant.now());
         String finalOutput = allOutputs.isEmpty() ? "" : allOutputs.getLast().getRaw();
-        int totalToolCalls = allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+        int totalToolCalls =
+                allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
-        log.info("Parallel workflow completed | Tasks: {} | Duration: {} | Tool calls: {}",
-                allOutputs.size(), totalDuration, totalToolCalls);
+        log.info(
+                "Parallel workflow completed | Tasks: {} | Duration: {} | Tool calls: {}",
+                allOutputs.size(),
+                totalDuration,
+                totalToolCalls);
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)
@@ -244,15 +254,17 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             ExecutorService executor,
             List<TaskOutput> completionOrder) {
 
-        executor.submit(() -> {
+        var unused = executor.submit(() -> {
             // Restore caller's MDC in this virtual thread, then add task-specific keys
             Map<String, String> prevMdc = MDC.getCopyOfContextMap();
             MDC.setContextMap(callerMdc);
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
             try {
-                log.info("Task starting (parallel) | Agent: {} | Description: {}",
-                        task.getAgent().getRole(), truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                log.info(
+                        "Task starting (parallel) | Agent: {} | Description: {}",
+                        task.getAgent().getRole(),
+                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
                 // Collect outputs from completed in-graph dependencies as context
                 List<TaskOutput> contextOutputs = new ArrayList<>();
@@ -265,30 +277,37 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     }
                 }
 
-                TaskOutput output = agentExecutor.execute(
-                        task, contextOutputs, verbose, memoryContext, delegationContext);
+                TaskOutput output =
+                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
 
                 completedOutputs.put(task, output);
                 completionOrder.add(output);
 
-                log.info("Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
-                        task.getAgent().getRole(), output.getDuration(), output.getToolCallCount());
+                log.info(
+                        "Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
+                        task.getAgent().getRole(),
+                        output.getDuration(),
+                        output.getToolCallCount());
 
             } catch (Exception e) {
-                log.error("Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
-                        task.getAgent().getRole(), truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
+                log.error(
+                        "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
+                        task.getAgent().getRole(),
+                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
                         e.getMessage());
 
                 failedTaskCauses.put(task, e);
 
                 if (errorStrategy == ParallelErrorStrategy.FAIL_FAST) {
                     // Record the first failure; subsequent failures are ignored
-                    firstFailureRef.compareAndSet(null, new TaskExecutionException(
-                            "Task failed: " + task.getDescription(),
-                            task.getDescription(),
-                            task.getAgent().getRole(),
-                            List.copyOf(completedOutputs.values()),
-                            e));
+                    firstFailureRef.compareAndSet(
+                            null,
+                            new TaskExecutionException(
+                                    "Task failed: " + task.getDescription(),
+                                    task.getDescription(),
+                                    task.getAgent().getRole(),
+                                    List.copyOf(completedOutputs.values()),
+                                    e));
                 }
 
             } finally {
@@ -303,9 +322,21 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                 latch.countDown();
 
                 // Propagate resolution to dependents: some may now be ready to run or skip
-                resolveDependent(task, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
-                        verbose, memoryContext, executor, completionOrder);
+                resolveDependent(
+                        task,
+                        graph,
+                        callerMdc,
+                        completedOutputs,
+                        failedTaskCauses,
+                        skippedTasks,
+                        pendingDepCounts,
+                        firstFailureRef,
+                        latch,
+                        delegationContext,
+                        verbose,
+                        memoryContext,
+                        executor,
+                        completionOrder);
             }
         });
     }
@@ -347,11 +378,11 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             }
 
             // All of this dependent's dependencies have been resolved
-            boolean shouldSkip = shouldSkip(dependent, graph, failedTaskCauses,
-                    skippedTasks, firstFailureRef);
+            boolean shouldSkip = shouldSkip(dependent, graph, failedTaskCauses, skippedTasks, firstFailureRef);
 
             if (shouldSkip) {
-                log.debug("Task skipped (parallel) | Agent: {} | Description: {}",
+                log.debug(
+                        "Task skipped (parallel) | Agent: {} | Description: {}",
                         dependent.getAgent().getRole(),
                         truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
 
@@ -360,14 +391,38 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
                 // Count this task as resolved (skipped) and cascade to its dependents
                 latch.countDown();
-                resolveDependent(dependent, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
-                        verbose, memoryContext, executor, completionOrder);
+                resolveDependent(
+                        dependent,
+                        graph,
+                        callerMdc,
+                        completedOutputs,
+                        failedTaskCauses,
+                        skippedTasks,
+                        pendingDepCounts,
+                        firstFailureRef,
+                        latch,
+                        delegationContext,
+                        verbose,
+                        memoryContext,
+                        executor,
+                        completionOrder);
             } else {
                 // All deps succeeded and no blocking failure -- submit this task
-                submitTask(dependent, graph, callerMdc, completedOutputs, failedTaskCauses,
-                        skippedTasks, pendingDepCounts, firstFailureRef, latch, delegationContext,
-                        verbose, memoryContext, executor, completionOrder);
+                submitTask(
+                        dependent,
+                        graph,
+                        callerMdc,
+                        completedOutputs,
+                        failedTaskCauses,
+                        skippedTasks,
+                        pendingDepCounts,
+                        firstFailureRef,
+                        latch,
+                        delegationContext,
+                        verbose,
+                        memoryContext,
+                        executor,
+                        completionOrder);
             }
         }
     }
@@ -384,7 +439,9 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
      *
      * @return true if the task should be skipped rather than submitted for execution
      */
-    private boolean shouldSkip(Task task, TaskDependencyGraph graph,
+    private boolean shouldSkip(
+            Task task,
+            TaskDependencyGraph graph,
             Map<Task, Throwable> failedTaskCauses,
             Set<Task> skippedTasks,
             AtomicReference<TaskExecutionException> firstFailureRef) {
@@ -400,8 +457,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             // skipped tasks appear in skippedTasks (not in failedTaskCauses).
             return task.getContext().stream()
                     .filter(graph::isInGraph)
-                    .anyMatch(dep -> failedTaskCauses.containsKey(dep)
-                            || skippedTasks.contains(dep));
+                    .anyMatch(dep -> failedTaskCauses.containsKey(dep) || skippedTasks.contains(dep));
         }
 
         return false;

@@ -1,19 +1,5 @@
 package net.agentensemble.memory;
 
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.output.Response;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
-import dev.langchain4j.store.embedding.EmbeddingSearchResult;
-import dev.langchain4j.store.embedding.EmbeddingStore;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import java.time.Instant;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,14 +9,28 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.output.Response;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import java.time.Instant;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 class EmbeddingStoreLongTermMemoryTest {
 
     @SuppressWarnings("unchecked")
     private final EmbeddingStore<TextSegment> embeddingStore = mock(EmbeddingStore.class);
+
     private final EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
     private EmbeddingStoreLongTermMemory ltm;
 
-    private static final float[] DUMMY_VECTOR = new float[]{0.1f, 0.2f, 0.3f};
+    private static final float[] DUMMY_VECTOR = new float[] {0.1f, 0.2f, 0.3f};
 
     @BeforeEach
     void setUp() {
@@ -82,8 +82,7 @@ class EmbeddingStoreLongTermMemoryTest {
 
     @Test
     void testStore_nullEntry_throwsException() {
-        assertThatThrownBy(() -> ltm.store(null))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ltm.store(null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -105,13 +104,12 @@ class EmbeddingStoreLongTermMemoryTest {
         when(embeddingModel.embed("Research AI trends")).thenReturn(Response.from(queryEmbedding));
 
         // Build a realistic TextSegment with metadata
-        dev.langchain4j.data.document.Metadata meta =
-                dev.langchain4j.data.document.Metadata.from("agentRole", "Researcher")
+        dev.langchain4j.data.document.Metadata meta = dev.langchain4j.data.document.Metadata.from(
+                        "agentRole", "Researcher")
                 .put("taskDescription", "Research AI trends")
                 .put("timestamp", "2026-01-15T10:00:00Z");
         TextSegment segment = TextSegment.from("Past research on AI", meta);
-        EmbeddingMatch<TextSegment> match = new EmbeddingMatch<>(0.9, "id1",
-                Embedding.from(DUMMY_VECTOR), segment);
+        EmbeddingMatch<TextSegment> match = new EmbeddingMatch<>(0.9, "id1", Embedding.from(DUMMY_VECTOR), segment);
         EmbeddingSearchResult<TextSegment> result = new EmbeddingSearchResult<>(List.of(match));
 
         when(embeddingStore.search(any(EmbeddingSearchRequest.class))).thenReturn(result);

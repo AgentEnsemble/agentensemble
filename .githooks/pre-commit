@@ -1,0 +1,45 @@
+#!/bin/bash
+# Pre-commit hook: runs spotlessApply on staged Java/Kotlin files and re-stages
+# any files that were reformatted, so the commit always contains formatted code.
+#
+# Install: ./gradlew setupGitHooks
+# Bypass:  git commit --no-verify
+
+set -euo pipefail
+
+# Collect staged Java and Kotlin Gradle files before running Spotless.
+# If none are staged, there is nothing to format.
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(java|kts)$' || true)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+echo "Running spotlessApply on staged files..."
+
+# Apply formatting in-place. Spotless is incremental, so only changed files
+# are reformatted. The formatter writes back to the working tree (not the index).
+if ! ./gradlew spotlessApply --quiet; then
+    echo "ERROR: spotlessApply failed. Fix formatting issues and try again."
+    exit 1
+fi
+
+# Re-stage any originally-staged files that Spotless reformatted.
+# Only files that were already staged (tracked in STAGED_FILES) are re-added.
+# Files that were unstaged before the commit remain unstaged after it.
+REFORMATTED=0
+while IFS= read -r FILE; do
+    if [ -f "$FILE" ] && ! git diff --quiet "$FILE"; then
+        git add "$FILE"
+        echo "  Re-staged (reformatted): $FILE"
+        REFORMATTED=1
+    fi
+done <<< "$STAGED_FILES"
+
+if [ "$REFORMATTED" -eq 1 ]; then
+    echo ""
+    echo "NOTE: Spotless reformatted one or more files."
+    echo "The formatted versions have been re-staged and will be included in your commit."
+fi
+
+exit 0

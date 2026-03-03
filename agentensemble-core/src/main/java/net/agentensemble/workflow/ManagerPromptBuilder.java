@@ -1,9 +1,8 @@
 package net.agentensemble.workflow;
 
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
-
-import java.util.List;
 
 /**
  * Builds the meta-prompts used by the Manager agent in a hierarchical workflow.
@@ -68,7 +67,11 @@ public final class ManagerPromptBuilder {
 
         for (int i = 0; i < tasks.size(); i++) {
             Task task = tasks.get(i);
-            sb.append("Task ").append(i + 1).append(": ").append(task.getDescription()).append("\n");
+            sb.append("Task ")
+                    .append(i + 1)
+                    .append(": ")
+                    .append(task.getDescription())
+                    .append("\n");
             sb.append("Expected output: ").append(task.getExpectedOutput()).append("\n");
             if (i < tasks.size() - 1) {
                 sb.append("\n");

@@ -1,11 +1,10 @@
 package net.agentensemble.ensemble;
 
-import net.agentensemble.task.TaskOutput;
-import lombok.Builder;
-import lombok.Value;
-
 import java.time.Duration;
 import java.util.List;
+import lombok.Builder;
+import lombok.Value;
+import net.agentensemble.task.TaskOutput;
 
 /**
  * The result of a complete ensemble execution.
@@ -35,9 +34,7 @@ public class EnsembleOutput {
     public static class EnsembleOutputBuilder {
 
         public EnsembleOutput build() {
-            List<TaskOutput> immutableOutputs = taskOutputs != null
-                    ? List.copyOf(taskOutputs)
-                    : List.of();
+            List<TaskOutput> immutableOutputs = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
             return new EnsembleOutput(raw, immutableOutputs, totalDuration, totalToolCalls);
         }
     }

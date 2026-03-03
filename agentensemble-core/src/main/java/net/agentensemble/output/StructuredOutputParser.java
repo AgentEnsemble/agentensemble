@@ -2,11 +2,10 @@ package net.agentensemble.output;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Parses structured (JSON) output from raw LLM responses.
@@ -33,12 +32,10 @@ public final class StructuredOutputParser {
 
     /** Matches markdown code fences: ```json ... ``` or ``` ... ``` */
     private static final Pattern MARKDOWN_FENCE_PATTERN =
-            Pattern.compile("```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```",
-                    Pattern.CASE_INSENSITIVE);
+            Pattern.compile("```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```", Pattern.CASE_INSENSITIVE);
 
     /** Matches the first JSON object or array embedded in prose (non-greedy to find the first block). */
-    private static final Pattern JSON_BLOCK_PATTERN =
-            Pattern.compile("(?s)([\\[\\{].*?[\\]\\}])", Pattern.DOTALL);
+    private static final Pattern JSON_BLOCK_PATTERN = Pattern.compile("(?s)([\\[\\{].*?[\\]\\}])", Pattern.DOTALL);
 
     private static final ObjectMapper OBJECT_MAPPER = buildObjectMapper();
 
@@ -79,24 +76,20 @@ public final class StructuredOutputParser {
             String trimmed = raw.strip();
             try {
                 T value = OBJECT_MAPPER.readValue(trimmed, type);
-                log.debug("Structured scalar output parsed successfully into {} from bare value",
-                        type.getSimpleName());
+                log.debug("Structured scalar output parsed successfully into {} from bare value", type.getSimpleName());
                 return ParseResult.success(value);
             } catch (Exception ignored) {
                 // Not a parseable scalar JSON value for this type -- fall through
             }
-            return ParseResult.failure(
-                    "Could not find valid JSON in response: " + truncate(raw, 200));
+            return ParseResult.failure("Could not find valid JSON in response: " + truncate(raw, 200));
         }
 
         try {
             T value = OBJECT_MAPPER.readValue(json, type);
-            log.debug("Structured output parsed successfully into {}",
-                    type.getSimpleName());
+            log.debug("Structured output parsed successfully into {}", type.getSimpleName());
             return ParseResult.success(value);
         } catch (Exception e) {
-            String errorMsg = "JSON could not be deserialized as "
-                    + type.getSimpleName() + ": " + e.getMessage();
+            String errorMsg = "JSON could not be deserialized as " + type.getSimpleName() + ": " + e.getMessage();
             log.debug("Structured output parse failed: {}", errorMsg);
             return ParseResult.failure(errorMsg);
         }

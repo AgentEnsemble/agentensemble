@@ -20,11 +20,11 @@ public class MaxIterationsExceededException extends AgentEnsembleException {
     private final int maxIterations;
     private final int toolCallsMade;
 
-    public MaxIterationsExceededException(String agentRole, String taskDescription,
-            int maxIterations, int toolCallsMade) {
+    public MaxIterationsExceededException(
+            String agentRole, String taskDescription, int maxIterations, int toolCallsMade) {
         super(String.format(
                 "Agent '%s' exceeded maximum iterations (%d). Tool calls made: %d. "
-                + "Task: '%s'. Consider increasing maxIterations or simplifying the task.",
+                        + "Task: '%s'. Consider increasing maxIterations or simplifying the task.",
                 agentRole, maxIterations, toolCallsMade, taskDescription));
         this.agentRole = agentRole;
         this.taskDescription = taskDescription;

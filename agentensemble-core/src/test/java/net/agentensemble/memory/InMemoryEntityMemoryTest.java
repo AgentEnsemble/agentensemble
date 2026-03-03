@@ -1,10 +1,10 @@
 package net.agentensemble.memory;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class InMemoryEntityMemoryTest {
 
@@ -63,20 +63,17 @@ class InMemoryEntityMemoryTest {
 
     @Test
     void testPut_nullEntityName_throwsException() {
-        assertThatThrownBy(() -> memory.put(null, "fact"))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> memory.put(null, "fact")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void testPut_blankEntityName_throwsException() {
-        assertThatThrownBy(() -> memory.put("   ", "fact"))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> memory.put("   ", "fact")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void testPut_nullFact_throwsException() {
-        assertThatThrownBy(() -> memory.put("OpenAI", null))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> memory.put("OpenAI", null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     // ========================
@@ -109,8 +106,7 @@ class InMemoryEntityMemoryTest {
         memory.put("Entity", "fact");
         var all = memory.getAll();
 
-        assertThatThrownBy(() -> all.put("Other", "fact"))
-                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> all.put("Other", "fact")).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -120,7 +116,8 @@ class InMemoryEntityMemoryTest {
         memory.put("C", "fact C");
 
         var all = memory.getAll();
-        assertThat(all).containsEntry("A", "fact A")
+        assertThat(all)
+                .containsEntry("A", "fact A")
                 .containsEntry("B", "fact B")
                 .containsEntry("C", "fact C");
     }

@@ -1,9 +1,16 @@
 package net.agentensemble.workflow;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
@@ -12,14 +19,6 @@ import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class DelegateTaskToolTest {
 
@@ -33,22 +32,26 @@ class DelegateTaskToolTest {
     void setUp() {
         researcherModel = mock(ChatModel.class);
         writerModel = mock(ChatModel.class);
-        researcher = Agent.builder().role("Researcher").goal("Research topics")
-                .llm(researcherModel).build();
-        writer = Agent.builder().role("Writer").goal("Write content")
-                .llm(writerModel).build();
+        researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research topics")
+                .llm(researcherModel)
+                .build();
+        writer = Agent.builder()
+                .role("Writer")
+                .goal("Write content")
+                .llm(writerModel)
+                .build();
 
         AgentExecutor executor = new AgentExecutor();
-        DelegationContext delegationContext = DelegationContext.create(
-                List.of(researcher, writer), 3, MemoryContext.disabled(), executor, false);
-        tool = new DelegateTaskTool(List.of(researcher, writer), executor, false,
-                MemoryContext.disabled(), delegationContext);
+        DelegationContext delegationContext =
+                DelegationContext.create(List.of(researcher, writer), 3, MemoryContext.disabled(), executor, false);
+        tool = new DelegateTaskTool(
+                List.of(researcher, writer), executor, false, MemoryContext.disabled(), delegationContext);
     }
 
     private ChatResponse textResponse(String text) {
-        return ChatResponse.builder()
-                .aiMessage(AiMessage.from(text))
-                .build();
+        return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }
 
     // ========================
@@ -182,8 +185,7 @@ class DelegateTaskToolTest {
 
         // Verify it works via the JSON-based tool adapter (as called by AgentExecutor)
         String result = LangChain4jToolAdapter.executeAnnotatedTool(
-                tool, "delegateTask",
-                "{\"agentRole\": \"Researcher\", \"taskDescription\": \"Research AI trends\"}");
+                tool, "delegateTask", "{\"agentRole\": \"Researcher\", \"taskDescription\": \"Research AI trends\"}");
 
         assertThat(result).isEqualTo("adapter result");
     }
@@ -191,7 +193,8 @@ class DelegateTaskToolTest {
     @Test
     void testDelegateTask_toolAnnotationIsPresent() throws NoSuchMethodException {
         var method = DelegateTaskTool.class.getMethod("delegateTask", String.class, String.class);
-        assertThat(method.isAnnotationPresent(dev.langchain4j.agent.tool.Tool.class)).isTrue();
+        assertThat(method.isAnnotationPresent(dev.langchain4j.agent.tool.Tool.class))
+                .isTrue();
     }
 
     @Test

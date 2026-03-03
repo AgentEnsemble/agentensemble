@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added (Code Quality Tooling)
+- **Spotless** (`com.diffplug.spotless` 7.0.2): enforces consistent Java formatting using
+  `palantir-java-format` 2.47.0 (4-space indent, matching existing style); `spotlessCheck`
+  wired into `check` task so CI fails on violations; `spotlessApply` auto-formats
+- **Error Prone** (`net.ltgt.errorprone` 4.2.0, `error_prone_core` 2.36.0): compile-time
+  bug detection; surfaced 8 real issues (IdentityHashMapUsage x4, ReferenceEquality,
+  UnusedVariable x2, JdkObsolete, FutureReturnValueIgnored x4) -- all fixed
+- **JaCoCo**: coverage reporting (XML + HTML) and enforcement gate for `agentensemble-core`:
+  LINE >= 90%, BRANCH >= 75% (current: 94.1% line, 81.4% branch); wired into `check`
+- **Codecov**: coverage uploaded on every CI run via `codecov-action@v5`; `codecov.yml`
+  configures auto threshold (project) and 80% target for new code (patch)
+- **Pre-commit hook**: `.githooks/pre-commit` runs `spotlessApply` on staged Java/Kotlin
+  files and re-stages any reformatted files so commits always contain formatted code;
+  activated via `./gradlew setupGitHooks`
+
+### Fixed (Error Prone findings)
+- `Ensemble.java`: `Map<Task, Task>` -> `IdentityHashMap<Task, Task>` (IdentityHashMapUsage)
+- `TaskDependencyGraph.java`: field types `Map<Task, List<Task>>` -> `IdentityHashMap<Task, List<Task>>` (IdentityHashMapUsage x2)
+- `ParallelWorkflowExecutor.java`: `Map<Task, AtomicInteger>` -> `IdentityHashMap<Task, AtomicInteger>` (IdentityHashMapUsage); `LinkedList<>` -> `ArrayList<>` (JdkObsolete); `executor.submit` -> `var unused = executor.submit` (FutureReturnValueIgnored)
+- `AgentExecutor.java`: removed unused `boolean verbose` parameter from `executeWithTools` method signature (UnusedVariable)
+- `Task.java`: added `@SuppressWarnings("ReferenceEquality")` to `validateContext` -- identity comparison is intentional (two Agent objects with identical fields are distinct agents)
+- `ShortTermMemoryTest.java`: three `executor.submit` -> `var unused = executor.submit` (FutureReturnValueIgnored)
+- `JsonSchemaGeneratorTest.java`: removed unused local variables `trailingCommaPos` and `activePos` (UnusedVariable)
+
+---
+
+
 ### Added (GitHub Pages documentation site)
 - `mkdocs.yml`: MkDocs Material site configuration; nav mirrors `docs/index.md` structure;
   brand logo (`assets/logo.svg`), favicon (`assets/favicon.svg`), light/dark toggle,

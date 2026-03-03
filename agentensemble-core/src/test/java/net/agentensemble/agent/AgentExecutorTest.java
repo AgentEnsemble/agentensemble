@@ -1,10 +1,18 @@
 package net.agentensemble.agent;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.AgentExecutionException;
@@ -14,23 +22,12 @@ import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 class AgentExecutorTest {
 
     private final AgentExecutor executor = new AgentExecutor();
 
     private ChatResponse textResponse(String text) {
-        return ChatResponse.builder()
-                .aiMessage(new AiMessage(text))
-                .build();
+        return ChatResponse.builder().aiMessage(new AiMessage(text)).build();
     }
 
     private ChatResponse toolCallResponse(String toolName, String arguments) {
@@ -39,9 +36,7 @@ class AgentExecutorTest {
                 .name(toolName)
                 .arguments(arguments)
                 .build();
-        return ChatResponse.builder()
-                .aiMessage(new AiMessage(List.of(request)))
-                .build();
+        return ChatResponse.builder().aiMessage(new AiMessage(List.of(request))).build();
     }
 
     // ========================
@@ -80,7 +75,11 @@ class AgentExecutorTest {
         when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Result"));
 
         var agent = Agent.builder().role("Analyst").goal("Analyze").llm(mockLlm).build();
-        var task = Task.builder().description("Analyze data").expectedOutput("Analysis").agent(agent).build();
+        var task = Task.builder()
+                .description("Analyze data")
+                .expectedOutput("Analysis")
+                .agent(agent)
+                .build();
 
         executor.execute(task, List.of(), false);
 
@@ -137,9 +136,16 @@ class AgentExecutorTest {
                 .thenReturn(textResponse("I apologize, the search failed. Here is my best answer..."));
 
         var agent = Agent.builder()
-                .role("Researcher").goal("Find info").tools(List.of(mockTool)).llm(mockLlm).build();
+                .role("Researcher")
+                .goal("Find info")
+                .tools(List.of(mockTool))
+                .llm(mockLlm)
+                .build();
         var task = Task.builder()
-                .description("Research").expectedOutput("Report").agent(agent).build();
+                .description("Research")
+                .expectedOutput("Report")
+                .agent(agent)
+                .build();
 
         TaskOutput output = executor.execute(task, List.of(), false);
 
@@ -161,8 +167,7 @@ class AgentExecutorTest {
         when(mockTool.execute(any())).thenReturn(ToolResult.success("result"));
 
         // LLM always returns tool calls, never a final answer
-        when(mockLlm.chat(any(ChatRequest.class)))
-                .thenReturn(toolCallResponse("search", "{\"input\": \"query\"}"));
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(toolCallResponse("search", "{\"input\": \"query\"}"));
 
         var agent = Agent.builder()
                 .role("Researcher")
@@ -172,7 +177,10 @@ class AgentExecutorTest {
                 .maxIterations(2)
                 .build();
         var task = Task.builder()
-                .description("Research").expectedOutput("Report").agent(agent).build();
+                .description("Research")
+                .expectedOutput("Report")
+                .agent(agent)
+                .build();
 
         assertThatThrownBy(() -> executor.execute(task, List.of(), false))
                 .isInstanceOf(MaxIterationsExceededException.class)
@@ -192,8 +200,16 @@ class AgentExecutorTest {
         var mockLlm = mock(ChatModel.class);
         when(mockLlm.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("API unavailable"));
 
-        var agent = Agent.builder().role("Researcher").goal("Find info").llm(mockLlm).build();
-        var task = Task.builder().description("Research").expectedOutput("Report").agent(agent).build();
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find info")
+                .llm(mockLlm)
+                .build();
+        var task = Task.builder()
+                .description("Research")
+                .expectedOutput("Report")
+                .agent(agent)
+                .build();
 
         assertThatThrownBy(() -> executor.execute(task, List.of(), false))
                 .isInstanceOf(AgentExecutionException.class)
@@ -210,8 +226,16 @@ class AgentExecutorTest {
         var mockLlm = mock(ChatModel.class);
         when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse(""));
 
-        var agent = Agent.builder().role("Researcher").goal("Find info").llm(mockLlm).build();
-        var task = Task.builder().description("Research").expectedOutput("Report").agent(agent).build();
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find info")
+                .llm(mockLlm)
+                .build();
+        var task = Task.builder()
+                .description("Research")
+                .expectedOutput("Report")
+                .agent(agent)
+                .build();
 
         TaskOutput output = executor.execute(task, List.of(), false);
 
@@ -227,8 +251,16 @@ class AgentExecutorTest {
         var mockLlm = mock(ChatModel.class);
         when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Article written."));
 
-        var agent = Agent.builder().role("Writer").goal("Write content").llm(mockLlm).build();
-        var task = Task.builder().description("Write blog post").expectedOutput("Blog post").agent(agent).build();
+        var agent = Agent.builder()
+                .role("Writer")
+                .goal("Write content")
+                .llm(mockLlm)
+                .build();
+        var task = Task.builder()
+                .description("Write blog post")
+                .expectedOutput("Blog post")
+                .agent(agent)
+                .build();
         var contextOutput = net.agentensemble.task.TaskOutput.builder()
                 .raw("Research result: AI is growing")
                 .taskDescription("Research task")

@@ -21,8 +21,8 @@ public class OutputParsingException extends AgentEnsembleException {
     private final List<String> parseErrors;
     private final int attemptCount;
 
-    public OutputParsingException(String message, String rawOutput, Class<?> outputType,
-            List<String> parseErrors, int attemptCount) {
+    public OutputParsingException(
+            String message, String rawOutput, Class<?> outputType, List<String> parseErrors, int attemptCount) {
         super(message);
         this.rawOutput = rawOutput;
         this.outputType = outputType;

@@ -1,6 +1,19 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Singular;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
@@ -12,23 +25,9 @@ import net.agentensemble.workflow.ParallelWorkflowExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
 import net.agentensemble.workflow.WorkflowExecutor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.Singular;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
 /**
  * An ensemble of agents collaborating on a sequence of tasks.
@@ -132,8 +131,11 @@ public class Ensemble {
         MDC.put("ensemble.id", ensembleId);
 
         try {
-            log.info("Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
-                    workflow, tasks.size(), agents.size());
+            log.info(
+                    "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
+                    workflow,
+                    tasks.size(),
+                    agents.size());
             log.debug("Input variables: {}", inputs);
 
             // Step 1: Validate configuration
@@ -143,12 +145,11 @@ public class Ensemble {
             List<Task> resolvedTasks = resolveTasks(inputs);
 
             // Step 3: Create memory context for this run (no-op when memory is not configured)
-            MemoryContext memoryContext = memory != null
-                    ? MemoryContext.from(memory)
-                    : MemoryContext.disabled();
+            MemoryContext memoryContext = memory != null ? MemoryContext.from(memory) : MemoryContext.disabled();
 
             if (memoryContext.isActive()) {
-                log.info("Memory enabled | shortTerm={} longTerm={} entityMemory={}",
+                log.info(
+                        "Memory enabled | shortTerm={} longTerm={} entityMemory={}",
                         memoryContext.hasShortTerm(),
                         memoryContext.hasLongTerm(),
                         memoryContext.hasEntityMemory());
@@ -158,8 +159,11 @@ public class Ensemble {
             WorkflowExecutor executor = selectExecutor();
             EnsembleOutput output = executor.execute(resolvedTasks, verbose, memoryContext);
 
-            log.info("Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
-                    output.getTotalDuration(), output.getTaskOutputs().size(), output.getTotalToolCalls());
+            log.info(
+                    "Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
+                    output.getTotalDuration(),
+                    output.getTaskOutputs().size(),
+                    output.getTotalToolCalls());
 
             return output;
 
@@ -188,7 +192,7 @@ public class Ensemble {
         // Pass 1: resolve description and expectedOutput; build original -> resolved map.
         // Use identity-based map because Task uses value equality and two pre-resolution
         // tasks with different descriptions must be treated as distinct keys.
-        Map<Task, Task> originalToResolved = new IdentityHashMap<>();
+        IdentityHashMap<Task, Task> originalToResolved = new IdentityHashMap<>();
         for (Task task : tasks) {
             Task resolved = task.toBuilder()
                     .description(TemplateResolver.resolve(task.getDescription(), inputs))
@@ -215,7 +219,8 @@ public class Ensemble {
                 for (Task ctxTask : originalContext) {
                     resolvedContext.add(originalToResolved.getOrDefault(ctxTask, ctxTask));
                 }
-                Task finalTask = resolvedBase.toBuilder().context(resolvedContext).build();
+                Task finalTask =
+                        resolvedBase.toBuilder().context(resolvedContext).build();
                 // Update the mapping so subsequent tasks in this pass see the final version
                 originalToResolved.put(original, finalTask);
                 result.add(finalTask);
@@ -229,8 +234,7 @@ public class Ensemble {
             case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
                     resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth);
-            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth,
-                    parallelErrorStrategy);
+            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy);
         };
     }
 
@@ -269,23 +273,20 @@ public class Ensemble {
 
     private void validateMaxDelegationDepth() {
         if (maxDelegationDepth <= 0) {
-            throw new ValidationException(
-                    "Ensemble maxDelegationDepth must be > 0, got: " + maxDelegationDepth);
+            throw new ValidationException("Ensemble maxDelegationDepth must be > 0, got: " + maxDelegationDepth);
         }
     }
 
     private void validateManagerMaxIterations() {
         if (workflow == Workflow.HIERARCHICAL && managerMaxIterations <= 0) {
-            throw new ValidationException(
-                    "Ensemble managerMaxIterations must be > 0 for HIERARCHICAL workflow, got: "
+            throw new ValidationException("Ensemble managerMaxIterations must be > 0 for HIERARCHICAL workflow, got: "
                     + managerMaxIterations);
         }
     }
 
     private void validateParallelErrorStrategy() {
         if (workflow == Workflow.PARALLEL && parallelErrorStrategy == null) {
-            throw new ValidationException(
-                    "Ensemble parallelErrorStrategy must not be null for PARALLEL workflow");
+            throw new ValidationException("Ensemble parallelErrorStrategy must not be null for PARALLEL workflow");
         }
     }
 
@@ -297,8 +298,7 @@ public class Ensemble {
 
         for (Task task : tasks) {
             if (!registeredAgents.contains(task.getAgent())) {
-                throw new ValidationException(
-                        "Task '" + task.getDescription()
+                throw new ValidationException("Task '" + task.getDescription()
                         + "' references agent '" + task.getAgent().getRole()
                         + "' which is not in the ensemble's agent list");
             }
@@ -320,11 +320,10 @@ public class Ensemble {
             if ("Manager".equalsIgnoreCase(role)) {
                 throw new ValidationException(
                         "Agent role 'Manager' is reserved for the virtual manager in HIERARCHICAL "
-                        + "workflow. Choose a different role for agent '" + role + "'.");
+                                + "workflow. Choose a different role for agent '" + role + "'.");
             }
             if (!seenRoles.add(role.toLowerCase(Locale.ROOT))) {
-                throw new ValidationException(
-                        "Duplicate agent role '" + role + "' detected in HIERARCHICAL workflow. "
+                throw new ValidationException("Duplicate agent role '" + role + "' detected in HIERARCHICAL workflow. "
                         + "All agent roles must be unique (case-insensitive) to avoid ambiguous delegation.");
             }
         }
@@ -353,8 +352,7 @@ public class Ensemble {
         }
     }
 
-    private void detectCycle(Task task, Map<Task, List<Task>> graph,
-            Set<Task> visited, Set<Task> inStack) {
+    private void detectCycle(Task task, Map<Task, List<Task>> graph, Set<Task> visited, Set<Task> inStack) {
         visited.add(task);
         inStack.add(task);
 
@@ -364,8 +362,7 @@ public class Ensemble {
                 detectCycle(dep, graph, visited, inStack);
             } else if (inStack.contains(dep)) {
                 throw new ValidationException(
-                        "Circular context dependency detected involving task: '"
-                        + task.getDescription() + "'");
+                        "Circular context dependency detected involving task: '" + task.getDescription() + "'");
             }
         }
 
@@ -395,13 +392,13 @@ public class Ensemble {
                     boolean inEnsembleTasks = ensureTaskSet.contains(contextTask);
                     String message = inEnsembleTasks
                             ? "Task '" + task.getDescription()
-                              + "' references context task '" + contextTask.getDescription()
-                              + "' which appears later in the task list. "
-                              + "Context tasks must be executed before the tasks that reference them."
+                                    + "' references context task '" + contextTask.getDescription()
+                                    + "' which appears later in the task list. "
+                                    + "Context tasks must be executed before the tasks that reference them."
                             : "Task '" + task.getDescription()
-                              + "' references context task '" + contextTask.getDescription()
-                              + "' which is not in the ensemble's task list. "
-                              + "All context tasks must be included in the ensemble before they can be referenced.";
+                                    + "' references context task '" + contextTask.getDescription()
+                                    + "' which is not in the ensemble's task list. "
+                                    + "All context tasks must be included in the ensemble before they can be referenced.";
                     throw new ValidationException(message);
                 }
             }
@@ -416,8 +413,7 @@ public class Ensemble {
         }
         for (Agent agent : agents) {
             if (!usedAgents.contains(agent)) {
-                log.warn("Agent '{}' is registered with the ensemble but not assigned to any task",
-                        agent.getRole());
+                log.warn("Agent '{}' is registered with the ensemble but not assigned to any task", agent.getRole());
             }
         }
     }

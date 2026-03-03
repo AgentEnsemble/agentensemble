@@ -1,15 +1,16 @@
 package net.agentensemble.output;
 
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 class StructuredOutputParserTest {
 
     record Report(String title, String summary) {}
+
     record CountRecord(String name, int count) {}
+
     record ListRecord(String topic, List<String> items) {}
 
     // ========================
@@ -97,7 +98,8 @@ class StructuredOutputParserTest {
 
     @Test
     void testExtractJson_noJson_returnsNull() {
-        assertThat(StructuredOutputParser.extractJson("This is just plain text with no JSON.")).isNull();
+        assertThat(StructuredOutputParser.extractJson("This is just plain text with no JSON."))
+                .isNull();
     }
 
     // ========================

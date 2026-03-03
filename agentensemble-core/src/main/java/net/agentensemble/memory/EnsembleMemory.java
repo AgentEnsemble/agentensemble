@@ -1,8 +1,8 @@
 package net.agentensemble.memory;
 
-import net.agentensemble.exception.ValidationException;
 import lombok.Builder;
 import lombok.Getter;
+import net.agentensemble.exception.ValidationException;
 
 /**
  * Memory configuration for an {@code Ensemble}.
@@ -97,8 +97,7 @@ public class EnsembleMemory {
         public EnsembleMemory build() {
             boolean anyEnabled = shortTerm || longTerm != null || entityMemory != null;
             if (!anyEnabled) {
-                throw new ValidationException(
-                        "EnsembleMemory must have at least one memory type enabled: "
+                throw new ValidationException("EnsembleMemory must have at least one memory type enabled: "
                         + "shortTerm=true, longTerm, or entityMemory");
             }
             // longTermMaxResults is only meaningful when long-term memory is configured

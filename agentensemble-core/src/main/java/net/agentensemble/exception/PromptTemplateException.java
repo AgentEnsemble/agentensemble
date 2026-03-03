@@ -17,8 +17,7 @@ public class PromptTemplateException extends AgentEnsembleException {
     private final List<String> missingVariables;
     private final String template;
 
-    public PromptTemplateException(String message, List<String> missingVariables,
-            String template) {
+    public PromptTemplateException(String message, List<String> missingVariables, String template) {
         super(message);
         this.missingVariables = List.copyOf(missingVariables);
         this.template = template;

@@ -9,6 +9,9 @@ junit-platform   = "6.0.3"
 assertj          = "3.27.7"
 mockito          = "5.22.0"
 logback          = "1.5.32"
+spotless         = "7.0.2"
+errorprone       = "4.2.0"
+errorprone-core  = "2.36.0"
 
 [libraries]
 langchain4j-core          = { group = "dev.langchain4j", name = "langchain4j-core",    version.ref = "langchain4j" }
@@ -22,6 +25,9 @@ junit-platform-launcher   = { group = "org.junit.platform",             name = "
 assertj-core              = { group = "org.assertj",                    name = "assertj-core",             version.ref = "assertj"  }
 mockito-core              = { group = "org.mockito",                    name = "mockito-core",             version.ref = "mockito"  }
 logback-classic           = { group = "ch.qos.logback",                 name = "logback-classic",          version.ref = "logback"  }
+errorprone-core           = { group = "com.google.errorprone",          name = "error_prone_core",         version.ref = "errorprone-core" }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }
+spotless           = { id = "com.diffplug.spotless",        version.ref = "spotless"           }
+errorprone         = { id = "net.ltgt.errorprone",          version.ref = "errorprone"         }

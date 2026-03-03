@@ -1,15 +1,14 @@
 package net.agentensemble;
 
-import dev.langchain4j.model.chat.ChatModel;
-import net.agentensemble.exception.ValidationException;
-import net.agentensemble.workflow.Workflow;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+
+import dev.langchain4j.model.chat.ChatModel;
+import java.util.List;
+import net.agentensemble.exception.ValidationException;
+import net.agentensemble.workflow.Workflow;
+import org.junit.jupiter.api.Test;
 
 class EnsembleTest {
 
@@ -36,9 +35,7 @@ class EnsembleTest {
     @Test
     void testRun_withEmptyTasks_throwsValidation() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .build();
+        var ensemble = Ensemble.builder().agent(researcher).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(ValidationException.class)
@@ -53,9 +50,7 @@ class EnsembleTest {
     void testRun_withEmptyAgents_throwsValidation() {
         var researcher = agent("Researcher");
         var researchTask = task("Research task", researcher);
-        var ensemble = Ensemble.builder()
-                .task(researchTask)
-                .build();
+        var ensemble = Ensemble.builder().task(researchTask).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(ValidationException.class)
@@ -74,7 +69,7 @@ class EnsembleTest {
         var writeTask = task("Write task", unregisteredAgent); // unregistered agent
 
         var ensemble = Ensemble.builder()
-                .agent(registeredAgent)         // only researcher registered
+                .agent(registeredAgent) // only researcher registered
                 .task(researchTask)
                 .task(writeTask)
                 .build();
@@ -96,13 +91,9 @@ class EnsembleTest {
         // taskA appears before taskB in the list) is caught by validateContextOrdering.
         var researcher = agent("Researcher");
         var taskA = task("Task A", researcher);
-        var taskB = taskA.toBuilder()
-                .description("Task B")
-                .context(List.of(taskA))
-                .build();
-        var taskAWithDep = taskA.toBuilder()
-                .context(List.of(taskB))
-                .build();
+        var taskB =
+                taskA.toBuilder().description("Task B").context(List.of(taskA)).build();
+        var taskAWithDep = taskA.toBuilder().context(List.of(taskB)).build();
 
         var ensemble = Ensemble.builder()
                 .agent(researcher)
@@ -135,7 +126,7 @@ class EnsembleTest {
         // Adding secondTask BEFORE firstTask in the list violates ordering
         var ensemble = Ensemble.builder()
                 .agent(researcher)
-                .task(secondTask)   // second task first -- violation
+                .task(secondTask) // second task first -- violation
                 .task(firstTask)
                 .build();
 
@@ -152,9 +143,7 @@ class EnsembleTest {
     @Test
     void testDefaultWorkflow_isSequential() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .build();
+        var ensemble = Ensemble.builder().agent(researcher).build();
 
         assertThat(ensemble.getWorkflow()).isEqualTo(Workflow.SEQUENTIAL);
     }
@@ -162,9 +151,7 @@ class EnsembleTest {
     @Test
     void testDefaultVerbose_isFalse() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .build();
+        var ensemble = Ensemble.builder().agent(researcher).build();
 
         assertThat(ensemble.isVerbose()).isFalse();
     }
@@ -187,8 +174,7 @@ class EnsembleTest {
 
         // Validation passes; execution is stubbed in Issue #12
         // No ValidationException thrown means validation succeeded
-        assertThatThrownBy(ensemble::run)
-                .isNotInstanceOf(ValidationException.class);
+        assertThatThrownBy(ensemble::run).isNotInstanceOf(ValidationException.class);
     }
 
     // ========================
@@ -197,7 +183,7 @@ class EnsembleTest {
 
     @Test
     void testRun_hierarchical_withReservedManagerRole_throwsValidation() {
-        var manager = agent("Manager");    // reserved role
+        var manager = agent("Manager"); // reserved role
         var worker = agent("Worker");
         var taskA = task("Task A", manager);
         var taskB = task("Task B", worker);
@@ -219,7 +205,7 @@ class EnsembleTest {
     @Test
     void testRun_hierarchical_withDuplicateRoles_throwsValidation() {
         var researcher1 = agent("Researcher");
-        var researcher2 = agent("Researcher");  // duplicate role
+        var researcher2 = agent("Researcher"); // duplicate role
         var taskA = task("Task A", researcher1);
         var taskB = task("Task B", researcher2);
 
@@ -267,7 +253,7 @@ class EnsembleTest {
 
         var ensemble = Ensemble.builder()
                 .agent(researcher)
-                .task(mainTask)          // externalTask not added to ensemble
+                .task(mainTask) // externalTask not added to ensemble
                 .build();
 
         assertThatThrownBy(ensemble::run)
@@ -294,12 +280,11 @@ class EnsembleTest {
         var ensemble = Ensemble.builder()
                 .agent(researcher)
                 .agent(writer)
-                .task(researchTask)   // research first
-                .task(writeTask)      // write second (depends on research)
+                .task(researchTask) // research first
+                .task(writeTask) // write second (depends on research)
                 .build();
 
         // No ValidationException -- ordering is correct
-        assertThatThrownBy(ensemble::run)
-                .isNotInstanceOf(ValidationException.class);
+        assertThatThrownBy(ensemble::run).isNotInstanceOf(ValidationException.class);
     }
 }

@@ -1,14 +1,13 @@
 package net.agentensemble.workflow;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 class ManagerPromptBuilderTest {
 
@@ -21,13 +20,20 @@ class ManagerPromptBuilderTest {
     }
 
     private Agent agentWithBackground(String role, String goal, String background) {
-        return Agent.builder().role(role).goal(goal).background(background)
-                .llm(mock(ChatModel.class)).build();
+        return Agent.builder()
+                .role(role)
+                .goal(goal)
+                .background(background)
+                .llm(mock(ChatModel.class))
+                .build();
     }
 
     private Task taskFor(Agent agent, String description, String expectedOutput) {
-        return Task.builder().description(description).expectedOutput(expectedOutput)
-                .agent(agent).build();
+        return Task.builder()
+                .description(description)
+                .expectedOutput(expectedOutput)
+                .agent(agent)
+                .build();
     }
 
     // ========================

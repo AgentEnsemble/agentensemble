@@ -1,14 +1,13 @@
 package net.agentensemble;
 
-import dev.langchain4j.model.chat.ChatModel;
-import net.agentensemble.exception.ValidationException;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+
+import dev.langchain4j.model.chat.ChatModel;
+import java.util.List;
+import net.agentensemble.exception.ValidationException;
+import org.junit.jupiter.api.Test;
 
 class TaskTest {
 
@@ -59,8 +58,16 @@ class TaskTest {
 
     @Test
     void testBuild_withMultipleContextTasks_succeeds() {
-        var ctx1 = Task.builder().description("Task 1").expectedOutput("Out 1").agent(testAgent).build();
-        var ctx2 = Task.builder().description("Task 2").expectedOutput("Out 2").agent(testAgent).build();
+        var ctx1 = Task.builder()
+                .description("Task 1")
+                .expectedOutput("Out 1")
+                .agent(testAgent)
+                .build();
+        var ctx2 = Task.builder()
+                .description("Task 2")
+                .expectedOutput("Out 2")
+                .agent(testAgent)
+                .build();
 
         var task = Task.builder()
                 .description("Main task")
@@ -107,10 +114,10 @@ class TaskTest {
     @Test
     void testBuild_withNullDescription_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description(null)
-                .expectedOutput("A report")
-                .agent(testAgent)
-                .build())
+                        .description(null)
+                        .expectedOutput("A report")
+                        .agent(testAgent)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("description");
     }
@@ -118,10 +125,10 @@ class TaskTest {
     @Test
     void testBuild_withBlankDescription_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("   ")
-                .expectedOutput("A report")
-                .agent(testAgent)
-                .build())
+                        .description("   ")
+                        .expectedOutput("A report")
+                        .agent(testAgent)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("description");
     }
@@ -129,10 +136,10 @@ class TaskTest {
     @Test
     void testBuild_withEmptyDescription_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("")
-                .expectedOutput("A report")
-                .agent(testAgent)
-                .build())
+                        .description("")
+                        .expectedOutput("A report")
+                        .agent(testAgent)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("description");
     }
@@ -144,10 +151,10 @@ class TaskTest {
     @Test
     void testBuild_withNullExpectedOutput_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Research task")
-                .expectedOutput(null)
-                .agent(testAgent)
-                .build())
+                        .description("Research task")
+                        .expectedOutput(null)
+                        .agent(testAgent)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("expectedOutput");
     }
@@ -155,10 +162,10 @@ class TaskTest {
     @Test
     void testBuild_withBlankExpectedOutput_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Research task")
-                .expectedOutput("  ")
-                .agent(testAgent)
-                .build())
+                        .description("Research task")
+                        .expectedOutput("  ")
+                        .agent(testAgent)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("expectedOutput");
     }
@@ -170,10 +177,10 @@ class TaskTest {
     @Test
     void testBuild_withNullAgent_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Research task")
-                .expectedOutput("A report")
-                .agent(null)
-                .build())
+                        .description("Research task")
+                        .expectedOutput("A report")
+                        .agent(null)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("agent");
     }
@@ -185,13 +192,17 @@ class TaskTest {
     @Test
     void testBuild_withNullContextElement_throwsValidation() {
         // List.of() doesn't allow nulls but we can use Arrays.asList for testing
-        var ctx = Task.builder().description("Ctx").expectedOutput("Out").agent(testAgent).build();
-        assertThatThrownBy(() -> Task.builder()
-                .description("Main task")
-                .expectedOutput("Output")
+        var ctx = Task.builder()
+                .description("Ctx")
+                .expectedOutput("Out")
                 .agent(testAgent)
-                .context(java.util.Arrays.asList(ctx, null))
-                .build())
+                .build();
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Main task")
+                        .expectedOutput("Output")
+                        .agent(testAgent)
+                        .context(java.util.Arrays.asList(ctx, null))
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("context")
                 .hasMessageContaining("null");
@@ -208,11 +219,11 @@ class TaskTest {
 
         // toBuilder produces a task with identical field values -- context.contains() checks value equality
         assertThatThrownBy(() -> Task.builder()
-                .description(baseTask.getDescription())
-                .expectedOutput(baseTask.getExpectedOutput())
-                .agent(baseTask.getAgent())
-                .context(List.of(baseTask))
-                .build())
+                        .description(baseTask.getDescription())
+                        .expectedOutput(baseTask.getExpectedOutput())
+                        .agent(baseTask.getAgent())
+                        .context(List.of(baseTask))
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("cannot reference itself");
     }
@@ -223,7 +234,11 @@ class TaskTest {
 
     @Test
     void testContextList_isImmutable() {
-        var ctx = Task.builder().description("Ctx").expectedOutput("Out").agent(testAgent).build();
+        var ctx = Task.builder()
+                .description("Ctx")
+                .expectedOutput("Out")
+                .agent(testAgent)
+                .build();
         var task = Task.builder()
                 .description("Main")
                 .expectedOutput("Result")
@@ -257,10 +272,12 @@ class TaskTest {
                 .agent(testAgent)
                 .build();
 
-        var ctx = Task.builder().description("Ctx").expectedOutput("Out").agent(testAgent).build();
-        var modified = original.toBuilder()
-                .context(List.of(ctx))
+        var ctx = Task.builder()
+                .description("Ctx")
+                .expectedOutput("Out")
+                .agent(testAgent)
                 .build();
+        var modified = original.toBuilder().context(List.of(ctx)).build();
 
         assertThat(modified.getDescription()).isEqualTo("Research AI trends");
         assertThat(modified.getContext()).hasSize(1);
@@ -315,11 +332,11 @@ class TaskTest {
     @Test
     void testBuild_withOutputType_primitive_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Task")
-                .expectedOutput("Output")
-                .agent(testAgent)
-                .outputType(int.class)
-                .build())
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .agent(testAgent)
+                        .outputType(int.class)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("primitive");
     }
@@ -327,11 +344,11 @@ class TaskTest {
     @Test
     void testBuild_withOutputType_void_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Task")
-                .expectedOutput("Output")
-                .agent(testAgent)
-                .outputType(Void.class)
-                .build())
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .agent(testAgent)
+                        .outputType(Void.class)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Void");
     }
@@ -339,11 +356,11 @@ class TaskTest {
     @Test
     void testBuild_withOutputType_array_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Task")
-                .expectedOutput("Output")
-                .agent(testAgent)
-                .outputType(String[].class)
-                .build())
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .agent(testAgent)
+                        .outputType(String[].class)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("array");
     }
@@ -390,11 +407,11 @@ class TaskTest {
     @Test
     void testBuild_withMaxOutputRetries_negative_throwsValidation() {
         assertThatThrownBy(() -> Task.builder()
-                .description("Task")
-                .expectedOutput("Output")
-                .agent(testAgent)
-                .maxOutputRetries(-1)
-                .build())
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .agent(testAgent)
+                        .maxOutputRetries(-1)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("maxOutputRetries");
     }

@@ -15,8 +15,7 @@ public class ToolExecutionException extends AgentEnsembleException {
     private final String toolName;
     private final String toolInput;
 
-    public ToolExecutionException(String message, String toolName, String toolInput,
-            Throwable cause) {
+    public ToolExecutionException(String message, String toolName, String toolInput, Throwable cause) {
         super(message, cause);
         this.toolName = toolName;
         this.toolInput = toolInput;

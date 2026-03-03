@@ -1,13 +1,12 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
-import net.agentensemble.exception.ValidationException;
-import net.agentensemble.tool.AgentTool;
-import lombok.Builder;
-import lombok.Value;
-
 import java.lang.reflect.Method;
 import java.util.List;
+import lombok.Builder;
+import lombok.Value;
+import net.agentensemble.exception.ValidationException;
+import net.agentensemble.tool.AgentTool;
 
 /**
  * An AI agent with a defined role, goal, and optional tools.
@@ -106,8 +105,8 @@ public class Agent {
             if (responseFormat == null) {
                 responseFormat = "";
             }
-            return new Agent(role, goal, background, tools, llm, allowDelegation, verbose,
-                    maxIterations, responseFormat);
+            return new Agent(
+                    role, goal, background, tools, llm, allowDelegation, verbose, maxIterations, responseFormat);
         }
 
         private void validateRole() {
@@ -130,8 +129,7 @@ public class Agent {
 
         private void validateMaxIterations() {
             if (maxIterations <= 0) {
-                throw new ValidationException(
-                        "Agent maxIterations must be > 0, got: " + maxIterations);
+                throw new ValidationException("Agent maxIterations must be > 0, got: " + maxIterations);
             }
         }
 
@@ -148,7 +146,7 @@ public class Agent {
                 if (!(tool instanceof AgentTool) && !hasToolAnnotatedMethods(tool)) {
                     throw new ValidationException(
                             "Tool at index " + i + " (" + tool.getClass().getSimpleName()
-                            + ") is neither an AgentTool nor has @Tool-annotated methods");
+                                    + ") is neither an AgentTool nor has @Tool-annotated methods");
                 }
             }
         }

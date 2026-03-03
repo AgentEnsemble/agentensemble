@@ -1,9 +1,18 @@
 package net.agentensemble.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.time.Instant;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -14,16 +23,6 @@ import net.agentensemble.memory.LongTermMemory;
 import net.agentensemble.memory.MemoryEntry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-
-import java.time.Instant;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * End-to-end integration tests for ensemble execution with memory enabled.
@@ -74,11 +73,15 @@ class MemoryEnsembleIntegrationTest {
 
         when(researcher.chat(any(ChatRequest.class)))
                 .thenReturn(textResponse("Research result: AI is revolutionizing healthcare."));
-        when(writer.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("Blog post written."));
+        when(writer.chat(any(ChatRequest.class))).thenReturn(textResponse("Blog post written."));
 
-        var researcherAgent = Agent.builder().role("Researcher").goal("Research").llm(researcher).build();
-        var writerAgent = Agent.builder().role("Writer").goal("Write").llm(writer).build();
+        var researcherAgent = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(researcher)
+                .build();
+        var writerAgent =
+                Agent.builder().role("Writer").goal("Write").llm(writer).build();
 
         var researchTask = Task.builder()
                 .description("Research healthcare AI")
@@ -94,8 +97,10 @@ class MemoryEnsembleIntegrationTest {
         EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent).agent(writerAgent)
-                .task(researchTask).task(writeTask)
+                .agent(researcherAgent)
+                .agent(writerAgent)
+                .task(researchTask)
+                .task(writeTask)
                 .memory(memory)
                 .build()
                 .run();
@@ -105,9 +110,8 @@ class MemoryEnsembleIntegrationTest {
         verify(writer, atLeast(1)).chat(captor.capture());
 
         // The writer's prompt should contain the research result (from STM)
-        String writerPrompt = captor.getValue().messages().stream()
-                .map(Object::toString)
-                .reduce("", String::concat);
+        String writerPrompt =
+                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
         assertThat(writerPrompt).contains("AI is revolutionizing healthcare");
 
         assertThat(output.getTaskOutputs()).hasSize(2);
@@ -118,22 +122,33 @@ class MemoryEnsembleIntegrationTest {
         var researcher = mock(ChatModel.class);
         var writer = mock(ChatModel.class);
 
-        when(researcher.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("Research output here."));
-        when(writer.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("Written."));
+        when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Research output here."));
+        when(writer.chat(any(ChatRequest.class))).thenReturn(textResponse("Written."));
 
-        var researcherAgent = Agent.builder().role("Researcher").goal("Research").llm(researcher).build();
-        var writerAgent = Agent.builder().role("Writer").goal("Write").llm(writer).build();
+        var researcherAgent = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(researcher)
+                .build();
+        var writerAgent =
+                Agent.builder().role("Writer").goal("Write").llm(writer).build();
 
         var researchTask = Task.builder()
-                .description("Research task").expectedOutput("Report").agent(researcherAgent).build();
+                .description("Research task")
+                .expectedOutput("Report")
+                .agent(researcherAgent)
+                .build();
         var writeTask = Task.builder()
-                .description("Write task").expectedOutput("Article").agent(writerAgent).build();
+                .description("Write task")
+                .expectedOutput("Article")
+                .agent(writerAgent)
+                .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent).agent(writerAgent)
-                .task(researchTask).task(writeTask)
+                .agent(researcherAgent)
+                .agent(writerAgent)
+                .task(researchTask)
+                .task(writeTask)
                 .memory(EnsembleMemory.builder().shortTerm(true).build())
                 .build()
                 .run();
@@ -141,8 +156,8 @@ class MemoryEnsembleIntegrationTest {
         // Capture writer's prompt and verify STM section heading
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
         verify(writer, atLeast(1)).chat(captor.capture());
-        String writerPrompt = captor.getValue().messages().stream()
-                .map(Object::toString).reduce("", String::concat);
+        String writerPrompt =
+                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
 
         assertThat(writerPrompt).contains("Short-Term Memory");
         assertThat(output.getTaskOutputs()).hasSize(2);
@@ -166,12 +181,7 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
-        Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memory(memory)
-                .build()
-                .run();
+        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
 
         // The task output should be stored into long-term memory
         ArgumentCaptor<MemoryEntry> captor = ArgumentCaptor.forClass(MemoryEntry.class);
@@ -207,19 +217,14 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
-        Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memory(memory)
-                .build()
-                .run();
+        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
 
         // Capture the prompt sent to the LLM
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
         verify(llm).chat(captor.capture());
 
-        String prompt = captor.getValue().messages().stream()
-                .map(Object::toString).reduce("", String::concat);
+        String prompt =
+                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
 
         // The LTM section should be present with the past memory content
         assertThat(prompt).contains("Long-Term Memory");
@@ -247,18 +252,13 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().entityMemory(em).build();
 
-        Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memory(memory)
-                .build()
-                .run();
+        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
 
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
         verify(llm).chat(captor.capture());
 
-        String prompt = captor.getValue().messages().stream()
-                .map(Object::toString).reduce("", String::concat);
+        String prompt =
+                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
 
         assertThat(prompt).contains("Entity Knowledge");
         assertThat(prompt).contains("Acme Corp");
@@ -283,7 +283,7 @@ class MemoryEnsembleIntegrationTest {
         EnsembleOutput output = Ensemble.builder()
                 .agent(agent)
                 .task(task)
-                .build()  // No .memory() call
+                .build() // No .memory() call
                 .run();
 
         assertThat(output.getRaw()).isEqualTo("Research complete.");
@@ -305,12 +305,21 @@ class MemoryEnsembleIntegrationTest {
         var analyst = agentWithResponse("Analyst", "Analysis complete.");
         var writer = agentWithResponse("Writer", "Article written.");
 
-        var t1 = Task.builder().description("Research AI").expectedOutput("Report")
-                .agent(researcher).build();
-        var t2 = Task.builder().description("Analyse findings").expectedOutput("Analysis")
-                .agent(analyst).build();
-        var t3 = Task.builder().description("Write article").expectedOutput("Article")
-                .agent(writer).build();
+        var t1 = Task.builder()
+                .description("Research AI")
+                .expectedOutput("Report")
+                .agent(researcher)
+                .build();
+        var t2 = Task.builder()
+                .description("Analyse findings")
+                .expectedOutput("Analysis")
+                .agent(analyst)
+                .build();
+        var t3 = Task.builder()
+                .description("Write article")
+                .expectedOutput("Article")
+                .agent(writer)
+                .build();
 
         EnsembleMemory memory = EnsembleMemory.builder()
                 .shortTerm(true)
@@ -319,8 +328,12 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher).agent(analyst).agent(writer)
-                .task(t1).task(t2).task(t3)
+                .agent(researcher)
+                .agent(analyst)
+                .agent(writer)
+                .task(t1)
+                .task(t2)
+                .task(t3)
                 .memory(memory)
                 .build()
                 .run();

@@ -1,11 +1,10 @@
 package net.agentensemble.task;
 
+import java.time.Duration;
+import java.time.Instant;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.Value;
-
-import java.time.Duration;
-import java.time.Instant;
 
 /**
  * The result produced by an agent executing a single task.
@@ -23,19 +22,24 @@ import java.time.Instant;
 public class TaskOutput {
 
     /** The complete text output from the agent. */
-    @NonNull String raw;
+    @NonNull
+    String raw;
 
     /** The original task description (for traceability). */
-    @NonNull String taskDescription;
+    @NonNull
+    String taskDescription;
 
     /** The role of the agent that produced this output. */
-    @NonNull String agentRole;
+    @NonNull
+    String agentRole;
 
     /** When this task completed (UTC). */
-    @NonNull Instant completedAt;
+    @NonNull
+    Instant completedAt;
 
     /** How long the task took to execute. */
-    @NonNull Duration duration;
+    @NonNull
+    Duration duration;
 
     /** Number of tool invocations during execution. */
     int toolCallCount;
@@ -65,15 +69,13 @@ public class TaskOutput {
     @SuppressWarnings("unchecked")
     public <T> T getParsedOutput(Class<T> type) {
         if (parsedOutput == null) {
-            throw new IllegalStateException(
-                    "No parsed output available. "
+            throw new IllegalStateException("No parsed output available. "
                     + "Ensure the task was built with outputType(...) "
                     + "and that parsing succeeded.");
         }
         if (!type.isInstance(parsedOutput)) {
-            throw new IllegalStateException(
-                    "Parsed output is of type " + parsedOutput.getClass().getName()
-                    + " but requested type " + type.getName() + " does not match.");
+            throw new IllegalStateException("Parsed output is of type "
+                    + parsedOutput.getClass().getName() + " but requested type " + type.getName() + " does not match.");
         }
         return type.cast(parsedOutput);
     }

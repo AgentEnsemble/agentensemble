@@ -1,17 +1,16 @@
 package net.agentensemble.delegation;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.memory.MemoryContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
 class DelegationContextTest {
 
@@ -24,7 +23,11 @@ class DelegationContextTest {
     @BeforeEach
     void setUp() {
         model = mock(ChatModel.class);
-        agentA = Agent.builder().role("Researcher").goal("Research things").llm(model).build();
+        agentA = Agent.builder()
+                .role("Researcher")
+                .goal("Research things")
+                .llm(model)
+                .build();
         agentB = Agent.builder().role("Writer").goal("Write things").llm(model).build();
         executor = mock(AgentExecutor.class);
         memoryContext = MemoryContext.disabled();
@@ -70,32 +73,28 @@ class DelegationContextTest {
 
     @Test
     void create_throwsWhenExecutorIsNull() {
-        assertThatThrownBy(() ->
-                DelegationContext.create(List.of(agentA), 3, memoryContext, null, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, memoryContext, null, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("agentExecutor");
     }
 
     @Test
     void create_throwsWhenMemoryContextIsNull() {
-        assertThatThrownBy(() ->
-                DelegationContext.create(List.of(agentA), 3, null, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 3, null, executor, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("memoryContext");
     }
 
     @Test
     void create_throwsWhenMaxDepthIsZero() {
-        assertThatThrownBy(() ->
-                DelegationContext.create(List.of(agentA), 0, memoryContext, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), 0, memoryContext, executor, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxDepth");
     }
 
     @Test
     void create_throwsWhenMaxDepthIsNegative() {
-        assertThatThrownBy(() ->
-                DelegationContext.create(List.of(agentA), -1, memoryContext, executor, false))
+        assertThatThrownBy(() -> DelegationContext.create(List.of(agentA), -1, memoryContext, executor, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxDepth");
     }

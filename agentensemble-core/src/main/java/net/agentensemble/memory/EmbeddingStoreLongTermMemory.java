@@ -8,12 +8,11 @@ import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Long-term memory backed by a LangChain4j {@link EmbeddingStore}.
@@ -56,8 +55,7 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
      * @param embeddingStore the store used to persist and search embeddings
      * @param embeddingModel the model used to generate text embeddings
      */
-    public EmbeddingStoreLongTermMemory(EmbeddingStore<TextSegment> embeddingStore,
-            EmbeddingModel embeddingModel) {
+    public EmbeddingStoreLongTermMemory(EmbeddingStore<TextSegment> embeddingStore, EmbeddingModel embeddingModel) {
         if (embeddingStore == null) {
             throw new IllegalArgumentException("embeddingStore must not be null");
         }
@@ -87,8 +85,7 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
         Embedding embedding = embeddingModel.embed(content).content();
         embeddingStore.add(embedding, segment);
 
-        log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars",
-                entry.getAgentRole(), content.length());
+        log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars", entry.getAgentRole(), content.length());
     }
 
     @Override
@@ -124,8 +121,10 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
                     .build());
         }
 
-        log.debug("Retrieved {} long-term memories for query: {}",
-                entries.size(), query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        log.debug(
+                "Retrieved {} long-term memories for query: {}",
+                entries.size(),
+                query.length() > 80 ? query.substring(0, 80) + "..." : query);
 
         return entries;
     }

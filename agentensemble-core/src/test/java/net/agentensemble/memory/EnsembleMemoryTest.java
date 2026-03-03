@@ -1,11 +1,11 @@
 package net.agentensemble.memory;
 
-import net.agentensemble.exception.ValidationException;
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+
+import net.agentensemble.exception.ValidationException;
+import org.junit.jupiter.api.Test;
 
 class EnsembleMemoryTest {
 
@@ -15,9 +15,7 @@ class EnsembleMemoryTest {
 
     @Test
     void testBuilder_shortTermOnly_builds() {
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .shortTerm(true)
-                .build();
+        EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
         assertThat(memory.isShortTerm()).isTrue();
         assertThat(memory.getLongTerm()).isNull();
@@ -32,9 +30,7 @@ class EnsembleMemoryTest {
     void testBuilder_longTermOnly_builds() {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .longTerm(ltm)
-                .build();
+        EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
         assertThat(memory.getLongTerm()).isSameAs(ltm);
         assertThat(memory.isShortTerm()).isFalse();
@@ -48,9 +44,7 @@ class EnsembleMemoryTest {
     void testBuilder_entityMemoryOnly_builds() {
         EntityMemory em = new InMemoryEntityMemory();
 
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .entityMemory(em)
-                .build();
+        EnsembleMemory memory = EnsembleMemory.builder().entityMemory(em).build();
 
         assertThat(memory.getEntityMemory()).isSameAs(em);
     }
@@ -83,9 +77,7 @@ class EnsembleMemoryTest {
     void testBuilder_defaults_shortTermFalseAndMaxResults5() {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .longTerm(ltm)
-                .build();
+        EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
         assertThat(memory.isShortTerm()).isFalse();
         assertThat(memory.getLongTermMaxResults()).isEqualTo(5);
@@ -95,10 +87,8 @@ class EnsembleMemoryTest {
     void testBuilder_customMaxResults_setsCorrectly() {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .longTerm(ltm)
-                .longTermMaxResults(10)
-                .build();
+        EnsembleMemory memory =
+                EnsembleMemory.builder().longTerm(ltm).longTermMaxResults(10).build();
 
         assertThat(memory.getLongTermMaxResults()).isEqualTo(10);
     }
@@ -116,9 +106,7 @@ class EnsembleMemoryTest {
 
     @Test
     void testBuilder_shortTermFalseAndNullLtmAndNullEntity_throwsValidationException() {
-        assertThatThrownBy(() -> EnsembleMemory.builder()
-                .shortTerm(false)
-                .build())
+        assertThatThrownBy(() -> EnsembleMemory.builder().shortTerm(false).build())
                 .isInstanceOf(ValidationException.class);
     }
 
@@ -127,9 +115,9 @@ class EnsembleMemoryTest {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
         assertThatThrownBy(() -> EnsembleMemory.builder()
-                .longTerm(ltm)
-                .longTermMaxResults(0)
-                .build())
+                        .longTerm(ltm)
+                        .longTermMaxResults(0)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("longTermMaxResults");
     }
@@ -139,9 +127,9 @@ class EnsembleMemoryTest {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
         assertThatThrownBy(() -> EnsembleMemory.builder()
-                .longTerm(ltm)
-                .longTermMaxResults(-1)
-                .build())
+                        .longTerm(ltm)
+                        .longTermMaxResults(-1)
+                        .build())
                 .isInstanceOf(ValidationException.class);
     }
 }

@@ -1,12 +1,5 @@
 package net.agentensemble.memory;
 
-import net.agentensemble.task.TaskOutput;
-import org.junit.jupiter.api.Test;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -15,6 +8,12 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import net.agentensemble.task.TaskOutput;
+import org.junit.jupiter.api.Test;
 
 class MemoryContextTest {
 
@@ -79,8 +78,7 @@ class MemoryContextTest {
 
     @Test
     void testFrom_nullConfig_throwsException() {
-        assertThatThrownBy(() -> MemoryContext.from(null))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> MemoryContext.from(null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -202,12 +200,16 @@ class MemoryContextTest {
     @Test
     void testQueryLongTerm_withLongTerm_callsRetrieve() {
         LongTermMemory ltm = mock(LongTermMemory.class);
-        when(ltm.retrieve(anyString(), anyInt())).thenReturn(List.of(
-                MemoryEntry.builder().content("past memory").agentRole("Agent")
-                        .taskDescription("old task").timestamp(Instant.now()).build()
-        ));
+        when(ltm.retrieve(anyString(), anyInt()))
+                .thenReturn(List.of(MemoryEntry.builder()
+                        .content("past memory")
+                        .agentRole("Agent")
+                        .taskDescription("old task")
+                        .timestamp(Instant.now())
+                        .build()));
 
-        EnsembleMemory config = EnsembleMemory.builder().longTerm(ltm).longTermMaxResults(3).build();
+        EnsembleMemory config =
+                EnsembleMemory.builder().longTerm(ltm).longTermMaxResults(3).build();
         MemoryContext ctx = MemoryContext.from(config);
 
         List<MemoryEntry> results = ctx.queryLongTerm("current task description");
@@ -238,8 +240,7 @@ class MemoryContextTest {
         MemoryContext ctx = MemoryContext.from(config);
 
         var facts = ctx.getEntityFacts();
-        assertThat(facts).containsEntry("Company X", "A tech startup")
-                .containsEntry("Alice", "The lead engineer");
+        assertThat(facts).containsEntry("Company X", "A tech startup").containsEntry("Alice", "The lead engineer");
     }
 
     @Test

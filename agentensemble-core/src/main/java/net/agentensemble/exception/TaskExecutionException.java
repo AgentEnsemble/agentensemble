@@ -1,8 +1,7 @@
 package net.agentensemble.exception;
 
-import net.agentensemble.task.TaskOutput;
-
 import java.util.List;
+import net.agentensemble.task.TaskOutput;
 
 /**
  * Thrown when a task fails during execution.
@@ -16,13 +15,17 @@ public class TaskExecutionException extends AgentEnsembleException {
     private final String agentRole;
     private final List<TaskOutput> completedTaskOutputs;
 
-    public TaskExecutionException(String message, String taskDescription, String agentRole,
-            List<TaskOutput> completedTaskOutputs) {
+    public TaskExecutionException(
+            String message, String taskDescription, String agentRole, List<TaskOutput> completedTaskOutputs) {
         this(message, taskDescription, agentRole, completedTaskOutputs, null);
     }
 
-    public TaskExecutionException(String message, String taskDescription, String agentRole,
-            List<TaskOutput> completedTaskOutputs, Throwable cause) {
+    public TaskExecutionException(
+            String message,
+            String taskDescription,
+            String agentRole,
+            List<TaskOutput> completedTaskOutputs,
+            Throwable cause) {
         super(message, cause);
         this.taskDescription = taskDescription;
         this.agentRole = agentRole;

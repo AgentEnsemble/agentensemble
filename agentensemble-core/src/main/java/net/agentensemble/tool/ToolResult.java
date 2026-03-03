@@ -35,8 +35,7 @@ public final class ToolResult {
      * @return a failed ToolResult
      */
     public static ToolResult failure(String errorMessage) {
-        return new ToolResult("", false,
-                errorMessage != null ? errorMessage : "Tool execution failed with no message");
+        return new ToolResult("", false, errorMessage != null ? errorMessage : "Tool execution failed with no message");
     }
 
     /** The text output from the tool. Empty string if the tool failed. */

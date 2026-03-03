@@ -2,6 +2,8 @@ package net.agentensemble.workflow;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import java.util.ArrayList;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
@@ -10,9 +12,6 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * A tool that allows the Manager agent to delegate tasks to worker agents.
@@ -50,8 +49,12 @@ public class DelegateTaskTool {
      *                           {@link MemoryContext#disabled()}
      * @param delegationContext  peer-delegation context so workers can further delegate if allowed
      */
-    public DelegateTaskTool(List<Agent> agents, AgentExecutor agentExecutor, boolean verbose,
-            MemoryContext memoryContext, DelegationContext delegationContext) {
+    public DelegateTaskTool(
+            List<Agent> agents,
+            AgentExecutor agentExecutor,
+            boolean verbose,
+            MemoryContext memoryContext,
+            DelegationContext delegationContext) {
         this.agents = List.copyOf(agents);
         this.agentExecutor = agentExecutor;
         this.verbose = verbose;
@@ -74,8 +77,8 @@ public class DelegateTaskTool {
     @Tool("Delegate a task to a worker agent. Provide the agent's role and a clear task description. "
             + "Use this tool for each task that needs to be completed by a team member.")
     public String delegateTask(
-            @P("The exact role of the worker agent to delegate to. "
-                    + "Must match one of the available agent roles.") String agentRole,
+            @P("The exact role of the worker agent to delegate to. " + "Must match one of the available agent roles.")
+                    String agentRole,
             @P("A clear description of the task for the agent to complete.") String taskDescription) {
 
         if (agentRole == null || agentRole.isBlank()) {
@@ -90,13 +93,14 @@ public class DelegateTaskTool {
         Agent agent = findAgentByRole(agentRole);
         if (agent == null) {
             List<String> availableRoles = agents.stream().map(Agent::getRole).toList();
-            String error = "No agent found with role '" + agentRole
-                    + "'. Available roles: " + availableRoles;
+            String error = "No agent found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation failed: {}", error);
             return error;
         }
 
-        log.info("Delegating task to agent '{}': {}", agent.getRole(),
+        log.info(
+                "Delegating task to agent '{}': {}",
+                agent.getRole(),
                 taskDescription.length() > 80 ? taskDescription.substring(0, 80) + "..." : taskDescription);
 
         Task delegatedTask = Task.builder()
@@ -105,12 +109,14 @@ public class DelegateTaskTool {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose, memoryContext,
-                delegationContext);
+        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), verbose, memoryContext, delegationContext);
         delegatedOutputs.add(output);
 
-        log.info("Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                agent.getRole(), output.getToolCallCount(), output.getDuration());
+        log.info(
+                "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
+                agent.getRole(),
+                output.getToolCallCount(),
+                output.getDuration());
 
         return output.getRaw();
     }

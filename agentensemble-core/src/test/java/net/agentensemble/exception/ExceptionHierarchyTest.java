@@ -1,14 +1,13 @@
 package net.agentensemble.exception;
 
-import net.agentensemble.task.TaskOutput;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import net.agentensemble.task.TaskOutput;
+import org.junit.jupiter.api.Test;
 
 class ExceptionHierarchyTest {
 
@@ -84,8 +83,7 @@ class ExceptionHierarchyTest {
     @Test
     void taskExecutionException_withCause() {
         var cause = new RuntimeException("LLM timeout");
-        var ex = new TaskExecutionException("Task failed", "Write task", "Writer",
-                List.of(), cause);
+        var ex = new TaskExecutionException("Task failed", "Write task", "Writer", List.of(), cause);
         assertThat(ex.getCause()).isSameAs(cause);
         assertThat(ex.getTaskDescription()).isEqualTo("Write task");
         assertThat(ex.getAgentRole()).isEqualTo("Writer");
@@ -111,8 +109,7 @@ class ExceptionHierarchyTest {
     @Test
     void agentExecutionException_fieldsAccessible() {
         var cause = new RuntimeException("connection timeout");
-        var ex = new AgentExecutionException("Agent failed to execute", "Senior Analyst",
-                "Research AI trends", cause);
+        var ex = new AgentExecutionException("Agent failed to execute", "Senior Analyst", "Research AI trends", cause);
         assertThat(ex.getMessage()).isEqualTo("Agent failed to execute");
         assertThat(ex.getAgentRole()).isEqualTo("Senior Analyst");
         assertThat(ex.getTaskDescription()).isEqualTo("Research AI trends");
@@ -133,8 +130,7 @@ class ExceptionHierarchyTest {
     @Test
     void toolExecutionException_fieldsAccessible() {
         var cause = new RuntimeException("connection refused");
-        var ex = new ToolExecutionException("Tool web_search failed", "web_search",
-                "query: AI trends 2026", cause);
+        var ex = new ToolExecutionException("Tool web_search failed", "web_search", "query: AI trends 2026", cause);
         assertThat(ex.getMessage()).isEqualTo("Tool web_search failed");
         assertThat(ex.getToolName()).isEqualTo("web_search");
         assertThat(ex.getToolInput()).isEqualTo("query: AI trends 2026");
@@ -163,9 +159,7 @@ class ExceptionHierarchyTest {
     @Test
     void maxIterationsExceededException_messageContainsContext() {
         var ex = new MaxIterationsExceededException("Researcher", "Research task", 10, 13);
-        assertThat(ex.getMessage())
-                .contains("Researcher")
-                .contains("10");
+        assertThat(ex.getMessage()).contains("Researcher").contains("10");
     }
 
     // ========================
@@ -174,8 +168,7 @@ class ExceptionHierarchyTest {
 
     @Test
     void promptTemplateException_extendsAgentEnsembleException() {
-        var ex = new PromptTemplateException("Missing variables: [topic]",
-                List.of("topic"), "Research {topic}");
+        var ex = new PromptTemplateException("Missing variables: [topic]", List.of("topic"), "Research {topic}");
         assertThat(ex).isInstanceOf(AgentEnsembleException.class);
     }
 
@@ -183,8 +176,7 @@ class ExceptionHierarchyTest {
     void promptTemplateException_fieldsAccessible() {
         var missing = List.of("topic", "year");
         var template = "Research {topic} in {year}";
-        var ex = new PromptTemplateException("Missing template variables: [topic, year]",
-                missing, template);
+        var ex = new PromptTemplateException("Missing template variables: [topic, year]", missing, template);
         assertThat(ex.getMessage()).isEqualTo("Missing template variables: [topic, year]");
         assertThat(ex.getMissingVariables()).containsExactly("topic", "year");
         assertThat(ex.getTemplate()).isEqualTo(template);
@@ -222,10 +214,7 @@ class ExceptionHierarchyTest {
     void parallelExecutionException_fieldsAccessible() {
         var output = taskOutput("result", "Researcher", "Research task");
         var cause = new RuntimeException("LLM error");
-        var ex = new ParallelExecutionException(
-                "1 of 2 tasks failed",
-                List.of(output),
-                Map.of("Write task", cause));
+        var ex = new ParallelExecutionException("1 of 2 tasks failed", List.of(output), Map.of("Write task", cause));
 
         assertThat(ex.getMessage()).isEqualTo("1 of 2 tasks failed");
         assertThat(ex.getCompletedTaskOutputs()).containsExactly(output);
@@ -275,11 +264,7 @@ class ExceptionHierarchyTest {
     void outputParsingException_fieldsAccessible() {
         var errors = List.of("err1", "err2", "err3");
         var ex = new OutputParsingException(
-                "Parsing failed after 3 attempts",
-                "{\"bad\": json}",
-                String.class,
-                errors,
-                3);
+                "Parsing failed after 3 attempts", "{\"bad\": json}", String.class, errors, 3);
 
         assertThat(ex.getMessage()).isEqualTo("Parsing failed after 3 attempts");
         assertThat(ex.getRawOutput()).isEqualTo("{\"bad\": json}");
@@ -290,8 +275,7 @@ class ExceptionHierarchyTest {
 
     @Test
     void outputParsingException_parseErrorsIsImmutable() {
-        var ex = new OutputParsingException("msg", "raw", String.class,
-                List.of("e1"), 1);
+        var ex = new OutputParsingException("msg", "raw", String.class, List.of("e1"), 1);
         assertThat(ex.getParseErrors()).isUnmodifiable();
     }
 
