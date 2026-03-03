@@ -100,3 +100,29 @@ Guards prevent:
 - Infinite delegation chains (configurable `maxDelegationDepth`, default 3)
 
 See the [Delegation guide](../guides/delegation.md).
+
+---
+
+## Guardrails
+
+**Guardrails** are pluggable validation hooks configured per task. They give you control over what enters and exits agent execution without modifying agent prompts or task logic.
+
+- **Input guardrails** run before the LLM call. If any fails, execution is blocked immediately and `GuardrailViolationException` is thrown -- no API call is made.
+- **Output guardrails** run after the agent produces a response. If any fails, the response is rejected and `GuardrailViolationException` is thrown.
+
+Both types implement functional interfaces (`InputGuardrail`, `OutputGuardrail`) and return `GuardrailResult.success()` or `GuardrailResult.failure(reason)`.
+
+```java
+var task = Task.builder()
+    .description("Summarize the document")
+    .expectedOutput("A concise summary")
+    .agent(writer)
+    .inputGuardrails(List.of(input -> {
+        return input.taskDescription().length() < 10
+            ? GuardrailResult.failure("Task description too short")
+            : GuardrailResult.success();
+    }))
+    .build();
+```
+
+See the [Guardrails guide](../guides/guardrails.md).

@@ -18,6 +18,7 @@ import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.execution.ExecutionContext;
+import net.agentensemble.guardrail.GuardrailViolationException;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -133,7 +134,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         taskIndex,
                         totalTasks));
 
-            } catch (AgentExecutionException | MaxIterationsExceededException e) {
+            } catch (AgentExecutionException | MaxIterationsExceededException | GuardrailViolationException e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
                 log.error("Task {}/{} failed: {}", taskIndex, totalTasks, e.getMessage());
 

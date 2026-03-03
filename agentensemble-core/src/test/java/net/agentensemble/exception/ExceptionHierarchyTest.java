@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import net.agentensemble.guardrail.GuardrailViolationException;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.Test;
 
@@ -292,5 +293,51 @@ class ExceptionHierarchyTest {
     void outputParsingException_nullRawOutput_isPermitted() {
         var ex = new OutputParsingException("msg", null, String.class, List.of("e1"), 1);
         assertThat(ex.getRawOutput()).isNull();
+    }
+
+    // ========================
+    // GuardrailViolationException
+    // ========================
+
+    @Test
+    void guardrailViolationException_extendsAgentEnsembleException() {
+        var ex = new GuardrailViolationException(
+                GuardrailViolationException.GuardrailType.INPUT, "blocked", "task", "agent");
+        assertThat(ex).isInstanceOf(AgentEnsembleException.class);
+        assertThat(ex).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void guardrailViolationException_inputType_fieldsAccessible() {
+        var ex = new GuardrailViolationException(
+                GuardrailViolationException.GuardrailType.INPUT, "contains PII", "Summarize text", "writer");
+
+        assertThat(ex.getGuardrailType()).isEqualTo(GuardrailViolationException.GuardrailType.INPUT);
+        assertThat(ex.getViolationMessage()).isEqualTo("contains PII");
+        assertThat(ex.getTaskDescription()).isEqualTo("Summarize text");
+        assertThat(ex.getAgentRole()).isEqualTo("writer");
+    }
+
+    @Test
+    void guardrailViolationException_outputType_fieldsAccessible() {
+        var ex = new GuardrailViolationException(
+                GuardrailViolationException.GuardrailType.OUTPUT, "response too long", "Write report", "analyst");
+
+        assertThat(ex.getGuardrailType()).isEqualTo(GuardrailViolationException.GuardrailType.OUTPUT);
+        assertThat(ex.getViolationMessage()).isEqualTo("response too long");
+        assertThat(ex.getTaskDescription()).isEqualTo("Write report");
+        assertThat(ex.getAgentRole()).isEqualTo("analyst");
+    }
+
+    @Test
+    void guardrailViolationException_messageContainsAllContext() {
+        var ex = new GuardrailViolationException(
+                GuardrailViolationException.GuardrailType.OUTPUT, "too long", "Write an essay", "essayist");
+
+        assertThat(ex.getMessage())
+                .contains("OUTPUT")
+                .contains("too long")
+                .contains("Write an essay")
+                .contains("essayist");
     }
 }

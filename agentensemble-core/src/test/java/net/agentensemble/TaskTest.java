@@ -5,6 +5,9 @@ import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
 import java.util.List;
+import net.agentensemble.guardrail.GuardrailResult;
+import net.agentensemble.guardrail.InputGuardrail;
+import net.agentensemble.guardrail.OutputGuardrail;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -260,5 +263,94 @@ class TaskTest {
                 .build();
 
         assertThat(task.getMaxOutputRetries()).isEqualTo(5);
+    }
+
+    // ========================
+    // inputGuardrails happy paths
+    // ========================
+
+    @Test
+    void testBuild_defaultInputGuardrails_isEmpty() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .build();
+
+        assertThat(task.getInputGuardrails()).isEmpty();
+    }
+
+    @Test
+    void testBuild_withInputGuardrails_stored() {
+        InputGuardrail guardrail = input -> GuardrailResult.success();
+
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .inputGuardrails(List.of(guardrail))
+                .build();
+
+        assertThat(task.getInputGuardrails()).containsExactly(guardrail);
+    }
+
+    @Test
+    void testBuild_inputGuardrailsList_isImmutable() {
+        InputGuardrail guardrail = input -> GuardrailResult.success();
+
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .inputGuardrails(List.of(guardrail))
+                .build();
+
+        assertThat(task.getInputGuardrails()).isUnmodifiable();
+    }
+
+    // ========================
+    // outputGuardrails happy paths
+    // ========================
+
+    @Test
+    void testBuild_defaultOutputGuardrails_isEmpty() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .build();
+
+        assertThat(task.getOutputGuardrails()).isEmpty();
+    }
+
+    @Test
+    void testBuild_withOutputGuardrails_stored() {
+        OutputGuardrail guardrail = output -> GuardrailResult.success();
+
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .outputGuardrails(List.of(guardrail))
+                .build();
+
+        assertThat(task.getOutputGuardrails()).containsExactly(guardrail);
+    }
+
+    @Test
+    void testBuild_withBothGuardrails_stored() {
+        InputGuardrail inGuard = input -> GuardrailResult.success();
+        OutputGuardrail outGuard = output -> GuardrailResult.success();
+
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .inputGuardrails(List.of(inGuard))
+                .outputGuardrails(List.of(outGuard))
+                .build();
+
+        assertThat(task.getInputGuardrails()).containsExactly(inGuard);
+        assertThat(task.getOutputGuardrails()).containsExactly(outGuard);
     }
 }

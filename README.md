@@ -492,6 +492,46 @@ Ensemble.builder()
 
 ---
 
+## Guardrails
+
+Add pluggable validation hooks to tasks to control what enters and exits agent execution:
+
+```java
+// Block before the LLM is called
+InputGuardrail noPiiGuardrail = input -> {
+    if (input.taskDescription().contains("SSN")) {
+        return GuardrailResult.failure("Task contains PII");
+    }
+    return GuardrailResult.success();
+};
+
+// Validate after the agent responds
+OutputGuardrail lengthGuardrail = output -> {
+    if (output.rawResponse().length() > 5000) {
+        return GuardrailResult.failure("Response exceeds 5000 characters");
+    }
+    return GuardrailResult.success();
+};
+
+var task = Task.builder()
+    .description("Summarize the article")
+    .expectedOutput("A concise summary")
+    .agent(writer)
+    .inputGuardrails(List.of(noPiiGuardrail))
+    .outputGuardrails(List.of(lengthGuardrail))
+    .build();
+```
+
+**Input guardrails** fire before the LLM call -- if any fails, `GuardrailViolationException` is thrown and no API call is made.
+
+**Output guardrails** fire after the agent response (and after structured output parsing when `outputType` is set).
+
+When a guardrail blocks a task, `GuardrailViolationException` propagates and is wrapped in `TaskExecutionException`, consistent with other task failures. The `TaskFailedEvent` callback fires before the exception propagates.
+
+**Full documentation:** [Guardrails Guide](https://docs.agentensemble.net/guides/guardrails/)
+
+---
+
 ## Task Configuration
 
 | Option | Type | Default | Description |
@@ -502,6 +542,8 @@ Ensemble.builder()
 | `context` | `List<Task>` | `[]` | Prior tasks whose outputs feed into this task (sequential workflow) |
 | `outputType` | `Class<?>` | `null` | Java class for structured output parsing. Records recommended. |
 | `maxOutputRetries` | `int` | `3` | Retry attempts when structured output parsing fails. `0` disables retries. |
+| `inputGuardrails` | `List<InputGuardrail>` | `[]` | Validation hooks that run before the LLM call. |
+| `outputGuardrails` | `List<OutputGuardrail>` | `[]` | Validation hooks that run after the agent produces a response. |
 
 **Full documentation:** [Task Configuration Reference](https://docs.agentensemble.net/reference/task-configuration/) | [Tasks Guide](https://docs.agentensemble.net/guides/tasks/)
 
@@ -744,7 +786,8 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v0.5.0~~ | ~~Parallel workflow (virtual threads)~~ |
 | ~~v0.6.0~~ | ~~Structured output (typed output parsing)~~ |
 | ~~v0.7.0~~ | ~~Callbacks and event listeners~~ |
-| v1.0.0 | Streaming, guardrails, built-in tools |
+| ~~v0.8.0~~ | ~~Guardrails: pre/post execution validation~~ |
+| v1.0.0 | Streaming, built-in tools |
 
 ---
 
