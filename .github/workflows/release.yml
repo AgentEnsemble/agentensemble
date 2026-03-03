@@ -52,6 +52,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
+      - name: Ensure GitHub Release exists
+        run: |
+          if ! gh release view ${{ steps.version.outputs.tag }} --json id > /dev/null 2>&1; then
+            gh release create ${{ steps.version.outputs.tag }} \
+              --title "v${{ steps.version.outputs.version }}" \
+              --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload artifacts to GitHub Release
         run: |
           gh release upload ${{ steps.version.outputs.tag }} \
@@ -66,11 +76,26 @@ jobs:
           IFS='.' read -ra PARTS <<< "${{ steps.version.outputs.version }}"
           NEXT_PATCH=$((${PARTS[2]} + 1))
           NEXT_VERSION="${PARTS[0]}.${PARTS[1]}.${NEXT_PATCH}"
+
           git fetch origin main
           git checkout main
-          sed -i "s/^version=.*/version=${NEXT_VERSION}-SNAPSHOT/" gradle.properties
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add gradle.properties
-          git commit -m "chore: bump version to ${NEXT_VERSION}-SNAPSHOT [skip ci]"
-          git push origin main
+
+          CURRENT_RAW=$(grep '^version=' gradle.properties | sed 's/version=//' | sed 's/-SNAPSHOT//')
+          IFS='.' read -ra CUR <<< "${CURRENT_RAW}"
+
+          SHOULD_BUMP=false
+          if   [ "${PARTS[0]}" -gt "${CUR[0]}" ]; then SHOULD_BUMP=true
+          elif [ "${PARTS[0]}" -eq "${CUR[0]}" ] && [ "${PARTS[1]}" -gt "${CUR[1]}" ]; then SHOULD_BUMP=true
+          elif [ "${PARTS[0]}" -eq "${CUR[0]}" ] && [ "${PARTS[1]}" -eq "${CUR[1]}" ] && [ "${NEXT_PATCH}" -gt "${CUR[2]}" ]; then SHOULD_BUMP=true
+          fi
+
+          if [ "${SHOULD_BUMP}" = true ]; then
+            sed -i "s/^version=.*/version=${NEXT_VERSION}-SNAPSHOT/" gradle.properties
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add gradle.properties
+            git commit -m "chore: bump version to ${NEXT_VERSION}-SNAPSHOT [skip ci]"
+            git push origin main
+          else
+            echo "Current development version ${CURRENT_RAW}-SNAPSHOT is already ahead of ${NEXT_VERSION}; no bump needed."
+          fi
