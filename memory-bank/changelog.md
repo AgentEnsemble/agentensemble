@@ -6,6 +6,21 @@
 
 ## [0.5.0-SNAPSHOT] - 2026-03-02 (PR #43, fix/copilot-review-feedback)
 
+### Fixed (Copilot PR #43 review -- commit 3064533)
+- `Ensemble.validateContextOrdering`: switched to identity-based membership sets
+  (IdentityHashMap-backed executedSoFar + ensureTaskSet) to be consistent with
+  resolveTasks() and validateAgentMembership(); prevents value-equal but identity-distinct
+  context tasks from passing validation but failing template remapping
+- `ToolResult.failure` Javadoc: updated from "must not be null" to "null is normalized to
+  a default message" to accurately reflect the normalization already in place
+- `MemoryContextTest.testRecord_withoutLongTerm_doesNotCallStore`: replaced vacuous
+  verify(mock, never()) test (unwired mock; always passed regardless of behavior) with
+  assertion-based test verifying observable state (hasLongTerm() false, STM recorded,
+  queryLongTerm returns empty)
+- `TaskOutput`: added Lombok @NonNull to raw, taskDescription, agentRole, completedAt, and
+  duration to match design spec (docs/design/03-domain-model.md); updated three
+  null-permitting tests to expect NullPointerException
+
 ### Fixed (Bug)
 - `Ensemble.resolveTasks`: two-pass approach remaps context list references to resolved Task
   instances (fixes spurious TaskExecutionException when using template variables with context
@@ -53,8 +68,8 @@
 ### Added (Tests, 287 -> 297)
 - EnsembleTest: 4 new validation tests (HIERARCHICAL reserved role, duplicate roles, managerMaxIterations=0, missing context task); renamed testRun_withMutualContextDependency to testRun_withForwardContextReference
 - TaskTest: self-reference and null context element validation tests
-- TaskOutputTest: null field behavior documentation tests and default toolCallCount test
-- MemoryContextTest: fixed dead test (mock LTM was never wired into context under test)
+- TaskOutputTest: null field behavior documentation tests and default toolCallCount test (updated to NPE assertions after @NonNull added)
+- MemoryContextTest: replaced vacuous mock test with observable-state assertions
 - AgentTest, AgentDelegationToolTest: assertion updates for changed messages
 
 ### Fixed (CI)

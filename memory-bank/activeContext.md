@@ -2,13 +2,29 @@
 
 ## Current Work Focus
 
-PR #43 open: addressing all GitHub Copilot review feedback from PRs #21-#41.
+PR #43 open: all Copilot review feedback addressed (two rounds of commits).
 Development continues on branch fix/copilot-review-feedback at 0.5.0-SNAPSHOT.
+All 297 tests pass. Ready to merge.
 
 ## Recent Changes
 
-- PR #43 opened (branch fix/copilot-review-feedback): addressed all actionable
-  GitHub Copilot review feedback from 16 closed PRs
+- PR #43 second commit (3064533): addressed 4 Copilot inline comments on PR #43
+  - Ensemble.java: validateContextOrdering() now uses identity-based sets
+    (IdentityHashMap-backed executedSoFar + ensureTaskSet) to be consistent with
+    resolveTasks() and validateAgentMembership(); prevents value-equal but
+    identity-distinct context tasks from passing validation but failing remapping
+  - ToolResult.java: updated failure() Javadoc: "null is normalized to a default
+    message" instead of "must not be null"
+  - MemoryContextTest.java: replaced vacuous testRecord_withoutLongTerm_doesNotCallStore
+    (unwired mock verify was always true) with assertion-based test verifying
+    hasLongTerm() is false, STM is recorded, queryLongTerm returns empty
+  - TaskOutput.java: added @NonNull to raw, taskDescription, agentRole, completedAt,
+    duration fields to match the design spec in docs/design/03-domain-model.md
+  - TaskOutputTest.java: updated three null-field tests to expect NullPointerException
+    (enforced by Lombok @NonNull at build time)
+
+- PR #43 first commit (44c482b): addressed all actionable Copilot review feedback
+  from 16 closed PRs #21-#41
   - Bug: Ensemble.resolveTasks two-pass approach; IdentityHashMap for agent membership
   - Null safety: 13 defensive fixes across AgentDelegationTool, DelegateTaskTool,
     EmbeddingStoreLongTermMemory, AgentExecutor, AgentPromptBuilder, Task, Agent,
