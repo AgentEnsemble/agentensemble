@@ -22,8 +22,12 @@ import java.util.Map;
  * Use {@link #disabled()} for a no-op instance when no memory is configured.
  * Use {@link #from(EnsembleMemory)} to create an active context.
  *
- * This class is not thread-safe. It is designed for sequential ensemble
- * execution where tasks complete one at a time.
+ * Thread safety: {@link #record(TaskOutput)} and all query methods are safe to call
+ * from multiple threads concurrently. Short-term memory uses a
+ * {@link java.util.concurrent.CopyOnWriteArrayList} internally, so concurrent
+ * writes from parallel tasks do not race. Long-term memory operations are
+ * delegated to the user-supplied {@link LongTermMemory} implementation, which
+ * must be thread-safe when used with {@code Workflow.PARALLEL}.
  */
 public class MemoryContext {
 

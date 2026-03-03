@@ -1,8 +1,12 @@
 package net.agentensemble.exception;
 
+import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -190,5 +194,69 @@ class ExceptionHierarchyTest {
     void promptTemplateException_missingVariablesIsImmutable() {
         var ex = new PromptTemplateException("error", List.of("x"), "{x}");
         assertThat(ex.getMissingVariables()).isUnmodifiable();
+    }
+
+    // ========================
+    // ParallelExecutionException
+    // ========================
+
+    private TaskOutput taskOutput(String raw, String role, String description) {
+        return TaskOutput.builder()
+                .raw(raw)
+                .agentRole(role)
+                .taskDescription(description)
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build();
+    }
+
+    @Test
+    void parallelExecutionException_extendsAgentEnsembleException() {
+        var ex = new ParallelExecutionException("partial failure", List.of(), Map.of("task", new RuntimeException()));
+        assertThat(ex).isInstanceOf(AgentEnsembleException.class);
+        assertThat(ex).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void parallelExecutionException_fieldsAccessible() {
+        var output = taskOutput("result", "Researcher", "Research task");
+        var cause = new RuntimeException("LLM error");
+        var ex = new ParallelExecutionException(
+                "1 of 2 tasks failed",
+                List.of(output),
+                Map.of("Write task", cause));
+
+        assertThat(ex.getMessage()).isEqualTo("1 of 2 tasks failed");
+        assertThat(ex.getCompletedTaskOutputs()).containsExactly(output);
+        assertThat(ex.getFailedTaskCauses()).containsKey("Write task");
+        assertThat(ex.getFailedTaskCauses().get("Write task")).isSameAs(cause);
+        assertThat(ex.getCompletedCount()).isEqualTo(1);
+        assertThat(ex.getFailedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void parallelExecutionException_completedOutputsIsImmutable() {
+        var ex = new ParallelExecutionException("error", List.of(), Map.of("t", new RuntimeException()));
+        assertThat(ex.getCompletedTaskOutputs()).isUnmodifiable();
+    }
+
+    @Test
+    void parallelExecutionException_failedTaskCausesIsImmutable() {
+        var ex = new ParallelExecutionException("error", List.of(), Map.of("t", new RuntimeException()));
+        assertThat(ex.getFailedTaskCauses()).isUnmodifiable();
+    }
+
+    @Test
+    void parallelExecutionException_multipleFailures_countsCorrect() {
+        var o1 = taskOutput("res1", "Agent1", "Task 1");
+        var o2 = taskOutput("res2", "Agent2", "Task 2");
+        var ex = new ParallelExecutionException(
+                "2 of 4 tasks failed",
+                List.of(o1, o2),
+                Map.of("Task 3", new RuntimeException("err3"), "Task 4", new RuntimeException("err4")));
+
+        assertThat(ex.getCompletedCount()).isEqualTo(2);
+        assertThat(ex.getFailedCount()).isEqualTo(2);
     }
 }

@@ -18,7 +18,7 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 | **Task** | A unit of work assigned to an agent, with a description and expected output |
 | **Ensemble** | A group of agents working together on a sequence of tasks |
 | **Tool** | A capability an agent can invoke (e.g., search, calculate) |
-| **Workflow** | How tasks are executed: `SEQUENTIAL` or `HIERARCHICAL` (manager delegates to workers) |
+| **Workflow** | How tasks are executed: `SEQUENTIAL`, `HIERARCHICAL` (manager delegates to workers), or `PARALLEL` (concurrent DAG-based execution) |
 | **Memory** | Optional per-run and cross-run context: short-term, long-term (vector store), and entity memory |
 
 ---
@@ -153,6 +153,69 @@ System.out.println(output.getRaw());
 ```
 
 If `managerLlm` is not set, the Manager uses the first agent's LLM. All worker agents participate in the same memory context when memory is configured (see [Memory System](#memory-system) below).
+
+---
+
+## Parallel Workflow
+
+With `Workflow.PARALLEL`, tasks execute concurrently using Java 21 virtual threads. The execution order is derived automatically from each task's `context` list -- tasks with no unmet dependencies start immediately and dependent tasks are unblocked as their prerequisites complete.
+
+You do not mark tasks as "parallel" or "serial" explicitly. The framework determines maximum safe concurrency from the `context` declarations.
+
+```java
+// These two have no dependencies -- they run CONCURRENTLY
+var researchTask = Task.builder()
+    .description("Research AI trends")
+    .expectedOutput("Research report")
+    .agent(researcher)
+    .build();
+
+var dataTask = Task.builder()
+    .description("Gather market data")
+    .expectedOutput("Market data")
+    .agent(analyst)
+    .build();
+
+// This depends on BOTH above -- starts only after both complete
+var synthesisTask = Task.builder()
+    .description("Synthesize findings into a report")
+    .expectedOutput("Combined report")
+    .agent(writer)
+    .context(List.of(researchTask, dataTask))
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher).agent(analyst).agent(writer)
+    .task(researchTask).task(dataTask).task(synthesisTask)
+    .workflow(Workflow.PARALLEL)
+    .build()
+    .run();
+```
+
+Execution timeline:
+```
+[researchTask]----+
+                   +--> [synthesisTask]
+[dataTask]--------+
+```
+
+**Task list order is irrelevant** for `PARALLEL` -- unlike `SEQUENTIAL`, you can list tasks in any order and the dependency graph will schedule them correctly.
+
+**Error handling** is configurable via `parallelErrorStrategy`:
+
+```java
+Ensemble.builder()
+    ...
+    .workflow(Workflow.PARALLEL)
+    .parallelErrorStrategy(ParallelErrorStrategy.FAIL_FAST)         // default: stop on first failure
+    // or:
+    .parallelErrorStrategy(ParallelErrorStrategy.CONTINUE_ON_ERROR) // finish independent tasks, report all failures
+    .build();
+```
+
+When using `CONTINUE_ON_ERROR`, a `ParallelExecutionException` is thrown if any tasks fail, carrying both the successful outputs and a map of failures.
+
+See the [Parallel Workflow guide](docs/guides/workflows.md#parallel) and the [Parallel Workflow example](docs/examples/parallel-workflow.md) for full details.
 
 ---
 
@@ -336,9 +399,10 @@ See the [Delegation guide](docs/guides/delegation.md) for full details.
 |---|---|---|---|
 | `agents` | `List<Agent>` | required | All agents participating |
 | `tasks` | `List<Task>` | required | All tasks to execute |
-| `workflow` | `Workflow` | `SEQUENTIAL` | Execution strategy: `SEQUENTIAL` or `HIERARCHICAL` |
+| `workflow` | `Workflow` | `SEQUENTIAL` | Execution strategy: `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL` |
 | `managerLlm` | `ChatModel` | first agent's LLM | LLM for the Manager agent (hierarchical workflow only) |
 | `managerMaxIterations` | `int` | `20` | Max tool-call iterations for the Manager agent (hierarchical workflow only) |
+| `parallelErrorStrategy` | `ParallelErrorStrategy` | `FAIL_FAST` | Error handling for parallel workflow: `FAIL_FAST` or `CONTINUE_ON_ERROR` |
 | `memory` | `EnsembleMemory` | `null` | Memory configuration; see [Memory System](#memory-system) |
 | `maxDelegationDepth` | `int` | `3` | Maximum peer-delegation depth when agents have `allowDelegation = true` |
 | `verbose` | `boolean` | `false` | Elevates execution logging to INFO |
@@ -525,7 +589,7 @@ Full user documentation is in [`docs/`](docs/):
 | ~~v0.2.0~~ | ~~Hierarchical workflow (manager agent delegates)~~ |
 | ~~v0.3.0~~ | ~~Memory system (short-term, long-term, entity)~~ |
 | ~~v0.4.0~~ | ~~Agent delegation~~ |
-| v0.5.0 | Parallel workflow (virtual threads) |
+| ~~v0.5.0~~ | ~~Parallel workflow (virtual threads)~~ |
 | v0.6.0 | Structured output (typed output parsing) |
 | v1.0.0 | Callbacks, streaming, guardrails, built-in tools |
 

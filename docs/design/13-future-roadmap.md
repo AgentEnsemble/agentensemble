@@ -98,36 +98,36 @@ var ensemble = Ensemble.builder()
 
 ---
 
-## Phase 5: Parallel Workflow
+## Phase 5: Parallel Workflow (COMPLETE -- v0.5.0)
 
-**Goal**: Execute independent tasks concurrently for faster ensemble completion.
+**Implemented**: `Workflow.PARALLEL`, `TaskDependencyGraph`, `ParallelWorkflowExecutor`, `ParallelErrorStrategy`, `ParallelExecutionException`.
 
 ### How It Works
 
-- Analyze the task dependency graph (context references)
-- Tasks with no unmet dependencies can run in parallel
-- Uses Java 21 virtual threads via `StructuredTaskScope`
-- As tasks complete, dependent tasks are unblocked and started
-- Final assembly waits for all tasks
+- `TaskDependencyGraph` builds a DAG from each task's `context` list using identity-based maps.
+- Tasks with no unmet dependencies start immediately on Java 21 virtual threads.
+- As each task completes, its dependents are evaluated. Those whose all dependencies are now satisfied are submitted; those with failed dependencies are skipped.
+- Uses `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21 API, no preview flags).
+- MDC is propagated from the calling thread into each virtual thread.
 
-### API
+### Implemented API
 
 ```java
 var ensemble = Ensemble.builder()
     .agents(List.of(a1, a2, a3))
     .tasks(List.of(t1, t2, t3))  // t1 and t2 are independent, t3 depends on both
     .workflow(Workflow.PARALLEL)
+    .parallelErrorStrategy(ParallelErrorStrategy.FAIL_FAST)  // or CONTINUE_ON_ERROR
     .build();
 // t1 and t2 run concurrently, t3 runs after both complete
 ```
 
-### Considerations
+### Error Strategies
 
-- Thread safety of tools (documented contract)
-- MDC propagation to virtual threads
-- Error handling: if one parallel task fails, what happens to others?
-  - Option A: Cancel all (fail-fast)
-  - Option B: Continue others, report partial failure
+- `FAIL_FAST` (default): cancel unstarted tasks on first failure, throw `TaskExecutionException`.
+- `CONTINUE_ON_ERROR`: independent tasks finish; failed-dep tasks skipped; throw `ParallelExecutionException` with partial results.
+
+See [docs/design/10-concurrency.md](10-concurrency.md) for the full concurrency design.
 
 ---
 
