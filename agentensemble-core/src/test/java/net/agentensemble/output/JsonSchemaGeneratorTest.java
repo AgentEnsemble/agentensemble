@@ -161,6 +161,47 @@ class JsonSchemaGeneratorTest {
     }
 
     // ========================
+    // Scalar top-level types (comment 5 fix)
+    // ========================
+
+    @Test
+    void testGenerate_stringClass_returnsStringSchemaNotJdkInternals() {
+        // Before fix: generate(String.class) called generateObject() which introspected JDK fields
+        String schema = JsonSchemaGenerator.generate(String.class);
+        assertThat(schema).isEqualTo("\"string\"");
+    }
+
+    @Test
+    void testGenerate_booleanClass_returnsBooleanSchema() {
+        String schema = JsonSchemaGenerator.generate(Boolean.class);
+        assertThat(schema).isEqualTo("\"boolean\"");
+    }
+
+    @Test
+    void testGenerate_integerClass_returnsIntegerSchema() {
+        String schema = JsonSchemaGenerator.generate(Integer.class);
+        assertThat(schema).isEqualTo("\"integer\"");
+    }
+
+    @Test
+    void testGenerate_longClass_returnsIntegerSchema() {
+        String schema = JsonSchemaGenerator.generate(Long.class);
+        assertThat(schema).isEqualTo("\"integer\"");
+    }
+
+    @Test
+    void testGenerate_doubleClass_returnsNumberSchema() {
+        String schema = JsonSchemaGenerator.generate(Double.class);
+        assertThat(schema).isEqualTo("\"number\"");
+    }
+
+    @Test
+    void testGenerate_topLevelEnum_returnsEnumSchema() {
+        String schema = JsonSchemaGenerator.generate(Status.class);
+        assertThat(schema).contains("enum:").contains("ACTIVE");
+    }
+
+    // ========================
     // Validation: unsupported types
     // ========================
 

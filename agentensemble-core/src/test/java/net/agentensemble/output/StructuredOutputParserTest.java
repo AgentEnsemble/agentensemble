@@ -140,6 +140,54 @@ class StructuredOutputParserTest {
     }
 
     // ========================
+    // parse -- scalar JSON types (comment 3 fix)
+    // ========================
+
+    @Test
+    void testParse_booleanTrue_parsedAsBoolean() {
+        ParseResult<Boolean> result = StructuredOutputParser.parse("true", Boolean.class);
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getValue()).isTrue();
+    }
+
+    @Test
+    void testParse_booleanFalse_parsedAsBoolean() {
+        ParseResult<Boolean> result = StructuredOutputParser.parse("false", Boolean.class);
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getValue()).isFalse();
+    }
+
+    @Test
+    void testParse_integerValue_parsedAsInteger() {
+        ParseResult<Integer> result = StructuredOutputParser.parse("42", Integer.class);
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getValue()).isEqualTo(42);
+    }
+
+    @Test
+    void testParse_quotedString_parsedAsString() {
+        // JSON-quoted string
+        ParseResult<String> result = StructuredOutputParser.parse("\"hello world\"", String.class);
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getValue()).isEqualTo("hello world");
+    }
+
+    // ========================
+    // extractJson -- non-greedy pattern (comment 4 fix)
+    // ========================
+
+    @Test
+    void testExtractJson_multipleJsonBlocks_findsFirst() {
+        // With greedy pattern, this matched from first { to last } (the whole thing)
+        // With non-greedy pattern, it finds just the first block
+        String input = "Here is data: {\"x\": 1} and more: {\"y\": 2}";
+        String result = StructuredOutputParser.extractJson(input);
+        assertThat(result).isNotNull();
+        // Should find the first block, not the entire span
+        assertThat(result).isEqualTo("{\"x\": 1}");
+    }
+
+    // ========================
     // parse -- failure cases
     // ========================
 

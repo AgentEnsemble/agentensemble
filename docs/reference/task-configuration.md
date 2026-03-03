@@ -8,7 +8,7 @@ All fields available on `Task.builder()`.
 | `expectedOutput` | `String` | Yes | -- | What the output should look like. Quality guidance for the agent. Supports `{variable}` placeholders. |
 | `agent` | `Agent` | Yes | -- | The agent assigned to execute this task. |
 | `context` | `List<Task>` | No | `[]` | Prior tasks whose outputs are injected into this task's agent prompt. Sequential workflow only. |
-| `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON and the result is parsed automatically. Supported: records, POJOs, common JDK types. Unsupported: primitives, void, arrays. |
+| `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON and the result is parsed automatically. Supported: records, POJOs, `Map<K,V>`, enums, `List<T>`, scalar wrappers (`Boolean`, `Integer`, `Long`, `Double`). Unsupported: primitives, `void`, top-level arrays. |
 | `maxOutputRetries` | `int` | No | `3` | Number of retry attempts if structured output parsing fails. `0` disables retries. Only meaningful when `outputType` is set. |
 
 ---

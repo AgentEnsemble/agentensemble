@@ -36,9 +36,9 @@ public final class StructuredOutputParser {
             Pattern.compile("```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```",
                     Pattern.CASE_INSENSITIVE);
 
-    /** Matches the first JSON object or array embedded in prose. */
+    /** Matches the first JSON object or array embedded in prose (non-greedy to find the first block). */
     private static final Pattern JSON_BLOCK_PATTERN =
-            Pattern.compile("(?s)([\\[\\{].*[\\]\\}])", Pattern.DOTALL);
+            Pattern.compile("(?s)([\\[\\{].*?[\\]\\}])", Pattern.DOTALL);
 
     private static final ObjectMapper OBJECT_MAPPER = buildObjectMapper();
 
@@ -48,6 +48,16 @@ public final class StructuredOutputParser {
 
     /**
      * Attempt to extract and parse JSON from a raw LLM response.
+     *
+     * <p>Handles both structured (object/array) and scalar JSON outputs:
+     * <ul>
+     *   <li>Object/array types ({@code records}, {@code POJOs}, {@code Map}, {@code List}):
+     *       {@link #extractJson(String)} locates the JSON block first.</li>
+     *   <li>Scalar types ({@code Boolean}, numeric wrappers, {@code String} as quoted JSON):
+     *       When no object/array block is found, the raw text is attempted directly via
+     *       Jackson, enabling parsing of bare values like {@code true}, {@code 42}, or
+     *       {@code "quoted text"}.</li>
+     * </ul>
      *
      * @param raw  the raw LLM response text
      * @param type the target class to deserialize into
@@ -61,7 +71,20 @@ public final class StructuredOutputParser {
         }
 
         String json = extractJson(raw);
+
         if (json == null) {
+            // extractJson only finds object/array blocks. For scalar output types
+            // (Boolean, numbers, JSON-quoted strings) the response may be a bare JSON
+            // value -- attempt a direct Jackson parse of the stripped text as a fallback.
+            String trimmed = raw.strip();
+            try {
+                T value = OBJECT_MAPPER.readValue(trimmed, type);
+                log.debug("Structured scalar output parsed successfully into {} from bare value",
+                        type.getSimpleName());
+                return ParseResult.success(value);
+            } catch (Exception ignored) {
+                // Not a parseable scalar JSON value for this type -- fall through
+            }
             return ParseResult.failure(
                     "Could not find valid JSON in response: " + truncate(raw, 200));
         }

@@ -427,12 +427,14 @@ public class AgentExecutor {
             currentResponse = retryResponse.aiMessage().text();
         }
 
+        // Pass currentResponse (the last bad response) so the exception carries the
+        // most relevant output for debugging -- not initialResponse from attempt 0.
         throw new OutputParsingException(
                 "Structured output parsing failed for task '"
                         + truncate(task.getDescription(), 80)
                         + "' after " + parseErrors.size() + " attempt(s). "
                         + "Expected type: " + outputType.getSimpleName(),
-                initialResponse, outputType, parseErrors, parseErrors.size());
+                currentResponse, outputType, parseErrors, parseErrors.size());
     }
 
     private static String buildStructuredOutputCorrectionPrompt(
@@ -440,10 +442,11 @@ public class AgentExecutor {
         return "Your previous response could not be parsed as valid JSON.\n\n"
                 + "Error: " + errorMessage + "\n\n"
                 + "Your previous response was:\n" + badOutput + "\n\n"
-                + "You MUST respond with ONLY a valid JSON object matching this schema:\n"
+                + "You MUST respond with ONLY valid JSON matching this schema "
+                + "(it may be an object, array, string, number, boolean, or null as required):\n"
                 + schemaDescription + "\n\n"
                 + "Do not include any explanation, markdown fences, or text before or after "
-                + "the JSON. Respond with only the JSON object.";
+                + "the JSON. Respond with only the JSON value.";
     }
 
     // ========================

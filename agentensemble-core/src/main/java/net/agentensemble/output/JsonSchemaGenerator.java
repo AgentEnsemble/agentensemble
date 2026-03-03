@@ -41,6 +41,10 @@ public final class JsonSchemaGenerator {
     /**
      * Generate a human-readable JSON schema description for the given class.
      *
+     * <p>Scalar wrapper types ({@code String}, boxed numerics, {@code Boolean}) and
+     * top-level collection/map types return their scalar schema directly.
+     * Object types (records, POJOs) are introspected field-by-field.
+     *
      * @param type the class to describe
      * @return a JSON-like schema string
      * @throws IllegalArgumentException if type is {@code null}, a primitive,
@@ -61,7 +65,46 @@ public final class JsonSchemaGenerator {
             throw new IllegalArgumentException(
                     "Top-level array types are not supported. Wrap the array in a record or class.");
         }
+        // For well-known scalar types and top-level collections/maps, return the schema
+        // directly rather than introspecting JDK internals via generateObject().
+        String topLevelSchema = topLevelScalarOrCollectionSchema(type);
+        if (topLevelSchema != null) {
+            return topLevelSchema;
+        }
         return generateObject(type, 0);
+    }
+
+    /**
+     * Return the schema string for scalar, enum, and top-level collection/map types,
+     * or {@code null} if the type should be treated as an object (record/POJO).
+     */
+    private static String topLevelScalarOrCollectionSchema(Class<?> type) {
+        if (type == String.class || type == CharSequence.class) {
+            return "\"string\"";
+        }
+        if (type == Integer.class || type == Long.class || type == Short.class
+                || type == Byte.class) {
+            return "\"integer\"";
+        }
+        if (type == Double.class || type == Float.class) {
+            return "\"number\"";
+        }
+        if (type == Boolean.class) {
+            return "\"boolean\"";
+        }
+        if (type.isEnum()) {
+            String values = Stream.of(type.getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+            return "\"enum: " + values + "\"";
+        }
+        if (Collection.class.isAssignableFrom(type)) {
+            return "[\"any\"]";
+        }
+        if (Map.class.isAssignableFrom(type)) {
+            return "{\"key\": \"value\"}";
+        }
+        return null;
     }
 
     private static String generateObject(Class<?> type, int depth) {

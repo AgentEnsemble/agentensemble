@@ -192,7 +192,10 @@ If all retries are exhausted, `OutputParsingException` is thrown with the raw ou
 
 - Java **records** (recommended -- field order and names are preserved)
 - **POJOs** with declared instance fields (Jackson deserialization)
-- Any type Jackson can deserialize: `String`, boxed numerics, `boolean`, `List<T>`, `Map<K,V>`, enums, nested objects
+- **Object types**: `Map<K,V>`, enums, nested objects
+- **Scalar types**: `Boolean`, boxed numerics (`Integer`, `Long`, `Double`, etc.) -- the agent is expected to respond with a bare JSON value (e.g., `42`, `true`)
+- **Collections**: `List<T>` and other `Collection` subtypes (the agent produces a JSON array)
+- **String**: the agent must produce a JSON-quoted string (e.g., `"text"`); unquoted plain text will not parse
 
 Unsupported: **primitives** (`int.class`, etc.), **void**, and **top-level arrays** (wrap the array in a record or class).
 

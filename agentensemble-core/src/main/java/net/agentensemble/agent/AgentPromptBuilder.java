@@ -225,7 +225,8 @@ public final class AgentPromptBuilder {
             sb.append("\n\n## Output Format\n");
             sb.append("You MUST respond with ONLY valid JSON and nothing else. ");
             sb.append("Do not include markdown fences, preamble, or explanation.\n");
-            sb.append("Your response must be a JSON object matching this schema:\n\n");
+            sb.append("Your response must be ONLY valid JSON matching this schema ");
+            sb.append("(object, array, or scalar as appropriate):\n\n");
             sb.append(schemaDescription);
         }
 
