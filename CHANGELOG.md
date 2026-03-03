@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.6.1...v0.7.0) (2026-03-03)
+
+
+### Features
+
+* ExecutionContext refactor, callback system, ToolResolver extraction ([#57](https://github.com/AgentEnsemble/agentensemble/issues/57)) ([#63](https://github.com/AgentEnsemble/agentensemble/issues/63)) ([dbcad6e](https://github.com/AgentEnsemble/agentensemble/commit/dbcad6ed159fd2655af783676f4af8e229a2316b))
+
 ## [0.6.1](https://github.com/AgentEnsemble/agentensemble/compare/v0.6.0...v0.6.1) (2026-03-03)
 
 
