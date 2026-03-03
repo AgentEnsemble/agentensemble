@@ -65,12 +65,15 @@ public class MemoryContext {
     }
 
     /**
-     * Return true if any memory type is active.
+     * Return true if any memory type is active (short-term, long-term, or entity memory).
      *
-     * @return false for the disabled instance, true otherwise
+     * An {@code EnsembleMemory} configuration object present with no actual memory types
+     * enabled would return false, correctly preventing "Memory enabled" log noise.
+     *
+     * @return true only when at least one memory type will inject or record data
      */
     public boolean isActive() {
-        return config != null;
+        return hasShortTerm() || hasLongTerm() || hasEntityMemory();
     }
 
     /**

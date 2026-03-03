@@ -30,8 +30,13 @@ public final class TemplateResolver {
 
     private static final Logger log = LoggerFactory.getLogger(TemplateResolver.class);
 
-    /** Sentinel prefix used to protect escaped {{ }} from being processed as variables. */
-    private static final String SENTINEL_PREFIX = "__AGENTENSEMBLE_ESCAPED_";
+    /**
+     * Sentinel prefix used to protect escaped {{ }} from being processed as variables.
+     *
+     * The value includes a long, UUID-like component to make accidental collisions with
+     * user-provided template content extremely unlikely.
+     */
+    private static final String SENTINEL_PREFIX = "__AGENTENSEMBLE_ESCAPED_6f8b2c1e_17a3_4b9c_9a3b_42de8f8c9b2d_";
     private static final String SENTINEL_SUFFIX = "__";
 
     /** Matches {{word}} -- escaped variables. */
@@ -39,6 +44,10 @@ public final class TemplateResolver {
 
     /** Matches {word} -- template variables. */
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{(\\w+)}");
+
+    /** Pre-compiled pattern to restore sentinel tokens back to literal {name}. */
+    private static final Pattern SENTINEL_RESTORE_PATTERN = Pattern.compile(
+            Pattern.quote(SENTINEL_PREFIX) + "(\\w+)" + Pattern.quote(SENTINEL_SUFFIX));
 
     /** Maximum length of template shown in error messages. */
     private static final int ERROR_TEMPLATE_MAX_LENGTH = 100;
@@ -105,8 +114,7 @@ public final class TemplateResolver {
         }
 
         // Step 5: Restore escaped sentinels as literal {name}
-        working = Pattern.compile(SENTINEL_PREFIX + "(\\w+)" + SENTINEL_SUFFIX)
-                .matcher(working)
+        working = SENTINEL_RESTORE_PATTERN.matcher(working)
                 .replaceAll(m -> "{" + m.group(1) + "}");
 
         log.debug("Resolved {} variables in template", foundVariables.size());

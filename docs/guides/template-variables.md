@@ -150,13 +150,14 @@ ensemble.run(Map.of("topic", "blockchain"));
 
 ## Variable Naming
 
-Variable names are case-sensitive and can contain letters, digits, underscores, and hyphens:
+Variable names are case-sensitive and can contain letters, digits, and underscores only (no hyphens or spaces):
 
 ```
 {topic}          -- valid
 {company_name}   -- valid
 {year2025}       -- valid
 {TOPIC}          -- valid, but different from {topic}
+{company-name}   -- invalid (hyphen not allowed)
 {company name}   -- invalid (space not allowed)
 ```
 

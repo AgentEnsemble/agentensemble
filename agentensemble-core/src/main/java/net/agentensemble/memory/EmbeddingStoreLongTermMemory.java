@@ -73,17 +73,22 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
         if (entry == null) {
             throw new IllegalArgumentException("MemoryEntry must not be null");
         }
+        String content = entry.getContent();
+        if (content == null) {
+            throw new IllegalArgumentException("MemoryEntry content must not be null");
+        }
+        Instant timestamp = entry.getTimestamp() != null ? entry.getTimestamp() : Instant.now();
 
         Metadata metadata = Metadata.from(META_AGENT_ROLE, entry.getAgentRole())
                 .put(META_TASK_DESCRIPTION, entry.getTaskDescription())
-                .put(META_TIMESTAMP, entry.getTimestamp().toString());
+                .put(META_TIMESTAMP, timestamp.toString());
 
-        TextSegment segment = TextSegment.from(entry.getContent(), metadata);
-        Embedding embedding = embeddingModel.embed(entry.getContent()).content();
+        TextSegment segment = TextSegment.from(content, metadata);
+        Embedding embedding = embeddingModel.embed(content).content();
         embeddingStore.add(embedding, segment);
 
         log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars",
-                entry.getAgentRole(), entry.getContent().length());
+                entry.getAgentRole(), content.length());
     }
 
     @Override

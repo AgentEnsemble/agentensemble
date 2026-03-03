@@ -83,7 +83,7 @@ public final class AgentPromptBuilder {
             sb.append("\nOutput format instructions: ").append(responseFormat);
         }
 
-        String prompt = sb.toString();
+        String prompt = sb.toString().stripTrailing();
         log.debug("Built system prompt ({} chars) for agent '{}'", prompt.length(), agent.getRole());
         return prompt;
     }
@@ -174,10 +174,11 @@ public final class AgentPromptBuilder {
                     sb.append("\n---\n");
                     sb.append("### ").append(ctx.getAgentRole())
                             .append(": ").append(ctx.getTaskDescription()).append("\n");
-                    sb.append(ctx.getRaw()).append("\n");
-                    sb.append("---");
+                    String raw = ctx.getRaw();
+                    sb.append(raw != null ? raw : "").append("\n");
+                    sb.append("---\n");
                 }
-                sb.append("\n\n");
+                sb.append("\n");
             }
         }
 

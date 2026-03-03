@@ -101,7 +101,8 @@ public class EnsembleMemory {
                         "EnsembleMemory must have at least one memory type enabled: "
                         + "shortTerm=true, longTerm, or entityMemory");
             }
-            if (longTermMaxResults <= 0) {
+            // longTermMaxResults is only meaningful when long-term memory is configured
+            if (longTerm != null && longTermMaxResults <= 0) {
                 throw new ValidationException(
                         "EnsembleMemory longTermMaxResults must be > 0, got: " + longTermMaxResults);
             }

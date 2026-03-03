@@ -80,6 +80,16 @@ public class AgentDelegationTool {
             @P("A clear description of the subtask for the target agent to complete.")
             String taskDescription) {
 
+        // Guard: null/blank parameters (the LLM may omit arguments)
+        if (agentRole == null || agentRole.isBlank()) {
+            log.warn("AgentDelegationTool invoked with null or blank agentRole by '{}'", callerRole);
+            return "Error: agentRole must not be null or blank. Provide the target agent's role.";
+        }
+        if (taskDescription == null || taskDescription.isBlank()) {
+            log.warn("AgentDelegationTool invoked with null or blank taskDescription by '{}'", callerRole);
+            return "Error: taskDescription must not be null or blank. Provide a clear subtask description.";
+        }
+
         // Guard: depth limit
         if (delegationContext.isAtLimit()) {
             String msg = "Delegation depth limit reached (max: " + delegationContext.getMaxDepth()
@@ -115,6 +125,10 @@ public class AgentDelegationTool {
                 delegationContext.getCurrentDepth() + 1, delegationContext.getMaxDepth(),
                 taskDescription.length() > 80 ? taskDescription.substring(0, 80) + "..." : taskDescription);
 
+        // Save prior MDC values so nested delegations (A->B->C) restore the outer
+        // context correctly when the inner finally block runs
+        String priorDepth = MDC.get(MDC_DELEGATION_DEPTH);
+        String priorParent = MDC.get(MDC_DELEGATION_PARENT);
         MDC.put(MDC_DELEGATION_DEPTH, String.valueOf(delegationContext.getCurrentDepth() + 1));
         MDC.put(MDC_DELEGATION_PARENT, callerRole);
 
@@ -143,8 +157,18 @@ public class AgentDelegationTool {
             return output.getRaw();
 
         } finally {
-            MDC.remove(MDC_DELEGATION_DEPTH);
-            MDC.remove(MDC_DELEGATION_PARENT);
+            // Restore prior MDC values rather than unconditionally removing them.
+            // This preserves outer delegation context when delegation is nested (A->B->C).
+            if (priorDepth != null) {
+                MDC.put(MDC_DELEGATION_DEPTH, priorDepth);
+            } else {
+                MDC.remove(MDC_DELEGATION_DEPTH);
+            }
+            if (priorParent != null) {
+                MDC.put(MDC_DELEGATION_PARENT, priorParent);
+            } else {
+                MDC.remove(MDC_DELEGATION_PARENT);
+            }
         }
     }
 

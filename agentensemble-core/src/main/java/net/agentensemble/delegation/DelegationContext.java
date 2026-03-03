@@ -16,7 +16,11 @@ import java.util.List;
  * agent delegates to a peer, {@link #descend()} produces a child context with
  * depth incremented by one, preserving all other fields.
  *
- * This class is immutable and therefore thread-safe.
+ * This class is immutable, but it holds references to other runtime components
+ * (such as {@link MemoryContext} and {@link AgentExecutor}) whose thread-safety
+ * characteristics must be considered separately. {@link MemoryContext} in particular
+ * is documented as not thread-safe, so the overall delegation runtime state should
+ * not be shared across threads unless all referenced components are thread-safe.
  *
  * Example:
  * <pre>

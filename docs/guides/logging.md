@@ -8,7 +8,7 @@ AgentEnsemble uses SLF4J for all logging. Add any SLF4J-compatible implementatio
 
 **Logback (recommended):**
 ```kotlin
-implementation("ch.qos.logback:logback-classic:1.5.12")
+implementation("ch.qos.logback:logback-classic:1.5.32")
 ```
 
 **Log4j2:**

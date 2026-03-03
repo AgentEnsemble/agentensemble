@@ -10,7 +10,9 @@ import java.util.List;
  * A unit of work assigned to an agent.
  *
  * Tasks are immutable value objects. Use the builder to construct instances.
- * All validation is performed at build time.
+ * Most validation is performed at build time (blank fields, null agent, null context
+ * elements, self-referencing context). Context ordering and membership are validated
+ * at {@code ensemble.run()} time by the workflow executor.
  *
  * Task descriptions and expected outputs may contain {variable} placeholders
  * that are resolved at {@code ensemble.run(inputs)} time.
@@ -64,7 +66,9 @@ public class Task {
             validateDescription();
             validateExpectedOutput();
             validateAgent();
-            context = List.copyOf(context != null ? context : List.of());
+            List<Task> effectiveContext = context != null ? context : List.of();
+            validateContext(effectiveContext);
+            context = List.copyOf(effectiveContext);
             return new Task(description, expectedOutput, agent, context);
         }
 
@@ -83,6 +87,25 @@ public class Task {
         private void validateAgent() {
             if (agent == null) {
                 throw new ValidationException("Task agent must not be null");
+            }
+        }
+
+        private void validateContext(List<Task> ctx) {
+            for (int i = 0; i < ctx.size(); i++) {
+                Task contextTask = ctx.get(i);
+                if (contextTask == null) {
+                    throw new ValidationException(
+                            "Task context element at index " + i + " must not be null");
+                }
+                // Self-reference: context contains a task with the same identity fields
+                // (description, expectedOutput, agent) as the task being built.
+                // Comparing agent by identity (==) because two distinct Agent objects
+                // with identical fields represent distinct agents.
+                if (contextTask.getDescription().equals(description)
+                        && contextTask.getExpectedOutput().equals(expectedOutput)
+                        && contextTask.getAgent() == agent) {
+                    throw new ValidationException("Task cannot reference itself in context");
+                }
             }
         }
     }

@@ -110,12 +110,15 @@ public class AgentExecutor {
      */
     public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose,
             MemoryContext memoryContext, DelegationContext delegationContext) {
+        // Normalize null memoryContext to disabled -- callers should prefer MemoryContext.disabled()
+        // but defensive normalization here prevents NPE if null is passed directly.
+        if (memoryContext == null) {
+            memoryContext = MemoryContext.disabled();
+        }
+
         Instant startTime = Instant.now();
         Agent agent = task.getAgent();
         boolean effectiveVerbose = verbose || agent.isVerbose();
-
-        log.info("Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
-                agent.getRole(), agent.getTools().size(), agent.isAllowDelegation());
 
         // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
@@ -131,6 +134,9 @@ public class AgentExecutor {
 
         // Build effective tool list -- inject delegation tool when allowed
         List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext);
+
+        log.info("Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
+                agent.getRole(), effectiveTools.size(), agent.isAllowDelegation());
 
         // Resolve tools
         ResolvedTools resolvedTools = resolveTools(effectiveTools);
@@ -243,9 +249,8 @@ public class AgentExecutor {
 
             if (aiMessage.hasToolExecutionRequests()) {
                 for (ToolExecutionRequest toolRequest : aiMessage.toolExecutionRequests()) {
-                    toolCallCounter.incrementAndGet();
-
-                    if (toolCallCounter.get() > maxIterations) {
+                    // Check limit before incrementing so toolCallCount reflects executed calls only
+                    if (toolCallCounter.get() >= maxIterations) {
                         stopMessageCount++;
                         String stopText = "STOP: Maximum tool iterations (" + maxIterations
                                 + ") reached. You must provide your best final answer now "
@@ -262,16 +267,25 @@ public class AgentExecutor {
                         messages.add(new ToolExecutionResultMessage(
                                 toolRequest.id(), toolRequest.name(), stopText));
                     } else {
-                        // Execute the tool
+                        // Execute the tool and count only executed calls
+                        toolCallCounter.incrementAndGet();
                         Instant toolStart = Instant.now();
-                        String toolResult = resolvedTools.execute(toolRequest, agent.getTools());
+                        String toolResult = resolvedTools.execute(toolRequest);
                         long toolMs = Duration.between(toolStart, Instant.now()).toMillis();
 
-                        log.info("Tool call: {}({}) -> {} [{}ms]",
-                                toolRequest.name(),
-                                truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                                truncate(toolResult, LOG_TRUNCATE_LENGTH),
-                                toolMs);
+                        if (toolResult != null && toolResult.startsWith("Error:")) {
+                            log.warn("Tool error: {}({}) -> {} [{}ms]",
+                                    toolRequest.name(),
+                                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                                    truncate(toolResult, LOG_TRUNCATE_LENGTH),
+                                    toolMs);
+                        } else {
+                            log.info("Tool call: {}({}) -> {} [{}ms]",
+                                    toolRequest.name(),
+                                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                                    truncate(toolResult, LOG_TRUNCATE_LENGTH),
+                                    toolMs);
+                        }
 
                         messages.add(new ToolExecutionResultMessage(
                                 toolRequest.id(), toolRequest.name(), toolResult));
@@ -324,7 +338,7 @@ public class AgentExecutor {
             return !agentToolMap.isEmpty() || !annotatedObjectMap.isEmpty();
         }
 
-        String execute(ToolExecutionRequest request, List<Object> originalTools) {
+        String execute(ToolExecutionRequest request) {
             String toolName = request.name();
 
             // Check AgentTool map first

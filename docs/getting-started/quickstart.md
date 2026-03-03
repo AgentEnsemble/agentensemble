@@ -12,7 +12,7 @@ Add the dependencies (see [Installation](installation.md)):
 dependencies {
     implementation("net.agentensemble:agentensemble-core:0.4.0")
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
-    implementation("ch.qos.logback:logback-classic:1.5.12")
+    implementation("ch.qos.logback:logback-classic:1.5.32")
 }
 ```
 

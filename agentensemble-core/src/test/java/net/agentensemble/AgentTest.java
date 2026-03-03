@@ -180,7 +180,7 @@ class AgentTest {
                 .llm(null)
                 .build())
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("llm");
+                .hasMessageContaining("LLM");
     }
 
     // ========================

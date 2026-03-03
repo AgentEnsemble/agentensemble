@@ -46,8 +46,8 @@ public class DelegateTaskTool {
      * @param agents             the worker agents available for delegation
      * @param agentExecutor      the executor to use when running delegated tasks
      * @param verbose            whether to enable verbose logging for delegated tasks
-     * @param memoryContext      runtime memory state for this run; use
-     *                           {@link MemoryContext#disabled()} when memory is not configured
+     * @param memoryContext      runtime memory state for this run; null is normalized to
+     *                           {@link MemoryContext#disabled()}
      * @param delegationContext  peer-delegation context so workers can further delegate if allowed
      */
     public DelegateTaskTool(List<Agent> agents, AgentExecutor agentExecutor, boolean verbose,
@@ -55,7 +55,7 @@ public class DelegateTaskTool {
         this.agents = List.copyOf(agents);
         this.agentExecutor = agentExecutor;
         this.verbose = verbose;
-        this.memoryContext = memoryContext;
+        this.memoryContext = memoryContext != null ? memoryContext : MemoryContext.disabled();
         this.delegationContext = delegationContext;
     }
 
@@ -77,6 +77,15 @@ public class DelegateTaskTool {
             @P("The exact role of the worker agent to delegate to. "
                     + "Must match one of the available agent roles.") String agentRole,
             @P("A clear description of the task for the agent to complete.") String taskDescription) {
+
+        if (agentRole == null || agentRole.isBlank()) {
+            log.warn("DelegateTaskTool invoked with null or blank agentRole");
+            return "Error: agentRole must not be null or blank.";
+        }
+        if (taskDescription == null || taskDescription.isBlank()) {
+            log.warn("DelegateTaskTool invoked with null or blank taskDescription");
+            return "Error: taskDescription must not be null or blank.";
+        }
 
         Agent agent = findAgentByRole(agentRole);
         if (agent == null) {

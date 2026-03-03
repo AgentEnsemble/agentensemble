@@ -1,6 +1,7 @@
 package net.agentensemble.task;
 
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.Value;
 
 import java.time.Duration;
@@ -18,19 +19,19 @@ import java.time.Instant;
 public class TaskOutput {
 
     /** The complete text output from the agent. */
-    String raw;
+    @NonNull String raw;
 
     /** The original task description (for traceability). */
-    String taskDescription;
+    @NonNull String taskDescription;
 
     /** The role of the agent that produced this output. */
-    String agentRole;
+    @NonNull String agentRole;
 
     /** When this task completed (UTC). */
-    Instant completedAt;
+    @NonNull Instant completedAt;
 
     /** How long the task took to execute. */
-    Duration duration;
+    @NonNull Duration duration;
 
     /** Number of tool invocations during execution. */
     int toolCallCount;

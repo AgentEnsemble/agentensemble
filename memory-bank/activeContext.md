@@ -2,9 +2,41 @@
 
 ## Current Work Focus
 
-v0.4.0 released and published to GitHub Packages. Development continues on main at 0.5.0-SNAPSHOT.
+PR #43 open: all Copilot review feedback addressed (two rounds of commits).
+Development continues on branch fix/copilot-review-feedback at 0.5.0-SNAPSHOT.
+All 297 tests pass. Ready to merge.
 
 ## Recent Changes
+
+- PR #43 second commit (3064533): addressed 4 Copilot inline comments on PR #43
+  - Ensemble.java: validateContextOrdering() now uses identity-based sets
+    (IdentityHashMap-backed executedSoFar + ensureTaskSet) to be consistent with
+    resolveTasks() and validateAgentMembership(); prevents value-equal but
+    identity-distinct context tasks from passing validation but failing remapping
+  - ToolResult.java: updated failure() Javadoc: "null is normalized to a default
+    message" instead of "must not be null"
+  - MemoryContextTest.java: replaced vacuous testRecord_withoutLongTerm_doesNotCallStore
+    (unwired mock verify was always true) with assertion-based test verifying
+    hasLongTerm() is false, STM is recorded, queryLongTerm returns empty
+  - TaskOutput.java: added @NonNull to raw, taskDescription, agentRole, completedAt,
+    duration fields to match the design spec in docs/design/03-domain-model.md
+  - TaskOutputTest.java: updated three null-field tests to expect NullPointerException
+    (enforced by Lombok @NonNull at build time)
+
+- PR #43 first commit (44c482b): addressed all actionable Copilot review feedback
+  from 16 closed PRs #21-#41
+  - Bug: Ensemble.resolveTasks two-pass approach; IdentityHashMap for agent membership
+  - Null safety: 13 defensive fixes across AgentDelegationTool, DelegateTaskTool,
+    EmbeddingStoreLongTermMemory, AgentExecutor, AgentPromptBuilder, Task, Agent,
+    ToolResult, LangChain4jToolAdapter, EnsembleMemory
+  - Correctness: MDC save/restore for nested delegation; hierarchical error wrapping;
+    HIERARCHICAL role validation; toolCallCounter fix; MemoryContext.isActive semantics
+  - Code quality: effective tool count logging; WARN for tool errors; UUID sentinel in
+    TemplateResolver; constructor delegation; prompt stripTrailing
+  - Documentation: logback version sync, template-variables hyphens, workflows timing
+  - Tests: +10 tests (287 -> 297); fixed dead test; renamed misleading test
+  - CI: skipped-guard on automerge; dependabot groups for github-actions
+  - 297 tests passing
 
 - Issue #17 merged (PR #41): agent delegation fully implemented
   - `DelegationContext`: immutable runtime state; create() factory; descend() creates

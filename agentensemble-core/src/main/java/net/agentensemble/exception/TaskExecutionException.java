@@ -18,10 +18,7 @@ public class TaskExecutionException extends AgentEnsembleException {
 
     public TaskExecutionException(String message, String taskDescription, String agentRole,
             List<TaskOutput> completedTaskOutputs) {
-        super(message);
-        this.taskDescription = taskDescription;
-        this.agentRole = agentRole;
-        this.completedTaskOutputs = List.copyOf(completedTaskOutputs);
+        this(message, taskDescription, agentRole, completedTaskOutputs, null);
     }
 
     public TaskExecutionException(String message, String taskDescription, String agentRole,
