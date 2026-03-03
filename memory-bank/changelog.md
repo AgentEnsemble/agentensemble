@@ -79,6 +79,38 @@
 
 ---
 
+## [Planned] Issue #20 Advanced Features -- Phase 7 Sub-Issues Created 2026-03-03
+
+### Architecture Decisions Recorded
+
+Issue #20 decomposed into 5 independently releasable sub-issues:
+
+| Issue | Feature | Release |
+|-------|---------|---------|
+| #57 | Callbacks/Event Listeners + ExecutionContext refactor | v0.7.0 |
+| #58 | Guardrails: Pre/post execution validation | v0.8.0 |
+| #59 | Rate Limiting: Per-agent/per-LLM | v0.8.0 |
+| #60 | Built-in Tool Library: agentensemble-tools module | v0.9.0 |
+| #61 | Streaming Output: Token-by-token via StreamingChatLanguageModel | v1.0.0 |
+
+Key architecture decisions:
+- ExecutionContext (#57): replaces (MemoryContext, boolean verbose) params in
+  WorkflowExecutor.execute() and AgentExecutor.execute() with a single context object;
+  prerequisite for guardrails, streaming, and any future runtime extensibility
+- Streaming (#61): decorator pattern -- Agent.streamingLlm optional field wraps a
+  StreamingChatLanguageModel; tool-loop uses standard ChatModel; only final response is
+  streamed via TokenEvent callbacks; preserves TaskOutput.raw contract
+- Rate Limiting (#59): pure decorator -- RateLimitedChatModel wraps any ChatModel (zero
+  changes to execution paths); token-bucket algorithm; thread-safe for parallel workflows;
+  Agent.rateLimit() convenience auto-wraps at build time
+- Built-in tools (#60): separate optional agentensemble-tools Gradle module; code
+  execution (sandboxed) deferred due to security complexity
+- Guardrails (#58): functional interfaces (InputGuardrail, OutputGuardrail) on Task;
+  invoked in AgentExecutor before LLM call (input) and after response (output);
+  throws GuardrailViolationException on failure
+
+---
+
 ## [0.6.0] - 2026-03-03 (Issue #19, PR #48)
 
 ### Added

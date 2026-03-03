@@ -2,9 +2,9 @@
 
 ## Current Work Focus
 
-All doc examples are now runnable from the command line. 5 named Gradle tasks added to
-`agentensemble-examples`. All doc example pages have run instructions. README links to
-docs site throughout. 440 tests passing on main.
+Issue #20 (Advanced Features) has been planned and decomposed into 5 sub-issues with
+individual release targets. Next implementation target is #57 (Callbacks/Event Listeners
++ ExecutionContext refactor) targeting v0.7.0. 440 tests passing on main.
 
 ## Recent Changes
 
@@ -76,8 +76,30 @@ docs site throughout. 440 tests passing on main.
 
 1. Release v0.6.0 (structured output milestone, via release-please)
 2. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput
-3. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
-4. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
+3. Issue #57 (v0.7.0): Callbacks/Event Listeners + ExecutionContext refactor (first Phase 7 sub-issue)
+4. Issue #58 + #59 (v0.8.0): Guardrails + Rate Limiting
+5. Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
+6. Issue #61 (v1.0.0): Streaming Output
+7. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
+
+## Issue #20 Phase 7 Sub-Issues
+
+| Issue | Feature | Release |
+|-------|---------|---------|
+| #57 | Callbacks/Event Listeners + ExecutionContext refactor | v0.7.0 |
+| #58 | Guardrails: Pre/post execution validation | v0.8.0 |
+| #59 | Rate Limiting: Per-agent/per-LLM | v0.8.0 |
+| #60 | Built-in Tool Library: agentensemble-tools module | v0.9.0 |
+| #61 | Streaming Output: Token-by-token via StreamingChatLanguageModel | v1.0.0 |
+
+**Key architecture decisions for Phase 7:**
+- ExecutionContext (#57): consolidates MemoryContext + verbose + listeners into one object passed
+  through WorkflowExecutor.execute() and AgentExecutor.execute() -- prerequisite for all other features
+- Streaming (#61): decorator pattern; Agent.streamingLlm optional field; tool-loop uses standard
+  ChatModel, only final response is streamed via TokenEvent callbacks
+- Rate Limiting (#59): pure decorator (RateLimitedChatModel wraps any ChatModel); zero changes
+  to execution paths; Agent.rateLimit() optional builder convenience
+- Built-in tools (#60): separate agentensemble-tools module; code execution deferred
 
 ## Important Notes
 
