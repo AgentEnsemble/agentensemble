@@ -77,3 +77,13 @@
 .md-tabs {
   background: linear-gradient(135deg, #2DD4FF 0%, #4D95FF 50%, #8363F9 100%);
 }
+
+/* ---------------------------------------------------------------------------
+   Logo sizing
+   The horizontal PNG (mark + wordmark) is 256x80px @2x. Display at 40px
+   height so it is crisp on both standard and HiDPI (retina) screens.
+--------------------------------------------------------------------------- */
+.md-header__button.md-logo img {
+  height: 2.5rem;
+  width: auto;
+}
