@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.8.0...v0.9.0) (2026-03-03)
+
+
+### Features
+
+* guardrails -- pre/post execution validation hooks ([#58](https://github.com/AgentEnsemble/agentensemble/issues/58)) ([#70](https://github.com/AgentEnsemble/agentensemble/issues/70)) ([ff48d5c](https://github.com/AgentEnsemble/agentensemble/commit/ff48d5c0c7fbde043d9e23fad4793537e9d601d7))
+
 ## [0.8.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.7.1...v0.8.0) (2026-03-03)
 
 
