@@ -123,6 +123,22 @@ public class HierarchicalTeamExample {
 
 ---
 
+## Running the Example
+
+```bash
+git clone https://github.com/AgentEnsemble/agentensemble.git
+cd agentensemble
+export OPENAI_API_KEY=your-api-key
+
+# Default company (Acme Corp)
+./gradlew :agentensemble-examples:runHierarchicalTeam
+
+# Analyse a different company
+./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
+```
+
+---
+
 ## How the Manager Behaves
 
 The Manager receives a prompt describing each worker agent and their capabilities, plus the full task list. It then:

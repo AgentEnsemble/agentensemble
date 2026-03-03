@@ -21,6 +21,8 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 | **Workflow** | How tasks are executed: `SEQUENTIAL`, `HIERARCHICAL` (manager delegates to workers), or `PARALLEL` (concurrent DAG-based execution) |
 | **Memory** | Optional per-run and cross-run context: short-term, long-term (vector store), and entity memory |
 
+**Full documentation:** [Core Concepts](https://docs.agentensemble.net/getting-started/concepts/) | [Getting Started](https://docs.agentensemble.net/getting-started/quickstart/)
+
 ---
 
 ## Quickstart
@@ -154,6 +156,8 @@ System.out.println(output.getRaw());
 
 If `managerLlm` is not set, the Manager uses the first agent's LLM. All worker agents participate in the same memory context when memory is configured (see [Memory System](#memory-system) below).
 
+**Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Hierarchical Team Example](https://docs.agentensemble.net/examples/hierarchical-team/)
+
 ---
 
 ## Parallel Workflow
@@ -215,7 +219,7 @@ Ensemble.builder()
 
 When using `CONTINUE_ON_ERROR`, a `ParallelExecutionException` is thrown if any tasks fail, carrying both the successful outputs and a map of failures.
 
-See the [Parallel Workflow guide](docs/guides/workflows.md#parallel) and the [Parallel Workflow example](docs/examples/parallel-workflow.md) for full details.
+**Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Parallel Workflow Example](https://docs.agentensemble.net/examples/parallel-workflow/)
 
 ---
 
@@ -315,6 +319,8 @@ EnsembleOutput output = Ensemble.builder()
 | `entityMemory` | `EntityMemory` | `null` | Named entity fact store; use `InMemoryEntityMemory` |
 | `longTermMaxResults` | `int` | `5` | Maximum memories retrieved per task when long-term memory is enabled |
 
+**Full documentation:** [Memory Guide](https://docs.agentensemble.net/guides/memory/) | [Memory Across Runs Example](https://docs.agentensemble.net/examples/memory-across-runs/)
+
 ---
 
 ## Agent Delegation
@@ -362,7 +368,7 @@ The framework executes the writer, returns the result as the tool output, and th
 - Delegating to an unknown agent role returns an error to the caller
 - Delegation depth is capped at `maxDelegationDepth` (default 3) to prevent infinite chains
 
-See the [Delegation guide](docs/guides/delegation.md) for full details.
+**Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/)
 
 ---
 
@@ -379,6 +385,8 @@ See the [Delegation guide](docs/guides/delegation.md) for full details.
 | `verbose` | `boolean` | `false` | Log prompts and responses at INFO |
 | `maxIterations` | `int` | `25` | Max tool-call iterations before forcing final answer |
 | `responseFormat` | `String` | `""` | Extra formatting instructions in the system prompt |
+
+**Full documentation:** [Agent Configuration Reference](https://docs.agentensemble.net/reference/agent-configuration/) | [Agents Guide](https://docs.agentensemble.net/guides/agents/)
 
 ---
 
@@ -424,7 +432,7 @@ report.findings().forEach(System.out::println);
 
 **Formatted text (no schema):** For Markdown or other formatted prose, use `Agent.responseFormat` and a descriptive `expectedOutput` -- no `outputType` needed. The `TaskOutput.raw` field always contains the complete response.
 
-See the [Structured Output example](docs/examples/structured-output.md) for full working code.
+**Full documentation:** [Structured Output Example](https://docs.agentensemble.net/examples/structured-output/)
 
 ---
 
@@ -438,6 +446,8 @@ See the [Structured Output example](docs/examples/structured-output.md) for full
 | `context` | `List<Task>` | `[]` | Prior tasks whose outputs feed into this task (sequential workflow) |
 | `outputType` | `Class<?>` | `null` | Java class for structured output parsing. Records recommended. |
 | `maxOutputRetries` | `int` | `3` | Retry attempts when structured output parsing fails. `0` disables retries. |
+
+**Full documentation:** [Task Configuration Reference](https://docs.agentensemble.net/reference/task-configuration/) | [Tasks Guide](https://docs.agentensemble.net/guides/tasks/)
 
 ---
 
@@ -454,6 +464,8 @@ See the [Structured Output example](docs/examples/structured-output.md) for full
 | `memory` | `EnsembleMemory` | `null` | Memory configuration; see [Memory System](#memory-system) |
 | `maxDelegationDepth` | `int` | `3` | Maximum peer-delegation depth when agents have `allowDelegation = true` |
 | `verbose` | `boolean` | `false` | Elevates execution logging to INFO |
+
+**Full documentation:** [Ensemble Configuration Reference](https://docs.agentensemble.net/reference/ensemble-configuration/)
 
 ---
 
@@ -499,6 +511,8 @@ var agent = Agent.builder()
 
 Both approaches can be combined in a single agent's tool list.
 
+**Full documentation:** [Tools Guide](https://docs.agentensemble.net/guides/tools/)
+
 ---
 
 ## Template Variables
@@ -517,6 +531,8 @@ ensemble.run(Map.of("topic", "quantum computing", "year", "2026"));
 ```
 
 Use `{{variable}}` to include a literal `{variable}` in the text without substitution.
+
+**Full documentation:** [Template Variables Guide](https://docs.agentensemble.net/guides/template-variables/)
 
 ---
 
@@ -542,6 +558,8 @@ try {
     System.err.println("Missing variables: " + e.getMissingVariables());
 }
 ```
+
+**Full documentation:** [Error Handling Guide](https://docs.agentensemble.net/guides/error-handling/)
 
 ---
 
@@ -571,19 +589,40 @@ AgentEnsemble uses SLF4J. Add your preferred implementation (Logback, Log4j2, et
 | `task.index` | `"2/5"` |
 | `agent.role` | `"Senior Research Analyst"` |
 
+**Full documentation:** [Logging Guide](https://docs.agentensemble.net/guides/logging/)
+
 ---
 
-## Running the Example
+## Running the Examples
+
+Clone the repo, set your API key, and run any of the included examples:
 
 ```bash
 git clone https://github.com/AgentEnsemble/agentensemble.git
 cd agentensemble
 export OPENAI_API_KEY=your-api-key
-./gradlew :agentensemble-examples:run
 
-# Custom topic:
-./gradlew :agentensemble-examples:run --args="quantum computing"
+# Research and writer pipeline (sequential workflow)
+./gradlew :agentensemble-examples:runResearchWriter
+./gradlew :agentensemble-examples:runResearchWriter --args="quantum computing"
+
+# Hierarchical team -- manager coordinates specialists
+./gradlew :agentensemble-examples:runHierarchicalTeam
+./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
+
+# Parallel workflow -- concurrent DAG-based execution
+./gradlew :agentensemble-examples:runParallelWorkflow
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla automotive"
+
+# Memory across runs -- long-term memory over 3 weekly cycles
+./gradlew :agentensemble-examples:runMemoryAcrossRuns
+
+# Structured output -- typed JSON + formatted Markdown
+./gradlew :agentensemble-examples:runStructuredOutput
+./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
 ```
+
+**Full documentation:** [Examples](https://docs.agentensemble.net/examples/research-writer/)
 
 ---
 
@@ -618,14 +657,14 @@ See [`docs/design/`](docs/design/) for full specifications:
 
 ## Documentation
 
-Full user documentation is in [`docs/`](docs/):
+Full documentation is available at **[docs.agentensemble.net](https://docs.agentensemble.net)**:
 
 | Section | Description |
 |---|---|
-| [Getting Started](docs/getting-started/installation.md) | Installation, quickstart, core concepts |
-| [Guides](docs/guides/agents.md) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging |
-| [Reference](docs/reference/ensemble-configuration.md) | Complete configuration field tables |
-| [Examples](docs/examples/research-writer.md) | Annotated example walkthroughs |
+| [Getting Started](https://docs.agentensemble.net/getting-started/installation/) | Installation, quickstart, core concepts |
+| [Guides](https://docs.agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging |
+| [Reference](https://docs.agentensemble.net/reference/ensemble-configuration/) | Complete configuration field tables |
+| [Examples](https://docs.agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs |
 | [Design Specs](docs/design/) | Internal architecture and design documentation |
 
 ---

@@ -92,18 +92,18 @@ public class ResearchWriterExample {
 
 ---
 
-## Running the Included Example
+## Running the Example
 
 ```bash
 git clone https://github.com/AgentEnsemble/agentensemble.git
 cd agentensemble
 export OPENAI_API_KEY=your-api-key
 
-# Default topic (AI agents in enterprise software)
-./gradlew :agentensemble-examples:run
+# Default topic (artificial intelligence agents in 2026)
+./gradlew :agentensemble-examples:runResearchWriter
 
 # Custom topic
-./gradlew :agentensemble-examples:run --args="quantum computing applications in finance"
+./gradlew :agentensemble-examples:runResearchWriter --args="quantum computing applications in finance"
 ```
 
 ---

@@ -132,6 +132,22 @@ public class MemoryAcrossRunsExample {
 
 ---
 
+## Running the Example
+
+```bash
+git clone https://github.com/AgentEnsemble/agentensemble.git
+cd agentensemble
+export OPENAI_API_KEY=your-api-key
+
+./gradlew :agentensemble-examples:runMemoryAcrossRuns
+```
+
+The example runs three simulated weekly cycles in a single JVM process so that the
+`InMemoryEmbeddingStore` accumulates context across all three runs. You will see the
+agents reference prior weeks' findings as the runs progress.
+
+---
+
 ## How Memory Builds Over Time
 
 After Run 1:
