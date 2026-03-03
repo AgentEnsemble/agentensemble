@@ -2,9 +2,12 @@
 
 ## Current Work Focus
 
-Class-size refactoring complete on main (6 commits, f46dd2c..f482a4e). All tests pass.
-No behaviour changes. Ready to open PR if this work is going on a branch; otherwise
-already on main. Next: Issue #42 (Execution Metrics) or Issue #58 (Guardrails).
+PR #66 open on `fix/javadoc-link-error-add-to-ci`: fixes the broken javadoc `{@link}`
+references that caused the v0.7.0 release workflow to fail, and adds `:agentensemble-core:javadoc`
+to the CI workflow so the same class of error is caught pre-merge.
+
+Full javadoc cleanup (92 remaining warnings) is tracked in issue #65.
+Next after #66 merges: Issue #42 (Execution Metrics) or Issue #58 (Guardrails).
 
 ## Recent Changes
 
