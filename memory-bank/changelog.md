@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added (GitHub Pages documentation site)
+- `mkdocs.yml`: MkDocs Material site configuration; nav mirrors `docs/index.md` structure;
+  brand logo (`assets/logo.svg`), favicon (`assets/favicon.svg`), light/dark toggle,
+  custom color scheme, code copy buttons, search
+- `docs/stylesheets/custom.css`: brand color overrides for both light and dark schemes;
+  header/tabs use the brand gradient (#2DD4FF -> #4D95FF -> #8363F9)
+- `docs/assets/logo.svg`: copy of `assets/brand/agentensemble-logo-mark.svg`
+- `docs/assets/favicon.svg`: copy of `assets/brand/agentensemble-favicon-32.svg`
+- `docs/requirements.txt`: `mkdocs-material` dependency for CI install
+- `.github/workflows/docs.yml`: GitHub Actions workflow; triggers on push to main when
+  `docs/**` or `mkdocs.yml` change, plus manual dispatch; deploys to GitHub Pages via
+  `actions/deploy-pages@v4` (source: GitHub Actions, not branch)
+- `.gitignore`: added `site/` (MkDocs build output)
+- `docs/design/01-overview.md`: fixed broken `../../LICENSE` relative link -- changed to
+  absolute GitHub URL so it resolves correctly from the published site
+
+### One-time manual step required
+- Enable GitHub Pages in repo Settings > Pages > Source: "GitHub Actions"
+- Site will be live at: https://agentensemble.github.io/agentensemble/
+
+
 ### Changed
 - Replaced manual `maven-publish` + `publishing {}` block in `agentensemble-core/build.gradle.kts`
   with `com.vanniktech.maven.publish` 0.29.0 (vanniktech plugin)
