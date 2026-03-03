@@ -2,7 +2,9 @@ package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -122,26 +124,60 @@ public class Ensemble {
     private final List<EnsembleListener> listeners;
 
     /**
-     * Execute the ensemble's tasks with no input variables.
+     * Template variable inputs for task description and expected output substitution.
+     *
+     * Use {@code .input("key", "value")} on the builder to supply individual entries, or
+     * {@code .inputs(map)} to supply a batch. These values are applied on every {@link #run()}
+     * call. When the same key is also present in a {@link #run(Map)} invocation, the run-time
+     * value takes precedence over the builder value.
+     *
+     * Example:
+     * <pre>
+     * Ensemble.builder()
+     *     .agent(researcher)
+     *     .task(researchTask)
+     *     .input("topic", "AI agents")
+     *     .build()
+     *     .run();
+     * </pre>
+     */
+    @Singular("input")
+    private final Map<String, String> inputs;
+
+    /**
+     * Execute the ensemble's tasks using the inputs configured on the builder.
      *
      * @return EnsembleOutput containing all results
      * @throws ValidationException if the ensemble configuration is invalid
      */
     public EnsembleOutput run() {
-        return run(Map.of());
+        return runWithInputs(inputs);
     }
 
     /**
-     * Execute the ensemble's tasks with template variable substitution.
+     * Execute the ensemble's tasks, merging the supplied run-time inputs with any inputs
+     * configured on the builder. When the same key appears in both, the run-time value
+     * takes precedence.
      *
-     * Variables like {topic} in task descriptions and expected outputs are
-     * replaced with values from the inputs map before execution.
+     * Use this overload when the same {@code Ensemble} instance is executed multiple times
+     * with different variable values (for example, iterating over a list of topics or weeks).
+     * For the common single-run case, prefer setting inputs on the builder via
+     * {@code .input("key", "value")} and calling the no-arg {@link #run()}.
      *
-     * @param inputs map of variable names to replacement values
+     * @param runtimeInputs additional or overriding variable values
      * @return EnsembleOutput containing all results
      * @throws ValidationException if the ensemble configuration is invalid
      */
-    public EnsembleOutput run(Map<String, String> inputs) {
+    public EnsembleOutput run(Map<String, String> runtimeInputs) {
+        if (runtimeInputs == null || runtimeInputs.isEmpty()) {
+            return runWithInputs(inputs);
+        }
+        Map<String, String> merged = new LinkedHashMap<>(inputs);
+        merged.putAll(runtimeInputs);
+        return runWithInputs(Collections.unmodifiableMap(merged));
+    }
+
+    private EnsembleOutput runWithInputs(Map<String, String> resolvedInputs) {
         String ensembleId = UUID.randomUUID().toString();
         MDC.put("ensemble.id", ensembleId);
 
@@ -151,13 +187,13 @@ public class Ensemble {
                     workflow,
                     tasks.size(),
                     agents.size());
-            log.debug("Input variables: {}", inputs);
+            log.debug("Input variables: {}", resolvedInputs);
 
             // Step 1: Validate configuration
             new EnsembleValidator(this).validate();
 
             // Step 2: Resolve template variables in task descriptions and expected outputs
-            List<Task> resolvedTasks = resolveTasks(inputs);
+            List<Task> resolvedTasks = resolveTasks(resolvedInputs);
 
             // Step 3: Create memory context for this run (no-op when memory is not configured)
             MemoryContext memoryContext = memory != null ? MemoryContext.from(memory) : MemoryContext.disabled();
