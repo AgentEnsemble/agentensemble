@@ -125,11 +125,19 @@
   - `Ensemble` builder: `.listener()`, `.onTaskStart()`, `.onTaskComplete()`, `.onTaskFailed()`, `.onToolCall()`
   - New tests: ExecutionContextTest(20), EnsembleListenerTest(10), ToolResolverTest(10), CallbackIntegrationTest(14)
   - Docs: `guides/callbacks.md`, roadmap Phase 7 COMPLETE, mkdocs.yml updated
-- [ ] Issue #58 (v0.8.0): Guardrails: Pre/post execution validation
+- [x] Issue #58 (v0.8.0): Guardrails: Pre/post execution validation -- feature/58-guardrails (563 tests, +64)
   - InputGuardrail / OutputGuardrail functional interfaces
-  - GuardrailResult, GuardrailViolationException
-  - Task.inputGuardrails / Task.outputGuardrails builder fields
-  - AgentExecutor invokes guardrails before/after execution
+  - GuardrailResult, GuardrailViolationException (with GuardrailType enum)
+  - GuardrailInput / GuardrailOutput context records
+  - Task.inputGuardrails / Task.outputGuardrails builder fields (immutable lists, default empty)
+  - AgentExecutor invokes input guardrails before prompt building, output guardrails after parsing
+  - SequentialWorkflowExecutor catches GuardrailViolationException, fires TaskFailedEvent, wraps in TaskExecutionException
+  - 64 new tests: GuardrailResultTest(6), GuardrailInputTest(3), GuardrailOutputTest(3),
+    GuardrailViolationExceptionTest(5), ExceptionHierarchyTest(+4), TaskTest(+7),
+    AgentExecutorTest(+11), GuardrailIntegrationTest(8)
+  - Docs: guardrails.md (new guide), tasks.md (guardrails section), task-configuration.md (2 new fields),
+    exceptions.md (GuardrailViolationException), concepts.md (guardrails concept),
+    13-future-roadmap.md (Phase 8 COMPLETE), mkdocs.yml (nav), README.md
 - [ ] Issue #59 (v0.8.0): Rate Limiting: Per-agent/per-LLM
   - RateLimitedChatModel decorator (token-bucket, thread-safe)
   - RateLimit value object with factory methods

@@ -21,6 +21,13 @@ import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.execution.ExecutionContext;
+import net.agentensemble.guardrail.GuardrailInput;
+import net.agentensemble.guardrail.GuardrailOutput;
+import net.agentensemble.guardrail.GuardrailResult;
+import net.agentensemble.guardrail.GuardrailViolationException;
+import net.agentensemble.guardrail.GuardrailViolationException.GuardrailType;
+import net.agentensemble.guardrail.InputGuardrail;
+import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,6 +107,9 @@ public class AgentExecutor {
         Agent agent = task.getAgent();
         boolean effectiveVerbose = verbose || agent.isVerbose();
 
+        // Run input guardrails before any LLM call -- throws GuardrailViolationException on failure
+        runInputGuardrails(task, contextOutputs);
+
         // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
         String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
@@ -164,6 +174,9 @@ public class AgentExecutor {
         if (task.getOutputType() != null) {
             parsedOutput = StructuredOutputHandler.parse(agent, task, finalResponse, systemPrompt);
         }
+
+        // Run output guardrails after response (and after structured output parsing)
+        runOutputGuardrails(task, finalResponse, parsedOutput);
 
         Duration duration = Duration.between(startTime, Instant.now());
         int toolCalls = toolCallCounter.get();
@@ -306,6 +319,76 @@ public class AgentExecutor {
             } else {
                 // LLM produced a text response -- we're done
                 return aiMessage.text();
+            }
+        }
+    }
+
+    // ========================
+    // Guardrail invocation
+    // ========================
+
+    /**
+     * Evaluate all input guardrails on the task before the LLM call.
+     *
+     * Guardrails are evaluated in order. The first failure stops evaluation and throws
+     * {@link GuardrailViolationException} with type INPUT.
+     *
+     * @param task           the task being executed
+     * @param contextOutputs outputs from prior tasks passed as context
+     * @throws GuardrailViolationException if any input guardrail fails
+     */
+    private void runInputGuardrails(Task task, List<TaskOutput> contextOutputs) {
+        List<InputGuardrail> guardrails = task.getInputGuardrails();
+        if (guardrails.isEmpty()) {
+            return;
+        }
+        Agent agent = task.getAgent();
+        GuardrailInput input =
+                new GuardrailInput(task.getDescription(), task.getExpectedOutput(), contextOutputs, agent.getRole());
+
+        for (InputGuardrail guardrail : guardrails) {
+            GuardrailResult result = guardrail.validate(input);
+            if (!result.isSuccess()) {
+                log.warn(
+                        "Input guardrail blocked agent '{}' task '{}': {}",
+                        agent.getRole(),
+                        truncate(task.getDescription(), 80),
+                        result.getMessage());
+                throw new GuardrailViolationException(
+                        GuardrailType.INPUT, result.getMessage(), task.getDescription(), agent.getRole());
+            }
+        }
+    }
+
+    /**
+     * Evaluate all output guardrails on the agent response after the LLM call.
+     *
+     * Guardrails are evaluated in order. The first failure stops evaluation and throws
+     * {@link GuardrailViolationException} with type OUTPUT.
+     *
+     * @param task         the task that was executed
+     * @param rawResponse  the raw text response from the agent
+     * @param parsedOutput the parsed structured output, or {@code null} if not applicable
+     * @throws GuardrailViolationException if any output guardrail fails
+     */
+    private void runOutputGuardrails(Task task, String rawResponse, Object parsedOutput) {
+        List<OutputGuardrail> guardrails = task.getOutputGuardrails();
+        if (guardrails.isEmpty()) {
+            return;
+        }
+        Agent agent = task.getAgent();
+        GuardrailOutput output = new GuardrailOutput(rawResponse, parsedOutput, task.getDescription(), agent.getRole());
+
+        for (OutputGuardrail guardrail : guardrails) {
+            GuardrailResult result = guardrail.validate(output);
+            if (!result.isSuccess()) {
+                log.warn(
+                        "Output guardrail blocked agent '{}' task '{}': {}",
+                        agent.getRole(),
+                        truncate(task.getDescription(), 80),
+                        result.getMessage());
+                throw new GuardrailViolationException(
+                        GuardrailType.OUTPUT, result.getMessage(), task.getDescription(), agent.getRole());
             }
         }
     }

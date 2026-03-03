@@ -117,6 +117,24 @@ A `@Tool`-annotated method threw an exception during execution. The exception is
 
 ---
 
+## `GuardrailViolationException`
+
+**Thrown by:** `AgentExecutor` when an `InputGuardrail` or `OutputGuardrail` configured on a `Task` returns a failure result.
+
+Propagates through the workflow executor and is wrapped in `TaskExecutionException` -- catch `TaskExecutionException` and inspect `getCause()` to detect guardrail failures.
+
+Input violations are thrown before any LLM call is made. Output violations are thrown after the agent response (and after structured output parsing when `outputType` is set).
+
+**Methods:**
+| Method | Type | Description |
+|---|---|---|
+| `getGuardrailType()` | `GuardrailType` | `INPUT` (pre-execution) or `OUTPUT` (post-execution) |
+| `getViolationMessage()` | `String` | The failure reason returned by the guardrail |
+| `getTaskDescription()` | `String` | Description of the blocked task |
+| `getAgentRole()` | `String` | Role of the agent assigned to the task |
+
+---
+
 ## Error Handling Guide
 
 See the [Error Handling guide](../guides/error-handling.md) for patterns and examples.

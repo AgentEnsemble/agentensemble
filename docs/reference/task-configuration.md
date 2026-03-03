@@ -10,6 +10,8 @@ All fields available on `Task.builder()`.
 | `context` | `List<Task>` | No | `[]` | Prior tasks whose outputs are injected into this task's agent prompt. Sequential workflow only. |
 | `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON and the result is parsed automatically. Supported: records, POJOs, `Map<K,V>`, enums, `List<T>`, scalar wrappers (`Boolean`, `Integer`, `Long`, `Double`). Unsupported: primitives, `void`, top-level arrays. |
 | `maxOutputRetries` | `int` | No | `3` | Number of retry attempts if structured output parsing fails. `0` disables retries. Only meaningful when `outputType` is set. |
+| `inputGuardrails` | `List<InputGuardrail>` | No | `[]` | Validation hooks that run before the LLM call. Each guardrail receives a `GuardrailInput` and returns `GuardrailResult.success()` or `GuardrailResult.failure(reason)`. The first failure throws `GuardrailViolationException` and prevents any LLM call. |
+| `outputGuardrails` | `List<OutputGuardrail>` | No | `[]` | Validation hooks that run after the agent produces a response. Each guardrail receives a `GuardrailOutput` (with raw text and optionally the parsed object). The first failure throws `GuardrailViolationException`. |
 
 ---
 
@@ -22,6 +24,8 @@ The following validations are applied at `build()` time:
 - `agent` must not be null
 - `outputType` must not be a primitive, `void`, or a top-level array type (when set)
 - `maxOutputRetries` must be `>= 0`
+- `inputGuardrails` defaults to an empty immutable list (no-op)
+- `outputGuardrails` defaults to an empty immutable list (no-op)
 
 At `Ensemble.run()` time:
 - All context tasks must appear earlier in the ensemble's task list (sequential workflow)

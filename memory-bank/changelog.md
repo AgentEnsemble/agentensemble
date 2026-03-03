@@ -126,6 +126,48 @@
 
 ---
 
+## [0.8.0] - 2026-03-03 (Issue #58, feature/58-guardrails)
+
+### Added
+- `net.agentensemble.guardrail` package: `InputGuardrail` (`@FunctionalInterface`),
+  `OutputGuardrail` (`@FunctionalInterface`), `GuardrailResult` (success/failure factory),
+  `GuardrailInput` (record: taskDescription, expectedOutput, contextOutputs, agentRole),
+  `GuardrailOutput` (record: rawResponse, parsedOutput, taskDescription, agentRole),
+  `GuardrailViolationException` (extends `AgentEnsembleException`; carries `GuardrailType` enum,
+  violationMessage, taskDescription, agentRole)
+- `Task.inputGuardrails` field: `List<InputGuardrail>`, default empty immutable list
+- `Task.outputGuardrails` field: `List<OutputGuardrail>`, default empty immutable list
+- 64 new tests (499 -> 563): `GuardrailResultTest` (6), `GuardrailInputTest` (3),
+  `GuardrailOutputTest` (3), `GuardrailViolationExceptionTest` (5),
+  `ExceptionHierarchyTest` (+4), `TaskTest` (+7), `AgentExecutorTest` (+11),
+  `GuardrailIntegrationTest` (8)
+- `docs/guides/guardrails.md`: new guide (quick start, input/output guardrails, multiple
+  guardrails, exception handling, callbacks integration, structured output, thread safety)
+
+### Changed
+- `AgentExecutor.execute()`: runs input guardrails before prompt building (before any LLM call);
+  runs output guardrails after final response and after structured output parsing;
+  throws `GuardrailViolationException` on first failure with full context
+- `SequentialWorkflowExecutor`: catch clause extended to include `GuardrailViolationException`
+  alongside `AgentExecutionException | MaxIterationsExceededException`; fires `TaskFailedEvent`
+  before wrapping in `TaskExecutionException`
+- `docs/guides/tasks.md`: Guardrails section added
+- `docs/reference/task-configuration.md`: `inputGuardrails` and `outputGuardrails` rows added
+- `docs/reference/exceptions.md`: `GuardrailViolationException` section added
+- `docs/getting-started/concepts.md`: Guardrails concept section added
+- `docs/design/13-future-roadmap.md`: Phase 8 (Guardrails) marked COMPLETE; Phase 9 for remaining
+- `mkdocs.yml`: Guardrails guide added to Guides nav
+- `README.md`: Guardrails section, Task Configuration table updated, roadmap updated
+
+### Technical Notes
+- First-failure semantics: guardrails evaluated in order; first failure stops evaluation
+- Input guardrails run before prompts are built -- no LLM calls when input guardrail fails
+- Output guardrails run after structured output parsing (parsedOutput available in GuardrailOutput)
+- GuardrailViolationException is propagated as cause of TaskExecutionException (consistent pattern)
+- ParallelTaskCoordinator already catches all Exception so parallel workflow handles guardrails correctly
+
+---
+
 ## [0.7.0] - 2026-03-03 (Issue #57, feature/57-callbacks-execution-context)
 
 ### Added

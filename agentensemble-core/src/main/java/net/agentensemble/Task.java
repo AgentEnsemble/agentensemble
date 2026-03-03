@@ -4,6 +4,8 @@ import java.util.List;
 import lombok.Builder;
 import lombok.Value;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.guardrail.InputGuardrail;
+import net.agentensemble.guardrail.OutputGuardrail;
 
 /**
  * A unit of work assigned to an agent.
@@ -101,6 +103,37 @@ public class Task {
     int maxOutputRetries;
 
     /**
+     * Guardrails evaluated before this task is executed.
+     *
+     * Each guardrail receives a {@link net.agentensemble.guardrail.GuardrailInput}
+     * containing the task description, expected output, context outputs, and agent role.
+     * If any guardrail returns a failure result, a
+     * {@link net.agentensemble.guardrail.GuardrailViolationException} is thrown before
+     * any LLM call is made.
+     *
+     * Guardrails are evaluated in order; the first failure stops evaluation.
+     *
+     * Default: empty list (no input validation).
+     */
+    List<InputGuardrail> inputGuardrails;
+
+    /**
+     * Guardrails evaluated after this task's agent produces a response.
+     *
+     * Each guardrail receives a {@link net.agentensemble.guardrail.GuardrailOutput}
+     * containing the raw response text, the parsed output (if any), the task
+     * description, and the agent role. If any guardrail returns a failure result,
+     * a {@link net.agentensemble.guardrail.GuardrailViolationException} is thrown.
+     * When {@link #outputType} is set, output guardrails run after structured output
+     * parsing completes.
+     *
+     * Guardrails are evaluated in order; the first failure stops evaluation.
+     *
+     * Default: empty list (no output validation).
+     */
+    List<OutputGuardrail> outputGuardrails;
+
+    /**
      * Custom builder that sets defaults and validates the Task configuration.
      */
     public static class TaskBuilder {
@@ -109,6 +142,8 @@ public class Task {
         private List<Task> context = List.of();
         private Class<?> outputType = null;
         private int maxOutputRetries = 3;
+        private List<InputGuardrail> inputGuardrails = List.of();
+        private List<OutputGuardrail> outputGuardrails = List.of();
 
         public Task build() {
             validateDescription();
@@ -119,7 +154,19 @@ public class Task {
             validateOutputType();
             validateMaxOutputRetries();
             context = List.copyOf(effectiveContext);
-            return new Task(description, expectedOutput, agent, context, outputType, maxOutputRetries);
+            List<InputGuardrail> effectiveInputGuardrails = inputGuardrails != null ? inputGuardrails : List.of();
+            List<OutputGuardrail> effectiveOutputGuardrails = outputGuardrails != null ? outputGuardrails : List.of();
+            inputGuardrails = List.copyOf(effectiveInputGuardrails);
+            outputGuardrails = List.copyOf(effectiveOutputGuardrails);
+            return new Task(
+                    description,
+                    expectedOutput,
+                    agent,
+                    context,
+                    outputType,
+                    maxOutputRetries,
+                    inputGuardrails,
+                    outputGuardrails);
         }
 
         private void validateDescription() {

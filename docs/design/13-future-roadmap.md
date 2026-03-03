@@ -239,18 +239,46 @@ virtual threads. Listener implementations must be thread-safe when registered wi
 
 ---
 
-## Phase 8: Advanced Features
+## Phase 8: Guardrails (COMPLETE -- v0.8.0)
+
+**Implemented**: `InputGuardrail`, `OutputGuardrail`, `GuardrailInput`, `GuardrailOutput`,
+`GuardrailResult`, `GuardrailViolationException`, and integration in `AgentExecutor` and
+`SequentialWorkflowExecutor`.
+
+### How It Works
+
+- `InputGuardrail` and `OutputGuardrail` are `@FunctionalInterface` types on `Task`.
+- `AgentExecutor` runs input guardrails before building prompts (before any LLM call).
+  The first failure throws `GuardrailViolationException(GuardrailType.INPUT, ...)`.
+- `AgentExecutor` runs output guardrails after the final response (and after structured
+  output parsing when `outputType` is set). The first failure throws
+  `GuardrailViolationException(GuardrailType.OUTPUT, ...)`.
+- `SequentialWorkflowExecutor` catches `GuardrailViolationException` alongside the existing
+  `AgentExecutionException | MaxIterationsExceededException`, fires `TaskFailedEvent`, and
+  wraps in `TaskExecutionException`.
+- `GuardrailResult.success()` / `.failure(String reason)` are the result factory methods.
+- Guardrails are evaluated in order; the first failure stops evaluation.
+
+### Implemented API
+
+```java
+var task = Task.builder()
+    .description("Summarize the article")
+    .expectedOutput("A concise summary")
+    .agent(writer)
+    .inputGuardrails(List.of(noPersonalInfoGuardrail))
+    .outputGuardrails(List.of(lengthLimitGuardrail, toxicityGuardrail))
+    .build();
+```
+
+---
+
+## Phase 9: Advanced Features
 
 ### Streaming Output
 
 - Stream agent responses token-by-token using LangChain4j's `StreamingChatLanguageModel`
 - Useful for real-time UIs showing agent progress
-
-### Guardrails / Output Validation
-
-- Pre-execution guardrails: validate task inputs before sending to LLM
-- Post-execution guardrails: validate outputs against custom rules
-- Pluggable validation interface
 
 ### Built-In Tool Library
 
@@ -282,6 +310,7 @@ A separate module `agentensemble-tools` providing common tools:
 | Phase 5 | v0.5.0 | Parallel workflow |
 | Phase 6 | v0.6.0 | Structured output |
 | Phase 7 | v0.7.0 | Callbacks and observability (COMPLETE) |
-| Phase 8 | v1.0.0 | Streaming, guardrails, built-in tools |
+| Phase 8 | v0.8.0 | Guardrails: pre/post execution validation (COMPLETE) |
+| Phase 9 | v1.0.0 | Streaming, built-in tools |
 
 Each phase should be backward-compatible with previous phases. The API is designed with future phases in mind -- builder methods can be added without breaking existing code.
