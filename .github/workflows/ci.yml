@@ -31,7 +31,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build and test
-        run: ./gradlew build --continue
+        run: ./gradlew build :agentensemble-core:javadoc --continue
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
