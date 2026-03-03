@@ -51,6 +51,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
 
       - name: Ensure GitHub Release exists
         run: |
