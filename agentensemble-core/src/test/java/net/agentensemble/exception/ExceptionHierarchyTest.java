@@ -259,4 +259,54 @@ class ExceptionHierarchyTest {
         assertThat(ex.getCompletedCount()).isEqualTo(2);
         assertThat(ex.getFailedCount()).isEqualTo(2);
     }
+
+    // ========================
+    // OutputParsingException
+    // ========================
+
+    @Test
+    void outputParsingException_extendsAgentEnsembleException() {
+        var ex = new OutputParsingException("failed", "raw", String.class, List.of("err1"), 1);
+        assertThat(ex).isInstanceOf(AgentEnsembleException.class);
+        assertThat(ex).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void outputParsingException_fieldsAccessible() {
+        var errors = List.of("err1", "err2", "err3");
+        var ex = new OutputParsingException(
+                "Parsing failed after 3 attempts",
+                "{\"bad\": json}",
+                String.class,
+                errors,
+                3);
+
+        assertThat(ex.getMessage()).isEqualTo("Parsing failed after 3 attempts");
+        assertThat(ex.getRawOutput()).isEqualTo("{\"bad\": json}");
+        assertThat(ex.getOutputType()).isEqualTo(String.class);
+        assertThat(ex.getParseErrors()).containsExactly("err1", "err2", "err3");
+        assertThat(ex.getAttemptCount()).isEqualTo(3);
+    }
+
+    @Test
+    void outputParsingException_parseErrorsIsImmutable() {
+        var ex = new OutputParsingException("msg", "raw", String.class,
+                List.of("e1"), 1);
+        assertThat(ex.getParseErrors()).isUnmodifiable();
+    }
+
+    @Test
+    void outputParsingException_parseErrorsSizeMatchesAttemptCount() {
+        int attempts = 4;
+        var errors = List.of("e1", "e2", "e3", "e4");
+        var ex = new OutputParsingException("msg", "raw", Integer.class, errors, attempts);
+        assertThat(ex.getParseErrors()).hasSize(attempts);
+        assertThat(ex.getAttemptCount()).isEqualTo(attempts);
+    }
+
+    @Test
+    void outputParsingException_nullRawOutput_isPermitted() {
+        var ex = new OutputParsingException("msg", null, String.class, List.of("e1"), 1);
+        assertThat(ex.getRawOutput()).isNull();
+    }
 }

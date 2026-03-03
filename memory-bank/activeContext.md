@@ -2,82 +2,68 @@
 
 ## Current Work Focus
 
-PR #45 merged to main (squash commit 7535576). Issue #18 Parallel Workflow complete.
-Development continues at 0.5.0-SNAPSHOT. 358 tests passing on main.
-
-GitHub Pages (MkDocs Material) documentation site configured and build-verified locally.
-Requires one-time manual step: enable GitHub Pages in repo Settings (source: GitHub Actions).
+Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.6.0).
+429 tests passing on feature branch. PR to be opened against main.
 
 ## Recent Changes
 
-- Issue #18 (Parallel Workflow) merged via PR #45 (squash commit 7535576):
+- Issue #19 (Structured Output) implemented on `feature/structured-output`:
 
   **New classes:**
-  - `TaskDependencyGraph`: identity-based DAG from task context declarations;
-    `getRoots()`, `getReadyTasks(completed)`, `getDependents(task)`, `isInGraph(task)`
-  - `ParallelWorkflowExecutor`: `Executors.newVirtualThreadPerTaskExecutor()` (stable
-    Java 21 API, no preview flags); `CountDownLatch(totalTasks)` for synchronization;
-    MDC captured from caller thread and propagated into each virtual thread; task
-    completion triggers `resolveDependent()` to evaluate and submit ready dependents;
-    `skippedTasks` set tracks skipped tasks to correctly propagate transitive skips
-    in CONTINUE_ON_ERROR chains
-  - `ParallelErrorStrategy`: `FAIL_FAST` (default) or `CONTINUE_ON_ERROR`
-  - `ParallelExecutionException`: thrown by CONTINUE_ON_ERROR; carries
-    `completedTaskOutputs` + `failedTaskCauses` map
+  - `net.agentensemble.output.ParseResult<T>`: result container for parse attempts;
+    `success(T)` / `failure(String)` factory methods; `isSuccess()`, `getValue()`,
+    `getErrorMessage()`. Public (accessed from `AgentExecutor` across packages).
+  - `net.agentensemble.output.JsonSchemaGenerator`: reflection-based schema generator;
+    `generate(Class<?>)` produces human-readable JSON-like schema for prompt injection;
+    supports records, POJOs, String, numeric types, boolean, List<T>, Map<K,V>, enums,
+    nested objects; max nesting depth 5; rejects primitives, void, top-level arrays.
+  - `net.agentensemble.output.StructuredOutputParser`: JSON extraction and Jackson
+    deserialization; `parse(String, Class<T>)` returns `ParseResult<T>`; `extractJson(String)`
+    tries markdown fences first, then trimmed full response, then regex scan for
+    embedded JSON; `ObjectMapper` configured with FAIL_ON_UNKNOWN_PROPERTIES=false,
+    FAIL_ON_NULL_FOR_PRIMITIVES=true.
+  - `net.agentensemble.exception.OutputParsingException`: extends `AgentEnsembleException`;
+    fields: `rawOutput`, `outputType`, `parseErrors` (immutable list), `attemptCount`.
+    Thrown after all retries exhausted.
 
   **Changes to existing classes:**
-  - `Workflow`: add `PARALLEL` enum value
-  - `Ensemble`: `parallelErrorStrategy` field (default FAIL_FAST);
-    `validateParallelErrorStrategy()`; `validateContextOrdering()` skips PARALLEL;
-    `selectExecutor()` PARALLEL branch; `resolveTasks()` pass-2 now updates
-    `originalToResolved` as final tasks are created (fixes diamond-pattern bug)
-  - `ShortTermMemory`: `CopyOnWriteArrayList` for thread-safe concurrent writes;
-    `getEntries()` returns immutable snapshot (`List.copyOf`)
-  - `MemoryContext`: Javadoc updated to reflect thread-safe status
+  - `Task`: added `Class<?> outputType` (default null) and `int maxOutputRetries` (default 3);
+    builder validation: outputType cannot be primitive/void/array; maxOutputRetries >= 0.
+  - `TaskOutput`: added `Object parsedOutput` (nullable) and `Class<?> outputType` (nullable);
+    added `getParsedOutput(Class<T>)` typed accessor (throws IllegalStateException when null
+    or type mismatch).
+  - `AgentPromptBuilder`: injects `## Output Format` section with JSON schema and JSON-only
+    instructions when `task.getOutputType() != null`.
+  - `AgentExecutor`: after main execution (tool loop or direct), calls `parseStructuredOutput()`
+    when `task.getOutputType() != null`; retry loop sends correction prompt to LLM with error
+    message and schema; on exhaustion throws `OutputParsingException`; passes `parsedOutput` and
+    `outputType` to `TaskOutput.builder()`.
 
-  **Bug fixes:**
-  - `Ensemble.resolveTasks()` pass-2 was not updating `originalToResolved` after
-    creating finalized context-rewritten tasks. Diamond-pattern dependencies
-    (A -> B -> D, A -> C -> D) produced stale object references. Fixed.
-  - `ParallelWorkflowExecutor.shouldSkip()` CONTINUE_ON_ERROR only checked
-    `failedTaskCauses`; skipped tasks in a chain were not propagated. Fixed by
-    adding `skippedTasks` Set and checking both sets in `shouldSkip()`.
-  - `FAIL_FAST` Javadoc corrected: running tasks are allowed to finish; they are
-    not cancelled/interrupted (only new tasks are not scheduled).
-
-  **Tests:** 297 -> 358 (+61 new)
-  - TaskDependencyGraphTest: 21 (roots, ready tasks, dependents, diamond, identity)
-  - ParallelWorkflowExecutorTest: 17 (includes transitive skip test)
-  - ParallelEnsembleIntegrationTest: 16 (E2E)
-  - ShortTermMemoryTest: +3 (concurrent safety, snapshot semantics)
-  - ExceptionHierarchyTest: +5 (ParallelExecutionException)
+  **Tests:** 358 -> 429 (+71 new)
+  - `JsonSchemaGeneratorTest`: 17 (records, POJOs, enums, nested, Maps, Lists, validation)
+  - `StructuredOutputParserTest`: 15 (extractJson strategies, parse success/failure)
+  - `ExceptionHierarchyTest`: +5 (OutputParsingException hierarchy and fields)
+  - `TaskTest`: +12 (outputType/maxOutputRetries defaults, validation, toBuilder)
+  - `TaskOutputTest`: +7 (parsedOutput, outputType fields, getParsedOutput typed access)
+  - `AgentPromptBuilderTest`: +4 (output format section present/absent, schema content)
+  - `StructuredOutputIntegrationTest`: 11 (happy path, markdown fence, retry, zero retries,
+    all-retries-exhausted, backward compat, mixed tasks, parallel workflow)
 
   **Documentation:**
-  - docs/guides/workflows.md: PARALLEL section, error strategies, thread safety
-  - docs/reference/ensemble-configuration.md: parallelErrorStrategy field
-  - docs/design/10-concurrency.md: full implementation details
-  - docs/design/13-future-roadmap.md: Phase 5 marked complete
-  - docs/examples/parallel-workflow.md: new competitive intelligence example
-  - README.md: Parallel Workflow section, updated tables and roadmap
-
-- Maven Central publishing fully operational -- v0.4.2 successfully released:
-  - `com.vanniktech.maven.publish` 0.29.0 with `SonatypeHost.CENTRAL_PORTAL` + `signAllPublications()`
-  - `publishAndReleaseToMavenCentral` handles full upload + auto-promotion lifecycle
-  - `.release-please-manifest.json` is at `0.4.2` (last release)
-  - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
-    `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
-  - Pending: `ORG_RELEASE_PLEASE_TOKEN` PAT (repo scope) for release-please PR creation
-
-- Issue #44 (backlog): Interactive execution graph visualization -- created
-  - Depends on Issue #18 (TaskDependencyGraph) and Issue #42 (ExecutionMetrics)
+  - `docs/guides/tasks.md`: Structured Output section with typed/Markdown examples and retry docs
+  - `docs/reference/task-configuration.md`: outputType and maxOutputRetries fields + validation
+  - `docs/getting-started/concepts.md`: outputType and maxOutputRetries in Task concept
+  - `docs/examples/structured-output.md`: new; two full examples (typed JSON + Markdown output)
+  - `docs/design/03-domain-model.md`: Task and TaskOutput specs updated
+  - `docs/design/13-future-roadmap.md`: Phase 6 marked COMPLETE with implementation notes
+  - `README.md`: Structured Output section, updated Task Configuration table, roadmap updated
 
 ## Next Steps
 
-1. Release v0.5.0 (parallel workflow milestone)
-2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
-3. Issue #42: Execution metrics (ExecutionMetrics on EnsembleOutput)
-4. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
-5. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
+1. Merge PR for Issue #19 to main (v0.6.0 release via release-please)
+2. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput
+3. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
+4. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
 
 ## Important Notes
 
@@ -93,21 +79,20 @@ Requires one-time manual step: enable GitHub Pages in repo Settings (source: Git
 
 ## Active Decisions
 
+- **ParseResult visibility**: public (accessed from AgentExecutor in different package)
+- **Schema generation**: prompt-based JSON schema (not LangChain4j ResponseFormat.JSON)
+  to work universally across all LLM providers without capability detection
+- **JSON extraction priority**: markdown fences first (most LLMs wrap in ```json```),
+  then full trimmed response, then regex scan for embedded JSON
+- **Retry loop design**: sends system prompt + correction user prompt (fresh context),
+  not the full tool conversation history -- sufficient for parse correction
+- **Top-level array rejection**: JsonSchemaGenerator.generate() and Task.outputType
+  both reject array types; workaround: wrap in record (e.g., record Results(List<T> items))
 - **Parallel execution**: `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21)
   NOT `StructuredTaskScope` (preview API, unstable across versions)
 - **Error strategy default**: FAIL_FAST (mirrors SEQUENTIAL behavior)
-- **ParallelExecutionException**: separate class from TaskExecutionException (clean
-  separation of "one failure halted run" vs "some succeeded, some failed")
-- **ShortTermMemory thread safety**: CopyOnWriteArrayList + snapshot semantics
-  (getEntries() returns List.copyOf, not live view)
 - **Memory architecture**: MemoryContext is created fresh per run() call; LTM and
   entity memory are shared across runs (user controls their lifecycle)
-- **STM replaces explicit context**: when shortTerm=true, the "Short-Term Memory"
-  section in the user prompt replaces (not duplicates) the explicit context section
-- **Manager excluded from STM**: in hierarchical workflow, the manager agent itself
-  uses MemoryContext.disabled() -- only worker delegations participate in memory
-- **EntityMemory is user-seeded**: no automatic entity extraction; users populate
-  facts manually before running the ensemble
 
 ## Important Patterns and Preferences
 

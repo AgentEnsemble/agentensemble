@@ -17,9 +17,27 @@ import java.util.List;
  * Task descriptions and expected outputs may contain {variable} placeholders
  * that are resolved at {@code ensemble.run(inputs)} time.
  *
- * Example:
+ * To request structured (typed) output from the agent, set {@link #outputType}
+ * to the target Java class. The agent will be prompted to produce JSON matching
+ * the schema, and the result will be automatically parsed. Use
+ * {@link net.agentensemble.task.TaskOutput#getParsedOutput(Class)} to access the
+ * typed result after execution.
+ *
+ * Example with structured output:
  * <pre>
- * Task researchTask = Task.builder()
+ * record ResearchReport(String title, List{@code <String>} findings, String conclusion) {}
+ *
+ * Task task = Task.builder()
+ *     .description("Research {topic} developments in {year}")
+ *     .expectedOutput("A structured research report")
+ *     .agent(researcher)
+ *     .outputType(ResearchReport.class)
+ *     .build();
+ * </pre>
+ *
+ * Example without structured output:
+ * <pre>
+ * Task task = Task.builder()
  *     .description("Research {topic} developments in {year}")
  *     .expectedOutput("A detailed report on {topic}")
  *     .agent(researcher)
@@ -55,12 +73,43 @@ public class Task {
     List<Task> context;
 
     /**
+     * The Java class to deserialize the agent's output into.
+     *
+     * When set, the agent is instructed to produce JSON matching the schema
+     * derived from this class, and the output is automatically parsed and
+     * validated after execution. If parsing fails, the framework retries up to
+     * {@link #maxOutputRetries} times before throwing
+     * {@link net.agentensemble.exception.OutputParsingException}.
+     *
+     * Supported types: records, POJOs with declared fields, and common JDK
+     * types (String, numeric wrappers, boolean, List, Map, enums, nested objects).
+     *
+     * Unsupported types: primitives, void, and top-level arrays.
+     *
+     * Default: {@code null} (raw text output only).
+     */
+    Class<?> outputType;
+
+    /**
+     * Maximum number of retry attempts if structured output parsing fails.
+     *
+     * On each retry the LLM is shown the parse error and the required schema,
+     * and asked to produce a corrected JSON response. This field has no effect
+     * when {@link #outputType} is {@code null}.
+     *
+     * Default: 3. Must be &gt;= 0.
+     */
+    int maxOutputRetries;
+
+    /**
      * Custom builder that sets defaults and validates the Task configuration.
      */
     public static class TaskBuilder {
 
-        // Default value
+        // Default values
         private List<Task> context = List.of();
+        private Class<?> outputType = null;
+        private int maxOutputRetries = 3;
 
         public Task build() {
             validateDescription();
@@ -68,8 +117,11 @@ public class Task {
             validateAgent();
             List<Task> effectiveContext = context != null ? context : List.of();
             validateContext(effectiveContext);
+            validateOutputType();
+            validateMaxOutputRetries();
             context = List.copyOf(effectiveContext);
-            return new Task(description, expectedOutput, agent, context);
+            return new Task(description, expectedOutput, agent, context,
+                    outputType, maxOutputRetries);
         }
 
         private void validateDescription() {
@@ -106,6 +158,31 @@ public class Task {
                         && contextTask.getAgent() == agent) {
                     throw new ValidationException("Task cannot reference itself in context");
                 }
+            }
+        }
+
+        private void validateOutputType() {
+            if (outputType == null) {
+                return;
+            }
+            if (outputType.isPrimitive()) {
+                throw new ValidationException(
+                        "Task outputType must not be a primitive type: " + outputType.getName());
+            }
+            if (outputType == Void.class) {
+                throw new ValidationException("Task outputType must not be Void");
+            }
+            if (outputType.isArray()) {
+                throw new ValidationException(
+                        "Task outputType must not be an array type. "
+                        + "Wrap the array in a record or class.");
+            }
+        }
+
+        private void validateMaxOutputRetries() {
+            if (maxOutputRetries < 0) {
+                throw new ValidationException(
+                        "Task maxOutputRetries must be >= 0, got: " + maxOutputRetries);
             }
         }
     }

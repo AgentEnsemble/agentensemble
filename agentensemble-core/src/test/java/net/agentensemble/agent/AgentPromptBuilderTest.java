@@ -226,4 +226,76 @@ class AgentPromptBuilderTest {
         int taskPos = prompt.indexOf("## Task");
         assertThat(contextPos).isLessThan(taskPos);
     }
+
+    // ========================
+    // Structured output format section
+    // ========================
+
+    record ReportRecord(String title, String summary) {}
+
+    @Test
+    void testBuildUserPrompt_withOutputType_containsOutputFormatSection() {
+        var agent = minimalAgent("Researcher", "Find info");
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A structured report")
+                .agent(agent)
+                .outputType(ReportRecord.class)
+                .build();
+
+        String prompt = AgentPromptBuilder.buildUserPrompt(task, List.of());
+
+        assertThat(prompt).contains("## Output Format");
+        assertThat(prompt).contains("ONLY valid JSON");
+        assertThat(prompt).contains("\"title\"");
+        assertThat(prompt).contains("\"summary\"");
+    }
+
+    @Test
+    void testBuildUserPrompt_withOutputType_outputFormatAfterExpectedOutput() {
+        var agent = minimalAgent("Researcher", "Find info");
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A structured report")
+                .agent(agent)
+                .outputType(ReportRecord.class)
+                .build();
+
+        String prompt = AgentPromptBuilder.buildUserPrompt(task, List.of());
+
+        int expectedOutputPos = prompt.indexOf("## Expected Output");
+        int outputFormatPos = prompt.indexOf("## Output Format");
+        assertThat(expectedOutputPos).isLessThan(outputFormatPos);
+    }
+
+    @Test
+    void testBuildUserPrompt_withoutOutputType_noOutputFormatSection() {
+        var agent = minimalAgent("Researcher", "Find info");
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A detailed report")
+                .agent(agent)
+                .build();
+
+        String prompt = AgentPromptBuilder.buildUserPrompt(task, List.of());
+
+        assertThat(prompt).doesNotContain("## Output Format");
+    }
+
+    @Test
+    void testBuildUserPrompt_withOutputType_schemaIncludesAllFields() {
+        var agent = minimalAgent("Researcher", "Find info");
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A structured report")
+                .agent(agent)
+                .outputType(ReportRecord.class)
+                .build();
+
+        String prompt = AgentPromptBuilder.buildUserPrompt(task, List.of());
+
+        // Schema should show both fields from the record
+        assertThat(prompt).contains("\"title\": \"string\"");
+        assertThat(prompt).contains("\"summary\": \"string\"");
+    }
 }

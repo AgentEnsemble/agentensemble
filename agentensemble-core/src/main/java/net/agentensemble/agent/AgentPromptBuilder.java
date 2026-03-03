@@ -4,6 +4,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryEntry;
+import net.agentensemble.output.JsonSchemaGenerator;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -217,6 +218,17 @@ public final class AgentPromptBuilder {
         // Expected output section
         sb.append("\n\n## Expected Output\n");
         sb.append(task.getExpectedOutput());
+
+        // Structured output format section (only when outputType is set)
+        if (task.getOutputType() != null) {
+            String schemaDescription = JsonSchemaGenerator.generate(task.getOutputType());
+            sb.append("\n\n## Output Format\n");
+            sb.append("You MUST respond with ONLY valid JSON and nothing else. ");
+            sb.append("Do not include markdown fences, preamble, or explanation.\n");
+            sb.append("Your response must be ONLY valid JSON matching this schema ");
+            sb.append("(object, array, or scalar as appropriate):\n\n");
+            sb.append(schemaDescription);
+        }
 
         String prompt = sb.toString();
         log.debug("Built user prompt ({} chars) for task '{}'",

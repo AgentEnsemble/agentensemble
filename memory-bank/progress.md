@@ -73,13 +73,34 @@
   - Documentation: workflows.md, ensemble-configuration.md, concurrency.md, roadmap, examples
   - Copilot review: 3 comments addressed (transitive skip bug, new test, FAIL_FAST Javadoc)
 
+### Phase 6: Structured Output
+- [ ] Issue #19: Structured output (PR in progress on `feature/structured-output`) -- 429 tests
+
+  **New classes:**
+  - `net.agentensemble.output.ParseResult<T>`
+  - `net.agentensemble.output.JsonSchemaGenerator`
+  - `net.agentensemble.output.StructuredOutputParser`
+  - `net.agentensemble.exception.OutputParsingException`
+
+  **Modified classes:**
+  - `Task`: `outputType`, `maxOutputRetries` fields with validation
+  - `TaskOutput`: `parsedOutput`, `outputType` fields; `getParsedOutput(Class<T>)` typed accessor
+  - `AgentPromptBuilder`: `## Output Format` section injection
+  - `AgentExecutor`: `parseStructuredOutput()` retry loop
+
+  **Tests:** +71 (JsonSchemaGeneratorTest, StructuredOutputParserTest, ExceptionHierarchyTest +5,
+  TaskTest +12, TaskOutputTest +7, AgentPromptBuilderTest +4, StructuredOutputIntegrationTest 11)
+
+  **Documentation:** tasks.md, task-configuration.md, concepts.md, structured-output.md (new),
+  03-domain-model.md, 13-future-roadmap.md (Phase 6 marked COMPLETE), README.md
+
 ## Current Status
 
-**Phase**: Phase 5 complete -- Issue #18 done, PR #45 merged; v0.5.0 pending release
-**Total tests**: 358 passing on main
-**Current version**: 0.5.0-SNAPSHOT (main)
-**Last release**: v0.4.2 -- Maven Central + GitHub Packages
-**Next action**: Release v0.5.0, then Issue #19 (Structured Output) or Issue #42 (Metrics)
+**Phase**: Phase 6 in progress -- Issue #19 implemented, PR pending
+**Total tests**: 429 passing on feature branch
+**Current version**: 0.5.0-SNAPSHOT (main) / feature/structured-output
+**Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.5.0 pending release-please)
+**Next action**: Open PR for Issue #19, merge to main (v0.6.0 release)
 
 ## Known Issues
 

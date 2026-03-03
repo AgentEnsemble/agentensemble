@@ -106,6 +106,26 @@ public class Task {
      */
     @Builder.Default
     List<Task> context = List.of();
+
+    /**
+     * The Java class to deserialize the agent's output into.
+     * When set, the agent is prompted to produce JSON matching the schema derived
+     * from this class, and the output is automatically parsed after execution.
+     * If parsing fails, the framework retries up to maxOutputRetries times.
+     * Supported: records, POJOs, common JDK types.
+     * Unsupported: primitives, void, top-level arrays.
+     * Default: null (raw text output only).
+     */
+    Class<?> outputType;
+
+    /**
+     * Maximum number of retry attempts if structured output parsing fails.
+     * On each retry the LLM is shown the parse error and required schema.
+     * Has no effect when outputType is null.
+     * Default: 3. Must be >= 0.
+     */
+    @Builder.Default
+    int maxOutputRetries = 3;
 }
 ```
 
@@ -117,6 +137,8 @@ public class Task {
 | `expectedOutput` | Non-null, non-blank | `ValidationException("Task expectedOutput must not be blank")` |
 | `agent` | Non-null | `ValidationException("Task agent must not be null")` |
 | `context` | No self-references | `ValidationException("Task cannot reference itself in context")` |
+| `outputType` | Not a primitive, void, or array (when non-null) | `ValidationException("Task outputType must not be a primitive type: ...")` |
+| `maxOutputRetries` | >= 0 | `ValidationException("Task maxOutputRetries must be >= 0, got: {value}")` |
 
 ### Edge Cases
 
@@ -151,6 +173,24 @@ public class TaskOutput {
 
     /** Number of tool invocations during execution. */
     int toolCallCount;
+
+    /**
+     * The parsed Java object when the task was configured with outputType.
+     * Null when no structured output was requested or parsing was not performed.
+     */
+    Object parsedOutput;
+
+    /**
+     * The Java class used for structured output parsing.
+     * Null when no structured output was requested.
+     */
+    Class<?> outputType;
+
+    /**
+     * Return the parsed output as the given type.
+     * Throws IllegalStateException when parsedOutput is null or type does not match.
+     */
+    public <T> T getParsedOutput(Class<T> type) { ... }
 }
 ```
 

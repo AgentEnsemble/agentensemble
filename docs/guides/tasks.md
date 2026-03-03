@@ -117,6 +117,90 @@ var writeTask = Task.builder()
 
 ---
 
+## Structured Output
+
+Set `outputType` to have the agent produce a structured JSON object that is automatically parsed into a typed Java object.
+
+### Typed output with a record
+
+```java
+record ResearchReport(String title, List<String> findings, String conclusion) {}
+
+Task task = Task.builder()
+    .description("Research the latest developments in {topic}")
+    .expectedOutput("A structured research report with title, findings, and conclusion")
+    .agent(researcher)
+    .outputType(ResearchReport.class)
+    .build();
+```
+
+When the ensemble runs, the agent is instructed to produce JSON matching the schema derived from `ResearchReport`. After execution, access the parsed result:
+
+```java
+EnsembleOutput output = ensemble.run(Map.of("topic", "AI agents"));
+TaskOutput taskOutput = output.getTaskOutputs().get(0);
+
+// Raw text is always available
+System.out.println(taskOutput.getRaw());
+
+// Typed access to the parsed object
+ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
+System.out.println(report.title());
+report.findings().forEach(System.out::println);
+```
+
+### Markdown output (no schema required)
+
+When you only need the agent to produce well-formatted text (such as Markdown), use `expectedOutput` and `Agent.responseFormat` -- no `outputType` needed:
+
+```java
+var writer = Agent.builder()
+    .role("Content Writer")
+    .goal("Write clear, well-structured content")
+    .responseFormat("Always format responses in Markdown with headers, bullet points, and code blocks where appropriate.")
+    .llm(model)
+    .build();
+
+Task task = Task.builder()
+    .description("Write a technical guide for {topic}")
+    .expectedOutput(
+        "A 600-800 word Markdown guide with: " +
+        "a title, an introduction, three main sections with subheadings, and a summary.")
+    .agent(writer)
+    .build();
+```
+
+The `raw` field of `TaskOutput` contains the formatted Markdown response.
+
+### Retry behaviour
+
+If the agent's response cannot be parsed, the framework retries automatically. On each retry the agent is shown the parse error and the required schema:
+
+```java
+Task task = Task.builder()
+    .description("Classify the following text")
+    .expectedOutput("A classification result")
+    .agent(classifier)
+    .outputType(ClassificationResult.class)
+    .maxOutputRetries(5)   // default is 3; use 0 to disable retries
+    .build();
+```
+
+If all retries are exhausted, `OutputParsingException` is thrown with the raw output, the parse error history, and the attempt count.
+
+### Supported types for `outputType`
+
+- Java **records** (recommended -- field order and names are preserved)
+- **POJOs** with declared instance fields (Jackson deserialization)
+- **Object types**: `Map<K,V>`, enums, nested objects
+- **Scalar types**: `Boolean`, boxed numerics (`Integer`, `Long`, `Double`, etc.) -- the agent is expected to respond with a bare JSON value (e.g., `42`, `true`)
+- **Collections**: `List<T>` and other `Collection` subtypes (the agent produces a JSON array)
+- **String**: the agent must produce a JSON-quoted string (e.g., `"text"`); unquoted plain text will not parse
+
+Unsupported: **primitives** (`int.class`, etc.), **void**, and **top-level arrays** (wrap the array in a record or class).
+
+---
+
 ## Tasks Are Immutable
 
 Tasks are immutable value objects. The builder produces a new instance on each call to `build()`. Use `toBuilder()` to create modified copies:
