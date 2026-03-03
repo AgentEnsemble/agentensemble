@@ -1,6 +1,6 @@
 # Workflows
 
-A workflow defines how tasks are executed. AgentEnsemble supports two strategies: `SEQUENTIAL` and `HIERARCHICAL`.
+A workflow defines how tasks are executed. AgentEnsemble supports three strategies: `SEQUENTIAL`, `HIERARCHICAL`, and `PARALLEL`.
 
 ---
 
@@ -107,23 +107,171 @@ In hierarchical workflow, `EnsembleOutput.getTaskOutputs()` contains:
 
 ---
 
+## PARALLEL
+
+Tasks execute concurrently using Java 21 virtual threads. The execution order is derived automatically from each task's `context` list, which acts as a dependency declaration. Tasks with no unmet dependencies start immediately; dependent tasks are unblocked as their prerequisites complete.
+
+Critically, **you do not mark tasks as "parallel" or "serial" explicitly**. The framework determines maximum safe concurrency from the `context` declarations. Tasks with no mutual dependencies automatically run concurrently. Tasks with dependencies automatically serialize.
+
+```java
+// These two have no dependencies -- they run in PARALLEL
+var researchTask = Task.builder()
+    .description("Research AI trends")
+    .expectedOutput("Research report")
+    .agent(researcher)
+    .build();
+
+var dataTask = Task.builder()
+    .description("Gather market data")
+    .expectedOutput("Market data")
+    .agent(analyst)
+    .build();
+
+// This depends on BOTH above -- runs AFTER both complete
+var synthesisTask = Task.builder()
+    .description("Synthesize findings into a report")
+    .expectedOutput("Combined report")
+    .agent(writer)
+    .context(List.of(researchTask, dataTask))
+    .build();
+
+// This depends on synthesis -- runs AFTER synthesis
+var editTask = Task.builder()
+    .description("Edit and polish the report")
+    .expectedOutput("Final report")
+    .agent(editor)
+    .context(List.of(synthesisTask))
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher).agent(analyst).agent(writer).agent(editor)
+    .task(researchTask).task(dataTask).task(synthesisTask).task(editTask)
+    .workflow(Workflow.PARALLEL)
+    .build()
+    .run();
+```
+
+Execution timeline:
+```
+[researchTask]----+
+                   +--> [synthesisTask] --> [editTask]
+[dataTask]--------+
+```
+
+### Task List Order Is Irrelevant
+
+For `SEQUENTIAL` workflow, tasks must be listed in dependency order (prerequisites first). For `PARALLEL`, the list order does not matter -- the dependency graph determines execution order. This means a task can appear before its dependency in the list and still execute correctly:
+
+```java
+// SEQUENTIAL: this would fail validation (tb listed before ta)
+// PARALLEL: this is valid -- tb waits for ta regardless of list position
+Ensemble.builder()
+    .task(tb)  // tb depends on ta but is listed first
+    .task(ta)
+    .workflow(Workflow.PARALLEL)
+    .build()
+    .run();
+```
+
+### Diamond Dependency Pattern
+
+Tasks with multiple dependencies and multiple dependents work naturally:
+
+```
+[A] ----+----> [C] ----+
+        |               +--> [E]
+[B] ----+----> [D] ----+
+```
+
+- A and B run in parallel (no deps)
+- C depends on A+B, D depends on A+B -- both start after A+B complete, and C and D run in parallel
+- E depends on C+D -- starts after both complete
+
+Expressed in code:
+```java
+var e = Task.builder()
+    .description("Final task")
+    .expectedOutput("Final output")
+    .agent(agent)
+    .context(List.of(c, d))  // waits for both C and D
+    .build();
+```
+
+### Error Handling
+
+Configure how failures are handled via `parallelErrorStrategy`:
+
+```java
+Ensemble.builder()
+    .tasks(...)
+    .agents(...)
+    .workflow(Workflow.PARALLEL)
+    .parallelErrorStrategy(ParallelErrorStrategy.FAIL_FAST)         // default
+    // or:
+    .parallelErrorStrategy(ParallelErrorStrategy.CONTINUE_ON_ERROR)
+    .build();
+```
+
+**FAIL_FAST** (default): On the first task failure, no new unstarted tasks are submitted. Already-running tasks complete normally. A `TaskExecutionException` is thrown after all running tasks finish. Completed task outputs are preserved in the exception.
+
+**CONTINUE_ON_ERROR**: When a task fails, independent tasks continue running. Tasks that depend on the failed task are skipped automatically. At the end, if any tasks failed, a `ParallelExecutionException` is thrown containing both the successful outputs and a map of failed task descriptions to their causes.
+
+```java
+try {
+    EnsembleOutput output = ensemble.run();
+} catch (TaskExecutionException e) {
+    // FAIL_FAST: single failure that halted the run
+    System.err.println("Failed task: " + e.getTaskDescription());
+    System.out.println("Completed before failure: " + e.getCompletedTaskOutputs().size());
+} catch (ParallelExecutionException e) {
+    // CONTINUE_ON_ERROR: some succeeded, some failed
+    System.out.println("Completed: " + e.getCompletedCount());
+    System.err.println("Failed: " + e.getFailedCount());
+    e.getFailedTaskCauses().forEach((desc, cause) ->
+        System.err.println("  " + desc + ": " + cause.getMessage()));
+    // Successful outputs are available:
+    e.getCompletedTaskOutputs().forEach(out -> System.out.println(out.getRaw()));
+}
+```
+
+### Thread Safety
+
+Parallel workflow uses `Executors.newVirtualThreadPerTaskExecutor()` (Java 21 stable API -- no preview flags required). Virtual threads are lightweight and do not block OS threads during LLM HTTP calls.
+
+**AgentTool implementations**: If the same tool instance is shared across multiple agents that run concurrently, it must be thread-safe. Alternatively, provide separate tool instances per agent.
+
+**LangChain4j ChatModel**: Most LangChain4j model implementations are thread-safe (they use HTTP clients that support concurrent requests). Check your specific provider's documentation if unsure.
+
+**MDC propagation**: The ensemble's MDC context (including `ensemble.id`) is captured before tasks are submitted and propagated to each virtual thread. Each thread also sets `agent.role` during its execution.
+
+### When to Use PARALLEL
+
+- Multiple independent tasks can run concurrently to reduce total wall-clock time
+- Your pipeline has a natural DAG structure (some tasks depend on others, some are independent)
+- You want to maximize throughput for LLM API calls
+
+---
+
 ## Choosing a Workflow
 
-| Consideration | SEQUENTIAL | HIERARCHICAL |
-|---|---|---|
-| Task order | Fixed, user-defined | Dynamic, manager-decided |
-| Routing logic | Explicit (agent per task) | Implicit (manager decides) |
-| LLM calls | N calls (one per task) | N+1 calls (tasks + manager) |
-| Predictability | High | Lower |
-| Flexibility | Lower | Higher |
+| Consideration | SEQUENTIAL | HIERARCHICAL | PARALLEL |
+|---|---|---|---|
+| Task order | Fixed, user-defined | Dynamic, manager-decided | DAG-driven, automatic |
+| Routing logic | Explicit (agent per task) | Implicit (manager decides) | Explicit (agent per task) |
+| LLM calls | N calls (one per task) | N+1 calls (tasks + manager) | N calls (one per task) |
+| Predictability | High | Lower | High |
+| Throughput | Serial | Serial (manager is bottleneck) | Maximum concurrency |
+| Error handling | Stop on first failure | Manager decides | FAIL_FAST or CONTINUE_ON_ERROR |
 
 ---
 
 ## Workflow and Memory
 
-Both workflows support all memory types. Memory context is shared across all agent executions within a single `run()` call.
+All three workflows support all memory types. Memory context is shared across all agent executions within a single `run()` call.
 
 In hierarchical workflow, the Manager agent itself does not participate in memory -- only the worker agents do.
+
+In parallel workflow, `ShortTermMemory` is thread-safe (uses `CopyOnWriteArrayList`). Concurrent task completions each record their output to short-term memory independently. Long-term memory implementations must also be thread-safe when used with `PARALLEL`.
 
 See the [Memory guide](memory.md).
 
@@ -131,6 +279,6 @@ See the [Memory guide](memory.md).
 
 ## Workflow and Delegation
 
-Both workflows support agent-to-agent delegation when agents have `allowDelegation = true`. In hierarchical workflow, worker agents can delegate to peer workers in addition to the manager's own delegation via `delegateTask`.
+All three workflows support agent-to-agent delegation when agents have `allowDelegation = true`. In hierarchical workflow, worker agents can delegate to peer workers in addition to the manager's own delegation via `delegateTask`.
 
 See the [Delegation guide](delegation.md).

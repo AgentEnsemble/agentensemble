@@ -7,6 +7,8 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
+import net.agentensemble.workflow.ParallelErrorStrategy;
+import net.agentensemble.workflow.ParallelWorkflowExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
 import net.agentensemble.workflow.WorkflowExecutor;
@@ -96,6 +98,14 @@ public class Ensemble {
      */
     @Builder.Default
     private final int maxDelegationDepth = 3;
+
+    /**
+     * Error handling strategy for parallel workflow execution.
+     * Only relevant when {@code workflow = Workflow.PARALLEL}.
+     * Default: {@link ParallelErrorStrategy#FAIL_FAST}.
+     */
+    @Builder.Default
+    private final ParallelErrorStrategy parallelErrorStrategy = ParallelErrorStrategy.FAIL_FAST;
 
     /**
      * Execute the ensemble's tasks with no input variables.
@@ -188,18 +198,27 @@ public class Ensemble {
         }
 
         // Pass 2: rewrite context lists to reference resolved instances.
+        // IMPORTANT: update originalToResolved as each final task is created so that
+        // later tasks in this pass (e.g., task D depending on task B) pick up the
+        // fully-rewritten version (with correct context) rather than the pass-1 draft.
+        // Without this update, a diamond A->B->D / A->C->D would produce D with stale
+        // context references not present in the result list, breaking DAG lookup.
         List<Task> result = new ArrayList<>(tasks.size());
         for (Task original : tasks) {
             Task resolvedBase = originalToResolved.get(original);
             List<Task> originalContext = original.getContext();
             if (originalContext.isEmpty()) {
                 result.add(resolvedBase);
+                // resolvedBase == originalToResolved.get(original) already; no update needed
             } else {
                 List<Task> resolvedContext = new ArrayList<>(originalContext.size());
                 for (Task ctxTask : originalContext) {
                     resolvedContext.add(originalToResolved.getOrDefault(ctxTask, ctxTask));
                 }
-                result.add(resolvedBase.toBuilder().context(resolvedContext).build());
+                Task finalTask = resolvedBase.toBuilder().context(resolvedContext).build();
+                // Update the mapping so subsequent tasks in this pass see the final version
+                originalToResolved.put(original, finalTask);
+                result.add(finalTask);
             }
         }
         return result;
@@ -210,6 +229,8 @@ public class Ensemble {
             case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
                     resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth);
+            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth,
+                    parallelErrorStrategy);
         };
     }
 
@@ -226,6 +247,7 @@ public class Ensemble {
         validateAgentsNotEmpty();
         validateMaxDelegationDepth();
         validateManagerMaxIterations();
+        validateParallelErrorStrategy();
         validateAgentMembership();
         validateHierarchicalRoles();
         validateNoCircularContextDependencies();
@@ -257,6 +279,13 @@ public class Ensemble {
             throw new ValidationException(
                     "Ensemble managerMaxIterations must be > 0 for HIERARCHICAL workflow, got: "
                     + managerMaxIterations);
+        }
+    }
+
+    private void validateParallelErrorStrategy() {
+        if (workflow == Workflow.PARALLEL && parallelErrorStrategy == null) {
+            throw new ValidationException(
+                    "Ensemble parallelErrorStrategy must not be null for PARALLEL workflow");
         }
     }
 
@@ -344,9 +373,11 @@ public class Ensemble {
     }
 
     private void validateContextOrdering() {
-        // Hierarchical workflow: the Manager agent decides execution order at runtime.
-        // Context ordering is not validated -- the manager handles task sequencing.
-        if (workflow == Workflow.HIERARCHICAL) {
+        // Hierarchical and parallel workflows do not require sequential task ordering:
+        // HIERARCHICAL: the Manager agent decides execution order at runtime.
+        // PARALLEL: the dependency graph (from context declarations) drives execution order.
+        // In both cases, the user-supplied task list order is irrelevant to execution.
+        if (workflow == Workflow.HIERARCHICAL || workflow == Workflow.PARALLEL) {
             return;
         }
 
