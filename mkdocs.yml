@@ -93,6 +93,7 @@ nav:
     - Parallel Workflow: examples/parallel-workflow.md
     - Memory Across Runs: examples/memory-across-runs.md
     - Structured Output: examples/structured-output.md
+    - Callbacks: examples/callbacks.md
   - Design:
     - Overview: design/01-overview.md
     - Architecture: design/02-architecture.md
