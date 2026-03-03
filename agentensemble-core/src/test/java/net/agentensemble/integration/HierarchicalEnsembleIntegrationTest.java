@@ -2,7 +2,6 @@ package net.agentensemble.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -12,21 +11,20 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import java.util.ArrayList;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
-import net.agentensemble.callback.TaskCompleteEvent;
-import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.exception.ValidationException;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end integration tests for hierarchical ensemble execution.
- * Uses mocked LLMs to avoid real network calls.
+ *
+ * Covers basic execution flow, manager LLM configuration, manager iterations,
+ * context ordering, and output structure. Validation and callback tests are in
+ * HierarchicalEnsembleValidationIntegrationTest.
  */
 class HierarchicalEnsembleIntegrationTest {
 
@@ -134,15 +132,11 @@ class HierarchicalEnsembleIntegrationTest {
     void testHierarchicalWorkflow_noManagerLlm_usesFirstAgentLlm() {
         ChatModel sharedModel = mock(ChatModel.class);
 
-        // First call is for a worker delegation, second is the manager's final answer.
-        // With no managerLlm, the first agent's LLM (sharedModel) is used for both.
         when(sharedModel.chat(any(ChatRequest.class)))
                 .thenReturn(delegateCallResponse("Researcher", "Research AI"))
-                .thenReturn(textResponse("Worker output")) // worker (same model)
-                .thenReturn(textResponse("Final answer")); // manager final
+                .thenReturn(textResponse("Worker output"))
+                .thenReturn(textResponse("Final answer"));
 
-        // Simulate: manager (sharedModel) calls delegate, worker (sharedModel) responds,
-        // manager (sharedModel) synthesizes. The model responds differently based on call order.
         Agent researcher = Agent.builder()
                 .role("Researcher")
                 .goal("Research")
@@ -162,7 +156,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build()
                 .run();
 
-        // Verify it completed without error (LLM was auto-resolved)
         assertThat(output).isNotNull();
         assertThat(output.getRaw()).isNotNull();
     }
@@ -215,7 +208,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .agent(worker)
                 .build();
 
-        // Should build and run without error with custom maxIterations
         EnsembleOutput output = Ensemble.builder()
                 .agent(worker)
                 .task(task)
@@ -229,7 +221,7 @@ class HierarchicalEnsembleIntegrationTest {
     }
 
     // ========================
-    // Validation: context ordering not enforced
+    // Context ordering not enforced in hierarchical
     // ========================
 
     @Test
@@ -246,8 +238,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .expectedOutput("Output one")
                 .agent(worker)
                 .build();
-        // task2 depends on task1 as context but comes BEFORE task1 in the list.
-        // Sequential validation would reject this; hierarchical should allow it.
         Task task2 = Task.builder()
                 .description("Task two")
                 .expectedOutput("Output two")
@@ -255,57 +245,16 @@ class HierarchicalEnsembleIntegrationTest {
                 .context(List.of(task1))
                 .build();
 
+        // task2 listed before task1 -- valid for HIERARCHICAL (no ordering constraint)
         assertThatCode(() -> Ensemble.builder()
                         .agent(worker)
-                        .task(task2) // task2 first, but it depends on task1 (listed after)
+                        .task(task2)
                         .task(task1)
                         .workflow(Workflow.HIERARCHICAL)
                         .managerLlm(managerModel)
                         .build()
                         .run())
                 .doesNotThrowAnyException();
-    }
-
-    // ========================
-    // Validation still enforced
-    // ========================
-
-    @Test
-    void testHierarchicalWorkflow_emptyTasks_throwsValidation() {
-        ChatModel managerModel = mock(ChatModel.class);
-        Agent agent =
-                Agent.builder().role("Worker").goal("Work").llm(managerModel).build();
-
-        assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
-                        .workflow(Workflow.HIERARCHICAL)
-                        .managerLlm(managerModel)
-                        .build()
-                        .run())
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("task");
-    }
-
-    @Test
-    void testHierarchicalWorkflow_emptyAgents_throwsValidation() {
-        ChatModel managerModel = mock(ChatModel.class);
-        ChatModel workerModel = mock(ChatModel.class);
-        Agent agent =
-                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task = Task.builder()
-                .description("Task")
-                .expectedOutput("Result")
-                .agent(agent)
-                .build();
-
-        assertThatThrownBy(() -> Ensemble.builder()
-                        .task(task)
-                        .workflow(Workflow.HIERARCHICAL)
-                        .managerLlm(managerModel)
-                        .build()
-                        .run())
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("agent");
     }
 
     // ========================
@@ -336,50 +285,5 @@ class HierarchicalEnsembleIntegrationTest {
                 .run();
 
         assertThat(output.getTaskOutputs()).isUnmodifiable();
-    }
-
-    // ========================
-    // Callback events
-    // ========================
-
-    @Test
-    void testHierarchicalWorkflow_listeners_receiveManagerTaskEvents() {
-        ChatModel managerModel = mock(ChatModel.class);
-        ChatModel workerModel = mock(ChatModel.class);
-
-        when(workerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Worker result"));
-        when(managerModel.chat(any(ChatRequest.class)))
-                .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
-                .thenReturn(textResponse("Final synthesis"));
-
-        Agent researcher = Agent.builder()
-                .role("Researcher")
-                .goal("Research topics")
-                .llm(workerModel)
-                .build();
-        Task task = Task.builder()
-                .description("Research AI trends")
-                .expectedOutput("AI trend summary")
-                .agent(researcher)
-                .build();
-
-        List<TaskStartEvent> startEvents = new ArrayList<>();
-        List<TaskCompleteEvent> completeEvents = new ArrayList<>();
-
-        Ensemble.builder()
-                .agent(researcher)
-                .task(task)
-                .workflow(Workflow.HIERARCHICAL)
-                .managerLlm(managerModel)
-                .onTaskStart(startEvents::add)
-                .onTaskComplete(completeEvents::add)
-                .build()
-                .run();
-
-        assertThat(startEvents).hasSize(1);
-        assertThat(startEvents.get(0).agentRole()).isEqualTo("Manager");
-        assertThat(completeEvents).hasSize(1);
-        assertThat(completeEvents.get(0).agentRole()).isEqualTo("Manager");
-        assertThat(completeEvents.get(0).taskOutput().getRaw()).isEqualTo("Final synthesis");
     }
 }
