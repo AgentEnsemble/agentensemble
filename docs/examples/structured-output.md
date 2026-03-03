@@ -189,6 +189,25 @@ public class MarkdownOutputExample {
 
 ---
 
+## Running the Example
+
+```bash
+git clone https://github.com/AgentEnsemble/agentensemble.git
+cd agentensemble
+export OPENAI_API_KEY=your-api-key
+
+# Default topic (AI agents in 2025)
+./gradlew :agentensemble-examples:runStructuredOutput
+
+# Custom topic
+./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
+```
+
+The example runs both Part 1 (typed JSON output) and Part 2 (formatted Markdown output) for the
+same topic in a single execution so you can compare the two approaches side by side.
+
+---
+
 ## Combining Both Approaches
 
 You can mix structured and plain-text tasks in the same ensemble:

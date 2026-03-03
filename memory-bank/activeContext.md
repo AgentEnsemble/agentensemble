@@ -2,8 +2,9 @@
 
 ## Current Work Focus
 
-PR #48 merged to main (squash commit 1d69c5c). Issue #19 Structured Output complete.
-Development continues at 0.6.0-SNAPSHOT. 440 tests passing on main.
+All doc examples are now runnable from the command line. 5 named Gradle tasks added to
+`agentensemble-examples`. All doc example pages have run instructions. README links to
+docs site throughout. 440 tests passing on main.
 
 ## Recent Changes
 

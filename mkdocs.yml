@@ -89,8 +89,9 @@ nav:
   - Examples:
     - Research and Writer: examples/research-writer.md
     - Hierarchical Team: examples/hierarchical-team.md
-    - Memory Across Runs: examples/memory-across-runs.md
     - Parallel Workflow: examples/parallel-workflow.md
+    - Memory Across Runs: examples/memory-across-runs.md
+    - Structured Output: examples/structured-output.md
   - Design:
     - Overview: design/01-overview.md
     - Architecture: design/02-architecture.md

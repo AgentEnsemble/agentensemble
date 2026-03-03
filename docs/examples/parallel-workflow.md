@@ -137,6 +137,23 @@ public class ParallelCompetitiveIntelligenceExample {
 }
 ```
 
+## Running the Example
+
+```bash
+git clone https://github.com/AgentEnsemble/agentensemble.git
+cd agentensemble
+export OPENAI_API_KEY=your-api-key
+
+# Default company (Acme Corp, enterprise software)
+./gradlew :agentensemble-examples:runParallelWorkflow
+
+# Analyse a different company
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla"
+
+# Specify company and industry
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla automotive"
+```
+
 ## Execution Timeline
 
 ```

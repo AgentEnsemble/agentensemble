@@ -94,9 +94,27 @@
   **Documentation:** tasks.md, task-configuration.md, concepts.md, structured-output.md (new),
   03-domain-model.md, 13-future-roadmap.md (Phase 6 marked COMPLETE), README.md
 
+### Runnable Examples + Docs Site Links
+
+- [x] `agentensemble-examples` module: 5 named `JavaExec` Gradle tasks under `"examples"` group:
+  - `runResearchWriter` (default `run` task still points here too)
+  - `runHierarchicalTeam` (HierarchicalTeamExample.java)
+  - `runParallelWorkflow` (ParallelCompetitiveIntelligenceExample.java)
+  - `runMemoryAcrossRuns` (MemoryAcrossRunsExample.java -- requires `langchain4j` artifact added
+    to examples deps for InMemoryEmbeddingStore)
+  - `runStructuredOutput` (StructuredOutputExample.java -- both typed JSON and Markdown parts)
+- [x] `gradle/libs.versions.toml`: added `langchain4j` (main artifact) alongside `langchain4j-core`
+- [x] All 5 doc example pages (`research-writer`, `hierarchical-team`, `parallel-workflow`,
+  `memory-across-runs`, `structured-output`) have "Running the Example" sections with exact
+  gradle commands and custom args
+- [x] `mkdocs.yml`: `Structured Output` added to Examples nav (was missing from the merged branch)
+- [x] `README.md`: every major section has a `**Full documentation:**` link to `docs.agentensemble.net`;
+  "Running the Examples" section updated with all 5 named tasks; "Documentation" table links to
+  hosted docs site
+
 ## Current Status
 
-**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged
+**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged; examples now runnable
 **Total tests**: 440 passing on main
 **Current version**: 0.6.0-SNAPSHOT (main)
 **Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
