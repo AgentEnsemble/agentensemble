@@ -4,6 +4,66 @@
 
 ---
 
+## [0.5.0-SNAPSHOT] - 2026-03-02 (PR #43, fix/copilot-review-feedback)
+
+### Fixed (Bug)
+- `Ensemble.resolveTasks`: two-pass approach remaps context list references to resolved Task
+  instances (fixes spurious TaskExecutionException when using template variables with context
+  dependencies -- value equality of resolved vs original tasks diverges)
+
+### Fixed (Null Safety)
+- `AgentDelegationTool.delegate`: null/blank agentRole/taskDescription validated early
+- `DelegateTaskTool`: null/blank param validation; null memoryContext normalized to disabled()
+- `EmbeddingStoreLongTermMemory.store`: null content rejected; null timestamp defaulted to Instant.now()
+- `AgentExecutor.execute`: null memoryContext normalized to MemoryContext.disabled()
+- `AgentPromptBuilder`: null-guard ctx.getRaw() in context rendering
+- `LangChain4jToolAdapter.convertToType`: primitive defaults for null value (prevents Method.invoke NPE)
+- `Task.build`: null context elements throw ValidationException; self-referencing context detected
+- `Agent.build`: null responseFormat normalized to empty string
+- `ToolResult.failure`: null errorMessage normalized to default message
+- `EnsembleMemory`: longTermMaxResults > 0 validated conditionally (only when longTerm != null)
+- `Ensemble.validate`: managerMaxIterations > 0 validated for HIERARCHICAL workflow
+
+### Fixed (Correctness)
+- `AgentDelegationTool`: MDC save/restore for nested delegation chains (A->B->C)
+- `HierarchicalWorkflowExecutor`: manager failure wrapped in TaskExecutionException with partial outputs
+- `Ensemble`: reserved "Manager" role and duplicate roles validated for HIERARCHICAL
+- `Ensemble.validateAgentMembership`: IdentityHashMap for identity-based agent lookup (per design spec)
+- `Ensemble.validateContextOrdering`: distinguishes missing-task from ordering-violation messages
+- `AgentExecutor` toolCallCounter: increments only on executed calls (not stop-message path)
+- `Ensemble.run`: ValidationException logged at WARN; runtime failures at ERROR with throwable
+- `MemoryContext.isActive`: returns true only when at least one memory type is genuinely active
+
+### Changed (Code Quality)
+- `AgentExecutor`: logs effective tool count (post-delegation-injection) instead of configured count
+- `AgentExecutor`: tool errors logged at WARN (result starts with "Error:"); successes at INFO
+- `AgentExecutor.ResolvedTools.execute`: removed unused originalTools parameter
+- `DelegationContext` Javadoc: clarified thread-safety limitation (mutable referenced components)
+- `LangChain4jToolAdapter`: throwable included in WARN log for tool execution exceptions
+- `TemplateResolver`: UUID-embedded sentinel prefix; restore regex precompiled as static final
+- `TaskExecutionException`: no-cause constructor delegates to with-cause constructor
+- `AgentPromptBuilder`: stripTrailing() on system prompt; context block separator fixed (no double ---)
+
+### Changed (Documentation)
+- quickstart.md, installation.md, logging.md: logback version 1.5.12 -> 1.5.32
+- template-variables.md: variable names support letters/digits/underscores only (no hyphens)
+- workflows.md: context ordering validated at run(), not at build() time
+- Task.java Javadoc: build-time vs run-time validation split clarified
+
+### Added (Tests, 287 -> 297)
+- EnsembleTest: 4 new validation tests (HIERARCHICAL reserved role, duplicate roles, managerMaxIterations=0, missing context task); renamed testRun_withMutualContextDependency to testRun_withForwardContextReference
+- TaskTest: self-reference and null context element validation tests
+- TaskOutputTest: null field behavior documentation tests and default toolCallCount test
+- MemoryContextTest: fixed dead test (mock LTM was never wired into context under test)
+- AgentTest, AgentDelegationToolTest: assertion updates for changed messages
+
+### Fixed (CI)
+- ci.yml: !contains(needs.*.result, 'skipped') guard added to dependabot-automerge
+- ci.yml: auto-merge branch protection requirement documented in script
+- dependabot.yml: groups config added for github-actions ecosystem
+
+---
+
 ## [0.4.0] - 2026-03-02
 
 ### Added

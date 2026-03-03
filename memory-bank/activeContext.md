@@ -2,9 +2,25 @@
 
 ## Current Work Focus
 
-v0.4.0 released and published to GitHub Packages. Development continues on main at 0.5.0-SNAPSHOT.
+PR #43 open: addressing all GitHub Copilot review feedback from PRs #21-#41.
+Development continues on branch fix/copilot-review-feedback at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
+
+- PR #43 opened (branch fix/copilot-review-feedback): addressed all actionable
+  GitHub Copilot review feedback from 16 closed PRs
+  - Bug: Ensemble.resolveTasks two-pass approach; IdentityHashMap for agent membership
+  - Null safety: 13 defensive fixes across AgentDelegationTool, DelegateTaskTool,
+    EmbeddingStoreLongTermMemory, AgentExecutor, AgentPromptBuilder, Task, Agent,
+    ToolResult, LangChain4jToolAdapter, EnsembleMemory
+  - Correctness: MDC save/restore for nested delegation; hierarchical error wrapping;
+    HIERARCHICAL role validation; toolCallCounter fix; MemoryContext.isActive semantics
+  - Code quality: effective tool count logging; WARN for tool errors; UUID sentinel in
+    TemplateResolver; constructor delegation; prompt stripTrailing
+  - Documentation: logback version sync, template-variables hyphens, workflows timing
+  - Tests: +10 tests (287 -> 297); fixed dead test; renamed misleading test
+  - CI: skipped-guard on automerge; dependabot groups for github-actions
+  - 297 tests passing
 
 - Issue #17 merged (PR #41): agent delegation fully implemented
   - `DelegationContext`: immutable runtime state; create() factory; descend() creates
