@@ -1,10 +1,11 @@
 [versions]
+vanniktech-publish = "0.29.0"
 langchain4j      = "1.11.0"
 lombok           = "1.18.42"
 jackson          = "2.21.1"
 slf4j            = "2.0.17"
-junit            = "5.12.2"
-junit-platform   = "1.12.2"
+junit            = "6.0.3"
+junit-platform   = "6.0.3"
 assertj          = "3.27.7"
 mockito          = "5.22.0"
 logback          = "1.5.32"
@@ -21,3 +22,6 @@ junit-platform-launcher   = { group = "org.junit.platform",             name = "
 assertj-core              = { group = "org.assertj",                    name = "assertj-core",             version.ref = "assertj"  }
 mockito-core              = { group = "org.mockito",                    name = "mockito-core",             version.ref = "mockito"  }
 logback-classic           = { group = "ch.qos.logback",                 name = "logback-classic",          version.ref = "logback"  }
+
+[plugins]
+vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

@@ -15,16 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Extract version from tag
         id: version
@@ -36,59 +36,73 @@ jobs:
           echo "Releasing version: ${VERSION} (tag: ${TAG})"
 
       - name: Build and test
-        run: ./gradlew build -Pversion=${{ steps.version.outputs.version }}
+        run: ./gradlew build :agentensemble-core:mavenPlainJavadocJar -Pversion=${{ steps.version.outputs.version }}
+
+      - name: Publish to Maven Central
+        run: ./gradlew :agentensemble-core:publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.ORG_MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.ORG_MAVEN_CENTRAL_PASSWORD }}
 
       - name: Publish to GitHub Packages
-        run: ./gradlew :agentensemble-core:publish -Pversion=${{ steps.version.outputs.version }}
+        run: ./gradlew :agentensemble-core:publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          files: |
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}.jar
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-sources.jar
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-javadoc.jar
-          body: |
-            ## Installation
+      - name: Ensure GitHub Release exists
+        run: |
+          if ! gh release view ${{ steps.version.outputs.tag }} --json id > /dev/null 2>&1; then
+            gh release create ${{ steps.version.outputs.tag }} \
+              --title "v${{ steps.version.outputs.version }}" \
+              --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            ### Gradle (Kotlin DSL)
+      - name: Upload artifacts to GitHub Release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LIBS=agentensemble-core/build/libs
+          # mavenPlainJavadocJar uses a generic prefix; copy to the artifact-id-based name
+          cp "${LIBS}/maven-javadoc-${VERSION}-javadoc.jar" \
+             "${LIBS}/agentensemble-core-${VERSION}-javadoc.jar"
+          gh release upload ${{ steps.version.outputs.tag }} \
+            "${LIBS}/agentensemble-core-${VERSION}.jar" \
+            "${LIBS}/agentensemble-core-${VERSION}-sources.jar" \
+            "${LIBS}/agentensemble-core-${VERSION}-javadoc.jar"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            ```kotlin
-            repositories {
-                maven {
-                    url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
-                    credentials {
-                        username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
-                        password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
-                    }
-                }
-            }
+      - name: Bump version to next SNAPSHOT
+        run: |
+          IFS='.' read -ra PARTS <<< "${{ steps.version.outputs.version }}"
+          NEXT_PATCH=$((${PARTS[2]} + 1))
+          NEXT_VERSION="${PARTS[0]}.${PARTS[1]}.${NEXT_PATCH}"
 
-            dependencies {
-                implementation("net.agentensemble:agentensemble-core:${{ steps.version.outputs.version }}")
-            }
-            ```
+          git fetch origin main
+          git checkout main
 
-            ### Maven
+          CURRENT_RAW=$(grep '^version=' gradle.properties | sed 's/version=//' | sed 's/-SNAPSHOT//')
+          IFS='.' read -ra CUR <<< "${CURRENT_RAW}"
 
-            ```xml
-            <repository>
-                <id>github</id>
-                <url>https://maven.pkg.github.com/AgentEnsemble/agentensemble</url>
-            </repository>
+          SHOULD_BUMP=false
+          if   [ "${PARTS[0]}" -gt "${CUR[0]}" ]; then SHOULD_BUMP=true
+          elif [ "${PARTS[0]}" -eq "${CUR[0]}" ] && [ "${PARTS[1]}" -gt "${CUR[1]}" ]; then SHOULD_BUMP=true
+          elif [ "${PARTS[0]}" -eq "${CUR[0]}" ] && [ "${PARTS[1]}" -eq "${CUR[1]}" ] && [ "${NEXT_PATCH}" -gt "${CUR[2]}" ]; then SHOULD_BUMP=true
+          fi
 
-            <dependency>
-                <groupId>net.agentensemble</groupId>
-                <artifactId>agentensemble-core</artifactId>
-                <version>${{ steps.version.outputs.version }}</version>
-            </dependency>
-            ```
-
-            ---
-
+          if [ "${SHOULD_BUMP}" = true ]; then
+            sed -i "s/^version=.*/version=${NEXT_VERSION}-SNAPSHOT/" gradle.properties
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add gradle.properties
+            git commit -m "chore: bump version to ${NEXT_VERSION}-SNAPSHOT [skip ci]"
+            git push origin main
+          else
+            echo "Current development version ${CURRENT_RAW}-SNAPSHOT is already ahead of ${NEXT_VERSION}; no bump needed."
+          fi

@@ -7,7 +7,23 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
 
 ## Recent Changes
 
-- Issue #18 (Parallel Workflow) implementation on feature/parallel-workflow (commit de768ab):
+- Maven Central publishing fully operational -- v0.4.2 successfully released:
+  - `com.vanniktech.maven.publish` 0.29.0 with `SonatypeHost.CENTRAL_PORTAL` + `signAllPublications()`
+  - `publishAndReleaseToMavenCentral` handles full upload + auto-promotion lifecycle
+  - `publishAllPublicationsToGitHubPackagesRepository` also gets signing env vars
+  - Build step runs `:agentensemble-core:mavenPlainJavadocJar` to generate javadoc JAR
+    (vanniktech generates `maven-javadoc-{v}-javadoc.jar`; upload step copies it to
+    `agentensemble-core-{v}-javadoc.jar` before attaching to GitHub Release)
+  - SNAPSHOT bump is version-aware: only bumps gradle.properties if the next patch
+    version is higher than the current development SNAPSHOT
+  - `release-please-action@v4` (simple type) requires `ORG_RELEASE_PLEASE_TOKEN` PAT
+    secret to create/approve PRs (org-level GITHUB_TOKEN PR restriction is in effect)
+  - `.release-please-manifest.json` is at `0.4.2` (last release)
+  - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
+    `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
+  - Pending: `ORG_RELEASE_PLEASE_TOKEN` PAT (repo scope) for release-please PR creation
+
+- Issue #18 (Parallel Workflow) implementation on feature/parallel-workflow:
 
   **New classes:**
   - `TaskDependencyGraph`: identity-based DAG from task context declarations;
@@ -15,7 +31,9 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
   - `ParallelWorkflowExecutor`: `Executors.newVirtualThreadPerTaskExecutor()` (stable
     Java 21 API, no preview flags); `CountDownLatch(totalTasks)` for synchronization;
     MDC captured from caller thread and propagated into each virtual thread; task
-    completion triggers `resolveDependent()` to evaluate and submit ready dependents
+    completion triggers `resolveDependent()` to evaluate and submit ready dependents;
+    `skippedTasks` set tracks skipped tasks to correctly propagate transitive skips
+    in CONTINUE_ON_ERROR chains
   - `ParallelErrorStrategy`: `FAIL_FAST` (default) or `CONTINUE_ON_ERROR`
   - `ParallelExecutionException`: thrown by CONTINUE_ON_ERROR; carries
     `completedTaskOutputs` + `failedTaskCauses` map
@@ -30,15 +48,20 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
     `getEntries()` returns immutable snapshot (`List.copyOf`)
   - `MemoryContext`: Javadoc updated to reflect thread-safe status
 
-  **Bug fix (included in same commit):** `Ensemble.resolveTasks()` pass-2 was not
-  updating `originalToResolved` after creating finalized context-rewritten tasks. This
-  caused diamond-pattern dependencies (A -> B -> D, A -> C -> D) to produce stale
-  object references in D's context list, breaking DAG lookup. Fixed by adding
-  `originalToResolved.put(original, finalTask)` in pass-2 when context is rewritten.
+  **Bug fixes:**
+  - `Ensemble.resolveTasks()` pass-2 was not updating `originalToResolved` after
+    creating finalized context-rewritten tasks. Diamond-pattern dependencies
+    (A -> B -> D, A -> C -> D) produced stale object references. Fixed by adding
+    `originalToResolved.put(original, finalTask)` in pass-2.
+  - `ParallelWorkflowExecutor.shouldSkip()` CONTINUE_ON_ERROR only checked
+    `failedTaskCauses`; skipped tasks in a chain were not propagated. Fixed by
+    adding `skippedTasks` Set and checking both sets in `shouldSkip()`.
+  - `FAIL_FAST` Javadoc corrected: running tasks are allowed to finish; they are
+    not cancelled/interrupted (only new tasks are not scheduled).
 
-  **Tests:** 297 -> 357 (+60 new)
+  **Tests:** 297 -> 358 (+61 new)
   - TaskDependencyGraphTest: 21 (roots, ready tasks, dependents, diamond, identity)
-  - ParallelWorkflowExecutorTest: 16 (single, independent, linear, diamond, error handling)
+  - ParallelWorkflowExecutorTest: 17 (includes transitive skip test)
   - ParallelEnsembleIntegrationTest: 16 (E2E)
   - ShortTermMemoryTest: +3 (concurrent safety, snapshot semantics)
   - ExceptionHierarchyTest: +5 (ParallelExecutionException)
@@ -56,10 +79,11 @@ PR #45 open on branch feature/parallel-workflow: Issue #18 Parallel Workflow imp
 
 ## Next Steps
 
-1. Merge PR #45 (parallel workflow) -> Issue #19 (Structured Output, v0.6.0)
-2. Issue #42: Execution metrics (ExecutionMetrics on EnsembleOutput)
-3. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
-4. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
+1. Merge PR #45 (parallel workflow), release v0.5.0
+2. Issue #19: Structured output (outputType on Task, JSON parsing, retry loop)
+3. Issue #42: Execution metrics (ExecutionMetrics on EnsembleOutput)
+4. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
+5. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
 
 ## Important Notes
 

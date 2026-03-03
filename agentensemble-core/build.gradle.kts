@@ -1,11 +1,8 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     `java-library`
-    `maven-publish`
-}
-
-java {
-    withSourcesJar()
-    withJavadocJar()
+    alias(libs.plugins.vanniktech.publish)
 }
 
 dependencies {
@@ -34,45 +31,44 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
 
-            pom {
-                name = "AgentEnsemble Core"
-                description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
-                url = "https://github.com/AgentEnsemble/agentensemble"
+    pom {
+        name = "AgentEnsemble Core"
+        description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
+        url = "https://github.com/AgentEnsemble/agentensemble"
 
-                licenses {
-                    license {
-                        name = "MIT License"
-                        url = "https://opensource.org/licenses/MIT"
-                    }
-                }
-
-                developers {
-                    developer {
-                        id = "agentensemble"
-                        name = "AgentEnsemble"
-                        url = "https://github.com/AgentEnsemble"
-                    }
-                }
-
-                scm {
-                    connection = "scm:git:git://github.com/AgentEnsemble/agentensemble.git"
-                    developerConnection = "scm:git:ssh://github.com/AgentEnsemble/agentensemble.git"
-                    url = "https://github.com/AgentEnsemble/agentensemble"
-                }
-
-                issueManagement {
-                    system = "GitHub"
-                    url = "https://github.com/AgentEnsemble/agentensemble/issues"
-                }
+        licenses {
+            license {
+                name = "MIT License"
+                url = "https://opensource.org/licenses/MIT"
             }
         }
-    }
 
+        developers {
+            developer {
+                id = "agentensemble"
+                name = "AgentEnsemble"
+                url = "https://github.com/AgentEnsemble"
+            }
+        }
+
+        scm {
+            connection = "scm:git:git://github.com/AgentEnsemble/agentensemble.git"
+            developerConnection = "scm:git:ssh://github.com/AgentEnsemble/agentensemble.git"
+            url = "https://github.com/AgentEnsemble/agentensemble"
+        }
+
+        issueManagement {
+            system = "GitHub"
+            url = "https://github.com/AgentEnsemble/agentensemble/issues"
+        }
+    }
+}
+
+publishing {
     repositories {
         maven {
             name = "GitHubPackages"
