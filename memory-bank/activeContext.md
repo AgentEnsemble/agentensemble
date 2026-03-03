@@ -2,8 +2,10 @@
 
 ## Current Work Focus
 
-Feature branch `feature/58-guardrails` implements Issue #58 (Guardrails: pre/post execution
-validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
+PR #70 (`feature/58-guardrails`) implements Issue #58 (Guardrails: pre/post execution
+validation hooks) for v0.8.0. All 567 tests pass. Copilot review feedback addressed in
+follow-up commit (exception/null safety in guardrail invocation, test name typo fix).
+Next: merge PR #70, release v0.8.0 via release-please.
 
 ## Recent Changes
 
