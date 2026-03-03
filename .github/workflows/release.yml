@@ -36,7 +36,7 @@ jobs:
           echo "Releasing version: ${VERSION} (tag: ${TAG})"
 
       - name: Build and test
-        run: ./gradlew build -Pversion=${{ steps.version.outputs.version }}
+        run: ./gradlew build :agentensemble-core:mavenPlainJavadocJar -Pversion=${{ steps.version.outputs.version }}
 
       - name: Publish to Maven Central
         run: ./gradlew :agentensemble-core:publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
@@ -66,10 +66,15 @@ jobs:
 
       - name: Upload artifacts to GitHub Release
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LIBS=agentensemble-core/build/libs
+          # mavenPlainJavadocJar uses a generic prefix; copy to the artifact-id-based name
+          cp "${LIBS}/maven-javadoc-${VERSION}-javadoc.jar" \
+             "${LIBS}/agentensemble-core-${VERSION}-javadoc.jar"
           gh release upload ${{ steps.version.outputs.tag }} \
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}.jar \
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-sources.jar \
-            agentensemble-core/build/libs/agentensemble-core-${{ steps.version.outputs.version }}-javadoc.jar
+            "${LIBS}/agentensemble-core-${VERSION}.jar" \
+            "${LIBS}/agentensemble-core-${VERSION}-sources.jar" \
+            "${LIBS}/agentensemble-core-${VERSION}-javadoc.jar"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
