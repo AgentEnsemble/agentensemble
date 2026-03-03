@@ -2,29 +2,30 @@
 
 ## Current Work Focus
 
-Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.6.0).
-429 tests passing on feature branch. PR to be opened against main.
+PR #48 merged to main (squash commit 1d69c5c). Issue #19 Structured Output complete.
+Development continues at 0.6.0-SNAPSHOT. 440 tests passing on main.
 
 ## Recent Changes
 
-- Issue #19 (Structured Output) implemented on `feature/structured-output`:
+- Issue #19 (Structured Output) merged via PR #48 (squash commit 1d69c5c):
 
   **New classes:**
-  - `net.agentensemble.output.ParseResult<T>`: result container for parse attempts;
-    `success(T)` / `failure(String)` factory methods; `isSuccess()`, `getValue()`,
-    `getErrorMessage()`. Public (accessed from `AgentExecutor` across packages).
+  - `net.agentensemble.output.ParseResult<T>`: success/failure result container for
+    parse attempts; `success(T)` / `failure(String)` factory methods; public (accessed
+    from `AgentExecutor` across packages).
   - `net.agentensemble.output.JsonSchemaGenerator`: reflection-based schema generator;
     `generate(Class<?>)` produces human-readable JSON-like schema for prompt injection;
     supports records, POJOs, String, numeric types, boolean, List<T>, Map<K,V>, enums,
-    nested objects; max nesting depth 5; rejects primitives, void, top-level arrays.
+    nested objects; max nesting depth 5; rejects primitives, void, top-level arrays;
+    `topLevelScalarOrCollectionSchema()` handles scalars before field introspection.
   - `net.agentensemble.output.StructuredOutputParser`: JSON extraction and Jackson
-    deserialization; `parse(String, Class<T>)` returns `ParseResult<T>`; `extractJson(String)`
-    tries markdown fences first, then trimmed full response, then regex scan for
-    embedded JSON; `ObjectMapper` configured with FAIL_ON_UNKNOWN_PROPERTIES=false,
-    FAIL_ON_NULL_FOR_PRIMITIVES=true.
+    deserialization; `parse(String, Class<T>)` returns `ParseResult<T>`;
+    `extractJson(String)` tries markdown fences first (non-greedy regex), then trimmed
+    full response, then regex scan for first embedded JSON block; scalar fallback in
+    `parse()` attempts direct Jackson parse when no object/array found.
   - `net.agentensemble.exception.OutputParsingException`: extends `AgentEnsembleException`;
-    fields: `rawOutput`, `outputType`, `parseErrors` (immutable list), `attemptCount`.
-    Thrown after all retries exhausted.
+    fields: `rawOutput` (last bad response), `outputType`, `parseErrors` (immutable list),
+    `attemptCount`. Thrown after all retries exhausted.
 
   **Changes to existing classes:**
   - `Task`: added `Class<?> outputType` (default null) and `int maxOutputRetries` (default 3);
@@ -33,15 +34,27 @@ Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.
     added `getParsedOutput(Class<T>)` typed accessor (throws IllegalStateException when null
     or type mismatch).
   - `AgentPromptBuilder`: injects `## Output Format` section with JSON schema and JSON-only
-    instructions when `task.getOutputType() != null`.
+    instructions ("ONLY valid JSON matching this schema (object, array, or scalar as appropriate)")
+    when `task.getOutputType() != null`.
   - `AgentExecutor`: after main execution (tool loop or direct), calls `parseStructuredOutput()`
     when `task.getOutputType() != null`; retry loop sends correction prompt to LLM with error
-    message and schema; on exhaustion throws `OutputParsingException`; passes `parsedOutput` and
-    `outputType` to `TaskOutput.builder()`.
+    message and schema; on exhaustion throws `OutputParsingException` with `currentResponse`
+    (last bad response, not initial); correction prompt updated to say "valid JSON" not "JSON object".
 
-  **Tests:** 358 -> 429 (+71 new)
-  - `JsonSchemaGeneratorTest`: 17 (records, POJOs, enums, nested, Maps, Lists, validation)
-  - `StructuredOutputParserTest`: 15 (extractJson strategies, parse success/failure)
+  **Copilot review fixes (commit 71bf58c, squashed into 1d69c5c):**
+  - `OutputParsingException.rawOutput`: uses `currentResponse` (last bad response)
+  - `JSON_BLOCK_PATTERN`: non-greedy (`.*?`) to find first block not oversized span
+  - `StructuredOutputParser.parse()`: scalar fallback for Boolean/Integer/String
+  - `JsonSchemaGenerator.generate()`: `topLevelScalarOrCollectionSchema()` short-circuits
+    before `generateObject()` for String.class, Boolean.class, etc.
+  - Prompt wording: "valid JSON value" not "JSON object" throughout
+  - Docs: tasks.md and task-configuration.md accurately describe scalar support
+
+  **Tests:** 358 -> 440 (+82 new)
+  - `JsonSchemaGeneratorTest`: 23 (records, POJOs, enums, nested, Maps, Lists,
+    scalar top-level types, validation)
+  - `StructuredOutputParserTest`: 20 (extractJson strategies, parse success/failure,
+    scalar types, non-greedy multi-block)
   - `ExceptionHierarchyTest`: +5 (OutputParsingException hierarchy and fields)
   - `TaskTest`: +12 (outputType/maxOutputRetries defaults, validation, toBuilder)
   - `TaskOutputTest`: +7 (parsedOutput, outputType fields, getParsedOutput typed access)
@@ -51,7 +64,7 @@ Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.
 
   **Documentation:**
   - `docs/guides/tasks.md`: Structured Output section with typed/Markdown examples and retry docs
-  - `docs/reference/task-configuration.md`: outputType and maxOutputRetries fields + validation
+  - `docs/reference/task-configuration.md`: outputType/maxOutputRetries fields + validation
   - `docs/getting-started/concepts.md`: outputType and maxOutputRetries in Task concept
   - `docs/examples/structured-output.md`: new; two full examples (typed JSON + Markdown output)
   - `docs/design/03-domain-model.md`: Task and TaskOutput specs updated
@@ -60,7 +73,7 @@ Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.
 
 ## Next Steps
 
-1. Merge PR for Issue #19 to main (v0.6.0 release via release-please)
+1. Release v0.6.0 (structured output milestone, via release-please)
 2. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput
 3. Issue #20 (v1.0.0): Advanced features (callbacks, streaming, guardrails, built-in tools)
 4. Issue #44 (backlog): Execution graph visualization (depends on #18, #42)
@@ -82,10 +95,11 @@ Feature branch `feature/structured-output` for Issue #19 (Structured Output, v0.
 - **ParseResult visibility**: public (accessed from AgentExecutor in different package)
 - **Schema generation**: prompt-based JSON schema (not LangChain4j ResponseFormat.JSON)
   to work universally across all LLM providers without capability detection
-- **JSON extraction priority**: markdown fences first (most LLMs wrap in ```json```),
-  then full trimmed response, then regex scan for embedded JSON
-- **Retry loop design**: sends system prompt + correction user prompt (fresh context),
-  not the full tool conversation history -- sufficient for parse correction
+- **JSON extraction priority**: markdown fences first (non-greedy, most LLMs wrap in
+  ```json```), then full trimmed response, then regex scan for first embedded JSON block
+- **Scalar fallback**: `parse()` attempts direct Jackson parse when extractJson returns null
+- **rawOutput in OutputParsingException**: carries currentResponse (last bad response)
+  not initialResponse (first response), to aid debugging of retry failures
 - **Top-level array rejection**: JsonSchemaGenerator.generate() and Task.outputType
   both reject array types; workaround: wrap in record (e.g., record Results(List<T> items))
 - **Parallel execution**: `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21)

@@ -74,7 +74,7 @@
   - Copilot review: 3 comments addressed (transitive skip bug, new test, FAIL_FAST Javadoc)
 
 ### Phase 6: Structured Output
-- [ ] Issue #19: Structured output (PR in progress on `feature/structured-output`) -- 429 tests
+- [x] Issue #19: Structured output (PR #48 merged, squash commit 1d69c5c) -- 440 tests (+82)
 
   **New classes:**
   - `net.agentensemble.output.ParseResult<T>`
@@ -96,11 +96,11 @@
 
 ## Current Status
 
-**Phase**: Phase 6 in progress -- Issue #19 implemented, PR pending
-**Total tests**: 429 passing on feature branch
-**Current version**: 0.5.0-SNAPSHOT (main) / feature/structured-output
-**Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.5.0 pending release-please)
-**Next action**: Open PR for Issue #19, merge to main (v0.6.0 release)
+**Phase**: Phase 6 complete -- Issue #19 done, PR #48 merged
+**Total tests**: 440 passing on main
+**Current version**: 0.6.0-SNAPSHOT (main)
+**Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
+**Next action**: Release v0.6.0, then Issue #42 (Execution Metrics) or Issue #20 (v1.0.0 features)
 
 ## Known Issues
 

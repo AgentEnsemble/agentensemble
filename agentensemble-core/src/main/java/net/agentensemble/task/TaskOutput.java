@@ -15,7 +15,7 @@ import lombok.Value;
  *
  * When the task was configured with {@code outputType}, the parsed Java object
  * is available via {@link #getParsedOutput(Class)}. The raw LLM response is
- * always available via {@link #getRaw()}.
+ * always available via {@code getRaw()}.
  */
 @Builder
 @Value
