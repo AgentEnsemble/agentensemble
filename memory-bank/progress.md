@@ -37,7 +37,9 @@
 
 - [x] `maven-publish` on `agentensemble-core` with POM metadata, sources JAR, Javadoc JAR
 - [x] GitHub Packages as Maven repository target
-- [x] Release workflow: tag-triggered (`v*.*.*`), publishes and creates GitHub Release
+- [x] Maven Central publishing via `com.vanniktech.maven.publish` 0.29.0 (Central Portal)
+- [x] GPG artifact signing configured (in-memory key via env vars)
+- [x] Release workflow: tag-triggered (`v*.*.*`), publishes to Maven Central + GitHub Packages and creates GitHub Release
 - [x] Enhanced CI: `--continue` flag, test result reporting, dependency-submission job
 
 ### Phase 2: Hierarchical Workflow
