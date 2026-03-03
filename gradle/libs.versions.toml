@@ -10,7 +10,7 @@ assertj          = "3.27.7"
 mockito          = "5.22.0"
 logback          = "1.5.32"
 spotless         = "8.3.0"
-errorprone       = "4.2.0"
+errorprone       = "5.1.0"
 errorprone-core  = "2.36.0"
 
 [libraries]
