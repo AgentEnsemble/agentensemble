@@ -28,7 +28,7 @@ jobs:
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build and test
         run: ./gradlew build --continue
@@ -57,7 +57,7 @@ jobs:
           java-version: 21
 
       - name: Submit dependency graph
-        uses: gradle/actions/dependency-submission@v4
+        uses: gradle/actions/dependency-submission@v5
 
   dependabot-automerge:
     name: Dependabot Auto-Merge
