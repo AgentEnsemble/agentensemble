@@ -9,7 +9,7 @@ junit-platform   = "6.0.3"
 assertj          = "3.27.7"
 mockito          = "5.22.0"
 logback          = "1.5.32"
-spotless         = "7.0.2"
+spotless         = "8.3.0"
 errorprone       = "4.2.0"
 errorprone-core  = "2.36.0"
 
