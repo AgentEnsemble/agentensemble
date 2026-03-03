@@ -7,11 +7,15 @@ Development continues at 0.5.0-SNAPSHOT.
 
 ## Recent Changes
 
-- Maven Central publishing pipeline configured:
+- Maven Central publishing pipeline configured and release-please added:
   - `com.vanniktech.maven.publish` 0.29.0 applied to `agentensemble-core`
   - `mavenPublishing {}` targets `SonatypeHost.CENTRAL_PORTAL` with `signAllPublications()`
-  - Release workflow split into `publishAndReleaseToMavenCentral` (GPG + Sonatype secrets)
-    and `publishAllPublicationsToGitHubPackagesRepository` as separate steps
+  - `release-please-action@v4` (simple release type): watches main for Conventional
+    Commits, opens Release PRs with CHANGELOG, creates tag + GitHub Release on merge
+  - `.release-please-manifest.json` bootstrapped at `0.4.0`
+  - `release.yml`: publishes to Maven Central + GitHub Packages, uploads JARs to
+    GitHub Release via `gh release upload`, then auto-bumps `gradle.properties`
+    to next patch SNAPSHOT and pushes to main `[skip ci]`
   - Required secrets: `ORG_GPG_SIGNING_KEY`, `ORG_GPG_SIGNING_PASSWORD`,
     `ORG_MAVEN_CENTRAL_USERNAME`, `ORG_MAVEN_CENTRAL_PASSWORD`
 

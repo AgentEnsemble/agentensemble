@@ -14,6 +14,15 @@
   Maven Central is the default for both Gradle and Maven consumers
 - Added `[plugins]` section to `gradle/libs.versions.toml` with `vanniktech-publish` entry
 
+- Added `release-please-action@v4` (simple release type) in `.github/workflows/release-please.yml`
+  - Watches main for Conventional Commits; opens/updates Release PRs with CHANGELOG entries
+  - Merging a Release PR creates tag + GitHub Release (no manual `git tag` needed)
+- Added `release-please-config.json` (simple type, root package)
+- Added `.release-please-manifest.json` bootstrapped at `0.4.0`
+- `release.yml` updated: removed `softprops/action-gh-release` (release-please owns the release);
+  added `gh release upload` to attach JARs to the existing release; added post-release SNAPSHOT bump
+  (patch-increments version in `gradle.properties`, commits `[skip ci]`, pushes to main)
+
 ### Required Secrets (add to GitHub repo settings before first Maven Central release)
 - `ORG_GPG_SIGNING_KEY`: ASCII-armored GPG private key (`gpg --armor --export-secret-keys KEY_ID`)
 - `ORG_GPG_SIGNING_PASSWORD`: GPG key passphrase
