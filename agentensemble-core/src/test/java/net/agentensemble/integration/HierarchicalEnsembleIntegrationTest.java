@@ -12,10 +12,13 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.ArrayList;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
+import net.agentensemble.callback.TaskCompleteEvent;
+import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.workflow.Workflow;
@@ -333,5 +336,50 @@ class HierarchicalEnsembleIntegrationTest {
                 .run();
 
         assertThat(output.getTaskOutputs()).isUnmodifiable();
+    }
+
+    // ========================
+    // Callback events
+    // ========================
+
+    @Test
+    void testHierarchicalWorkflow_listeners_receiveManagerTaskEvents() {
+        ChatModel managerModel = mock(ChatModel.class);
+        ChatModel workerModel = mock(ChatModel.class);
+
+        when(workerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Worker result"));
+        when(managerModel.chat(any(ChatRequest.class)))
+                .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
+                .thenReturn(textResponse("Final synthesis"));
+
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research topics")
+                .llm(workerModel)
+                .build();
+        Task task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("AI trend summary")
+                .agent(researcher)
+                .build();
+
+        List<TaskStartEvent> startEvents = new ArrayList<>();
+        List<TaskCompleteEvent> completeEvents = new ArrayList<>();
+
+        Ensemble.builder()
+                .agent(researcher)
+                .task(task)
+                .workflow(Workflow.HIERARCHICAL)
+                .managerLlm(managerModel)
+                .onTaskStart(startEvents::add)
+                .onTaskComplete(completeEvents::add)
+                .build()
+                .run();
+
+        assertThat(startEvents).hasSize(1);
+        assertThat(startEvents.get(0).agentRole()).isEqualTo("Manager");
+        assertThat(completeEvents).hasSize(1);
+        assertThat(completeEvents.get(0).agentRole()).isEqualTo("Manager");
+        assertThat(completeEvents.get(0).taskOutput().getRaw()).isEqualTo("Final synthesis");
     }
 }
