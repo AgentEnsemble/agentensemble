@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.vanniktech.publish)
 }
 
+java {
+    withJavadocJar()
+}
+
 dependencies {
     // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
