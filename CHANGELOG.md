@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.7.1...v0.8.0) (2026-03-03)
+
+
+### Features
+
+* add .input() builder method for template variable inputs ([#68](https://github.com/AgentEnsemble/agentensemble/issues/68)) ([8524707](https://github.com/AgentEnsemble/agentensemble/commit/85247078a6e0ea01426af33971ef6a867e0335db))
+
 ## [0.7.1](https://github.com/AgentEnsemble/agentensemble/compare/v0.7.0...v0.7.1) (2026-03-03)
 
 
