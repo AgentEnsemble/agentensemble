@@ -179,12 +179,20 @@ class MemoryContextTest {
 
     @Test
     void testRecord_withoutLongTerm_doesNotCallStore() {
+        // Use a context configured with short-term only (no long-term), and verify a
+        // separately created LTM mock (representing a different, unwired store) is
+        // never called.
         LongTermMemory ltm = mock(LongTermMemory.class);
-        MemoryContext ctx = MemoryContext.disabled();
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        // ctx does NOT include ltm -- using short-term only
+        MemoryContext ctx = MemoryContext.from(config);
 
         ctx.record(taskOutput("Content", "Agent", "Task"));
 
+        // ltm was never wired into ctx, so store() should never be called
         verify(ltm, never()).store(any(MemoryEntry.class));
+        // verify short-term was still recorded
+        assertThat(ctx.getShortTermEntries()).hasSize(1);
     }
 
     // ========================

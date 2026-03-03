@@ -6,6 +6,9 @@ import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.exception.AgentExecutionException;
+import net.agentensemble.exception.MaxIterationsExceededException;
+import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
@@ -113,12 +116,26 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             // 5. Execute the manager (ReAct loop: it calls delegateTask for each worker task)
             // The manager itself does not participate in shared memory (it is a meta-orchestrator)
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
-            TaskOutput managerOutput = agentExecutor.execute(managerTask, List.of(), verbose,
-                    MemoryContext.disabled());
+            TaskOutput managerOutput;
+            try {
+                managerOutput = agentExecutor.execute(managerTask, List.of(), verbose,
+                        MemoryContext.disabled());
+            } catch (AgentExecutionException | MaxIterationsExceededException e) {
+                // Wrap with partial outputs so callers can recover completed worker results
+                List<TaskOutput> partial = delegateTool.getDelegatedOutputs();
+                log.error("Manager agent failed after {} delegations: {}",
+                        partial.size(), e.getMessage(), e);
+                throw new TaskExecutionException(
+                        "Hierarchical workflow manager failed: " + e.getMessage(),
+                        managerTask.getDescription(),
+                        MANAGER_ROLE,
+                        partial,
+                        e);
+            }
             log.info("Manager agent completed | Delegations: {} | Duration: {}",
                     delegateTool.getDelegatedOutputs().size(), managerOutput.getDuration());
 
-            // 5. Assemble output: worker outputs first, manager final output last
+            // 6. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
             allOutputs.add(managerOutput);
 

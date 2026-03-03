@@ -86,15 +86,14 @@ class EnsembleTest {
     }
 
     // ========================
-    // Validation: circular context
+    // Validation: context ordering (forward reference)
     // ========================
 
     @Test
-    void testRun_withMutualContextDependency_throwsValidation() {
-        // With immutable objects, true A->B->A cycles cannot be constructed.
-        // This test verifies that a scenario where two tasks mutually reference
-        // each other (approximated via toBuilder) is caught by context ordering:
-        // taskAWithCircle depends on taskB but appears before taskB in the list.
+    void testRun_withForwardContextReference_throwsValidation() {
+        // True A->B->A cycles cannot be constructed with immutable Task objects.
+        // This test verifies that a forward reference (taskA depends on taskB, but
+        // taskA appears before taskB in the list) is caught by validateContextOrdering.
         var researcher = agent("Researcher");
         var taskA = task("Task A", researcher);
         var taskB = taskA.toBuilder()
@@ -190,6 +189,90 @@ class EnsembleTest {
         // No ValidationException thrown means validation succeeded
         assertThatThrownBy(ensemble::run)
                 .isNotInstanceOf(ValidationException.class);
+    }
+
+    // ========================
+    // Validation: hierarchical roles
+    // ========================
+
+    @Test
+    void testRun_hierarchical_withReservedManagerRole_throwsValidation() {
+        var manager = agent("Manager");    // reserved role
+        var worker = agent("Worker");
+        var taskA = task("Task A", manager);
+        var taskB = task("Task B", worker);
+
+        var ensemble = Ensemble.builder()
+                .agent(manager)
+                .agent(worker)
+                .task(taskA)
+                .task(taskB)
+                .workflow(Workflow.HIERARCHICAL)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Manager")
+                .hasMessageContaining("reserved");
+    }
+
+    @Test
+    void testRun_hierarchical_withDuplicateRoles_throwsValidation() {
+        var researcher1 = agent("Researcher");
+        var researcher2 = agent("Researcher");  // duplicate role
+        var taskA = task("Task A", researcher1);
+        var taskB = task("Task B", researcher2);
+
+        var ensemble = Ensemble.builder()
+                .agent(researcher1)
+                .agent(researcher2)
+                .task(taskA)
+                .task(taskB)
+                .workflow(Workflow.HIERARCHICAL)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Duplicate")
+                .hasMessageContaining("Researcher");
+    }
+
+    @Test
+    void testRun_hierarchical_withZeroManagerMaxIterations_throwsValidation() {
+        var worker = agent("Worker");
+        var taskA = task("Task A", worker);
+
+        var ensemble = Ensemble.builder()
+                .agent(worker)
+                .task(taskA)
+                .workflow(Workflow.HIERARCHICAL)
+                .managerMaxIterations(0)
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("managerMaxIterations");
+    }
+
+    @Test
+    void testRun_contextTask_notInEnsemble_givesHelpfulMessage() {
+        var researcher = agent("Researcher");
+        var externalTask = task("External task not in ensemble", researcher);
+        var mainTask = Task.builder()
+                .description("Main task")
+                .expectedOutput("Output")
+                .agent(researcher)
+                .context(List.of(externalTask))
+                .build();
+
+        var ensemble = Ensemble.builder()
+                .agent(researcher)
+                .task(mainTask)          // externalTask not added to ensemble
+                .build();
+
+        assertThatThrownBy(ensemble::run)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("not in the ensemble");
     }
 
     // ========================

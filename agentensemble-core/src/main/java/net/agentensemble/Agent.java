@@ -102,6 +102,10 @@ public class Agent {
             validateMaxIterations();
             validateTools();
             tools = List.copyOf(tools);
+            // Normalize responseFormat: null is treated as empty string to avoid NPE in prompt building
+            if (responseFormat == null) {
+                responseFormat = "";
+            }
             return new Agent(role, goal, background, tools, llm, allowDelegation, verbose,
                     maxIterations, responseFormat);
         }
@@ -120,7 +124,7 @@ public class Agent {
 
         private void validateLlm() {
             if (llm == null) {
-                throw new ValidationException("Agent llm must not be null");
+                throw new ValidationException("Agent LLM must not be null");
             }
         }
 

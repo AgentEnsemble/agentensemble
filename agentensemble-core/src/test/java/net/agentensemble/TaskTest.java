@@ -179,6 +179,45 @@ class TaskTest {
     }
 
     // ========================
+    // Validation: context
+    // ========================
+
+    @Test
+    void testBuild_withNullContextElement_throwsValidation() {
+        // List.of() doesn't allow nulls but we can use Arrays.asList for testing
+        var ctx = Task.builder().description("Ctx").expectedOutput("Out").agent(testAgent).build();
+        assertThatThrownBy(() -> Task.builder()
+                .description("Main task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .context(java.util.Arrays.asList(ctx, null))
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("context")
+                .hasMessageContaining("null");
+    }
+
+    @Test
+    void testBuild_withSelfReference_throwsValidation() {
+        // Create a task that we will reuse in its own context via toBuilder
+        var baseTask = Task.builder()
+                .description("Self-referencing task")
+                .expectedOutput("Self output")
+                .agent(testAgent)
+                .build();
+
+        // toBuilder produces a task with identical field values -- context.contains() checks value equality
+        assertThatThrownBy(() -> Task.builder()
+                .description(baseTask.getDescription())
+                .expectedOutput(baseTask.getExpectedOutput())
+                .agent(baseTask.getAgent())
+                .context(List.of(baseTask))
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("cannot reference itself");
+    }
+
+    // ========================
     // Immutability
     // ========================
 

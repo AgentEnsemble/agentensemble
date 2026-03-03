@@ -21,7 +21,7 @@ Ensemble.builder()
 
 ### Execution Order
 
-Tasks run in list order. The ensemble validates at build time that context tasks always appear before the tasks that reference them. If this ordering is violated, a `ValidationException` is thrown immediately -- not at run time.
+Tasks run in list order. The ensemble validates, when `run()` is called, that context tasks always appear before the tasks that reference them. This validation happens before any task execution or LLM calls. If this ordering is violated, a `ValidationException` is thrown at run time during `run()`.
 
 ### Context Injection
 

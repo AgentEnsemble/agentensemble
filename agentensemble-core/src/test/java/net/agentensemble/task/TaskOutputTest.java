@@ -59,4 +59,67 @@ class TaskOutputTest {
         // @Value ensures no setters exist -- verified via compilation
         assertThat(output).isNotNull();
     }
+
+    // ========================
+    // Null field handling (Lombok @Builder does not enforce non-null by default)
+    // ========================
+
+    @Test
+    void testBuild_withNullRaw_buildsWithNullValue() {
+        // TaskOutput uses Lombok @Builder without explicit null validation.
+        // This test documents the current behavior and ensures callers
+        // of getRaw() handle null gracefully (as AgentPromptBuilder now does).
+        var output = TaskOutput.builder()
+                .raw(null)
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build();
+
+        assertThat(output.getRaw()).isNull();
+    }
+
+    @Test
+    void testBuild_withNullTaskDescription_buildsWithNullValue() {
+        var output = TaskOutput.builder()
+                .raw("output")
+                .taskDescription(null)
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build();
+
+        assertThat(output.getTaskDescription()).isNull();
+    }
+
+    @Test
+    void testBuild_withNullAgentRole_buildsWithNullValue() {
+        var output = TaskOutput.builder()
+                .raw("output")
+                .taskDescription("task")
+                .agentRole(null)
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .toolCallCount(0)
+                .build();
+
+        assertThat(output.getAgentRole()).isNull();
+    }
+
+    @Test
+    void testBuild_defaultToolCallCount_isZero() {
+        // When toolCallCount is not set, it defaults to 0 (primitive int default)
+        var output = TaskOutput.builder()
+                .raw("output")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .build();
+
+        assertThat(output.getToolCallCount()).isZero();
+    }
 }
