@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="1 0 0 0 0
+                0 1 0 0 0
+                0 0 1 0 0
+                0 0 0 .35 0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Icon (network crown) -->
+  <g filter="url(#softGlow)" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer arcs -->
+    <path d="M112 252 C 160 160, 208 124, 256 112 C 304 124, 352 160, 400 252" />
+    <path d="M132 352 C 200 356, 312 356, 380 352" />
+    <!-- Inner weave -->
+    <path d="M140 248 C 190 290, 232 320, 256 336 C 280 320, 322 290, 372 248" />
+    <path d="M176 328 C 206 280, 230 232, 256 196 C 282 232, 306 280, 336 328" />
+    <!-- Struts to nodes -->
+    <path d="M112 252 L 176 328" />
+    <path d="M400 252 L 336 328" />
+    <path d="M256 112 L 256 196" />
+    <path d="M140 248 L 256 196" />
+    <path d="M372 248 L 256 196" />
+  </g>
+
+  <!-- Nodes -->
+  <g filter="url(#softGlow)" fill="white">
+    <circle cx="256" cy="112" r="30"/>
+    <circle cx="112" cy="252" r="28"/>
+    <circle cx="400" cy="252" r="28"/>
+    <circle cx="176" cy="328" r="28"/>
+    <circle cx="336" cy="328" r="28"/>
+  </g>
+</svg>

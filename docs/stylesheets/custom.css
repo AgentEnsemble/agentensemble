@@ -80,10 +80,10 @@
 
 /* ---------------------------------------------------------------------------
    Logo sizing
-   The horizontal PNG (mark + wordmark) is 256x80px @2x. Display at 40px
-   height so it is crisp on both standard and HiDPI (retina) screens.
+   White mark SVG displayed at 100px in the header.
 --------------------------------------------------------------------------- */
-.md-header__button.md-logo img {
-  height: 2.5rem;
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 100px;
   width: auto;
 }
