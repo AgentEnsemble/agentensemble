@@ -131,18 +131,27 @@ See [docs/design/10-concurrency.md](10-concurrency.md) for the full concurrency 
 
 ---
 
-## Phase 6: Structured Output
+## Phase 6: Structured Output (COMPLETE -- v0.6.0)
 
-**Goal**: Allow tasks to produce structured output (JSON, typed objects) instead of raw text.
+**Implemented**: `Task.outputType`, `Task.maxOutputRetries`, `TaskOutput.parsedOutput`,
+`TaskOutput.getParsedOutput(Class)`, `JsonSchemaGenerator`, `StructuredOutputParser`,
+`ParseResult`, `OutputParsingException`.
 
 ### How It Works
 
-- Task defines an `outputSchema` (JSON Schema or Java class)
-- After the agent produces raw text, the framework validates/parses it against the schema
-- If parsing fails, the framework asks the agent to fix its output (retry loop)
-- Parsed output is available as a typed object in `TaskOutput`
+- `Task.outputType(Class<?>)` specifies the target Java class (records, POJOs, common JDK types).
+- `AgentPromptBuilder` injects an `## Output Format` section into the user prompt containing the
+  JSON schema derived from the class, plus explicit JSON-only instructions.
+- `AgentExecutor` runs a retry loop after the main execution:
+  1. `StructuredOutputParser.extractJson(raw)` -- extracts JSON from the response, handling plain
+     JSON, markdown fences, and prose-embedded JSON.
+  2. `StructuredOutputParser.parse(json, type)` -- deserializes via Jackson (`FAIL_ON_UNKNOWN_PROPERTIES = false`).
+  3. On failure: sends a correction prompt to the LLM showing the error and schema; retries up to
+     `Task.maxOutputRetries` times (default: 3).
+  4. On exhaustion: throws `OutputParsingException` with raw output, parse errors, and attempt count.
+- Parsed output is stored in `TaskOutput.parsedOutput`; access via `getParsedOutput(Class<T>)`.
 
-### API Extension
+### Implemented API
 
 ```java
 record ResearchReport(String title, List<String> findings, String conclusion) {}
@@ -151,12 +160,20 @@ var task = Task.builder()
     .description("Research AI trends")
     .expectedOutput("A structured research report")
     .agent(researcher)
-    .outputType(ResearchReport.class)
+    .outputType(ResearchReport.class)   // required JSON schema injected into prompt
+    .maxOutputRetries(3)               // default; use 0 to disable retries
     .build();
 
 // After execution:
 ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
 ```
+
+### Deferred to a Future Release
+
+- Generic collection types as top-level output (`List<MyRecord>` -- `Class<?>` cannot carry generic info).
+  Workaround: wrap in a record: `record Results(List<MyRecord> items) {}`.
+- Setting `ResponseFormat.JSON` on `ChatRequest` to use native JSON mode on models that support it
+  (would require detecting model capability at runtime). Prompt-based instruction works universally.
 
 ---
 

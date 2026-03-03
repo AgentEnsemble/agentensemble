@@ -266,4 +266,156 @@ class TaskTest {
         assertThat(modified.getContext()).hasSize(1);
         assertThat(original.getContext()).isEmpty();
     }
+
+    // ========================
+    // outputType defaults and happy paths
+    // ========================
+
+    record SimpleReport(String title, String summary) {}
+
+    @Test
+    void testBuild_withoutOutputType_defaultsToNull() {
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A report")
+                .agent(testAgent)
+                .build();
+
+        assertThat(task.getOutputType()).isNull();
+    }
+
+    @Test
+    void testBuild_withOutputType_record_succeeds() {
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A structured report")
+                .agent(testAgent)
+                .outputType(SimpleReport.class)
+                .build();
+
+        assertThat(task.getOutputType()).isEqualTo(SimpleReport.class);
+    }
+
+    @Test
+    void testBuild_withOutputType_string_succeeds() {
+        var task = Task.builder()
+                .description("Summarize this")
+                .expectedOutput("A summary")
+                .agent(testAgent)
+                .outputType(String.class)
+                .build();
+
+        assertThat(task.getOutputType()).isEqualTo(String.class);
+    }
+
+    // ========================
+    // outputType validation
+    // ========================
+
+    @Test
+    void testBuild_withOutputType_primitive_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .outputType(int.class)
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("primitive");
+    }
+
+    @Test
+    void testBuild_withOutputType_void_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .outputType(Void.class)
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Void");
+    }
+
+    @Test
+    void testBuild_withOutputType_array_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .outputType(String[].class)
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("array");
+    }
+
+    // ========================
+    // maxOutputRetries defaults and validation
+    // ========================
+
+    @Test
+    void testBuild_withoutMaxOutputRetries_defaultsToThree() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .build();
+
+        assertThat(task.getMaxOutputRetries()).isEqualTo(3);
+    }
+
+    @Test
+    void testBuild_withMaxOutputRetries_zero_succeeds() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .maxOutputRetries(0)
+                .build();
+
+        assertThat(task.getMaxOutputRetries()).isZero();
+    }
+
+    @Test
+    void testBuild_withMaxOutputRetries_positive_succeeds() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .maxOutputRetries(5)
+                .build();
+
+        assertThat(task.getMaxOutputRetries()).isEqualTo(5);
+    }
+
+    @Test
+    void testBuild_withMaxOutputRetries_negative_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .maxOutputRetries(-1)
+                .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("maxOutputRetries");
+    }
+
+    // ========================
+    // outputType with toBuilder
+    // ========================
+
+    @Test
+    void testToBuilder_preservesOutputType() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .outputType(SimpleReport.class)
+                .maxOutputRetries(2)
+                .build();
+
+        var copy = task.toBuilder().description("Updated task").build();
+
+        assertThat(copy.getOutputType()).isEqualTo(SimpleReport.class);
+        assertThat(copy.getMaxOutputRetries()).isEqualTo(2);
+    }
 }

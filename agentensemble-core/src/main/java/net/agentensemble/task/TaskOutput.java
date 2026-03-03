@@ -13,6 +13,10 @@ import java.time.Instant;
  * TaskOutput instances are immutable and carry the complete result alongside
  * tracing metadata (which agent produced it, when, and how many tool calls
  * were made).
+ *
+ * When the task was configured with {@code outputType}, the parsed Java object
+ * is available via {@link #getParsedOutput(Class)}. The raw LLM response is
+ * always available via {@link #getRaw()}.
  */
 @Builder
 @Value
@@ -35,4 +39,42 @@ public class TaskOutput {
 
     /** Number of tool invocations during execution. */
     int toolCallCount;
+
+    /**
+     * The parsed Java object when the task was configured with
+     * {@code outputType}. {@code null} when no structured output was requested
+     * or parsing was not performed.
+     */
+    Object parsedOutput;
+
+    /**
+     * The Java class that was used for structured output parsing.
+     * {@code null} when no structured output was requested.
+     */
+    Class<?> outputType;
+
+    /**
+     * Return the parsed output as the given type.
+     *
+     * @param type the expected class; must match the type the task was built with
+     * @param <T>  the target type
+     * @return the parsed object cast to {@code T}
+     * @throws IllegalStateException if no parsed output is available, or if
+     *                               the stored object is not an instance of {@code type}
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T getParsedOutput(Class<T> type) {
+        if (parsedOutput == null) {
+            throw new IllegalStateException(
+                    "No parsed output available. "
+                    + "Ensure the task was built with outputType(...) "
+                    + "and that parsing succeeded.");
+        }
+        if (!type.isInstance(parsedOutput)) {
+            throw new IllegalStateException(
+                    "Parsed output is of type " + parsedOutput.getClass().getName()
+                    + " but requested type " + type.getName() + " does not match.");
+        }
+        return type.cast(parsedOutput);
+    }
 }
