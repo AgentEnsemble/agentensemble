@@ -13,7 +13,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -178,21 +177,22 @@ class MemoryContextTest {
     }
 
     @Test
-    void testRecord_withoutLongTerm_doesNotCallStore() {
-        // Use a context configured with short-term only (no long-term), and verify a
-        // separately created LTM mock (representing a different, unwired store) is
-        // never called.
-        LongTermMemory ltm = mock(LongTermMemory.class);
+    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
+        // A MemoryContext configured with short-term only must not route records to any
+        // long-term store. Assert on the observable state rather than using an unwired mock,
+        // which would make verify(mock, never()) vacuously true regardless of behavior.
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
-        // ctx does NOT include ltm -- using short-term only
         MemoryContext ctx = MemoryContext.from(config);
+
+        // No long-term memory is configured
+        assertThat(ctx.hasLongTerm()).isFalse();
 
         ctx.record(taskOutput("Content", "Agent", "Task"));
 
-        // ltm was never wired into ctx, so store() should never be called
-        verify(ltm, never()).store(any(MemoryEntry.class));
-        // verify short-term was still recorded
+        // Short-term was recorded
         assertThat(ctx.getShortTermEntries()).hasSize(1);
+        // Long-term query returns empty (no long-term store)
+        assertThat(ctx.queryLongTerm("Content")).isEmpty();
     }
 
     // ========================

@@ -350,12 +350,18 @@ public class Ensemble {
             return;
         }
 
-        // For sequential workflow: each context task must appear earlier in the tasks list
-        List<Task> executedSoFar = new ArrayList<>();
+        // Use identity-based membership to be consistent with resolveTasks() and
+        // validateAgentMembership(): two Task objects with identical field values must
+        // be treated as distinct tasks. A value-equal but identity-distinct context task
+        // would pass equals()-based validation but then fail remapping in resolveTasks().
+        Set<Task> executedSoFar = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Task> ensureTaskSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        ensureTaskSet.addAll(tasks);
+
         for (Task task : tasks) {
             for (Task contextTask : task.getContext()) {
                 if (!executedSoFar.contains(contextTask)) {
-                    boolean inEnsembleTasks = tasks.contains(contextTask);
+                    boolean inEnsembleTasks = ensureTaskSet.contains(contextTask);
                     String message = inEnsembleTasks
                             ? "Task '" + task.getDescription()
                               + "' references context task '" + contextTask.getDescription()

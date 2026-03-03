@@ -31,7 +31,7 @@ public final class ToolResult {
     /**
      * Create a failure tool result.
      *
-     * @param errorMessage description of what went wrong; must not be null
+     * @param errorMessage description of what went wrong; null is normalized to a default message
      * @return a failed ToolResult
      */
     public static ToolResult failure(String errorMessage) {
