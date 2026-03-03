@@ -11,7 +11,7 @@ mockito          = "5.22.0"
 logback          = "1.5.32"
 spotless         = "8.3.0"
 errorprone       = "5.1.0"
-errorprone-core  = "2.36.0"
+errorprone-core  = "2.48.0"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
