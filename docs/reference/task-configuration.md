@@ -8,6 +8,8 @@ All fields available on `Task.builder()`.
 | `expectedOutput` | `String` | Yes | -- | What the output should look like. Quality guidance for the agent. Supports `{variable}` placeholders. |
 | `agent` | `Agent` | Yes | -- | The agent assigned to execute this task. |
 | `context` | `List<Task>` | No | `[]` | Prior tasks whose outputs are injected into this task's agent prompt. Sequential workflow only. |
+| `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON and the result is parsed automatically. Supported: records, POJOs, common JDK types. Unsupported: primitives, void, arrays. |
+| `maxOutputRetries` | `int` | No | `3` | Number of retry attempts if structured output parsing fails. `0` disables retries. Only meaningful when `outputType` is set. |
 
 ---
 
@@ -18,6 +20,8 @@ The following validations are applied at `build()` time:
 - `description` must not be null or blank
 - `expectedOutput` must not be null or blank
 - `agent` must not be null
+- `outputType` must not be a primitive, `void`, or a top-level array type (when set)
+- `maxOutputRetries` must be `>= 0`
 
 At `Ensemble.run()` time:
 - All context tasks must appear earlier in the ensemble's task list (sequential workflow)

@@ -382,6 +382,52 @@ See the [Delegation guide](docs/guides/delegation.md) for full details.
 
 ---
 
+## Structured Output
+
+Set `outputType` on a task to have the agent produce JSON that is automatically parsed into a typed Java object. The framework generates a schema from the class, injects it into the prompt, and retries if parsing fails.
+
+```java
+record ResearchReport(String title, List<String> findings, String conclusion) {}
+
+var researchTask = Task.builder()
+    .description("Research the latest AI trends")
+    .expectedOutput("A structured research report")
+    .agent(researcher)
+    .outputType(ResearchReport.class)  // agent prompted for JSON matching this schema
+    .maxOutputRetries(3)               // retry on parse failure (default: 3)
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher)
+    .task(researchTask)
+    .build()
+    .run();
+
+TaskOutput taskOutput = output.getTaskOutputs().get(0);
+
+// Raw text is always available
+System.out.println(taskOutput.getRaw());
+
+// Typed access to the parsed result
+ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
+System.out.println(report.title());
+report.findings().forEach(System.out::println);
+```
+
+**How it works:**
+1. The agent's prompt gains an `## Output Format` section with the JSON schema.
+2. The framework extracts JSON from the response (handles plain JSON, markdown fences, and prose).
+3. If parsing fails, a correction prompt is sent and the agent retries (up to `maxOutputRetries` times).
+4. On exhaustion, `OutputParsingException` is thrown with the full error history.
+
+**Supported types:** records, POJOs, `String`, numeric wrappers, `boolean`, `List<T>`, `Map<K,V>`, enums, nested objects.
+
+**Formatted text (no schema):** For Markdown or other formatted prose, use `Agent.responseFormat` and a descriptive `expectedOutput` -- no `outputType` needed. The `TaskOutput.raw` field always contains the complete response.
+
+See the [Structured Output example](docs/examples/structured-output.md) for full working code.
+
+---
+
 ## Task Configuration
 
 | Option | Type | Default | Description |
@@ -390,6 +436,8 @@ See the [Delegation guide](docs/guides/delegation.md) for full details.
 | `expectedOutput` | `String` | required | What the output should look like |
 | `agent` | `Agent` | required | The agent assigned to this task |
 | `context` | `List<Task>` | `[]` | Prior tasks whose outputs feed into this task (sequential workflow) |
+| `outputType` | `Class<?>` | `null` | Java class for structured output parsing. Records recommended. |
+| `maxOutputRetries` | `int` | `3` | Retry attempts when structured output parsing fails. `0` disables retries. |
 
 ---
 
@@ -590,7 +638,7 @@ Full user documentation is in [`docs/`](docs/):
 | ~~v0.3.0~~ | ~~Memory system (short-term, long-term, entity)~~ |
 | ~~v0.4.0~~ | ~~Agent delegation~~ |
 | ~~v0.5.0~~ | ~~Parallel workflow (virtual threads)~~ |
-| v0.6.0 | Structured output (typed output parsing) |
+| ~~v0.6.0~~ | ~~Structured output (typed output parsing)~~ |
 | v1.0.0 | Callbacks, streaming, guardrails, built-in tools |
 
 ---

@@ -28,6 +28,8 @@ Key properties:
 - **expectedOutput**: What the output should look like (quality guidance for the agent).
 - **agent**: The agent assigned to execute this task.
 - **context**: Other tasks whose outputs should be fed into this task as prior context.
+- **outputType**: Optional Java class to parse the agent's response into. When set, the agent is prompted to produce JSON matching the class schema, and the result is automatically deserialized. Access it with `taskOutput.getParsedOutput(MyRecord.class)`.
+- **maxOutputRetries**: How many times to retry if structured output parsing fails (default: 3).
 
 See the [Task Configuration reference](../reference/task-configuration.md).
 

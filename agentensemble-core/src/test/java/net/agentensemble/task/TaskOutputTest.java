@@ -118,4 +118,96 @@ class TaskOutputTest {
 
         assertThat(output.getToolCallCount()).isZero();
     }
+
+    // ========================
+    // parsedOutput and outputType fields
+    // ========================
+
+    record SampleReport(String title, String summary) {}
+
+    @Test
+    void testBuild_withoutParsedOutput_defaultsToNull() {
+        var output = TaskOutput.builder()
+                .raw("output")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .build();
+
+        assertThat(output.getParsedOutput()).isNull();
+        assertThat(output.getOutputType()).isNull();
+    }
+
+    @Test
+    void testBuild_withParsedOutput_storesCorrectly() {
+        var report = new SampleReport("AI Trends", "AI is growing");
+        var output = TaskOutput.builder()
+                .raw("{\"title\": \"AI Trends\", \"summary\": \"AI is growing\"}")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .parsedOutput(report)
+                .outputType(SampleReport.class)
+                .build();
+
+        assertThat(output.getParsedOutput()).isSameAs(report);
+        assertThat(output.getOutputType()).isEqualTo(SampleReport.class);
+    }
+
+    // ========================
+    // getParsedOutput(Class<T>)
+    // ========================
+
+    @Test
+    void testGetParsedOutput_typedAccess_succeeds() {
+        var report = new SampleReport("Title", "Summary");
+        var output = TaskOutput.builder()
+                .raw("{\"title\": \"Title\", \"summary\": \"Summary\"}")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .parsedOutput(report)
+                .outputType(SampleReport.class)
+                .build();
+
+        SampleReport result = output.getParsedOutput(SampleReport.class);
+        assertThat(result.title()).isEqualTo("Title");
+        assertThat(result.summary()).isEqualTo("Summary");
+    }
+
+    @Test
+    void testGetParsedOutput_noParsedOutput_throwsIllegalState() {
+        var output = TaskOutput.builder()
+                .raw("raw text")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .build();
+
+        assertThatThrownBy(() -> output.getParsedOutput(SampleReport.class))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No parsed output available");
+    }
+
+    @Test
+    void testGetParsedOutput_wrongType_throwsIllegalState() {
+        var report = new SampleReport("Title", "Summary");
+        var output = TaskOutput.builder()
+                .raw("{}")
+                .taskDescription("task")
+                .agentRole("agent")
+                .completedAt(Instant.now())
+                .duration(Duration.ofSeconds(1))
+                .parsedOutput(report)
+                .outputType(SampleReport.class)
+                .build();
+
+        assertThatThrownBy(() -> output.getParsedOutput(String.class))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("does not match");
+    }
 }
