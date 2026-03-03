@@ -1,16 +1,15 @@
 package net.agentensemble.memory;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class ShortTermMemoryTest {
 
@@ -69,8 +68,7 @@ class ShortTermMemoryTest {
 
     @Test
     void testAdd_nullEntry_throwsIllegalArgumentException() {
-        assertThatThrownBy(() -> memory.add(null))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> memory.add(null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     // ========================
@@ -82,8 +80,7 @@ class ShortTermMemoryTest {
         memory.add(entry("content", "Agent"));
         var entries = memory.getEntries();
 
-        assertThatThrownBy(() -> entries.add(null))
-                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> entries.add(null)).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -114,7 +111,7 @@ class ShortTermMemoryTest {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < threadCount; i++) {
                 final int idx = i;
-                executor.submit(() -> {
+                var unused = executor.submit(() -> {
                     try {
                         start.await();
                         memory.add(entry("entry-" + idx, "Agent-" + idx));
@@ -144,7 +141,7 @@ class ShortTermMemoryTest {
             // Writer threads
             for (int i = 0; i < threadCount; i++) {
                 final int idx = i;
-                executor.submit(() -> {
+                var unused = executor.submit(() -> {
                     try {
                         start.await();
                         memory.add(entry("entry-" + idx, "Agent-" + idx));
@@ -157,7 +154,7 @@ class ShortTermMemoryTest {
             }
             // Reader threads
             for (int i = 0; i < threadCount; i++) {
-                executor.submit(() -> {
+                var unused2 = executor.submit(() -> {
                     try {
                         start.await();
                         // Reading while writers are active must not throw

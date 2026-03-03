@@ -1,17 +1,16 @@
 package net.agentensemble;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.List;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
 class AgentTest {
 
@@ -112,10 +111,10 @@ class AgentTest {
     @Test
     void testBuild_withNullRole_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role(null)
-                .goal("Find information")
-                .llm(mockLlm)
-                .build())
+                        .role(null)
+                        .goal("Find information")
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("role");
     }
@@ -123,10 +122,10 @@ class AgentTest {
     @Test
     void testBuild_withBlankRole_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("   ")
-                .goal("Find information")
-                .llm(mockLlm)
-                .build())
+                        .role("   ")
+                        .goal("Find information")
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("role");
     }
@@ -134,10 +133,10 @@ class AgentTest {
     @Test
     void testBuild_withEmptyRole_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("")
-                .goal("Find information")
-                .llm(mockLlm)
-                .build())
+                        .role("")
+                        .goal("Find information")
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("role");
     }
@@ -149,10 +148,10 @@ class AgentTest {
     @Test
     void testBuild_withNullGoal_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal(null)
-                .llm(mockLlm)
-                .build())
+                        .role("Researcher")
+                        .goal(null)
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("goal");
     }
@@ -160,10 +159,10 @@ class AgentTest {
     @Test
     void testBuild_withBlankGoal_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal("  ")
-                .llm(mockLlm)
-                .build())
+                        .role("Researcher")
+                        .goal("  ")
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("goal");
     }
@@ -175,10 +174,10 @@ class AgentTest {
     @Test
     void testBuild_withNullLlm_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal("Find information")
-                .llm(null)
-                .build())
+                        .role("Researcher")
+                        .goal("Find information")
+                        .llm(null)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("LLM");
     }
@@ -190,11 +189,11 @@ class AgentTest {
     @Test
     void testBuild_withZeroMaxIterations_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal("Find information")
-                .llm(mockLlm)
-                .maxIterations(0)
-                .build())
+                        .role("Researcher")
+                        .goal("Find information")
+                        .llm(mockLlm)
+                        .maxIterations(0)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("maxIterations");
     }
@@ -202,11 +201,11 @@ class AgentTest {
     @Test
     void testBuild_withNegativeMaxIterations_throwsValidation() {
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal("Find information")
-                .llm(mockLlm)
-                .maxIterations(-1)
-                .build())
+                        .role("Researcher")
+                        .goal("Find information")
+                        .llm(mockLlm)
+                        .maxIterations(-1)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("maxIterations");
     }
@@ -232,11 +231,11 @@ class AgentTest {
         var invalidTool = new Object(); // neither AgentTool nor @Tool-annotated
 
         assertThatThrownBy(() -> Agent.builder()
-                .role("Researcher")
-                .goal("Find information")
-                .tools(List.of(invalidTool))
-                .llm(mockLlm)
-                .build())
+                        .role("Researcher")
+                        .goal("Find information")
+                        .tools(List.of(invalidTool))
+                        .llm(mockLlm)
+                        .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Object");
     }
@@ -268,9 +267,7 @@ class AgentTest {
                 .llm(mockLlm)
                 .build();
 
-        var modified = original.toBuilder()
-                .verbose(true)
-                .build();
+        var modified = original.toBuilder().verbose(true).build();
 
         assertThat(modified.isVerbose()).isTrue();
         assertThat(original.isVerbose()).isFalse();
@@ -285,11 +282,19 @@ class AgentTest {
     private static AgentTool stubAgentTool(String name) {
         return new AgentTool() {
             @Override
-            public String name() { return name; }
+            public String name() {
+                return name;
+            }
+
             @Override
-            public String description() { return "A test tool"; }
+            public String description() {
+                return "A test tool";
+            }
+
             @Override
-            public ToolResult execute(String input) { return ToolResult.success("ok"); }
+            public ToolResult execute(String input) {
+                return ToolResult.success("ok");
+            }
         };
     }
 

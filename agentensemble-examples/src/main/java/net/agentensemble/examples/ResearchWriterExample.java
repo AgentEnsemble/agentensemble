@@ -1,6 +1,7 @@
 package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -8,8 +9,6 @@ import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Map;
 
 /**
  * Demonstrates a two-agent research and writing workflow.
@@ -40,8 +39,7 @@ public class ResearchWriterExample {
         String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
-                    "OPENAI_API_KEY environment variable is not set. "
-                    + "Please set it to your OpenAI API key.");
+                    "OPENAI_API_KEY environment variable is not set. " + "Please set it to your OpenAI API key.");
         }
 
         var model = OpenAiChatModel.builder()
@@ -109,7 +107,7 @@ public class ResearchWriterExample {
                         + "with an engaging title, introduction, body sections, and conclusion. "
                         + "The post should be ready to publish.")
                 .agent(writer)
-                .context(java.util.List.of(researchTask))  // Writer gets researcher's output as context
+                .context(java.util.List.of(researchTask)) // Writer gets researcher's output as context
                 .build();
 
         // ========================
@@ -146,7 +144,7 @@ public class ResearchWriterExample {
         System.out.println(output.getRaw());
 
         System.out.println("\n" + "=".repeat(60));
-        System.out.printf("Completed in %s | Total tool calls: %d%n",
-                output.getTotalDuration(), output.getTotalToolCalls());
+        System.out.printf(
+                "Completed in %s | Total tool calls: %d%n", output.getTotalDuration(), output.getTotalToolCalls());
     }
 }

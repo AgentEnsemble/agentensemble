@@ -1,5 +1,11 @@
 package net.agentensemble.workflow;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
@@ -13,13 +19,6 @@ import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 /**
  * Executes tasks one after another in list order.
@@ -63,15 +62,14 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     }
 
     @Override
-    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose,
-            MemoryContext memoryContext) {
+    public EnsembleOutput execute(List<Task> resolvedTasks, boolean verbose, MemoryContext memoryContext) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
 
         // Create the delegation context once for the entire run; all agents share it
-        DelegationContext delegationContext = DelegationContext.create(
-                agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
+        DelegationContext delegationContext =
+                DelegationContext.create(agents, maxDelegationDepth, memoryContext, agentExecutor, verbose);
 
         for (int i = 0; i < totalTasks; i++) {
             Task task = resolvedTasks.get(i);
@@ -82,34 +80,36 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
 
             try {
-                log.info("Task {}/{} starting | Description: {} | Agent: {}",
-                        taskIndex, totalTasks,
+                log.info(
+                        "Task {}/{} starting | Description: {} | Agent: {}",
+                        taskIndex,
+                        totalTasks,
                         truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
                         task.getAgent().getRole());
 
                 // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
-                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks,
-                        contextOutputs.size());
+                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
 
                 // Execute the task with delegation context -- delegation tool is injected
                 // automatically when the agent has allowDelegation=true
-                TaskOutput taskOutput = agentExecutor.execute(task, contextOutputs, verbose,
-                        memoryContext, delegationContext);
+                TaskOutput taskOutput =
+                        agentExecutor.execute(task, contextOutputs, verbose, memoryContext, delegationContext);
                 completedOutputs.put(task, taskOutput);
 
-                log.info("Task {}/{} completed | Duration: {} | Tool calls: {}",
-                        taskIndex, totalTasks, taskOutput.getDuration(),
+                log.info(
+                        "Task {}/{} completed | Duration: {} | Tool calls: {}",
+                        taskIndex,
+                        totalTasks,
+                        taskOutput.getDuration(),
                         taskOutput.getToolCallCount());
 
                 if (verbose) {
-                    log.info("Task {}/{} output preview: {}",
-                            taskIndex, totalTasks,
-                            truncate(taskOutput.getRaw(), 200));
+                    log.info(
+                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
                 } else {
-                    log.debug("Task {}/{} output preview: {}",
-                            taskIndex, totalTasks,
-                            truncate(taskOutput.getRaw(), 200));
+                    log.debug(
+                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
                 }
 
             } catch (AgentExecutionException | MaxIterationsExceededException e) {
@@ -130,7 +130,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
         Duration totalDuration = Duration.between(ensembleStartTime, Instant.now());
         List<TaskOutput> allOutputs = List.copyOf(completedOutputs.values());
         String finalOutput = allOutputs.isEmpty() ? "" : allOutputs.getLast().getRaw();
-        int totalToolCalls = allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+        int totalToolCalls =
+                allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)

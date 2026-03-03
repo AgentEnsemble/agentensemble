@@ -2,15 +2,14 @@ package net.agentensemble.delegation;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import java.util.ArrayList;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * A tool that allows an agent to delegate a subtask to another agent within the same ensemble.
@@ -75,10 +74,8 @@ public class AgentDelegationTool {
             + "Use this when you need specialised help from a team member. "
             + "Provide the target agent's role and a clear description of the subtask.")
     public String delegate(
-            @P("The role of the agent to delegate to. Must match one of the available agent roles.")
-            String agentRole,
-            @P("A clear description of the subtask for the target agent to complete.")
-            String taskDescription) {
+            @P("The role of the agent to delegate to. Must match one of the available agent roles.") String agentRole,
+            @P("A clear description of the subtask for the target agent to complete.") String taskDescription) {
 
         // Guard: null/blank parameters (the LLM may omit arguments)
         if (agentRole == null || agentRole.isBlank()) {
@@ -102,27 +99,27 @@ public class AgentDelegationTool {
         // Guard: self-delegation
         Agent target = findAgentByRole(agentRole);
         if (target != null && target.getRole().equalsIgnoreCase(callerRole)) {
-            String msg = "Cannot delegate to yourself (role: '" + callerRole
-                    + "'). Choose a different agent.";
+            String msg = "Cannot delegate to yourself (role: '" + callerRole + "'). Choose a different agent.";
             log.warn("{}", msg);
             return msg;
         }
 
         // Guard: unknown agent
         if (target == null) {
-            List<String> availableRoles = delegationContext.getPeerAgents()
-                    .stream()
+            List<String> availableRoles = delegationContext.getPeerAgents().stream()
                     .map(Agent::getRole)
                     .toList();
-            String msg = "Agent not found with role '" + agentRole
-                    + "'. Available roles: " + availableRoles;
+            String msg = "Agent not found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation from '{}' failed: {}", callerRole, msg);
             return msg;
         }
 
-        log.info("Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
-                callerRole, target.getRole(),
-                delegationContext.getCurrentDepth() + 1, delegationContext.getMaxDepth(),
+        log.info(
+                "Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
+                callerRole,
+                target.getRole(),
+                delegationContext.getCurrentDepth() + 1,
+                delegationContext.getMaxDepth(),
                 taskDescription.length() > 80 ? taskDescription.substring(0, 80) + "..." : taskDescription);
 
         // Save prior MDC values so nested delegations (A->B->C) restore the outer
@@ -142,17 +139,22 @@ public class AgentDelegationTool {
             // Descend: child runs at depth + 1
             DelegationContext childCtx = delegationContext.descend();
 
-            TaskOutput output = delegationContext.getAgentExecutor().execute(
-                    delegatedTask,
-                    List.of(),
-                    delegationContext.isVerbose(),
-                    delegationContext.getMemoryContext(),
-                    childCtx);
+            TaskOutput output = delegationContext
+                    .getAgentExecutor()
+                    .execute(
+                            delegatedTask,
+                            List.of(),
+                            delegationContext.isVerbose(),
+                            delegationContext.getMemoryContext(),
+                            childCtx);
 
             delegatedOutputs.add(output);
 
-            log.info("Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    target.getRole(), output.getToolCallCount(), output.getDuration());
+            log.info(
+                    "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
+                    target.getRole(),
+                    output.getToolCallCount(),
+                    output.getDuration());
 
             return output.getRaw();
 

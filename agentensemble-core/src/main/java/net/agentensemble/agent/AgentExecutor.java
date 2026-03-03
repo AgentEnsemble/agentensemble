@@ -10,6 +10,13 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.delegation.AgentDelegationTool;
@@ -26,14 +33,6 @@ import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Executes a single agent on a single task.
@@ -87,8 +86,8 @@ public class AgentExecutor {
      * @throws AgentExecutionException        if the LLM throws an error
      * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
      */
-    public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose,
-            MemoryContext memoryContext) {
+    public TaskOutput execute(
+            Task task, List<TaskOutput> contextOutputs, boolean verbose, MemoryContext memoryContext) {
         return execute(task, contextOutputs, verbose, memoryContext, null);
     }
 
@@ -112,8 +111,12 @@ public class AgentExecutor {
      * @throws AgentExecutionException        if the LLM throws an error
      * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
      */
-    public TaskOutput execute(Task task, List<TaskOutput> contextOutputs, boolean verbose,
-            MemoryContext memoryContext, DelegationContext delegationContext) {
+    public TaskOutput execute(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            boolean verbose,
+            MemoryContext memoryContext,
+            DelegationContext delegationContext) {
         // Normalize null memoryContext to disabled -- callers should prefer MemoryContext.disabled()
         // but defensive normalization here prevents NPE if null is passed directly.
         if (memoryContext == null) {
@@ -139,8 +142,11 @@ public class AgentExecutor {
         // Build effective tool list -- inject delegation tool when allowed
         List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext);
 
-        log.info("Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
-                agent.getRole(), effectiveTools.size(), agent.isAllowDelegation());
+        log.info(
+                "Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
+                agent.getRole(),
+                effectiveTools.size(),
+                agent.isAllowDelegation());
 
         // Resolve tools
         ResolvedTools resolvedTools = resolveTools(effectiveTools);
@@ -150,8 +156,7 @@ public class AgentExecutor {
 
         try {
             if (resolvedTools.hasTools()) {
-                finalResponse = executeWithTools(agent, task, systemPrompt, userPrompt,
-                        resolvedTools, toolCallCounter, effectiveVerbose);
+                finalResponse = executeWithTools(agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter);
             } else {
                 finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt);
                 log.debug("Agent '{}' completed (no tools)", agent.getRole());
@@ -161,12 +166,16 @@ public class AgentExecutor {
         } catch (Exception e) {
             throw new AgentExecutionException(
                     "Agent '" + agent.getRole() + "' failed: " + e.getMessage(),
-                    agent.getRole(), task.getDescription(), e);
+                    agent.getRole(),
+                    task.getDescription(),
+                    e);
         }
 
         if (finalResponse == null || finalResponse.isBlank()) {
-            log.warn("Agent '{}' returned empty response for task '{}'",
-                    agent.getRole(), truncate(task.getDescription(), 80));
+            log.warn(
+                    "Agent '{}' returned empty response for task '{}'",
+                    agent.getRole(),
+                    truncate(task.getDescription(), 80));
             finalResponse = finalResponse != null ? finalResponse : "";
         }
 
@@ -212,13 +221,14 @@ public class AgentExecutor {
      */
     private List<Object> buildEffectiveTools(Agent agent, DelegationContext delegationContext) {
         if (agent.isAllowDelegation() && delegationContext != null) {
-            AgentDelegationTool delegationTool =
-                    new AgentDelegationTool(agent.getRole(), delegationContext);
+            AgentDelegationTool delegationTool = new AgentDelegationTool(agent.getRole(), delegationContext);
             List<Object> tools = new ArrayList<>();
             tools.add(delegationTool);
             tools.addAll(agent.getTools());
-            log.debug("Agent '{}' delegation tool injected (depth {}/{})",
-                    agent.getRole(), delegationContext.getCurrentDepth(),
+            log.debug(
+                    "Agent '{}' delegation tool injected (depth {}/{})",
+                    agent.getRole(),
+                    delegationContext.getCurrentDepth(),
                     delegationContext.getMaxDepth());
             return tools;
         }
@@ -231,16 +241,19 @@ public class AgentExecutor {
 
     private String executeWithoutTools(Agent agent, String systemPrompt, String userPrompt) {
         ChatRequest request = ChatRequest.builder()
-                .messages(List.of(
-                        new SystemMessage(systemPrompt),
-                        new UserMessage(userPrompt)))
+                .messages(List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt)))
                 .build();
         ChatResponse response = agent.getLlm().chat(request);
         return response.aiMessage().text();
     }
 
-    private String executeWithTools(Agent agent, Task task, String systemPrompt, String userPrompt,
-            ResolvedTools resolvedTools, AtomicInteger toolCallCounter, boolean verbose) {
+    private String executeWithTools(
+            Agent agent,
+            Task task,
+            String systemPrompt,
+            String userPrompt,
+            ResolvedTools resolvedTools,
+            AtomicInteger toolCallCounter) {
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
@@ -270,14 +283,16 @@ public class AgentExecutor {
 
                         if (stopMessageCount >= MAX_STOP_MESSAGES) {
                             throw new MaxIterationsExceededException(
-                                    agent.getRole(), task.getDescription(),
-                                    maxIterations, toolCallCounter.get());
+                                    agent.getRole(), task.getDescription(), maxIterations, toolCallCounter.get());
                         }
 
-                        log.warn("Agent '{}' exceeded max iterations ({}). Stop message sent ({}/{}).",
-                                agent.getRole(), maxIterations, stopMessageCount, MAX_STOP_MESSAGES);
-                        messages.add(new ToolExecutionResultMessage(
-                                toolRequest.id(), toolRequest.name(), stopText));
+                        log.warn(
+                                "Agent '{}' exceeded max iterations ({}). Stop message sent ({}/{}).",
+                                agent.getRole(),
+                                maxIterations,
+                                stopMessageCount,
+                                MAX_STOP_MESSAGES);
+                        messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), stopText));
                     } else {
                         // Execute the tool and count only executed calls
                         toolCallCounter.incrementAndGet();
@@ -286,21 +301,22 @@ public class AgentExecutor {
                         long toolMs = Duration.between(toolStart, Instant.now()).toMillis();
 
                         if (toolResult != null && toolResult.startsWith("Error:")) {
-                            log.warn("Tool error: {}({}) -> {} [{}ms]",
+                            log.warn(
+                                    "Tool error: {}({}) -> {} [{}ms]",
                                     toolRequest.name(),
                                     truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
                                     truncate(toolResult, LOG_TRUNCATE_LENGTH),
                                     toolMs);
                         } else {
-                            log.info("Tool call: {}({}) -> {} [{}ms]",
+                            log.info(
+                                    "Tool call: {}({}) -> {} [{}ms]",
                                     toolRequest.name(),
                                     truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
                                     truncate(toolResult, LOG_TRUNCATE_LENGTH),
                                     toolMs);
                         }
 
-                        messages.add(new ToolExecutionResultMessage(
-                                toolRequest.id(), toolRequest.name(), toolResult));
+                        messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResult));
                     }
                 }
                 // Continue the loop for the next LLM response
@@ -362,8 +378,7 @@ public class AgentExecutor {
             // Check @Tool-annotated objects
             Object annotatedObj = annotatedObjectMap.get(toolName);
             if (annotatedObj != null) {
-                return LangChain4jToolAdapter.executeAnnotatedTool(annotatedObj, toolName,
-                        request.arguments());
+                return LangChain4jToolAdapter.executeAnnotatedTool(annotatedObj, toolName, request.arguments());
             }
 
             return "Error: Unknown tool '" + toolName + "'";
@@ -388,8 +403,7 @@ public class AgentExecutor {
      * @return the parsed object (never null on success)
      * @throws OutputParsingException if all parse attempts are exhausted
      */
-    private Object parseStructuredOutput(Agent agent, Task task,
-            String initialResponse, String systemPrompt) {
+    private Object parseStructuredOutput(Agent agent, Task task, String initialResponse, String systemPrompt) {
 
         List<String> parseErrors = new ArrayList<>();
         String currentResponse = initialResponse;
@@ -400,8 +414,11 @@ public class AgentExecutor {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             ParseResult<?> result = StructuredOutputParser.parse(currentResponse, outputType);
             if (result.isSuccess()) {
-                log.info("Agent '{}' structured output parsed successfully on attempt {}/{}",
-                        agent.getRole(), attempt + 1, maxRetries + 1);
+                log.info(
+                        "Agent '{}' structured output parsed successfully on attempt {}/{}",
+                        agent.getRole(),
+                        attempt + 1,
+                        maxRetries + 1);
                 return result.getValue();
             }
 
@@ -411,16 +428,18 @@ public class AgentExecutor {
                 break;
             }
 
-            log.warn("Agent '{}' structured output parse failed (attempt {}/{}): {}",
-                    agent.getRole(), attempt + 1, maxRetries + 1, result.getErrorMessage());
+            log.warn(
+                    "Agent '{}' structured output parse failed (attempt {}/{}): {}",
+                    agent.getRole(),
+                    attempt + 1,
+                    maxRetries + 1,
+                    result.getErrorMessage());
 
-            String correctionPrompt = buildStructuredOutputCorrectionPrompt(
-                    currentResponse, result.getErrorMessage(), schemaDescription);
+            String correctionPrompt =
+                    buildStructuredOutputCorrectionPrompt(currentResponse, result.getErrorMessage(), schemaDescription);
 
             ChatRequest retryRequest = ChatRequest.builder()
-                    .messages(List.of(
-                            new SystemMessage(systemPrompt),
-                            new UserMessage(correctionPrompt)))
+                    .messages(List.of(new SystemMessage(systemPrompt), new UserMessage(correctionPrompt)))
                     .build();
 
             ChatResponse retryResponse = agent.getLlm().chat(retryRequest);
@@ -434,7 +453,10 @@ public class AgentExecutor {
                         + truncate(task.getDescription(), 80)
                         + "' after " + parseErrors.size() + " attempt(s). "
                         + "Expected type: " + outputType.getSimpleName(),
-                currentResponse, outputType, parseErrors, parseErrors.size());
+                currentResponse,
+                outputType,
+                parseErrors,
+                parseErrors.size());
     }
 
     private static String buildStructuredOutputCorrectionPrompt(

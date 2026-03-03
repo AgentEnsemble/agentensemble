@@ -1,9 +1,8 @@
 package net.agentensemble.memory;
 
+import java.time.Instant;
 import lombok.Builder;
 import lombok.Value;
-
-import java.time.Instant;
 
 /**
  * An immutable record of a single memory -- a task output captured during

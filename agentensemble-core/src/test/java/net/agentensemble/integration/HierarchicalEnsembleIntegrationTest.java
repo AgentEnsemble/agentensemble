@@ -1,10 +1,18 @@
 package net.agentensemble.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -13,15 +21,6 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 /**
  * End-to-end integration tests for hierarchical ensemble execution.
  * Uses mocked LLMs to avoid real network calls.
@@ -29,21 +28,17 @@ import static org.mockito.Mockito.when;
 class HierarchicalEnsembleIntegrationTest {
 
     private ChatResponse textResponse(String text) {
-        return ChatResponse.builder()
-                .aiMessage(AiMessage.from(text))
-                .build();
+        return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }
 
     private ChatResponse delegateCallResponse(String agentRole, String taskDescription) {
         ToolExecutionRequest req = ToolExecutionRequest.builder()
                 .id("d-1")
                 .name("delegateTask")
-                .arguments("{\"agentRole\": \"" + agentRole + "\", "
-                        + "\"taskDescription\": \"" + taskDescription + "\"}")
+                .arguments(
+                        "{\"agentRole\": \"" + agentRole + "\", " + "\"taskDescription\": \"" + taskDescription + "\"}")
                 .build();
-        return ChatResponse.builder()
-                .aiMessage(AiMessage.from(req))
-                .build();
+        return ChatResponse.builder().aiMessage(AiMessage.from(req)).build();
     }
 
     // ========================
@@ -60,10 +55,16 @@ class HierarchicalEnsembleIntegrationTest {
                 .thenReturn(delegateCallResponse("Researcher", "Research AI trends"))
                 .thenReturn(textResponse("Final synthesis based on research"));
 
-        Agent researcher = Agent.builder().role("Researcher").goal("Research topics")
-                .llm(workerModel).build();
-        Task task = Task.builder().description("Research AI trends")
-                .expectedOutput("AI trend summary").agent(researcher).build();
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research topics")
+                .llm(workerModel)
+                .build();
+        Task task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("AI trend summary")
+                .agent(researcher)
+                .build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(researcher)
@@ -90,12 +91,23 @@ class HierarchicalEnsembleIntegrationTest {
                 .thenReturn(delegateCallResponse("Writer", "Write about AI trends"))
                 .thenReturn(textResponse("Comprehensive final answer"));
 
-        Agent researcher = Agent.builder().role("Researcher").goal("Research").llm(workerModel).build();
-        Agent writer = Agent.builder().role("Writer").goal("Write").llm(workerModel).build();
-        Task researchTask = Task.builder().description("Research AI trends")
-                .expectedOutput("Research findings").agent(researcher).build();
-        Task writeTask = Task.builder().description("Write about AI trends")
-                .expectedOutput("Blog post").agent(writer).build();
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(workerModel)
+                .build();
+        Agent writer =
+                Agent.builder().role("Writer").goal("Write").llm(workerModel).build();
+        Task researchTask = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("Research findings")
+                .agent(researcher)
+                .build();
+        Task writeTask = Task.builder()
+                .description("Write about AI trends")
+                .expectedOutput("Blog post")
+                .agent(writer)
+                .build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(researcher)
@@ -123,15 +135,21 @@ class HierarchicalEnsembleIntegrationTest {
         // With no managerLlm, the first agent's LLM (sharedModel) is used for both.
         when(sharedModel.chat(any(ChatRequest.class)))
                 .thenReturn(delegateCallResponse("Researcher", "Research AI"))
-                .thenReturn(textResponse("Worker output"))   // worker (same model)
-                .thenReturn(textResponse("Final answer"));   // manager final
+                .thenReturn(textResponse("Worker output")) // worker (same model)
+                .thenReturn(textResponse("Final answer")); // manager final
 
         // Simulate: manager (sharedModel) calls delegate, worker (sharedModel) responds,
         // manager (sharedModel) synthesizes. The model responds differently based on call order.
-        Agent researcher = Agent.builder().role("Researcher").goal("Research")
-                .llm(sharedModel).build();
-        Task task = Task.builder().description("Research something")
-                .expectedOutput("Result").agent(researcher).build();
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(sharedModel)
+                .build();
+        Task task = Task.builder()
+                .description("Research something")
+                .expectedOutput("Result")
+                .agent(researcher)
+                .build();
 
         // No managerLlm set -- should default to first agent's LLM
         EnsembleOutput output = Ensemble.builder()
@@ -156,9 +174,13 @@ class HierarchicalEnsembleIntegrationTest {
                 .thenReturn(delegateCallResponse("Worker", "Do the work"))
                 .thenReturn(textResponse("Manager synthesized"));
 
-        Agent worker = Agent.builder().role("Worker").goal("Do work").llm(workerModel).build();
-        Task task = Task.builder().description("Do the work")
-                .expectedOutput("Work done").agent(worker).build();
+        Agent worker =
+                Agent.builder().role("Worker").goal("Do work").llm(workerModel).build();
+        Task task = Task.builder()
+                .description("Do the work")
+                .expectedOutput("Work done")
+                .agent(worker)
+                .build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(worker)
@@ -182,8 +204,13 @@ class HierarchicalEnsembleIntegrationTest {
 
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Done"));
 
-        Agent worker = Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task = Task.builder().description("Task").expectedOutput("Result").agent(worker).build();
+        Agent worker =
+                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
+        Task task = Task.builder()
+                .description("Task")
+                .expectedOutput("Result")
+                .agent(worker)
+                .build();
 
         // Should build and run without error with custom maxIterations
         EnsembleOutput output = Ensemble.builder()
@@ -209,24 +236,31 @@ class HierarchicalEnsembleIntegrationTest {
 
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        Agent worker = Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task1 = Task.builder().description("Task one").expectedOutput("Output one")
-                .agent(worker).build();
+        Agent worker =
+                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
+        Task task1 = Task.builder()
+                .description("Task one")
+                .expectedOutput("Output one")
+                .agent(worker)
+                .build();
         // task2 depends on task1 as context but comes BEFORE task1 in the list.
         // Sequential validation would reject this; hierarchical should allow it.
-        Task task2 = Task.builder().description("Task two").expectedOutput("Output two")
-                .agent(worker).context(List.of(task1)).build();
+        Task task2 = Task.builder()
+                .description("Task two")
+                .expectedOutput("Output two")
+                .agent(worker)
+                .context(List.of(task1))
+                .build();
 
-        assertThatCode(() ->
-                Ensemble.builder()
+        assertThatCode(() -> Ensemble.builder()
                         .agent(worker)
-                        .task(task2)  // task2 first, but it depends on task1 (listed after)
+                        .task(task2) // task2 first, but it depends on task1 (listed after)
                         .task(task1)
                         .workflow(Workflow.HIERARCHICAL)
                         .managerLlm(managerModel)
                         .build()
-                        .run()
-        ).doesNotThrowAnyException();
+                        .run())
+                .doesNotThrowAnyException();
     }
 
     // ========================
@@ -236,14 +270,15 @@ class HierarchicalEnsembleIntegrationTest {
     @Test
     void testHierarchicalWorkflow_emptyTasks_throwsValidation() {
         ChatModel managerModel = mock(ChatModel.class);
-        Agent agent = Agent.builder().role("Worker").goal("Work").llm(managerModel).build();
+        Agent agent =
+                Agent.builder().role("Worker").goal("Work").llm(managerModel).build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                .agent(agent)
-                .workflow(Workflow.HIERARCHICAL)
-                .managerLlm(managerModel)
-                .build()
-                .run())
+                        .agent(agent)
+                        .workflow(Workflow.HIERARCHICAL)
+                        .managerLlm(managerModel)
+                        .build()
+                        .run())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("task");
     }
@@ -252,15 +287,20 @@ class HierarchicalEnsembleIntegrationTest {
     void testHierarchicalWorkflow_emptyAgents_throwsValidation() {
         ChatModel managerModel = mock(ChatModel.class);
         ChatModel workerModel = mock(ChatModel.class);
-        Agent agent = Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task = Task.builder().description("Task").expectedOutput("Result").agent(agent).build();
+        Agent agent =
+                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
+        Task task = Task.builder()
+                .description("Task")
+                .expectedOutput("Result")
+                .agent(agent)
+                .build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                .task(task)
-                .workflow(Workflow.HIERARCHICAL)
-                .managerLlm(managerModel)
-                .build()
-                .run())
+                        .task(task)
+                        .workflow(Workflow.HIERARCHICAL)
+                        .managerLlm(managerModel)
+                        .build()
+                        .run())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("agent");
     }
@@ -276,8 +316,13 @@ class HierarchicalEnsembleIntegrationTest {
 
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        Agent worker = Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task = Task.builder().description("Task").expectedOutput("Result").agent(worker).build();
+        Agent worker =
+                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
+        Task task = Task.builder()
+                .description("Task")
+                .expectedOutput("Result")
+                .agent(worker)
+                .build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(worker)

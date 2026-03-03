@@ -1,15 +1,14 @@
 package net.agentensemble.config;
 
-import net.agentensemble.exception.PromptTemplateException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.agentensemble.exception.PromptTemplateException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Resolves {variable} template placeholders in strings.
@@ -37,6 +36,7 @@ public final class TemplateResolver {
      * user-provided template content extremely unlikely.
      */
     private static final String SENTINEL_PREFIX = "__AGENTENSEMBLE_ESCAPED_6f8b2c1e_17a3_4b9c_9a3b_42de8f8c9b2d_";
+
     private static final String SENTINEL_SUFFIX = "__";
 
     /** Matches {{word}} -- escaped variables. */
@@ -46,8 +46,8 @@ public final class TemplateResolver {
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{(\\w+)}");
 
     /** Pre-compiled pattern to restore sentinel tokens back to literal {name}. */
-    private static final Pattern SENTINEL_RESTORE_PATTERN = Pattern.compile(
-            Pattern.quote(SENTINEL_PREFIX) + "(\\w+)" + Pattern.quote(SENTINEL_SUFFIX));
+    private static final Pattern SENTINEL_RESTORE_PATTERN =
+            Pattern.compile(Pattern.quote(SENTINEL_PREFIX) + "(\\w+)" + Pattern.quote(SENTINEL_SUFFIX));
 
     /** Maximum length of template shown in error messages. */
     private static final int ERROR_TEMPLATE_MAX_LENGTH = 100;
@@ -74,12 +74,11 @@ public final class TemplateResolver {
 
         Map<String, String> effectiveInputs = inputs != null ? inputs : Map.of();
 
-        log.debug("Resolving template ({} chars) with {} input variables",
-                template.length(), effectiveInputs.size());
+        log.debug("Resolving template ({} chars) with {} input variables", template.length(), effectiveInputs.size());
 
         // Step 1: Protect escaped {{ }} by replacing with sentinels
-        String working = ESCAPED_PATTERN.matcher(template)
-                .replaceAll(m -> SENTINEL_PREFIX + m.group(1) + SENTINEL_SUFFIX);
+        String working =
+                ESCAPED_PATTERN.matcher(template).replaceAll(m -> SENTINEL_PREFIX + m.group(1) + SENTINEL_SUFFIX);
 
         // Step 2: Find all unescaped {variable} references (preserving order, deduplicating)
         Matcher matcher = VARIABLE_PATTERN.matcher(working);
@@ -102,7 +101,7 @@ public final class TemplateResolver {
                     : template;
             throw new PromptTemplateException(
                     "Missing template variables: " + missingVariables
-                    + ". Provide them in ensemble.run(inputs). Template: '" + truncated + "'",
+                            + ". Provide them in ensemble.run(inputs). Template: '" + truncated + "'",
                     missingVariables,
                     template);
         }
@@ -114,8 +113,7 @@ public final class TemplateResolver {
         }
 
         // Step 5: Restore escaped sentinels as literal {name}
-        working = SENTINEL_RESTORE_PATTERN.matcher(working)
-                .replaceAll(m -> "{" + m.group(1) + "}");
+        working = SENTINEL_RESTORE_PATTERN.matcher(working).replaceAll(m -> "{" + m.group(1) + "}");
 
         log.debug("Resolved {} variables in template", foundVariables.size());
 

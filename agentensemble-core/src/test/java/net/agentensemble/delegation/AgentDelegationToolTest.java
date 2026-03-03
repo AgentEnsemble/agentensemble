@@ -1,9 +1,17 @@
 package net.agentensemble.delegation;
 
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.response.ChatResponse;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
@@ -11,15 +19,6 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class AgentDelegationToolTest {
 
@@ -77,12 +76,15 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_returnsWorkerOutput() {
-        when(executor.execute(any(Task.class), any(), any(Boolean.class), any(MemoryContext.class),
-                any(DelegationContext.class)))
+        when(executor.execute(
+                        any(Task.class),
+                        any(),
+                        any(Boolean.class),
+                        any(MemoryContext.class),
+                        any(DelegationContext.class)))
                 .thenReturn(makeOutput("research complete"));
 
-        delegationContext = DelegationContext.create(List.of(researcher, writer), 3,
-                memoryContext, executor, false);
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, memoryContext, executor, false);
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
         String result = tool.delegate("Writer", "Write a blog post about AI");
@@ -92,8 +94,12 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_caseInsensitiveRoleMatch() {
-        when(executor.execute(any(Task.class), any(), any(Boolean.class), any(MemoryContext.class),
-                any(DelegationContext.class)))
+        when(executor.execute(
+                        any(Task.class),
+                        any(),
+                        any(Boolean.class),
+                        any(MemoryContext.class),
+                        any(DelegationContext.class)))
                 .thenReturn(makeOutput("output"));
 
         delegationContext = DelegationContext.create(List.of(writer), 3, memoryContext, executor, false);
@@ -106,13 +112,16 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_accumulates_delegatedOutputs() {
-        when(executor.execute(any(Task.class), any(), any(Boolean.class), any(MemoryContext.class),
-                any(DelegationContext.class)))
+        when(executor.execute(
+                        any(Task.class),
+                        any(),
+                        any(Boolean.class),
+                        any(MemoryContext.class),
+                        any(DelegationContext.class)))
                 .thenReturn(makeOutput("output 1"))
                 .thenReturn(makeOutput("output 2"));
 
-        delegationContext = DelegationContext.create(List.of(researcher, writer), 3,
-                memoryContext, executor, false);
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, memoryContext, executor, false);
 
         AgentDelegationTool tool = new AgentDelegationTool("Caller", delegationContext);
         tool.delegate("Researcher", "Task 1");
@@ -151,8 +160,7 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_agentNotFound_includesAvailableRoles() {
-        delegationContext = DelegationContext.create(List.of(researcher, writer), 3,
-                memoryContext, executor, false);
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, memoryContext, executor, false);
 
         AgentDelegationTool tool = new AgentDelegationTool("Caller", delegationContext);
         String result = tool.delegate("Unknown", "task");
@@ -178,8 +186,7 @@ class AgentDelegationToolTest {
     @Test
     void delegate_atDepthLimit_returnsLimitErrorMessage() {
         // Create a context already at the limit (depth = max)
-        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1,
-                memoryContext, executor, false)
+        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1, memoryContext, executor, false)
                 .descend(); // depth = 1 = max
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", limitedCtx);
@@ -190,8 +197,7 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_atDepthLimit_doesNotInvokeExecutor() {
-        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1,
-                memoryContext, executor, false)
+        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1, memoryContext, executor, false)
                 .descend();
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", limitedCtx);
@@ -203,8 +209,7 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_atDepthLimit_doesNotAccumulateOutputs() {
-        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1,
-                memoryContext, executor, false)
+        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1, memoryContext, executor, false)
                 .descend();
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", limitedCtx);
@@ -219,8 +224,7 @@ class AgentDelegationToolTest {
 
     @Test
     void delegate_toSelf_returnsErrorMessage() {
-        delegationContext = DelegationContext.create(List.of(researcher, writer), 3,
-                memoryContext, executor, false);
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, memoryContext, executor, false);
 
         // The calling agent's role is "Researcher" -- delegates to itself
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
@@ -241,15 +245,19 @@ class AgentDelegationToolTest {
         // Custom executor that captures the DelegationContext passed to it
         AgentExecutor capturingExecutor = new AgentExecutor() {
             @Override
-            public TaskOutput execute(Task task, List<TaskOutput> contextOutputs,
-                    boolean verbose, MemoryContext mc, DelegationContext dc) {
+            public TaskOutput execute(
+                    Task task,
+                    List<TaskOutput> contextOutputs,
+                    boolean verbose,
+                    MemoryContext mc,
+                    DelegationContext dc) {
                 capturedContext[0] = dc;
                 return output;
             }
         };
 
-        DelegationContext rootCtx = DelegationContext.create(List.of(writer), 3,
-                memoryContext, capturingExecutor, false);
+        DelegationContext rootCtx =
+                DelegationContext.create(List.of(writer), 3, memoryContext, capturingExecutor, false);
 
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", rootCtx);
         tool.delegate("Writer", "Write something");

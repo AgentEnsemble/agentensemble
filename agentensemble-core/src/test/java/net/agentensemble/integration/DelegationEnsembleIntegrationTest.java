@@ -1,6 +1,10 @@
 package net.agentensemble.integration;
 
-import dev.langchain4j.agent.tool.Tool;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -14,13 +18,6 @@ import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Integration tests for agent delegation in both sequential and hierarchical workflows.
@@ -64,21 +61,17 @@ class DelegationEnsembleIntegrationTest {
     }
 
     private ChatResponse textResponse(String text) {
-        return ChatResponse.builder()
-                .aiMessage(AiMessage.from(text))
-                .build();
+        return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }
 
     private ChatResponse delegationCallResponse(String agentRole, String taskDescription) {
         ToolExecutionRequest req = ToolExecutionRequest.builder()
                 .id("del-1")
                 .name("delegate")
-                .arguments("{\"agentRole\": \"" + agentRole + "\", "
-                        + "\"taskDescription\": \"" + taskDescription + "\"}")
+                .arguments(
+                        "{\"agentRole\": \"" + agentRole + "\", " + "\"taskDescription\": \"" + taskDescription + "\"}")
                 .build();
-        return ChatResponse.builder()
-                .aiMessage(AiMessage.from(req))
-                .build();
+        return ChatResponse.builder().aiMessage(AiMessage.from(req)).build();
     }
 
     // ========================
@@ -102,11 +95,8 @@ class DelegationEnsembleIntegrationTest {
 
         when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("research result"));
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(nonDelegatingAgent)
-                .task(task)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().agent(nonDelegatingAgent).task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("research result");
     }
@@ -284,10 +274,7 @@ class DelegationEnsembleIntegrationTest {
 
         when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("result"));
 
-        Ensemble ensemble = Ensemble.builder()
-                .agent(researcher)
-                .task(task)
-                .build();
+        Ensemble ensemble = Ensemble.builder().agent(researcher).task(task).build();
 
         assertThat(ensemble.getMaxDelegationDepth()).isEqualTo(3);
     }
@@ -329,11 +316,8 @@ class DelegationEnsembleIntegrationTest {
 
         when(analystModel.chat(any(ChatRequest.class))).thenReturn(textResponse("analysis result"));
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(plainAgent)
-                .task(task)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().agent(plainAgent).task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("analysis result");
     }
@@ -363,8 +347,7 @@ class DelegationEnsembleIntegrationTest {
         ToolExecutionRequest managerDelegation = ToolExecutionRequest.builder()
                 .id("mgr-1")
                 .name("delegateTask")
-                .arguments("{\"agentRole\": \"Lead Researcher\", "
-                        + "\"taskDescription\": \"Research AI trends\"}")
+                .arguments("{\"agentRole\": \"Lead Researcher\", " + "\"taskDescription\": \"Research AI trends\"}")
                 .build();
         when(managerModel.chat(any(ChatRequest.class)))
                 .thenReturn(ChatResponse.builder()

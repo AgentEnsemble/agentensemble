@@ -1,19 +1,18 @@
 package net.agentensemble.workflow;
 
-import dev.langchain4j.model.chat.ChatModel;
-import net.agentensemble.Agent;
-import net.agentensemble.Task;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
+import dev.langchain4j.model.chat.ChatModel;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
+import net.agentensemble.Agent;
+import net.agentensemble.Task;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for TaskDependencyGraph.
@@ -210,8 +209,7 @@ class TaskDependencyGraphTest {
     void testGetReadyTasks_nullCompleted_throwsIllegalArgumentException() {
         var t1 = task("T1");
         var graph = new TaskDependencyGraph(List.of(t1));
-        assertThatThrownBy(() -> graph.getReadyTasks(null))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> graph.getReadyTasks(null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     // ========================

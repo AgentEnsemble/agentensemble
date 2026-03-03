@@ -1,18 +1,5 @@
 package net.agentensemble.integration;
 
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import net.agentensemble.Agent;
-import net.agentensemble.Ensemble;
-import net.agentensemble.Task;
-import net.agentensemble.exception.OutputParsingException;
-import net.agentensemble.workflow.Workflow;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,6 +7,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.List;
+import net.agentensemble.Agent;
+import net.agentensemble.Ensemble;
+import net.agentensemble.Task;
+import net.agentensemble.exception.OutputParsingException;
+import net.agentensemble.workflow.Workflow;
+import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end integration tests for structured output (outputType) execution.
@@ -30,6 +29,7 @@ import static org.mockito.Mockito.when;
 class StructuredOutputIntegrationTest {
 
     record ResearchReport(String title, String summary) {}
+
     record FindingsReport(String topic, List<String> findings) {}
 
     private ChatResponse textResponse(String text) {
@@ -59,10 +59,7 @@ class StructuredOutputIntegrationTest {
                 .outputType(ResearchReport.class)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent).task(task)
-                .build()
-                .run();
+        var output = Ensemble.builder().agent(agent).task(task).build().run();
 
         // Raw output is preserved
         assertThat(output.getRaw()).contains("AI Trends");
@@ -83,11 +80,8 @@ class StructuredOutputIntegrationTest {
                 .thenReturn(textResponse(
                         "Here is the output:\n```json\n{\"title\": \"Report\", \"summary\": \"Details\"}\n```"));
 
-        var agent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(mockLlm)
-                .build();
+        var agent =
+                Agent.builder().role("Researcher").goal("Research").llm(mockLlm).build();
 
         var task = Task.builder()
                 .description("Research task")
@@ -96,8 +90,7 @@ class StructuredOutputIntegrationTest {
                 .outputType(ResearchReport.class)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent).task(task).build().run();
+        var output = Ensemble.builder().agent(agent).task(task).build().run();
 
         ResearchReport report = output.getTaskOutputs().get(0).getParsedOutput(ResearchReport.class);
         assertThat(report.title()).isEqualTo("Report");
@@ -117,11 +110,8 @@ class StructuredOutputIntegrationTest {
                 // Second call: valid JSON (retry)
                 .thenReturn(textResponse("{\"title\": \"AI Report\", \"summary\": \"AI trends\"}"));
 
-        var agent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(mockLlm)
-                .build();
+        var agent =
+                Agent.builder().role("Researcher").goal("Research").llm(mockLlm).build();
 
         var task = Task.builder()
                 .description("Research AI")
@@ -131,8 +121,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(3)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent).task(task).build().run();
+        var output = Ensemble.builder().agent(agent).task(task).build().run();
 
         // LLM was called twice: once for main execution, once for the retry
         verify(mockLlm, times(2)).chat(any(ChatRequest.class));
@@ -149,14 +138,10 @@ class StructuredOutputIntegrationTest {
     void testStructuredOutput_allRetriesExhausted_throwsOutputParsingException() {
         var mockLlm = mock(ChatModel.class);
         // Always returns invalid JSON
-        when(mockLlm.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("This is not JSON"));
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("This is not JSON"));
 
-        var agent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(mockLlm)
-                .build();
+        var agent =
+                Agent.builder().role("Researcher").goal("Research").llm(mockLlm).build();
 
         int maxRetries = 2;
         var task = Task.builder()
@@ -167,8 +152,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(maxRetries)
                 .build();
 
-        var ensemble = Ensemble.builder()
-                .agent(agent).task(task).build();
+        var ensemble = Ensemble.builder().agent(agent).task(task).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(OutputParsingException.class)
@@ -187,14 +171,10 @@ class StructuredOutputIntegrationTest {
     @Test
     void testStructuredOutput_zeroRetries_throwsOnFirstFailure() {
         var mockLlm = mock(ChatModel.class);
-        when(mockLlm.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("Not JSON"));
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Not JSON"));
 
-        var agent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(mockLlm)
-                .build();
+        var agent =
+                Agent.builder().role("Researcher").goal("Research").llm(mockLlm).build();
 
         var task = Task.builder()
                 .description("Research AI")
@@ -204,8 +184,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(0)
                 .build();
 
-        var ensemble = Ensemble.builder()
-                .agent(agent).task(task).build();
+        var ensemble = Ensemble.builder().agent(agent).task(task).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(OutputParsingException.class)
@@ -226,14 +205,10 @@ class StructuredOutputIntegrationTest {
     @Test
     void testNoOutputType_rawOutputOnly_noStructuredParsing() {
         var mockLlm = mock(ChatModel.class);
-        when(mockLlm.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("Plain text response"));
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Plain text response"));
 
-        var agent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(mockLlm)
-                .build();
+        var agent =
+                Agent.builder().role("Researcher").goal("Research").llm(mockLlm).build();
 
         var task = Task.builder()
                 .description("Research AI")
@@ -242,8 +217,7 @@ class StructuredOutputIntegrationTest {
                 // no outputType
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent).task(task).build().run();
+        var output = Ensemble.builder().agent(agent).task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Plain text response");
 
@@ -263,8 +237,7 @@ class StructuredOutputIntegrationTest {
                 .thenReturn(textResponse("{\"title\": \"Research\", \"summary\": \"Summary\"}"));
 
         var mockLlm2 = mock(ChatModel.class);
-        when(mockLlm2.chat(any(ChatRequest.class)))
-                .thenReturn(textResponse("A nicely written blog post."));
+        when(mockLlm2.chat(any(ChatRequest.class))).thenReturn(textResponse("A nicely written blog post."));
 
         var researcher = Agent.builder()
                 .role("Researcher")
@@ -272,11 +245,7 @@ class StructuredOutputIntegrationTest {
                 .llm(mockLlm1)
                 .build();
 
-        var writer = Agent.builder()
-                .role("Writer")
-                .goal("Write")
-                .llm(mockLlm2)
-                .build();
+        var writer = Agent.builder().role("Writer").goal("Write").llm(mockLlm2).build();
 
         var researchTask = Task.builder()
                 .description("Research AI trends")
@@ -294,8 +263,10 @@ class StructuredOutputIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(researcher).agent(writer)
-                .task(researchTask).task(writeTask)
+                .agent(researcher)
+                .agent(writer)
+                .task(researchTask)
+                .task(writeTask)
                 .build()
                 .run();
 
@@ -325,17 +296,9 @@ class StructuredOutputIntegrationTest {
         when(mockLlm2.chat(any(ChatRequest.class)))
                 .thenReturn(textResponse("{\"title\": \"Task2\", \"summary\": \"Summary2\"}"));
 
-        var agent1 = Agent.builder()
-                .role("Agent1")
-                .goal("Work")
-                .llm(mockLlm1)
-                .build();
+        var agent1 = Agent.builder().role("Agent1").goal("Work").llm(mockLlm1).build();
 
-        var agent2 = Agent.builder()
-                .role("Agent2")
-                .goal("Work")
-                .llm(mockLlm2)
-                .build();
+        var agent2 = Agent.builder().role("Agent2").goal("Work").llm(mockLlm2).build();
 
         var task1 = Task.builder()
                 .description("Task 1")
@@ -352,8 +315,10 @@ class StructuredOutputIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent1).agent(agent2)
-                .task(task1).task(task2)
+                .agent(agent1)
+                .agent(agent2)
+                .task(task1)
+                .task(task2)
                 .workflow(Workflow.PARALLEL)
                 .build()
                 .run();
@@ -362,9 +327,8 @@ class StructuredOutputIntegrationTest {
 
         // Both tasks should have parsed output
         var outputs = output.getTaskOutputs();
-        long parsedCount = outputs.stream()
-                .filter(t -> t.getParsedOutput() != null)
-                .count();
+        long parsedCount =
+                outputs.stream().filter(t -> t.getParsedOutput() != null).count();
         assertThat(parsedCount).isEqualTo(2);
     }
 }

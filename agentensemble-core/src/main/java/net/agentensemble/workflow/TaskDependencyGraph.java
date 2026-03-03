@@ -1,13 +1,11 @@
 package net.agentensemble.workflow;
 
-import net.agentensemble.Task;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import net.agentensemble.Task;
 
 /**
  * An immutable directed acyclic graph (DAG) of task dependencies.
@@ -29,13 +27,13 @@ public class TaskDependencyGraph {
      * Forward edges: task -> tasks that it depends on (its context list).
      * Used to determine if a task is ready (all dependencies are complete).
      */
-    private final Map<Task, List<Task>> dependencies;
+    private final IdentityHashMap<Task, List<Task>> dependencies;
 
     /**
      * Reverse edges: task -> tasks that depend on it.
      * Used to efficiently find which tasks to check after a task completes.
      */
-    private final Map<Task, List<Task>> dependents;
+    private final IdentityHashMap<Task, List<Task>> dependents;
 
     /**
      * Tasks with no dependencies -- they can start immediately.
@@ -146,9 +144,7 @@ public class TaskDependencyGraph {
             }
             // Check if all in-graph dependencies are complete
             List<Task> deps = dependencies.get(task);
-            boolean allDepsComplete = deps.stream()
-                    .filter(this::isInGraph)
-                    .allMatch(completed::contains);
+            boolean allDepsComplete = deps.stream().filter(this::isInGraph).allMatch(completed::contains);
             if (allDepsComplete) {
                 ready.add(task);
             }

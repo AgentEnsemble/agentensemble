@@ -1,12 +1,11 @@
 package net.agentensemble.memory;
 
-import net.agentensemble.task.TaskOutput;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import net.agentensemble.task.TaskOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Runtime memory state for a single ensemble run.
@@ -104,7 +103,8 @@ public class MemoryContext {
      * @return true if entity facts will be injected into prompts
      */
     public boolean hasEntityMemory() {
-        return config != null && config.getEntityMemory() != null
+        return config != null
+                && config.getEntityMemory() != null
                 && !config.getEntityMemory().isEmpty();
     }
 
@@ -133,8 +133,10 @@ public class MemoryContext {
 
         if (hasShortTerm()) {
             shortTermMemory.add(entry);
-            log.debug("Recorded short-term memory | Agent: '{}' | STM size: {}",
-                    output.getAgentRole(), shortTermMemory.size());
+            log.debug(
+                    "Recorded short-term memory | Agent: '{}' | STM size: {}",
+                    output.getAgentRole(),
+                    shortTermMemory.size());
         }
 
         if (hasLongTerm()) {

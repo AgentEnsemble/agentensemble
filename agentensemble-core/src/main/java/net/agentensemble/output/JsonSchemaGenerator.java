@@ -55,8 +55,7 @@ public final class JsonSchemaGenerator {
             throw new IllegalArgumentException("Type must not be null");
         }
         if (type.isPrimitive()) {
-            throw new IllegalArgumentException(
-                    "Top-level primitive types are not supported: " + type.getName());
+            throw new IllegalArgumentException("Top-level primitive types are not supported: " + type.getName());
         }
         if (type == Void.class) {
             throw new IllegalArgumentException("Void type is not supported");
@@ -82,8 +81,7 @@ public final class JsonSchemaGenerator {
         if (type == String.class || type == CharSequence.class) {
             return "\"string\"";
         }
-        if (type == Integer.class || type == Long.class || type == Short.class
-                || type == Byte.class) {
+        if (type == Integer.class || type == Long.class || type == Short.class || type == Byte.class) {
             return "\"integer\"";
         }
         if (type == Double.class || type == Float.class) {
@@ -93,9 +91,8 @@ public final class JsonSchemaGenerator {
             return "\"boolean\"";
         }
         if (type.isEnum()) {
-            String values = Stream.of(type.getEnumConstants())
-                    .map(Object::toString)
-                    .collect(Collectors.joining(", "));
+            String values =
+                    Stream.of(type.getEnumConstants()).map(Object::toString).collect(Collectors.joining(", "));
             return "\"enum: " + values + "\"";
         }
         if (Collection.class.isAssignableFrom(type)) {
@@ -123,7 +120,9 @@ public final class JsonSchemaGenerator {
         int i = 0;
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             sb.append(innerIndent)
-                    .append("\"").append(entry.getKey()).append("\": ")
+                    .append("\"")
+                    .append(entry.getKey())
+                    .append("\": ")
                     .append(entry.getValue());
             if (i < fields.size() - 1) {
                 sb.append(",");
@@ -139,8 +138,7 @@ public final class JsonSchemaGenerator {
         Map<String, String> result = new LinkedHashMap<>();
         if (type.isRecord()) {
             for (RecordComponent component : type.getRecordComponents()) {
-                result.put(component.getName(),
-                        typeToSchema(component.getGenericType(), depth));
+                result.put(component.getName(), typeToSchema(component.getGenericType(), depth));
             }
         } else {
             for (Field field : type.getDeclaredFields()) {
@@ -167,22 +165,25 @@ public final class JsonSchemaGenerator {
         if (clazz == String.class || clazz == CharSequence.class) {
             return "\"string\"";
         }
-        if (clazz == int.class || clazz == long.class || clazz == short.class
-                || clazz == byte.class || clazz == Integer.class || clazz == Long.class
-                || clazz == Short.class || clazz == Byte.class) {
+        if (clazz == int.class
+                || clazz == long.class
+                || clazz == short.class
+                || clazz == byte.class
+                || clazz == Integer.class
+                || clazz == Long.class
+                || clazz == Short.class
+                || clazz == Byte.class) {
             return "\"integer\"";
         }
-        if (clazz == double.class || clazz == float.class
-                || clazz == Double.class || clazz == Float.class) {
+        if (clazz == double.class || clazz == float.class || clazz == Double.class || clazz == Float.class) {
             return "\"number\"";
         }
         if (clazz == boolean.class || clazz == Boolean.class) {
             return "\"boolean\"";
         }
         if (clazz.isEnum()) {
-            String values = Stream.of(clazz.getEnumConstants())
-                    .map(Object::toString)
-                    .collect(Collectors.joining(", "));
+            String values =
+                    Stream.of(clazz.getEnumConstants()).map(Object::toString).collect(Collectors.joining(", "));
             return "\"enum: " + values + "\"";
         }
         if (clazz.isArray()) {
@@ -213,11 +214,7 @@ public final class JsonSchemaGenerator {
             if (Map.class.isAssignableFrom(rawClass)) {
                 Type[] typeArgs = pt.getActualTypeArguments();
                 if (typeArgs.length >= 2) {
-                    return "{"
-                            + typeToSchema(typeArgs[0], depth)
-                            + ": "
-                            + typeToSchema(typeArgs[1], depth)
-                            + "}";
+                    return "{" + typeToSchema(typeArgs[0], depth) + ": " + typeToSchema(typeArgs[1], depth) + "}";
                 }
                 return "{\"key\": \"value\"}";
             }

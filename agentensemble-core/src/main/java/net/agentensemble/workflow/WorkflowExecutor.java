@@ -1,10 +1,9 @@
 package net.agentensemble.workflow;
 
+import java.util.List;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.memory.MemoryContext;
-
-import java.util.List;
 
 /**
  * Strategy interface for executing ensemble tasks.

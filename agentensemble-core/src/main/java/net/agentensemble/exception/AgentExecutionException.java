@@ -12,8 +12,7 @@ public class AgentExecutionException extends AgentEnsembleException {
     private final String agentRole;
     private final String taskDescription;
 
-    public AgentExecutionException(String message, String agentRole, String taskDescription,
-            Throwable cause) {
+    public AgentExecutionException(String message, String agentRole, String taskDescription, Throwable cause) {
         super(message, cause);
         this.agentRole = agentRole;
         this.taskDescription = taskDescription;

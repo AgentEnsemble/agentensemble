@@ -1,10 +1,9 @@
 package net.agentensemble;
 
-import net.agentensemble.exception.ValidationException;
+import java.util.List;
 import lombok.Builder;
 import lombok.Value;
-
-import java.util.List;
+import net.agentensemble.exception.ValidationException;
 
 /**
  * A unit of work assigned to an agent.
@@ -120,8 +119,7 @@ public class Task {
             validateOutputType();
             validateMaxOutputRetries();
             context = List.copyOf(effectiveContext);
-            return new Task(description, expectedOutput, agent, context,
-                    outputType, maxOutputRetries);
+            return new Task(description, expectedOutput, agent, context, outputType, maxOutputRetries);
         }
 
         private void validateDescription() {
@@ -142,12 +140,14 @@ public class Task {
             }
         }
 
+        // Agent comparison uses reference equality intentionally: two Agent objects
+        // with identical fields are distinct agents; only the same instance is "self".
+        @SuppressWarnings("ReferenceEquality")
         private void validateContext(List<Task> ctx) {
             for (int i = 0; i < ctx.size(); i++) {
                 Task contextTask = ctx.get(i);
                 if (contextTask == null) {
-                    throw new ValidationException(
-                            "Task context element at index " + i + " must not be null");
+                    throw new ValidationException("Task context element at index " + i + " must not be null");
                 }
                 // Self-reference: context contains a task with the same identity fields
                 // (description, expectedOutput, agent) as the task being built.
@@ -166,23 +166,20 @@ public class Task {
                 return;
             }
             if (outputType.isPrimitive()) {
-                throw new ValidationException(
-                        "Task outputType must not be a primitive type: " + outputType.getName());
+                throw new ValidationException("Task outputType must not be a primitive type: " + outputType.getName());
             }
             if (outputType == Void.class) {
                 throw new ValidationException("Task outputType must not be Void");
             }
             if (outputType.isArray()) {
                 throw new ValidationException(
-                        "Task outputType must not be an array type. "
-                        + "Wrap the array in a record or class.");
+                        "Task outputType must not be an array type. " + "Wrap the array in a record or class.");
             }
         }
 
         private void validateMaxOutputRetries() {
             if (maxOutputRetries < 0) {
-                throw new ValidationException(
-                        "Task maxOutputRetries must be >= 0, got: " + maxOutputRetries);
+                throw new ValidationException("Task maxOutputRetries must be >= 0, got: " + maxOutputRetries);
             }
         }
     }

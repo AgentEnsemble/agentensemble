@@ -1,13 +1,12 @@
 package net.agentensemble.ensemble;
 
-import net.agentensemble.task.TaskOutput;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import net.agentensemble.task.TaskOutput;
+import org.junit.jupiter.api.Test;
 
 class EnsembleOutputTest {
 

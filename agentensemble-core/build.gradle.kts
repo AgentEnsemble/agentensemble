@@ -1,6 +1,31 @@
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+
 plugins {
     `java-library`
     alias(libs.plugins.vanniktech.publish)
+}
+
+// Coverage verification -- wired into check so CI fails if coverage drops below thresholds.
+// Thresholds are set conservatively below the current measured levels:
+//   LINE:   actual 94.1%  -> minimum 90%
+//   BRANCH: actual 81.4%  -> minimum 75%
+tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                minimum = "0.90".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                minimum = "0.75".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(tasks.named("jacocoTestCoverageVerification"))
 }
 
 dependencies {

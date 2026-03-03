@@ -5,11 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Adapts {@link AgentTool} instances to LangChain4j's tool specification model,
@@ -159,8 +158,7 @@ public final class LangChain4jToolAdapter {
 
     private static java.lang.reflect.Method findMethod(Object obj, String methodName) {
         for (java.lang.reflect.Method m : obj.getClass().getMethods()) {
-            if (m.getName().equals(methodName)
-                    && m.isAnnotationPresent(dev.langchain4j.agent.tool.Tool.class)) {
+            if (m.getName().equals(methodName) && m.isAnnotationPresent(dev.langchain4j.agent.tool.Tool.class)) {
                 return m;
             }
         }

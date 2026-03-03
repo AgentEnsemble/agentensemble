@@ -1,26 +1,21 @@
 package net.agentensemble.agent;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+
 import dev.langchain4j.model.chat.ChatModel;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-
 class AgentPromptBuilderTest {
 
     private Agent minimalAgent(String role, String goal) {
-        return Agent.builder()
-                .role(role)
-                .goal(goal)
-                .llm(mock(ChatModel.class))
-                .build();
+        return Agent.builder().role(role).goal(goal).llm(mock(ChatModel.class)).build();
     }
 
     private TaskOutput taskOutput(String agentRole, String description, String raw) {
@@ -74,16 +69,14 @@ class AgentPromptBuilderTest {
         var agent = Agent.builder()
                 .role("Writer")
                 .goal("Write articles")
-                .background("")  // empty, should be omitted
+                .background("") // empty, should be omitted
                 .llm(mock(ChatModel.class))
                 .build();
 
         String prompt = AgentPromptBuilder.buildSystemPrompt(agent);
 
         // No extra blank line from empty background
-        assertThat(prompt)
-                .startsWith("You are Writer.")
-                .doesNotContain("background");
+        assertThat(prompt).startsWith("You are Writer.").doesNotContain("background");
     }
 
     @Test
@@ -92,8 +85,7 @@ class AgentPromptBuilderTest {
 
         String prompt = AgentPromptBuilder.buildSystemPrompt(agent);
 
-        assertThat(prompt)
-                .doesNotContain("Output format instructions");
+        assertThat(prompt).doesNotContain("Output format instructions");
     }
 
     @Test

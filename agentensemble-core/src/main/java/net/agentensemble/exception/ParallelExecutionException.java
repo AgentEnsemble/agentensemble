@@ -1,9 +1,8 @@
 package net.agentensemble.exception;
 
-import net.agentensemble.task.TaskOutput;
-
 import java.util.List;
 import java.util.Map;
+import net.agentensemble.task.TaskOutput;
 
 /**
  * Thrown by {@code ParallelWorkflowExecutor} when one or more tasks fail during
@@ -38,9 +37,8 @@ public class ParallelExecutionException extends AgentEnsembleException {
      * @param failedTaskCauses     map of failed task description to the exception that caused
      *                             the failure; must not be null and must not be empty
      */
-    public ParallelExecutionException(String message,
-            List<TaskOutput> completedTaskOutputs,
-            Map<String, Throwable> failedTaskCauses) {
+    public ParallelExecutionException(
+            String message, List<TaskOutput> completedTaskOutputs, Map<String, Throwable> failedTaskCauses) {
         super(message);
         this.completedTaskOutputs = List.copyOf(completedTaskOutputs);
         this.failedTaskCauses = Map.copyOf(failedTaskCauses);

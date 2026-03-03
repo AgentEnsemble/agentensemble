@@ -1,9 +1,19 @@
 package net.agentensemble.workflow;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.ParallelExecutionException;
@@ -12,17 +22,6 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for ParallelWorkflowExecutor.
@@ -169,9 +168,8 @@ class ParallelWorkflowExecutorTest {
 
         var output = executor().execute(List.of(ta, tb, tc, td), false, MemoryContext.disabled());
 
-        List<String> roles = output.getTaskOutputs().stream()
-                .map(TaskOutput::getAgentRole)
-                .toList();
+        List<String> roles =
+                output.getTaskOutputs().stream().map(TaskOutput::getAgentRole).toList();
         // A must come before B, C, D
         assertThat(roles.indexOf("A")).isLessThan(roles.indexOf("B"));
         assertThat(roles.indexOf("A")).isLessThan(roles.indexOf("C"));
@@ -217,9 +215,8 @@ class ParallelWorkflowExecutorTest {
         var tGood = task("Good task", good);
         var tBad = task("Bad task", bad);
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.FAIL_FAST).execute(
-                        List.of(tGood, tBad), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
+                        .execute(List.of(tGood, tBad), false, MemoryContext.disabled()))
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
@@ -233,9 +230,8 @@ class ParallelWorkflowExecutorTest {
         var bad = agentThatFails("Bad");
         var tBad = task("Failing task", bad);
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.FAIL_FAST).execute(
-                        List.of(tBad), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
+                        .execute(List.of(tBad), false, MemoryContext.disabled()))
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
@@ -268,16 +264,16 @@ class ParallelWorkflowExecutorTest {
         var tGood = task("Good task", good);
         var tBad = task("Bad task", bad);
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(
-                        List.of(tGood, tBad), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
+                        .execute(List.of(tGood, tBad), false, MemoryContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
                     assertThat(pe.getFailedCount()).isEqualTo(1);
                     assertThat(pe.getFailedTaskCauses()).containsKey("Bad task");
                     assertThat(pe.getCompletedTaskOutputs()).hasSize(1);
-                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole()).isEqualTo("Good");
+                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole())
+                            .isEqualTo("Good");
                 });
     }
 
@@ -291,15 +287,15 @@ class ParallelWorkflowExecutorTest {
         var tBad = task("Task Bad", bad);
         var tSkip = taskWithContext("Task Skip", skip, List.of(tBad));
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(
-                        List.of(ta, tBad, tSkip), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
+                        .execute(List.of(ta, tBad, tSkip), false, MemoryContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
                     // A completed, B failed, Skip was skipped (not completed, not failed)
                     assertThat(pe.getCompletedTaskOutputs()).hasSize(1);
-                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole()).isEqualTo("A");
+                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole())
+                            .isEqualTo("A");
                     assertThat(pe.getFailedTaskCauses()).containsKey("Task Bad");
                     // Skip is neither in completed nor failed (it was bypassed)
                     assertThat(pe.getFailedTaskCauses()).doesNotContainKey("Task Skip");
@@ -317,9 +313,8 @@ class ParallelWorkflowExecutorTest {
         var tMiddle = taskWithContext("Task Middle", middle, List.of(tRoot));
         var tTail = taskWithContext("Task Tail", tail, List.of(tMiddle));
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(
-                        List.of(tRoot, tMiddle, tTail), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
+                        .execute(List.of(tRoot, tMiddle, tTail), false, MemoryContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -327,8 +322,7 @@ class ParallelWorkflowExecutorTest {
                     // Middle and Tail are skipped, not failed
                     assertThat(pe.getFailedCount()).isEqualTo(1);
                     assertThat(pe.getFailedTaskCauses()).containsKey("Task Root");
-                    assertThat(pe.getFailedTaskCauses())
-                            .doesNotContainKeys("Task Middle", "Task Tail");
+                    assertThat(pe.getFailedTaskCauses()).doesNotContainKeys("Task Middle", "Task Tail");
                     assertThat(pe.getCompletedTaskOutputs()).isEmpty();
                 });
     }
@@ -340,9 +334,8 @@ class ParallelWorkflowExecutorTest {
         var t1 = task("Fail 1", bad1);
         var t2 = task("Fail 2", bad2);
 
-        assertThatThrownBy(() ->
-                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(
-                        List.of(t1, t2), false, MemoryContext.disabled()))
+        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
+                        .execute(List.of(t1, t2), false, MemoryContext.disabled()))
                 .isInstanceOf(ParallelExecutionException.class)
                 .satisfies(ex -> {
                     var pe = (ParallelExecutionException) ex;
@@ -369,9 +362,7 @@ class ParallelWorkflowExecutorTest {
 
         // Both tasks ran
         assertThat(output.getTaskOutputs()).hasSize(2);
-        assertThat(output.getTaskOutputs())
-                .extracting(TaskOutput::getAgentRole)
-                .containsExactlyInAnyOrder("A", "B");
+        assertThat(output.getTaskOutputs()).extracting(TaskOutput::getAgentRole).containsExactlyInAnyOrder("A", "B");
     }
 
     // ========================

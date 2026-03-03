@@ -1,12 +1,11 @@
 package net.agentensemble.config;
 
-import net.agentensemble.exception.PromptTemplateException;
-import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.Map;
+import net.agentensemble.exception.PromptTemplateException;
+import org.junit.jupiter.api.Test;
 
 class TemplateResolverTest {
 
@@ -56,15 +55,13 @@ class TemplateResolverTest {
 
     @Test
     void testResolve_multipleVariables() {
-        assertThat(TemplateResolver.resolve("Research {topic} in {year}",
-                Map.of("topic", "AI", "year", "2026")))
+        assertThat(TemplateResolver.resolve("Research {topic} in {year}", Map.of("topic", "AI", "year", "2026")))
                 .isEqualTo("Research AI in 2026");
     }
 
     @Test
     void testResolve_sameVariableMultipleTimes() {
-        assertThat(TemplateResolver.resolve("{a} and {a}", Map.of("a", "X")))
-                .isEqualTo("X and X");
+        assertThat(TemplateResolver.resolve("{a} and {a}", Map.of("a", "X"))).isEqualTo("X and X");
     }
 
     @Test
@@ -75,16 +72,14 @@ class TemplateResolverTest {
 
     @Test
     void testResolve_emptyValue_replacesWithEmpty() {
-        assertThat(TemplateResolver.resolve("Hello {name}", Map.of("name", "")))
-                .isEqualTo("Hello ");
+        assertThat(TemplateResolver.resolve("Hello {name}", Map.of("name", ""))).isEqualTo("Hello ");
     }
 
     @Test
     void testResolve_nullValue_treatedAsEmpty() {
         Map<String, String> inputs = new java.util.HashMap<>();
         inputs.put("name", null);
-        assertThat(TemplateResolver.resolve("Hello {name}", inputs))
-                .isEqualTo("Hello ");
+        assertThat(TemplateResolver.resolve("Hello {name}", inputs)).isEqualTo("Hello ");
     }
 
     // ========================
@@ -100,8 +95,7 @@ class TemplateResolverTest {
 
     @Test
     void testResolve_multipleMissingVariables_reportsAll() {
-        assertThatThrownBy(() ->
-                TemplateResolver.resolve("{a} and {b}", Map.of()))
+        assertThatThrownBy(() -> TemplateResolver.resolve("{a} and {b}", Map.of()))
                 .isInstanceOf(PromptTemplateException.class)
                 .satisfies(ex -> {
                     var pte = (PromptTemplateException) ex;
@@ -111,8 +105,7 @@ class TemplateResolverTest {
 
     @Test
     void testResolve_partialInputs_reportsOnlyMissing() {
-        assertThatThrownBy(() ->
-                TemplateResolver.resolve("{a} and {b}", Map.of("a", "X")))
+        assertThatThrownBy(() -> TemplateResolver.resolve("{a} and {b}", Map.of("a", "X")))
                 .isInstanceOf(PromptTemplateException.class)
                 .satisfies(ex -> {
                     var pte = (PromptTemplateException) ex;
@@ -144,20 +137,17 @@ class TemplateResolverTest {
 
     @Test
     void testResolve_escapedBraces_returnsLiteral() {
-        assertThat(TemplateResolver.resolve("{{topic}}", Map.of()))
-                .isEqualTo("{topic}");
+        assertThat(TemplateResolver.resolve("{{topic}}", Map.of())).isEqualTo("{topic}");
     }
 
     @Test
     void testResolve_escapedBraces_notSubstitutedEvenIfInputExists() {
-        assertThat(TemplateResolver.resolve("{{topic}}", Map.of("topic", "AI")))
-                .isEqualTo("{topic}");
+        assertThat(TemplateResolver.resolve("{{topic}}", Map.of("topic", "AI"))).isEqualTo("{topic}");
     }
 
     @Test
     void testResolve_mixedEscapedAndNormal() {
-        assertThat(TemplateResolver.resolve("{{escaped}} and {normal}",
-                Map.of("normal", "substituted")))
+        assertThat(TemplateResolver.resolve("{{escaped}} and {normal}", Map.of("normal", "substituted")))
                 .isEqualTo("{escaped} and substituted");
     }
 }

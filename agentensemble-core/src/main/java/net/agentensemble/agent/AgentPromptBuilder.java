@@ -1,5 +1,7 @@
 package net.agentensemble.agent;
 
+import java.util.List;
+import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.memory.MemoryContext;
@@ -8,9 +10,6 @@ import net.agentensemble.output.JsonSchemaGenerator;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * Constructs system and user prompts for agent-LLM interactions.
@@ -146,8 +145,7 @@ public final class AgentPromptBuilder {
      *                       when memory is not configured
      * @return the user prompt string
      */
-    public static String buildUserPrompt(Task task, List<TaskOutput> contextOutputs,
-            MemoryContext memoryContext) {
+    public static String buildUserPrompt(Task task, List<TaskOutput> contextOutputs, MemoryContext memoryContext) {
         StringBuilder sb = new StringBuilder();
 
         if (memoryContext.hasShortTerm()) {
@@ -158,8 +156,11 @@ public final class AgentPromptBuilder {
                 sb.append("The following outputs from earlier tasks in this run may be relevant:\n");
                 for (MemoryEntry entry : stmEntries) {
                     sb.append("\n---\n");
-                    sb.append("### ").append(entry.getAgentRole())
-                            .append(": ").append(entry.getTaskDescription()).append("\n");
+                    sb.append("### ")
+                            .append(entry.getAgentRole())
+                            .append(": ")
+                            .append(entry.getTaskDescription())
+                            .append("\n");
                     sb.append(entry.getContent()).append("\n");
                     sb.append("---");
                 }
@@ -173,8 +174,11 @@ public final class AgentPromptBuilder {
                 for (TaskOutput ctx : contextOutputs) {
                     warnIfLargeContext(ctx);
                     sb.append("\n---\n");
-                    sb.append("### ").append(ctx.getAgentRole())
-                            .append(": ").append(ctx.getTaskDescription()).append("\n");
+                    sb.append("### ")
+                            .append(ctx.getAgentRole())
+                            .append(": ")
+                            .append(ctx.getTaskDescription())
+                            .append("\n");
                     String raw = ctx.getRaw();
                     sb.append(raw != null ? raw : "").append("\n");
                     sb.append("---\n");
@@ -204,8 +208,11 @@ public final class AgentPromptBuilder {
                 sb.append("## Entity Knowledge\n");
                 sb.append("The following known facts may be relevant:\n\n");
                 for (Map.Entry<String, String> entry : entityFacts.entrySet()) {
-                    sb.append("- **").append(entry.getKey()).append("**: ")
-                            .append(entry.getValue()).append("\n");
+                    sb.append("- **")
+                            .append(entry.getKey())
+                            .append("**: ")
+                            .append(entry.getValue())
+                            .append("\n");
                 }
                 sb.append("\n");
             }
@@ -231,15 +238,14 @@ public final class AgentPromptBuilder {
         }
 
         String prompt = sb.toString();
-        log.debug("Built user prompt ({} chars) for task '{}'",
-                prompt.length(), truncate(task.getDescription(), 80));
+        log.debug("Built user prompt ({} chars) for task '{}'", prompt.length(), truncate(task.getDescription(), 80));
         return prompt;
     }
 
     private static void warnIfLargeContext(TaskOutput ctx) {
         if (ctx.getRaw() != null && ctx.getRaw().length() > CONTEXT_LENGTH_WARN_THRESHOLD) {
-            log.warn("Context from task '{}' is {} characters (>{}). "
-                    + "Consider breaking into smaller tasks.",
+            log.warn(
+                    "Context from task '{}' is {} characters (>{}). " + "Consider breaking into smaller tasks.",
                     truncate(ctx.getTaskDescription(), 80),
                     ctx.getRaw().length(),
                     CONTEXT_LENGTH_WARN_THRESHOLD);

@@ -1,10 +1,9 @@
 package net.agentensemble.delegation;
 
+import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.memory.MemoryContext;
-
-import java.util.List;
 
 /**
  * Immutable runtime state for an agent delegation chain.
@@ -41,8 +40,13 @@ public final class DelegationContext {
     private final AgentExecutor agentExecutor;
     private final boolean verbose;
 
-    private DelegationContext(List<Agent> peerAgents, int maxDepth, int currentDepth,
-            MemoryContext memoryContext, AgentExecutor agentExecutor, boolean verbose) {
+    private DelegationContext(
+            List<Agent> peerAgents,
+            int maxDepth,
+            int currentDepth,
+            MemoryContext memoryContext,
+            AgentExecutor agentExecutor,
+            boolean verbose) {
         this.peerAgents = peerAgents;
         this.maxDepth = maxDepth;
         this.currentDepth = currentDepth;
@@ -62,8 +66,12 @@ public final class DelegationContext {
      * @return a new root-level delegation context
      * @throws IllegalArgumentException if any required argument is null or maxDepth is not positive
      */
-    public static DelegationContext create(List<Agent> peerAgents, int maxDepth,
-            MemoryContext memoryContext, AgentExecutor agentExecutor, boolean verbose) {
+    public static DelegationContext create(
+            List<Agent> peerAgents,
+            int maxDepth,
+            MemoryContext memoryContext,
+            AgentExecutor agentExecutor,
+            boolean verbose) {
         if (peerAgents == null) {
             throw new IllegalArgumentException("peerAgents must not be null");
         }
@@ -76,8 +84,7 @@ public final class DelegationContext {
         if (agentExecutor == null) {
             throw new IllegalArgumentException("agentExecutor must not be null");
         }
-        return new DelegationContext(List.copyOf(peerAgents), maxDepth, 0,
-                memoryContext, agentExecutor, verbose);
+        return new DelegationContext(List.copyOf(peerAgents), maxDepth, 0, memoryContext, agentExecutor, verbose);
     }
 
     /**
@@ -89,8 +96,7 @@ public final class DelegationContext {
      * @return a new {@code DelegationContext} with depth incremented by one
      */
     public DelegationContext descend() {
-        return new DelegationContext(peerAgents, maxDepth, currentDepth + 1,
-                memoryContext, agentExecutor, verbose);
+        return new DelegationContext(peerAgents, maxDepth, currentDepth + 1, memoryContext, agentExecutor, verbose);
     }
 
     /**
