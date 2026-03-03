@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed (Class-size refactoring -- 2026-03-03)
+- `Ensemble.java` (523 -> 342 lines): all validation logic extracted to package-private
+  `EnsembleValidator`; `Ensemble.run()` delegates via `new EnsembleValidator(this).validate()`
+- `AgentExecutor.java` (411 -> 321 lines): structured output parsing and LLM retry loop
+  extracted to package-private `StructuredOutputHandler`; `AgentExecutor` delegates via
+  `StructuredOutputHandler.parse(agent, task, response, systemPrompt)`
+- `ParallelWorkflowExecutor.java` (510 -> 243 lines): per-task submission, dependency
+  resolution, skip cascading, and `shouldSkip()` extracted to package-private
+  `ParallelTaskCoordinator`; coordinator holds all per-execution shared state as fields,
+  eliminating 16-parameter method signatures
+
+### Added (Class-size refactoring -- 2026-03-03)
+- `net.agentensemble.EnsembleValidator`: package-private; `validate(Ensemble)` entry point;
+  contains `validateTasksNotEmpty`, `validateAgentsNotEmpty`, `validateMaxDelegationDepth`,
+  `validateManagerMaxIterations`, `validateParallelErrorStrategy`, `validateAgentMembership`,
+  `validateHierarchicalRoles`, `validateNoCircularContextDependencies`, `validateContextOrdering`,
+  `warnUnusedAgents`
+- `net.agentensemble.agent.StructuredOutputHandler`: package-private; static `parse(Agent, Task,
+  String, String)` method; handles retry loop with LLM correction prompts
+- `net.agentensemble.workflow.ParallelTaskCoordinator`: package-private; per-execution coordinator
+  holding shared state (completedOutputs, failedTaskCauses, skippedTasks, pendingDepCounts,
+  firstFailureRef, latch, etc.) as final fields; `submitTask(Task)` and `resolveDependent(Task)`
+  (package-private and private respectively)
+- New test classes (all tests relocated, zero new assertions):
+  - `EnsembleValidationTest` (validation error cases split from `EnsembleTest`)
+  - `TaskValidationTest` (validation error cases split from `TaskTest`)
+  - `ParallelWorkflowExecutorTestBase` (abstract base with shared helpers)
+  - `ParallelWorkflowExecutorErrorTest` (FAIL_FAST + CONTINUE_ON_ERROR split from main test)
+  - `ParallelWorkflowExecutorCallbackTest` (callback/taskIndex split from main test)
+  - `ParallelEnsembleErrorIntegrationTest` (error strategies split from integration test)
+  - `HierarchicalEnsembleValidationIntegrationTest` (validation + callbacks split)
+  - `DelegationEnsembleConfigIntegrationTest` (config/memory/hierarchical split)
+
 ### Added (Code Quality Tooling)
 - **Spotless** (`com.diffplug.spotless` 7.0.2): enforces consistent Java formatting using
   `palantir-java-format` 2.47.0 (4-space indent, matching existing style); `spotlessCheck`

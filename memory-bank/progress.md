@@ -144,10 +144,21 @@
   - TokenEvent added to EnsembleListener
   - Final response streamed; tool-loop remains non-streaming
 
+## Refactoring
+
+- **Class-size refactoring** complete on main (6 commits, f46dd2c..f482a4e):
+  - New production classes (package-private, no API surface change):
+    - `EnsembleValidator`: extracted from `Ensemble` -- all validation logic
+    - `StructuredOutputHandler`: extracted from `AgentExecutor` -- structured output parsing + retry
+    - `ParallelTaskCoordinator`: extracted from `ParallelWorkflowExecutor` -- task submission,
+      dependency resolution, skip cascading; holds per-execution shared state as fields
+  - Test files split by concern: 9 new test class files, 0 new test assertions
+  - No file exceeds 380 lines (was: max 558 test, 523 main)
+
 ## Current Status
 
 **Phase**: Phase 7 in progress -- Issue #57 (callbacks) done on feature branch; PR pending
-**Total tests**: 499 passing on feature/57-callbacks-execution-context (440 on main)
+**Total tests**: 499 passing on main (post-refactor; tests relocated not added)
 **Current version**: 0.6.0-SNAPSHOT (main); v0.7.0 targeting after PR merge
 **Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
 **Next action**: PR for Issue #57, then v0.7.0 release, then Issue #42 (Execution Metrics)

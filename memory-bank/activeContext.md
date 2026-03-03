@@ -2,11 +2,32 @@
 
 ## Current Work Focus
 
-Issue #57 (Callbacks/Event Listeners + ExecutionContext refactor) is COMPLETE.
-Committed on `feature/57-callbacks-execution-context` (6477ad6). 499 tests passing.
-Next: open PR -> merge -> v0.7.0 release.
+Class-size refactoring complete on main (6 commits, f46dd2c..f482a4e). All tests pass.
+No behaviour changes. Ready to open PR if this work is going on a branch; otherwise
+already on main. Next: Issue #42 (Execution Metrics) or Issue #58 (Guardrails).
 
 ## Recent Changes
+
+- **Class-size refactoring** (6 commits on main):
+  - Extracted `EnsembleValidator` (package-private) from `Ensemble`: all 10 validate*()
+    methods + detectCycle() + warnUnusedAgents() moved out; `Ensemble` delegates via
+    `new EnsembleValidator(this).validate()`. Ensemble.java: 523 -> 342 lines.
+  - Extracted `StructuredOutputHandler` (package-private) from `AgentExecutor`:
+    `parseStructuredOutput()` + `buildStructuredOutputCorrectionPrompt()` moved out;
+    AgentExecutor delegates via `StructuredOutputHandler.parse(agent, task, response, prompt)`.
+    AgentExecutor.java: 411 -> 321 lines.
+  - Extracted `ParallelTaskCoordinator` (package-private) from `ParallelWorkflowExecutor`:
+    `submitTask()`, `resolveDependent()`, `shouldSkip()` moved into coordinator class that
+    holds all per-execution shared state as fields (eliminates 16-parameter method signatures).
+    ParallelWorkflowExecutor.java: 510 -> 243 lines.
+  - Split test files by concern (all tests preserved, zero new assertions):
+    - `EnsembleTest` (386) -> `EnsembleTest` (141 builder/listeners) + `EnsembleValidationTest` (265)
+    - `TaskTest` (438) -> `TaskTest` (264 builder/defaults) + `TaskValidationTest` (199)
+    - `ParallelWorkflowExecutorTest` (505) -> 3 files + shared base class
+    - `ParallelEnsembleIntegrationTest` (558) -> basic (376) + error strategy (212)
+    - `HierarchicalEnsembleIntegrationTest` (385) -> execution (289) + validation+callbacks (95)
+    - `DelegationEnsembleIntegrationTest` (376) -> core scenarios (224) + config/memory (209)
+  - No file in the project now exceeds 380 lines.
 
 - Issue #57 (Callbacks + ExecutionContext refactor) implemented on feature branch:
 
