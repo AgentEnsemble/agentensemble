@@ -39,4 +39,4 @@ AgentEnsemble is inspired by the multi-agent orchestration pattern where agents 
 
 ## License
 
-MIT License. See [LICENSE](../../LICENSE).
+MIT License. See [LICENSE](https://github.com/AgentEnsemble/agentensemble/blob/main/LICENSE).

@@ -1,0 +1,79 @@
+/*
+ * AgentEnsemble brand color overrides for MkDocs Material.
+ *
+ * Brand palette:
+ *   Primary Blue  #4D95FF  (77, 149, 255)
+ *   Secondary Purple  #8363F9  (131, 99, 249)
+ *   Accent Cyan  #2DD4FF  (45, 212, 255)
+ *   Dark  #111827  (17, 24, 39)
+ *   Light  #F2F4F8  (242, 244, 248)
+ *   Gradient  #2DD4FF -> #4D95FF -> #8363F9
+ */
+
+/* ---------------------------------------------------------------------------
+   Light mode (scheme: default)
+   Header background: Primary Blue
+   Links / accent: Secondary Purple
+--------------------------------------------------------------------------- */
+[data-md-color-scheme="default"] {
+  /* Header / nav bar */
+  --md-primary-fg-color:        #4D95FF;
+  --md-primary-fg-color--light: rgba(77, 149, 255, 0.54);
+  --md-primary-fg-color--dark:  #1a6fd4;
+  --md-primary-bg-color:        #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.70);
+
+  /* Links, active nav items, hover states */
+  --md-accent-fg-color:             #8363F9;
+  --md-accent-fg-color--transparent: rgba(131, 99, 249, 0.10);
+  --md-accent-bg-color:             #ffffff;
+  --md-accent-bg-color--light:      rgba(255, 255, 255, 0.70);
+
+  /* Page surface */
+  --md-default-bg-color: #F2F4F8;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark mode (scheme: slate)
+   Header background: Primary Blue
+   Links / accent: Accent Cyan (more legible on dark)
+   Page background: Dark (#111827)
+--------------------------------------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  /* Page background */
+  --md-default-bg-color:            #111827;
+  --md-default-bg-color--light:     rgba(17, 24, 39, 0.54);
+  --md-default-bg-color--lighter:   rgba(17, 24, 39, 0.26);
+  --md-default-bg-color--lightest:  rgba(17, 24, 39, 0.07);
+
+  /* Page foreground / body text */
+  --md-default-fg-color:            #F2F4F8;
+  --md-default-fg-color--light:     rgba(242, 244, 248, 0.54);
+  --md-default-fg-color--lighter:   rgba(242, 244, 248, 0.26);
+  --md-default-fg-color--lightest:  rgba(242, 244, 248, 0.07);
+
+  /* Header / nav bar */
+  --md-primary-fg-color:        #4D95FF;
+  --md-primary-fg-color--light: rgba(77, 149, 255, 0.54);
+  --md-primary-fg-color--dark:  #1a6fd4;
+  --md-primary-bg-color:        #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.70);
+
+  /* Links, active nav items, hover states */
+  --md-accent-fg-color:             #2DD4FF;
+  --md-accent-fg-color--transparent: rgba(45, 212, 255, 0.10);
+  --md-accent-bg-color:             #ffffff;
+  --md-accent-bg-color--light:      rgba(255, 255, 255, 0.70);
+}
+
+/* ---------------------------------------------------------------------------
+   Header gradient (applied to both modes)
+   Overrides the solid primary color with the brand gradient on the header.
+--------------------------------------------------------------------------- */
+.md-header {
+  background: linear-gradient(135deg, #2DD4FF 0%, #4D95FF 50%, #8363F9 100%);
+}
+
+.md-tabs {
+  background: linear-gradient(135deg, #2DD4FF 0%, #4D95FF 50%, #8363F9 100%);
+}

@@ -5,6 +5,9 @@
 PR #45 merged to main (squash commit 7535576). Issue #18 Parallel Workflow complete.
 Development continues at 0.5.0-SNAPSHOT. 358 tests passing on main.
 
+GitHub Pages (MkDocs Material) documentation site configured and build-verified locally.
+Requires one-time manual step: enable GitHub Pages in repo Settings (source: GitHub Actions).
+
 ## Recent Changes
 
 - Issue #18 (Parallel Workflow) merged via PR #45 (squash commit 7535576):

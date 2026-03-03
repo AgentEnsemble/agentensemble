@@ -1,0 +1,107 @@
+site_name: AgentEnsemble
+site_url: https://agentensemble.github.io/agentensemble/
+site_description: >-
+  Java 21 framework for orchestrating teams of AI agents that collaborate
+  to accomplish complex tasks. Built on LangChain4j.
+site_author: AgentEnsemble
+
+repo_name: AgentEnsemble/agentensemble
+repo_url: https://github.com/AgentEnsemble/agentensemble
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/custom.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Core Concepts: getting-started/concepts.md
+  - Guides:
+    - Agents: guides/agents.md
+    - Tasks: guides/tasks.md
+    - Workflows: guides/workflows.md
+    - Tools: guides/tools.md
+    - Memory: guides/memory.md
+    - Delegation: guides/delegation.md
+    - Error Handling: guides/error-handling.md
+    - Logging: guides/logging.md
+    - Template Variables: guides/template-variables.md
+  - Reference:
+    - Agent Configuration: reference/agent-configuration.md
+    - Task Configuration: reference/task-configuration.md
+    - Ensemble Configuration: reference/ensemble-configuration.md
+    - Memory Configuration: reference/memory-configuration.md
+    - Exceptions: reference/exceptions.md
+  - Examples:
+    - Research and Writer: examples/research-writer.md
+    - Hierarchical Team: examples/hierarchical-team.md
+    - Memory Across Runs: examples/memory-across-runs.md
+    - Parallel Workflow: examples/parallel-workflow.md
+  - Design:
+    - Overview: design/01-overview.md
+    - Architecture: design/02-architecture.md
+    - Domain Model: design/03-domain-model.md
+    - Execution Engine: design/04-execution-engine.md
+    - Prompt Templates: design/05-prompt-templates.md
+    - Tool System: design/06-tool-system.md
+    - Template Resolver: design/07-template-resolver.md
+    - Error Handling: design/08-error-handling.md
+    - Logging: design/09-logging.md
+    - Concurrency: design/10-concurrency.md
+    - Configuration Reference: design/11-configuration.md
+    - Testing Strategy: design/12-testing-strategy.md
+    - Future Roadmap: design/13-future-roadmap.md
