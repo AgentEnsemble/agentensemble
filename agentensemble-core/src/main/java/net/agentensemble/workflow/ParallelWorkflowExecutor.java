@@ -17,9 +17,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
-import net.agentensemble.callback.TaskCompleteEvent;
-import net.agentensemble.callback.TaskFailedEvent;
-import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ParallelExecutionException;
@@ -55,13 +52,15 @@ import org.slf4j.MDC;
  *       A {@link ParallelExecutionException} is thrown at the end if any tasks failed.</li>
  * </ul>
  *
- * <strong>Event callbacks:</strong> {@link TaskStartEvent}, {@link TaskCompleteEvent}, and
- * {@link TaskFailedEvent} are fired via the {@link ExecutionContext}. Listener exceptions
- * are caught and logged without aborting execution.
+ * <strong>Event callbacks:</strong> {@link net.agentensemble.callback.TaskStartEvent},
+ * {@link net.agentensemble.callback.TaskCompleteEvent}, and
+ * {@link net.agentensemble.callback.TaskFailedEvent} are fired via the
+ * {@link ExecutionContext}. Listener exceptions are caught and logged without aborting
+ * execution.
  *
  * <strong>MDC propagation:</strong> The MDC context of the calling thread is captured
  * before tasks are submitted and restored in each virtual thread for consistent structured
- * logging. Each task additionally sets {@code agent.role} in MDC for its duration.
+ * logging.
  *
  * <strong>Thread safety:</strong> Virtual threads created by
  * {@link Executors#newVirtualThreadPerTaskExecutor()} are lightweight and do not block
@@ -69,16 +68,11 @@ import org.slf4j.MDC;
  * implementations must be thread-safe when registered with a parallel workflow.
  *
  * Stateless -- all execution state is held in per-invocation local variables.
+ * Task submission and dependency resolution are delegated to {@link ParallelTaskCoordinator}.
  */
 public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ParallelWorkflowExecutor.class);
-
-    /** MDC key for the current agent's role, set per task execution. */
-    private static final String MDC_AGENT_ROLE = "agent.role";
-
-    /** Truncation length for task descriptions in log messages. */
-    private static final int LOG_TRUNCATE_LENGTH = 80;
 
     private final List<Agent> agents;
     private final int maxDelegationDepth;
@@ -166,24 +160,27 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         List<TaskOutput> completionOrder = Collections.synchronizedList(new ArrayList<>());
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            ParallelTaskCoordinator coordinator = new ParallelTaskCoordinator(
+                    graph,
+                    callerMdc,
+                    completedOutputs,
+                    failedTaskCauses,
+                    skippedTasks,
+                    pendingDepCounts,
+                    firstFailureRef,
+                    latch,
+                    delegationContext,
+                    executionContext,
+                    totalTasks,
+                    executor,
+                    completionOrder,
+                    taskIndexMap,
+                    errorStrategy,
+                    agentExecutor);
+
             // Submit all root tasks (no in-graph dependencies) immediately
             for (Task root : graph.getRoots()) {
-                submitTask(
-                        root,
-                        graph,
-                        callerMdc,
-                        completedOutputs,
-                        failedTaskCauses,
-                        skippedTasks,
-                        pendingDepCounts,
-                        firstFailureRef,
-                        latch,
-                        delegationContext,
-                        executionContext,
-                        totalTasks,
-                        executor,
-                        completionOrder,
-                        taskIndexMap);
+                coordinator.submitTask(root);
             }
 
             // Wait for all tasks to resolve (complete, fail, or be skipped)
@@ -242,269 +239,5 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
                 .build();
-    }
-
-    /**
-     * Submit a task for execution on a virtual thread.
-     *
-     * The task is run via {@link AgentExecutor}. On completion (success or failure),
-     * the task's state is recorded and its dependents are evaluated via
-     * {@link #resolveDependent}. The latch is decremented exactly once per task
-     * invocation (in the finally block).
-     */
-    private void submitTask(
-            Task task,
-            TaskDependencyGraph graph,
-            Map<String, String> callerMdc,
-            Map<Task, TaskOutput> completedOutputs,
-            Map<Task, Throwable> failedTaskCauses,
-            Set<Task> skippedTasks,
-            Map<Task, AtomicInteger> pendingDepCounts,
-            AtomicReference<TaskExecutionException> firstFailureRef,
-            CountDownLatch latch,
-            DelegationContext delegationContext,
-            ExecutionContext executionContext,
-            int totalTasks,
-            ExecutorService executor,
-            List<TaskOutput> completionOrder,
-            Map<Task, Integer> taskIndexMap) {
-
-        var unused = executor.submit(() -> {
-            // Restore caller's MDC in this virtual thread, then add task-specific keys
-            Map<String, String> prevMdc = MDC.getCopyOfContextMap();
-            MDC.setContextMap(callerMdc);
-            MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
-
-            int taskIndex = taskIndexMap.getOrDefault(task, 0);
-            Instant taskStart = Instant.now();
-            try {
-                log.info(
-                        "Task starting (parallel) | Agent: {} | Description: {}",
-                        task.getAgent().getRole(),
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
-
-                executionContext.fireTaskStart(new TaskStartEvent(
-                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
-
-                // Collect outputs from completed in-graph dependencies as context
-                List<TaskOutput> contextOutputs = new ArrayList<>();
-                for (Task dep : task.getContext()) {
-                    if (graph.isInGraph(dep)) {
-                        TaskOutput out = completedOutputs.get(dep);
-                        if (out != null) {
-                            contextOutputs.add(out);
-                        }
-                    }
-                }
-
-                TaskOutput output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
-
-                completedOutputs.put(task, output);
-                completionOrder.add(output);
-
-                log.info(
-                        "Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
-                        task.getAgent().getRole(),
-                        output.getDuration(),
-                        output.getToolCallCount());
-
-                executionContext.fireTaskComplete(new TaskCompleteEvent(
-                        task.getDescription(),
-                        task.getAgent().getRole(),
-                        output,
-                        output.getDuration(),
-                        taskIndex,
-                        totalTasks));
-
-            } catch (Exception e) {
-                Duration taskDuration = Duration.between(taskStart, Instant.now());
-                log.error(
-                        "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
-                        task.getAgent().getRole(),
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
-                        e.getMessage());
-
-                failedTaskCauses.put(task, e);
-
-                // Fire TaskFailedEvent before recording the failure
-                executionContext.fireTaskFailed(new TaskFailedEvent(
-                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, taskIndex, totalTasks));
-
-                if (errorStrategy == ParallelErrorStrategy.FAIL_FAST) {
-                    // Record the first failure; subsequent failures are ignored
-                    firstFailureRef.compareAndSet(
-                            null,
-                            new TaskExecutionException(
-                                    "Task failed: " + task.getDescription(),
-                                    task.getDescription(),
-                                    task.getAgent().getRole(),
-                                    List.copyOf(completedOutputs.values()),
-                                    e));
-                }
-
-            } finally {
-                // Restore MDC from before this thread's execution
-                if (prevMdc != null) {
-                    MDC.setContextMap(prevMdc);
-                } else {
-                    MDC.clear();
-                }
-
-                // Signal that this task has been resolved (success or failure)
-                latch.countDown();
-
-                // Propagate resolution to dependents: some may now be ready to run or skip
-                resolveDependent(
-                        task,
-                        graph,
-                        callerMdc,
-                        completedOutputs,
-                        failedTaskCauses,
-                        skippedTasks,
-                        pendingDepCounts,
-                        firstFailureRef,
-                        latch,
-                        delegationContext,
-                        executionContext,
-                        totalTasks,
-                        executor,
-                        completionOrder,
-                        taskIndexMap);
-            }
-        });
-    }
-
-    /**
-     * Evaluate dependents of a task that has just been resolved (completed, failed, or skipped).
-     *
-     * For each dependent, decrement its pending dependency count. If the count reaches 0,
-     * either submit the task (if all deps succeeded and no FAIL_FAST failure is pending)
-     * or skip it (if a dep failed or was skipped, or FAIL_FAST applies). Skipped tasks
-     * cascade their resolution to their own dependents recursively, and are added to
-     * {@code skippedTasks} so that transitive dependents are also correctly skipped.
-     *
-     * <p>This method is called from within a virtual thread's finally block (after that
-     * thread's own latch.countDown()). It may itself call latch.countDown() for skipped
-     * tasks and recurse. The recursion depth is bounded by the longest chain in the DAG.
-     */
-    private void resolveDependent(
-            Task resolvedTask,
-            TaskDependencyGraph graph,
-            Map<String, String> callerMdc,
-            Map<Task, TaskOutput> completedOutputs,
-            Map<Task, Throwable> failedTaskCauses,
-            Set<Task> skippedTasks,
-            Map<Task, AtomicInteger> pendingDepCounts,
-            AtomicReference<TaskExecutionException> firstFailureRef,
-            CountDownLatch latch,
-            DelegationContext delegationContext,
-            ExecutionContext executionContext,
-            int totalTasks,
-            ExecutorService executor,
-            List<TaskOutput> completionOrder,
-            Map<Task, Integer> taskIndexMap) {
-
-        for (Task dependent : graph.getDependents(resolvedTask)) {
-            int remaining = pendingDepCounts.get(dependent).decrementAndGet();
-            if (remaining > 0) {
-                // This dependent still has other unresolved deps -- nothing to do yet
-                continue;
-            }
-
-            // All of this dependent's dependencies have been resolved
-            boolean shouldSkip = shouldSkip(dependent, graph, failedTaskCauses, skippedTasks, firstFailureRef);
-
-            if (shouldSkip) {
-                log.debug(
-                        "Task skipped (parallel) | Agent: {} | Description: {}",
-                        dependent.getAgent().getRole(),
-                        truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
-
-                // Track this task as skipped so its own transitive dependents are also skipped
-                skippedTasks.add(dependent);
-
-                // Count this task as resolved (skipped) and cascade to its dependents
-                latch.countDown();
-                resolveDependent(
-                        dependent,
-                        graph,
-                        callerMdc,
-                        completedOutputs,
-                        failedTaskCauses,
-                        skippedTasks,
-                        pendingDepCounts,
-                        firstFailureRef,
-                        latch,
-                        delegationContext,
-                        executionContext,
-                        totalTasks,
-                        executor,
-                        completionOrder,
-                        taskIndexMap);
-            } else {
-                // All deps succeeded and no blocking failure -- submit this task
-                submitTask(
-                        dependent,
-                        graph,
-                        callerMdc,
-                        completedOutputs,
-                        failedTaskCauses,
-                        skippedTasks,
-                        pendingDepCounts,
-                        firstFailureRef,
-                        latch,
-                        delegationContext,
-                        executionContext,
-                        totalTasks,
-                        executor,
-                        completionOrder,
-                        taskIndexMap);
-            }
-        }
-    }
-
-    /**
-     * Determine whether a task should be skipped based on the current failure state.
-     *
-     * For {@link ParallelErrorStrategy#CONTINUE_ON_ERROR}, a task is skipped if any
-     * of its in-graph dependencies either failed (present in {@code failedTaskCauses})
-     * or was itself skipped (present in {@code skippedTasks}). Checking both sets is
-     * required to correctly propagate skips transitively through chains: if A fails,
-     * B (depends on A) is skipped, and C (depends on B) must also be skipped even
-     * though B is not in {@code failedTaskCauses}.
-     *
-     * @return true if the task should be skipped rather than submitted for execution
-     */
-    private boolean shouldSkip(
-            Task task,
-            TaskDependencyGraph graph,
-            Map<Task, Throwable> failedTaskCauses,
-            Set<Task> skippedTasks,
-            AtomicReference<TaskExecutionException> firstFailureRef) {
-
-        if (errorStrategy == ParallelErrorStrategy.FAIL_FAST && firstFailureRef.get() != null) {
-            // A failure has been registered -- skip all unstarted tasks
-            return true;
-        }
-
-        if (errorStrategy == ParallelErrorStrategy.CONTINUE_ON_ERROR) {
-            // Skip if any in-graph dependency either failed OR was itself skipped.
-            // Both checks are required: failed tasks appear in failedTaskCauses;
-            // skipped tasks appear in skippedTasks (not in failedTaskCauses).
-            return task.getContext().stream()
-                    .filter(graph::isInGraph)
-                    .anyMatch(dep -> failedTaskCauses.containsKey(dep) || skippedTasks.contains(dep));
-        }
-
-        return false;
-    }
-
-    // ========================
-    // Private utilities
-    // ========================
-
-    private static String truncate(String text, int maxLength) {
-        if (text == null) return "";
-        return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
     }
 }

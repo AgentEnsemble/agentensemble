@@ -1,93 +1,29 @@
 package net.agentensemble.workflow;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import net.agentensemble.Agent;
-import net.agentensemble.Task;
-import net.agentensemble.callback.EnsembleListener;
-import net.agentensemble.callback.TaskCompleteEvent;
-import net.agentensemble.callback.TaskFailedEvent;
-import net.agentensemble.callback.TaskStartEvent;
-import net.agentensemble.exception.ParallelExecutionException;
-import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.task.TaskOutput;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for ParallelWorkflowExecutor.
+ * Unit tests for ParallelWorkflowExecutor -- basic execution, output ordering,
+ * context passing, memory integration, and concurrency verification.
  *
- * Uses mocked LLMs to avoid real network calls. All tests verify execution correctness,
- * ordering, error handling, and context propagation.
+ * Error strategy tests are in ParallelWorkflowExecutorErrorTest.
+ * Callback tests are in ParallelWorkflowExecutorCallbackTest.
  */
-class ParallelWorkflowExecutorTest {
-
-    private List<Agent> agents;
-
-    @BeforeEach
-    void setUp() {
-        agents = new ArrayList<>();
-    }
-
-    private ChatResponse textResponse(String text) {
-        return ChatResponse.builder().aiMessage(new AiMessage(text)).build();
-    }
-
-    private Agent agentWithResponse(String role, String response) {
-        var mockLlm = mock(ChatModel.class);
-        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse(response));
-        var agent = Agent.builder().role(role).goal("Do work").llm(mockLlm).build();
-        agents.add(agent);
-        return agent;
-    }
-
-    private Agent agentThatFails(String role) {
-        var mockLlm = mock(ChatModel.class);
-        when(mockLlm.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("LLM error for " + role));
-        var agent = Agent.builder().role(role).goal("Do work").llm(mockLlm).build();
-        agents.add(agent);
-        return agent;
-    }
-
-    private Task task(String description, Agent agent) {
-        return Task.builder()
-                .description(description)
-                .expectedOutput("Output for " + description)
-                .agent(agent)
-                .build();
-    }
-
-    private Task taskWithContext(String description, Agent agent, List<Task> context) {
-        return Task.builder()
-                .description(description)
-                .expectedOutput("Output for " + description)
-                .agent(agent)
-                .context(context)
-                .build();
-    }
-
-    private ParallelWorkflowExecutor executor(ParallelErrorStrategy strategy) {
-        return new ParallelWorkflowExecutor(agents, 3, strategy);
-    }
-
-    private ParallelWorkflowExecutor executor() {
-        return executor(ParallelErrorStrategy.FAIL_FAST);
-    }
+class ParallelWorkflowExecutorTest extends ParallelWorkflowExecutorTestBase {
 
     // ========================
     // Basic execution
@@ -135,7 +71,6 @@ class ParallelWorkflowExecutorTest {
         var output = executor().execute(List.of(t1, t2, t3), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(3);
-        // All three tasks must have completed
         assertThat(output.getTaskOutputs())
                 .extracting(TaskOutput::getAgentRole)
                 .containsExactlyInAnyOrder("A", "B", "C");
@@ -162,7 +97,6 @@ class ParallelWorkflowExecutorTest {
 
     @Test
     void testOutputOrdering_topologicalOrder() {
-        // A -> B -> D; A -> C -> D: all four tasks
         var a = agentWithResponse("A", "A output");
         var b = agentWithResponse("B", "B output");
         var c = agentWithResponse("C", "C output");
@@ -176,10 +110,8 @@ class ParallelWorkflowExecutorTest {
 
         List<String> roles =
                 output.getTaskOutputs().stream().map(TaskOutput::getAgentRole).toList();
-        // A must come before B, C, D
         assertThat(roles.indexOf("A")).isLessThan(roles.indexOf("B"));
         assertThat(roles.indexOf("A")).isLessThan(roles.indexOf("C"));
-        // B and C must come before D
         assertThat(roles.indexOf("B")).isLessThan(roles.indexOf("D"));
         assertThat(roles.indexOf("C")).isLessThan(roles.indexOf("D"));
     }
@@ -193,7 +125,6 @@ class ParallelWorkflowExecutorTest {
 
         var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
-        // The "final" output is the last completed task in topological order
         assertThat(output.getRaw()).isEqualTo("B result");
     }
 
@@ -206,149 +137,7 @@ class ParallelWorkflowExecutorTest {
 
         var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
-        // Both tasks run with no tool calls
         assertThat(output.getTotalToolCalls()).isZero();
-    }
-
-    // ========================
-    // FAIL_FAST error handling
-    // ========================
-
-    @Test
-    void testFailFast_oneTaskFails_throwsTaskExecutionException() {
-        var good = agentWithResponse("Good", "Good result");
-        var bad = agentThatFails("Bad");
-        var tGood = task("Good task", good);
-        var tBad = task("Bad task", bad);
-
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.FAIL_FAST)
-                        .execute(List.of(tGood, tBad), ExecutionContext.disabled()))
-                .isInstanceOf(TaskExecutionException.class)
-                .satisfies(ex -> {
-                    var te = (TaskExecutionException) ex;
-                    assertThat(te.getTaskDescription()).isEqualTo("Bad task");
-                    assertThat(te.getAgentRole()).isEqualTo("Bad");
-                });
-    }
-
-    @Test
-    void testFailFast_singleTask_throwsTaskExecutionException() {
-        var bad = agentThatFails("Bad");
-        var tBad = task("Failing task", bad);
-
-        assertThatThrownBy(() ->
-                        executor(ParallelErrorStrategy.FAIL_FAST).execute(List.of(tBad), ExecutionContext.disabled()))
-                .isInstanceOf(TaskExecutionException.class)
-                .satisfies(ex -> {
-                    var te = (TaskExecutionException) ex;
-                    assertThat(te.getTaskDescription()).isEqualTo("Failing task");
-                });
-    }
-
-    // ========================
-    // CONTINUE_ON_ERROR error handling
-    // ========================
-
-    @Test
-    void testContinueOnError_allSucceed_returnsNormally() {
-        var a = agentWithResponse("A", "A result");
-        var b = agentWithResponse("B", "B result");
-        var ta = task("Task A", a);
-        var tb = task("Task B", b);
-
-        // No exception should be thrown when all tasks succeed
-        var output =
-                executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(List.of(ta, tb), ExecutionContext.disabled());
-
-        assertThat(output.getTaskOutputs()).hasSize(2);
-    }
-
-    @Test
-    void testContinueOnError_oneTaskFails_throwsParallelExecutionException() {
-        var good = agentWithResponse("Good", "Good result");
-        var bad = agentThatFails("Bad");
-        var tGood = task("Good task", good);
-        var tBad = task("Bad task", bad);
-
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(tGood, tBad), ExecutionContext.disabled()))
-                .isInstanceOf(ParallelExecutionException.class)
-                .satisfies(ex -> {
-                    var pe = (ParallelExecutionException) ex;
-                    assertThat(pe.getFailedCount()).isEqualTo(1);
-                    assertThat(pe.getFailedTaskCauses()).containsKey("Bad task");
-                    assertThat(pe.getCompletedTaskOutputs()).hasSize(1);
-                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole())
-                            .isEqualTo("Good");
-                });
-    }
-
-    @Test
-    void testContinueOnError_dependentOfFailed_isSkipped() {
-        // A succeeds, B fails, C depends on B -- C must be skipped
-        var a = agentWithResponse("A", "A result");
-        var bad = agentThatFails("Bad");
-        var skip = agentWithResponse("Skip", "Should not execute");
-        var ta = task("Task A", a);
-        var tBad = task("Task Bad", bad);
-        var tSkip = taskWithContext("Task Skip", skip, List.of(tBad));
-
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(ta, tBad, tSkip), ExecutionContext.disabled()))
-                .isInstanceOf(ParallelExecutionException.class)
-                .satisfies(ex -> {
-                    var pe = (ParallelExecutionException) ex;
-                    // A completed, B failed, Skip was skipped (not completed, not failed)
-                    assertThat(pe.getCompletedTaskOutputs()).hasSize(1);
-                    assertThat(pe.getCompletedTaskOutputs().get(0).getAgentRole())
-                            .isEqualTo("A");
-                    assertThat(pe.getFailedTaskCauses()).containsKey("Task Bad");
-                    // Skip is neither in completed nor failed (it was bypassed)
-                    assertThat(pe.getFailedTaskCauses()).doesNotContainKey("Task Skip");
-                });
-    }
-
-    @Test
-    void testContinueOnError_transitiveDependentOfFailed_isSkipped() {
-        // Root fails, Middle depends on Root, Tail depends on Middle.
-        // Both Middle and Tail must be skipped -- not just the direct dependent.
-        var badRoot = agentThatFails("Root");
-        var middle = agentWithResponse("Middle", "Middle result");
-        var tail = agentWithResponse("Tail", "Tail result");
-        var tRoot = task("Task Root", badRoot);
-        var tMiddle = taskWithContext("Task Middle", middle, List.of(tRoot));
-        var tTail = taskWithContext("Task Tail", tail, List.of(tMiddle));
-
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(tRoot, tMiddle, tTail), ExecutionContext.disabled()))
-                .isInstanceOf(ParallelExecutionException.class)
-                .satisfies(ex -> {
-                    var pe = (ParallelExecutionException) ex;
-                    // Only the root task should appear in failed causes;
-                    // Middle and Tail are skipped, not failed
-                    assertThat(pe.getFailedCount()).isEqualTo(1);
-                    assertThat(pe.getFailedTaskCauses()).containsKey("Task Root");
-                    assertThat(pe.getFailedTaskCauses()).doesNotContainKeys("Task Middle", "Task Tail");
-                    assertThat(pe.getCompletedTaskOutputs()).isEmpty();
-                });
-    }
-
-    @Test
-    void testContinueOnError_multipleFailures_allReported() {
-        var bad1 = agentThatFails("Bad1");
-        var bad2 = agentThatFails("Bad2");
-        var t1 = task("Fail 1", bad1);
-        var t2 = task("Fail 2", bad2);
-
-        assertThatThrownBy(() -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR)
-                        .execute(List.of(t1, t2), ExecutionContext.disabled()))
-                .isInstanceOf(ParallelExecutionException.class)
-                .satisfies(ex -> {
-                    var pe = (ParallelExecutionException) ex;
-                    assertThat(pe.getFailedCount()).isEqualTo(2);
-                    assertThat(pe.getFailedTaskCauses()).containsKeys("Fail 1", "Fail 2");
-                    assertThat(pe.getCompletedTaskOutputs()).isEmpty();
-                });
     }
 
     // ========================
@@ -357,8 +146,6 @@ class ParallelWorkflowExecutorTest {
 
     @Test
     void testContextOutputsPassedToAgent_capturedViaTaskOutput() {
-        // Verify that a dependent task actually executes after its dependency
-        // (evidenced by the agent being called and producing its own output)
         var a = agentWithResponse("A", "A produced output");
         var b = agentWithResponse("B", "B used context");
         var ta = task("Task A", a);
@@ -366,7 +153,6 @@ class ParallelWorkflowExecutorTest {
 
         var output = executor().execute(List.of(ta, tb), ExecutionContext.disabled());
 
-        // Both tasks ran
         assertThat(output.getTaskOutputs()).hasSize(2);
         assertThat(output.getTaskOutputs()).extracting(TaskOutput::getAgentRole).containsExactlyInAnyOrder("A", "B");
     }
@@ -382,7 +168,6 @@ class ParallelWorkflowExecutorTest {
         var ta = task("Task A", a);
         var tb = task("Task B", b);
 
-        // Memory context is passed through -- must not throw even with concurrent tasks
         var memoryContext = mock(MemoryContext.class);
         when(memoryContext.isActive()).thenReturn(false);
         when(memoryContext.hasShortTerm()).thenReturn(false);
@@ -397,84 +182,11 @@ class ParallelWorkflowExecutorTest {
     }
 
     // ========================
-    // Callback taskIndex tests
-    // ========================
-
-    @Test
-    void testCallbacks_taskStartEvents_haveOneBasedIndices() {
-        var a1 = agentWithResponse("A1", "Result 1");
-        var a2 = agentWithResponse("A2", "Result 2");
-        var a3 = agentWithResponse("A3", "Result 3");
-        var t1 = task("Task 1", a1);
-        var t2 = task("Task 2", a2);
-        var t3 = task("Task 3", a3);
-
-        List<TaskStartEvent> events = Collections.synchronizedList(new ArrayList<>());
-        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-            @Override
-            public void onTaskStart(TaskStartEvent event) {
-                events.add(event);
-            }
-        }));
-
-        executor().execute(List.of(t1, t2, t3), ec);
-
-        assertThat(events).hasSize(3);
-        assertThat(events.stream().map(TaskStartEvent::taskIndex).toList()).containsExactlyInAnyOrder(1, 2, 3);
-        assertThat(events.stream().map(TaskStartEvent::totalTasks).toList()).containsOnly(3);
-    }
-
-    @Test
-    void testCallbacks_taskCompleteEvents_haveOneBasedIndices() {
-        var a1 = agentWithResponse("A1", "Result 1");
-        var a2 = agentWithResponse("A2", "Result 2");
-        var t1 = task("Task 1", a1);
-        var t2 = task("Task 2", a2);
-
-        List<Integer> completedIndices = Collections.synchronizedList(new ArrayList<>());
-        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-            @Override
-            public void onTaskComplete(TaskCompleteEvent event) {
-                completedIndices.add(event.taskIndex());
-            }
-        }));
-
-        executor().execute(List.of(t1, t2), ec);
-
-        assertThat(completedIndices).containsExactlyInAnyOrder(1, 2);
-    }
-
-    @Test
-    void testCallbacks_taskFailedEvent_hasOneBasedIndex() {
-        var bad = agentThatFails("Bad");
-        var good = agentWithResponse("Good", "Good result");
-        // t1 is at index 1, t2 is at index 2 -- bad is t1 so its index should be 1
-        var t1 = task("Task 1", bad);
-        var t2 = task("Task 2", good);
-
-        List<Integer> failedIndices = Collections.synchronizedList(new ArrayList<>());
-        ExecutionContext ec = ExecutionContext.of(MemoryContext.disabled(), false, List.of(new EnsembleListener() {
-            @Override
-            public void onTaskFailed(TaskFailedEvent event) {
-                failedIndices.add(event.taskIndex());
-            }
-        }));
-
-        assertThatThrownBy(
-                        () -> executor(ParallelErrorStrategy.CONTINUE_ON_ERROR).execute(List.of(t1, t2), ec))
-                .isInstanceOf(ParallelExecutionException.class);
-
-        assertThat(failedIndices).containsExactly(1);
-    }
-
-    // ========================
     // Concurrent execution verification
     // ========================
 
     @Test
-    void testConcurrentExecution_trackingViaSharedState() throws InterruptedException {
-        // Track execution start times using a concurrent map
-        // If tasks run truly concurrently, their start times will overlap
+    void testConcurrentExecution_trackingViaSharedState() {
         Map<String, Long> startTimes = new ConcurrentHashMap<>();
 
         var llm1 = mock(ChatModel.class);
@@ -499,7 +211,6 @@ class ParallelWorkflowExecutorTest {
         var output = executor().execute(List.of(t1, t2), ExecutionContext.disabled());
 
         assertThat(output.getTaskOutputs()).hasSize(2);
-        // Both tasks were invoked
         assertThat(startTimes).containsKeys("t1", "t2");
     }
 }
