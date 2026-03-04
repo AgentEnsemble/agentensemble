@@ -20,11 +20,38 @@ repositories {
 dependencies {
     implementation("net.agentensemble:agentensemble-core:1.0.0")
 
-    // Optional: built-in tool library (calculator, datetime, file I/O, web search, etc.)
-    implementation("net.agentensemble:agentensemble-tools:1.0.0")
+    // Optional: add individual tools -- only include what you need.
+    // Use the BOM (see below) to align all tool versions automatically.
+    implementation("net.agentensemble:agentensemble-tools-calculator:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-datetime:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-web-search:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-web-scraper:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-json-parser:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-file-read:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-file-write:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-process:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-http:1.0.0")
+
+    // Optional: Micrometer metrics integration
+    implementation("net.agentensemble:agentensemble-metrics-micrometer:1.0.0")
 
     // Add the LangChain4j integration for your LLM provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
+}
+```
+
+### Using the BOM
+
+The BOM (Bill of Materials) aligns all tool versions automatically:
+
+```kotlin
+dependencies {
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:1.0.0"))
+    implementation("net.agentensemble:agentensemble-core:1.0.0")
+
+    // No version needed for tools -- resolved from BOM
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-web-search")
 }
 ```
 
@@ -37,10 +64,7 @@ repositories {
 
 dependencies {
     implementation 'net.agentensemble:agentensemble-core:1.0.0'
-
-    // Optional: built-in tool library
-    implementation 'net.agentensemble:agentensemble-tools:1.0.0'
-
+    implementation 'net.agentensemble:agentensemble-tools-calculator:1.0.0'
     implementation 'dev.langchain4j:langchain4j-open-ai:1.11.0'
 }
 ```
@@ -55,10 +79,15 @@ dependencies {
         <version>1.0.0</version>
     </dependency>
 
-    <!-- Optional: built-in tool library -->
+    <!-- Individual tool modules -->
     <dependency>
         <groupId>net.agentensemble</groupId>
-        <artifactId>agentensemble-tools</artifactId>
+        <artifactId>agentensemble-tools-calculator</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools-web-search</artifactId>
         <version>1.0.0</version>
     </dependency>
 
@@ -69,6 +98,48 @@ dependencies {
     </dependency>
 </dependencies>
 ```
+
+**With BOM (Maven):**
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>net.agentensemble</groupId>
+            <artifactId>agentensemble-tools-bom</artifactId>
+            <version>1.0.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+<dependencies>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools-calculator</artifactId>
+        <!-- version from BOM -->
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Available Modules
+
+| Module | Description |
+|--------|-------------|
+| `agentensemble-core` | Framework core -- required |
+| `agentensemble-tools-calculator` | Arithmetic expression evaluator |
+| `agentensemble-tools-datetime` | Date/time operations |
+| `agentensemble-tools-json-parser` | JSON path extraction |
+| `agentensemble-tools-file-read` | Sandboxed file reading |
+| `agentensemble-tools-file-write` | Sandboxed file writing |
+| `agentensemble-tools-web-search` | Web search (Tavily/SerpAPI) |
+| `agentensemble-tools-web-scraper` | Web page text extraction |
+| `agentensemble-tools-process` | Subprocess execution (cross-language) |
+| `agentensemble-tools-http` | HTTP endpoint wrapping |
+| `agentensemble-tools-bom` | Version alignment BOM |
+| `agentensemble-metrics-micrometer` | Micrometer metrics integration |
 
 ---
 
@@ -107,3 +178,5 @@ See the [Logging guide](../guides/logging.md) for configuration details.
 
 - [Quickstart](quickstart.md) -- Build your first ensemble
 - [Core Concepts](concepts.md) -- Understand the key abstractions
+- [Built-in Tools](../guides/built-in-tools.md) -- Ready-to-use tool reference
+- [Remote Tools](../guides/remote-tools.md) -- Cross-language tools with Python, Node.js, etc.

@@ -1,300 +1,295 @@
 # Built-in Tools
 
-The `agentensemble-tools` module provides ready-to-use implementations of common tools that agents
-frequently need. Each tool implements the `AgentTool` interface and can be registered on any agent.
+AgentEnsemble provides a library of ready-to-use tools. Each tool is published as its own
+Gradle/Maven module so you can include exactly what your project needs.
 
-## Adding the Dependency
+All built-in tools extend `AbstractAgentTool` and receive automatic metrics, structured
+logging, and exception handling. See [Tools](tools.md) and [Metrics](metrics.md) for details.
 
-`agentensemble-tools` is a separate artifact. Add it alongside `agentensemble-core`:
+---
 
-=== "Gradle (Kotlin DSL)"
+## Installation
+
+### Individual tools (recommended)
+
+Add only the tools you need:
+
+=== "Gradle"
 
     ```kotlin
-    dependencies {
-        implementation("net.agentensemble:agentensemble-core:1.0.0")
-        implementation("net.agentensemble:agentensemble-tools:1.0.0")
-    }
+    implementation("net.agentensemble:agentensemble-tools-calculator:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-datetime:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-json-parser:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-file-read:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-file-write:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-web-search:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-web-scraper:VERSION")
+    // Remote tools
+    implementation("net.agentensemble:agentensemble-tools-process:VERSION")
+    implementation("net.agentensemble:agentensemble-tools-http:VERSION")
     ```
 
 === "Maven"
 
     ```xml
-    <dependencies>
+    <dependency>
+      <groupId>net.agentensemble</groupId>
+      <artifactId>agentensemble-tools-calculator</artifactId>
+      <version>VERSION</version>
+    </dependency>
+    ```
+
+### BOM (Bill of Materials)
+
+Use the BOM to manage all tool versions in one place:
+
+=== "Gradle"
+
+    ```kotlin
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:VERSION"))
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-web-search")
+    // ... no version needed; from BOM
+    ```
+
+=== "Maven"
+
+    ```xml
+    <dependencyManagement>
+      <dependencies>
         <dependency>
-            <groupId>net.agentensemble</groupId>
-            <artifactId>agentensemble-core</artifactId>
-            <version>1.0.0</version>
+          <groupId>net.agentensemble</groupId>
+          <artifactId>agentensemble-tools-bom</artifactId>
+          <version>VERSION</version>
+          <type>pom</type>
+          <scope>import</scope>
         </dependency>
-        <dependency>
-            <groupId>net.agentensemble</groupId>
-            <artifactId>agentensemble-tools</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-    </dependencies>
+      </dependencies>
+    </dependencyManagement>
     ```
 
 ---
 
-## CalculatorTool
+## Available Tools
 
-Evaluates arithmetic expressions. Supports `+`, `-`, `*`, `/`, `%` (modulo), `^` (power), and
-parentheses. Operator precedence follows standard math conventions.
+### CalculatorTool
 
-**Input:** A math expression string.
+**Module:** `agentensemble-tools-calculator` |
+**Package:** `net.agentensemble.tools.calculator`
 
-**Output:** The numeric result as a string.
+Evaluates arithmetic expressions with full operator precedence.
+
+**Supported operators:** `+`, `-`, `*`, `/`, `%` (modulo), `^` (power), parentheses, unary minus
 
 ```java
-var calculator = new CalculatorTool();
+import net.agentensemble.tools.calculator.CalculatorTool;
 
-// Register on an agent
-var analyst = Agent.builder()
-    .role("Financial Analyst")
-    .goal("Perform financial calculations")
-    .llm(model)
-    .tool(calculator)
-    .build();
+var calculator = new CalculatorTool();
+agent.tools(List.of(calculator));
 ```
 
-**Supported operations:**
-
-| Expression          | Result |
-|---------------------|--------|
-| `2 + 3 * 4`         | `14`   |
-| `(2 + 3) * 4`       | `20`   |
-| `17 % 5`            | `2`    |
-| `2 ^ 10`            | `1024` |
-| `1.5 + 2.5`         | `4`    |
+**Input examples:**
+- `"2 + 3 * 4"` → `14`
+- `"(10 + 5) / 3"` → `5`
+- `"2 ^ 10"` → `1024`
 
 ---
 
-## DateTimeTool
+### DateTimeTool
 
-Provides current date/time, timezone conversion, and date arithmetic using `java.time`.
+**Module:** `agentensemble-tools-datetime` |
+**Package:** `net.agentensemble.tools.datetime`
 
-**Input:** A command string (see supported commands below).
-
-**Output:** A formatted date or datetime string.
+Date and time operations using the Java `java.time` package.
 
 ```java
-var dateTime = new DateTimeTool();
+import net.agentensemble.tools.datetime.DateTimeTool;
 
-var scheduler = Agent.builder()
-    .role("Scheduler")
-    .goal("Manage dates and deadlines")
-    .llm(model)
-    .tool(dateTime)
-    .build();
+var datetime = new DateTimeTool();
 ```
 
 **Supported commands:**
 
-| Command                                               | Example Output                         |
-|-------------------------------------------------------|----------------------------------------|
-| `now`                                                 | `2024-03-15T12:30:00 UTC`              |
-| `now in America/New_York`                             | `2024-03-15T08:30:00 America/New_York` |
-| `today`                                               | `2024-03-15`                           |
-| `today in Pacific/Auckland`                           | `2024-03-16`                           |
-| `2024-03-15 + 5 days`                                 | `2024-03-20`                           |
-| `2024-01-31 + 1 month`                                | `2024-02-29`                           |
-| `2024-03-15T10:00:00Z + 3 hours`                      | `2024-03-15T13:00:00Z`                 |
-| `convert 2024-03-15T12:00:00Z from UTC to America/Chicago` | `2024-03-15T07:00:00 America/Chicago` |
+| Command | Example | Result |
+|---------|---------|--------|
+| `now` | `now` | Current UTC datetime |
+| `now in <timezone>` | `now in America/New_York` | Current datetime in timezone |
+| `today` | `today` | Current UTC date |
+| `today in <timezone>` | `today in Europe/London` | Current date in timezone |
+| `<date> +/- <N> <unit>` | `2024-01-15 + 30 days` | Date arithmetic |
+| `<datetime> +/- <N> <unit>` | `2024-01-15T10:00:00Z + 2 hours` | Datetime arithmetic |
+| `convert <dt> from <tz> to <tz>` | `convert 2024-01-15T10:00:00Z from UTC to America/Chicago` | Timezone conversion |
 
-Supported units for arithmetic: `days`, `weeks`, `months`, `years`, `hours`, `minutes`, `seconds`.
-Timezone IDs use IANA format (e.g., `America/New_York`, `Europe/London`, `UTC`).
+Units: `days`, `weeks`, `months`, `years`, `hours`, `minutes`, `seconds`
 
 ---
 
-## FileReadTool
+### JsonParserTool
 
-Reads file contents from a sandboxed base directory. Path traversal attacks (via `../`) are
-rejected before any filesystem access.
+**Module:** `agentensemble-tools-json-parser` |
+**Package:** `net.agentensemble.tools.json`
 
-**Input:** A file path relative to the sandbox directory.
-
-**Output:** The file contents as a string.
+Extracts values from JSON using dot-notation paths with array indexing.
 
 ```java
-// Sandbox to a specific directory
-var fileReader = FileReadTool.of(Path.of("/workspace/data"));
+import net.agentensemble.tools.json.JsonParserTool;
 
-var researcher = Agent.builder()
-    .role("Research Analyst")
-    .goal("Analyze documents")
-    .llm(model)
-    .tool(fileReader)
-    .build();
+var jsonParser = new JsonParserTool();
 ```
 
-**Sandboxing:** Any path that resolves outside the base directory -- including `../secret.txt` or
-an absolute path like `/etc/passwd` -- is rejected with an access-denied failure result.
+**Input format** (two lines: path, then JSON):
+
+```
+user.address.city
+{"user": {"name": "Alice", "address": {"city": "Denver"}}}
+```
+
+**Path syntax:**
+- `user.name` -- nested object access
+- `items[0].title` -- array index access
+- `metadata.tags[2]` -- combined
 
 ---
 
-## FileWriteTool
+### FileReadTool
 
-Writes content to a file within a sandboxed base directory. Parent directories are created
-automatically. Uses the same path-traversal protection as `FileReadTool`.
+**Module:** `agentensemble-tools-file-read` |
+**Package:** `net.agentensemble.tools.io`
 
-**Input:** A JSON object with `path` and `content` fields.
-
-**Output:** A success message including the file path written.
+Reads file contents within a sandboxed base directory. Path traversal (`../`) is rejected.
 
 ```java
-var fileWriter = FileWriteTool.of(Path.of("/workspace/output"));
+import net.agentensemble.tools.io.FileReadTool;
 
-var writer = Agent.builder()
-    .role("Report Writer")
-    .goal("Produce written outputs")
-    .llm(model)
-    .tool(fileWriter)
-    .build();
+var fileRead = FileReadTool.of(Path.of("/workspace/data"));
 ```
 
-**Input format:**
+**Input:** a relative file path, e.g. `"reports/q4.txt"` or `"data/summary.json"`
+
+---
+
+### FileWriteTool
+
+**Module:** `agentensemble-tools-file-write` |
+**Package:** `net.agentensemble.tools.io`
+
+Writes content to a file within a sandboxed base directory. Parent directories are
+created automatically.
+
+```java
+import net.agentensemble.tools.io.FileWriteTool;
+
+var fileWrite = FileWriteTool.of(Path.of("/workspace/output"));
+```
+
+**Input format (JSON):**
 
 ```json
-{"path": "reports/analysis.txt", "content": "The analysis shows..."}
+{"path": "reports/analysis.md", "content": "# Analysis\n\nThe results show..."}
 ```
-
-Subdirectories in the path are created automatically if they do not exist.
 
 ---
 
-## WebSearchTool
+### WebSearchTool
 
-Performs a web search via a configurable provider and returns formatted results.
+**Module:** `agentensemble-tools-web-search` |
+**Package:** `net.agentensemble.tools.web.search`
 
-**Input:** A search query string.
-
-**Output:** Formatted search results as plain text.
+Performs web searches using Tavily or SerpAPI.
 
 ```java
-// Tavily (recommended for AI agents)
-var webSearch = WebSearchTool.ofTavily(System.getenv("TAVILY_API_KEY"));
+import net.agentensemble.tools.web.search.WebSearchTool;
+
+// Tavily
+var search = WebSearchTool.ofTavily(System.getenv("TAVILY_API_KEY"));
 
 // SerpAPI (Google)
-var webSearch = WebSearchTool.ofSerpApi(System.getenv("SERPAPI_API_KEY"));
+var search = WebSearchTool.ofSerpApi(System.getenv("SERPAPI_KEY"));
 
 // Custom provider
-var webSearch = WebSearchTool.of(query -> {
-    // your HTTP logic
-    return formattedResults;
-});
-
-var researcher = Agent.builder()
-    .role("Research Analyst")
-    .goal("Find and summarize online information")
-    .llm(model)
-    .tool(webSearch)
-    .build();
+var search = WebSearchTool.of(myCustomProvider);
 ```
 
-**Providers:**
-
-| Factory Method                          | Provider          |
-|-----------------------------------------|-------------------|
-| `WebSearchTool.ofTavily(apiKey)`        | Tavily Search API |
-| `WebSearchTool.ofSerpApi(apiKey)`       | SerpAPI (Google)  |
-| `WebSearchTool.of(WebSearchProvider)`   | Custom            |
-
-The `WebSearchProvider` interface is a single-method functional interface, making lambda
-implementations straightforward.
+**Input:** a search query string, e.g. `"Java 21 virtual threads performance benchmark"`
 
 ---
 
-## WebScraperTool
+### WebScraperTool
 
-Fetches a web page and extracts its readable text content using Jsoup. Strips HTML tags, scripts,
-navigation, headers, and footers. Truncates output to a configurable character limit to avoid
-overwhelming the LLM context window.
+**Module:** `agentensemble-tools-web-scraper` |
+**Package:** `net.agentensemble.tools.web.scraper`
 
-**Input:** A URL string.
-
-**Output:** Plain-text content extracted from the page.
+Fetches a web page and extracts its readable text content by stripping HTML, scripts,
+navigation, and footer elements.
 
 ```java
-// Default (5000 chars, 10s timeout)
+import net.agentensemble.tools.web.scraper.WebScraperTool;
+
+// Default settings (5000 chars, 10s timeout)
 var scraper = new WebScraperTool();
 
 // Custom max content length
 var scraper = WebScraperTool.withMaxContentLength(3000);
-
-var analyst = Agent.builder()
-    .role("Web Analyst")
-    .goal("Extract information from web pages")
-    .llm(model)
-    .tool(scraper)
-    .build();
 ```
 
-Output exceeding the maximum length is truncated with a `[truncated at N chars]` notice appended.
+**Input:** a URL string, e.g. `"https://example.com/article"`
 
 ---
 
-## JsonParserTool
+### ProcessAgentTool
 
-Extracts values from JSON using dot-notation path expressions with optional array indexing.
+**Module:** `agentensemble-tools-process` |
+**Package:** `net.agentensemble.tools.process`
 
-**Input:** Two sections separated by a newline. The first line is the path; the remaining lines
-are the JSON to parse.
-
-**Output:** The extracted value as a string. Objects and arrays are returned as compact JSON.
+Executes an external subprocess using the AgentEnsemble subprocess protocol.
+See [Remote Tools](remote-tools.md) for the full protocol specification.
 
 ```java
-var jsonParser = new JsonParserTool();
+import net.agentensemble.tools.process.ProcessAgentTool;
 
-var extractor = Agent.builder()
-    .role("Data Extractor")
-    .goal("Parse and extract structured data")
-    .llm(model)
-    .tool(jsonParser)
+var sentiment = ProcessAgentTool.builder()
+    .name("sentiment_analysis")
+    .description("Analyzes text sentiment using Python NLTK")
+    .command("python3", "/opt/tools/sentiment.py")
+    .timeout(Duration.ofSeconds(30))
     .build();
-```
-
-**Path syntax:**
-
-| Path                     | JSON                                            | Output  |
-|--------------------------|-------------------------------------------------|---------|
-| `name`                   | `{"name": "Alice"}`                             | `Alice` |
-| `user.address.city`      | `{"user": {"address": {"city": "Denver"}}}`     | `Denver`|
-| `items[0]`               | `{"items": ["alpha", "beta"]}`                  | `alpha` |
-| `users[1].name`          | `{"users": [{"name": "A"}, {"name": "B"}]}`     | `B`     |
-
-**Input example:**
-
-```
-user.address.city
-{"user": {"address": {"city": "Denver", "zip": "80203"}}}
 ```
 
 ---
 
-## Using Multiple Tools Together
+### HttpAgentTool
 
-Agents can be configured with any combination of built-in tools:
+**Module:** `agentensemble-tools-http` |
+**Package:** `net.agentensemble.tools.http`
+
+Wraps an HTTP REST endpoint as an agent tool.
+See [Remote Tools](remote-tools.md) for full documentation.
 
 ```java
-var calculator = new CalculatorTool();
-var dateTime = new DateTimeTool();
-var fileReader = FileReadTool.of(Path.of("/workspace/data"));
-var fileWriter = FileWriteTool.of(Path.of("/workspace/output"));
-var webSearch = WebSearchTool.ofTavily(System.getenv("TAVILY_API_KEY"));
-var scraper = new WebScraperTool();
-var jsonParser = new JsonParserTool();
+import net.agentensemble.tools.http.HttpAgentTool;
 
-var universalAgent = Agent.builder()
-    .role("Research and Analysis Specialist")
-    .goal("Research topics using web sources, analyze data, and produce written reports")
-    .llm(model)
-    .tool(webSearch)
-    .tool(scraper)
-    .tool(calculator)
-    .tool(dateTime)
-    .tool(fileReader)
-    .tool(fileWriter)
-    .tool(jsonParser)
-    .build();
+var classifier = HttpAgentTool.post(
+    "text_classifier",
+    "Classifies text into categories",
+    "https://ml.example.com/classify");
 ```
 
-See the [Tools guide](tools.md) for information on combining built-in tools with custom tools.
+---
+
+## Using Multiple Tools
+
+```java
+var agent = Agent.builder()
+    .role("Research Analyst")
+    .goal("Research and analyze market trends")
+    .tools(List.of(
+        WebSearchTool.ofTavily(apiKey),
+        new WebScraperTool(),
+        new CalculatorTool(),
+        new DateTimeTool(),
+        FileWriteTool.of(Path.of("/workspace/output"))
+    ))
+    .llm(chatModel)
+    .maxIterations(15)
+    .build();
+```

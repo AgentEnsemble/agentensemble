@@ -57,13 +57,23 @@ public final class MicrometerToolMetrics implements ToolMetrics {
     /** Timer metric name for tool execution duration. */
     public static final String METRIC_DURATION = "agentensemble.tool.duration";
 
-    static final String TAG_TOOL_NAME = "tool_name";
-    static final String TAG_AGENT_ROLE = "agent_role";
-    static final String TAG_OUTCOME = "outcome";
+    /** Tag key for the tool name, e.g. {@code "calculator"}. */
+    public static final String TAG_TOOL_NAME = "tool_name";
 
-    static final String OUTCOME_SUCCESS = "success";
-    static final String OUTCOME_FAILURE = "failure";
-    static final String OUTCOME_ERROR = "error";
+    /** Tag key for the agent role that invoked the tool, e.g. {@code "Researcher"}. */
+    public static final String TAG_AGENT_ROLE = "agent_role";
+
+    /** Tag key for the execution outcome. */
+    public static final String TAG_OUTCOME = "outcome";
+
+    /** Outcome tag value for a successful tool execution. */
+    public static final String OUTCOME_SUCCESS = "success";
+
+    /** Outcome tag value for a tool that returned a failure result. */
+    public static final String OUTCOME_FAILURE = "failure";
+
+    /** Outcome tag value for a tool that threw an unexpected exception. */
+    public static final String OUTCOME_ERROR = "error";
 
     private final MeterRegistry registry;
 
