@@ -14,17 +14,14 @@
 
 ```kotlin
 repositories {
-    maven {
-        url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
-        credentials {
-            username = System.getenv("GITHUB_ACTOR")
-            password = System.getenv("GITHUB_TOKEN")
-        }
-    }
+    mavenCentral()
 }
 
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:0.4.0")
+    implementation("net.agentensemble:agentensemble-core:1.0.0")
+
+    // Optional: built-in tool library (calculator, datetime, file I/O, web search, etc.)
+    implementation("net.agentensemble:agentensemble-tools:1.0.0")
 
     // Add the LangChain4j integration for your LLM provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
@@ -35,17 +32,15 @@ dependencies {
 
 ```groovy
 repositories {
-    maven {
-        url 'https://maven.pkg.github.com/AgentEnsemble/agentensemble'
-        credentials {
-            username System.getenv('GITHUB_ACTOR')
-            password System.getenv('GITHUB_TOKEN')
-        }
-    }
+    mavenCentral()
 }
 
 dependencies {
-    implementation 'net.agentensemble:agentensemble-core:0.4.0'
+    implementation 'net.agentensemble:agentensemble-core:1.0.0'
+
+    // Optional: built-in tool library
+    implementation 'net.agentensemble:agentensemble-tools:1.0.0'
+
     implementation 'dev.langchain4j:langchain4j-open-ai:1.11.0'
 }
 ```
@@ -53,19 +48,20 @@ dependencies {
 ### Maven
 
 ```xml
-<repositories>
-    <repository>
-        <id>agentensemble-github</id>
-        <url>https://maven.pkg.github.com/AgentEnsemble/agentensemble</url>
-    </repository>
-</repositories>
-
 <dependencies>
     <dependency>
         <groupId>net.agentensemble</groupId>
         <artifactId>agentensemble-core</artifactId>
-        <version>0.4.0</version>
+        <version>1.0.0</version>
     </dependency>
+
+    <!-- Optional: built-in tool library -->
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+
     <dependency>
         <groupId>dev.langchain4j</groupId>
         <artifactId>langchain4j-open-ai</artifactId>
@@ -73,21 +69,6 @@ dependencies {
     </dependency>
 </dependencies>
 ```
-
----
-
-## GitHub Packages Authentication
-
-AgentEnsemble is published to GitHub Packages. Authentication is required to download packages from GitHub Packages, even for public repositories.
-
-**Set environment variables:**
-
-```bash
-export GITHUB_ACTOR=your-github-username
-export GITHUB_TOKEN=your-personal-access-token
-```
-
-Your personal access token needs the `read:packages` scope. Create one at: **GitHub Settings > Developer Settings > Personal Access Tokens**.
 
 ---
 
