@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] -- feature/60-built-in-tool-library (Issues #60 + #73) -- post-review fixes
+## [Unreleased / merged to main] -- Issues #60 + #73, PR #72 (squash `706305e`) -- MERGED 2026-03-04
 
 ### Fixed (PR #72 post-review -- commits 5e81c70, 1134b52)
 - `ExecutionContext.java`: two `{@link}` references to Lombok-generated builder methods
@@ -29,7 +29,7 @@
 - Issue #74 created: Tool Pipeline/Chaining (Unix-pipe-style `search -> filter -> format`)
   for future development
 
-## [Unreleased] -- feature/60-built-in-tool-library (Issues #60 + #73)
+## [Unreleased / merged via PR #72] -- feature/60-built-in-tool-library (Issues #60 + #73)
 
 ### Added
 - `AbstractAgentTool` base class: template method (`doExecute`), automatic timing/success/failure/
