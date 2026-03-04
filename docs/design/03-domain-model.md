@@ -196,6 +196,81 @@ public class TaskOutput {
 
 ---
 
+## DelegationRequest
+
+Immutable, builder-pattern object constructed by the framework before each delegation invocation (both peer delegation via `AgentDelegationTool` and hierarchical delegation via `DelegateTaskTool`). Provides a structured, correlated representation of the delegation for observability and audit.
+
+```java
+@Value
+@Builder(toBuilder = true)
+public class DelegationRequest {
+
+    /** Auto-generated UUID v4. Correlates with the matching DelegationResponse. */
+    @Builder.Default @NonNull String taskId = UUID.randomUUID().toString();
+
+    /** Role of the target agent. */
+    @NonNull String agentRole;
+
+    /** Subtask description. */
+    @NonNull String taskDescription;
+
+    /** Optional key-value scope providing bounded context. Default: empty map. */
+    @Builder.Default Map<String, Object> scope = Collections.emptyMap();
+
+    /** Priority hint. Default: NORMAL. */
+    @Builder.Default DelegationPriority priority = DelegationPriority.NORMAL;
+
+    /** Optional description of expected output schema. Default: null. */
+    String expectedOutputSchema;
+
+    /** Maximum output parsing retries. Default: 0. */
+    @Builder.Default int maxOutputRetries = 0;
+
+    /** Arbitrary observability metadata. Default: empty map. */
+    @Builder.Default Map<String, Object> metadata = Collections.emptyMap();
+}
+```
+
+---
+
+## DelegationResponse
+
+Immutable Java record produced after each delegation attempt. Includes successful delegations and guard-blocked attempts (depth limit, self-delegation, unknown agent) with `DelegationStatus.FAILURE`.
+
+```java
+public record DelegationResponse(
+    String taskId,          // correlates with DelegationRequest.taskId
+    DelegationStatus status,
+    String workerRole,
+    String rawOutput,       // null on failure
+    Object parsedOutput,    // null when no structured output was requested
+    Map<String, Object> artifacts,
+    List<String> errors,    // empty on success
+    Map<String, Object> metadata,
+    Duration duration
+) {}
+```
+
+### DelegationStatus
+
+```java
+public enum DelegationStatus {
+    SUCCESS,   // task completed and worker produced usable output
+    FAILURE,   // task failed; errors list contains details
+    PARTIAL    // task completed but output may be incomplete
+}
+```
+
+### DelegationPriority
+
+```java
+public enum DelegationPriority {
+    LOW, NORMAL, HIGH, CRITICAL
+}
+```
+
+---
+
 ## EnsembleOutput
 
 ```java

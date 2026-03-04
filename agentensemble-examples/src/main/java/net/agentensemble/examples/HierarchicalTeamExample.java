@@ -6,6 +6,8 @@ import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.task.TaskOutput;
+import net.agentensemble.workflow.DefaultManagerPromptStrategy;
+import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,6 +112,24 @@ public class HierarchicalTeamExample {
         // Build and run the ensemble
         // ========================
 
+        // Optional: inject a domain constraint into the manager's system prompt.
+        // The default strategy (DefaultManagerPromptStrategy.DEFAULT) is used when
+        // managerPromptStrategy() is not called. This demonstrates extending it:
+        ManagerPromptStrategy investmentStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(net.agentensemble.workflow.ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
+                        + "\n\nFocus on investment-relevant insights. "
+                        + "Always ask the Financial Analyst to complete their analysis before the "
+                        + "Report Writer begins synthesising.";
+            }
+
+            @Override
+            public String buildUserPrompt(net.agentensemble.workflow.ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+            }
+        };
+
         EnsembleOutput output = Ensemble.builder()
                 .agent(marketResearcher)
                 .agent(financialAnalyst)
@@ -120,6 +140,7 @@ public class HierarchicalTeamExample {
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(powerfulModel)
                 .managerMaxIterations(15)
+                .managerPromptStrategy(investmentStrategy)
                 .input("company", company)
                 .build()
                 .run();
