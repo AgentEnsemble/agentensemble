@@ -16,7 +16,7 @@ import java.util.Map;
  * {@code AgentDelegationTool.getDelegationResponses()} or
  * {@code DelegateTaskTool.getDelegationResponses()}.
  *
- * @param taskId       correlation ID matching the originating {@link DelegationRequest#getTaskId()}
+ * @param taskId       correlation ID matching the originating {@code DelegationRequest.getTaskId()}
  * @param status       outcome of the delegation
  * @param workerRole   role of the agent that executed the delegated task
  * @param rawOutput    raw text output produced by the worker agent; may be null on failure

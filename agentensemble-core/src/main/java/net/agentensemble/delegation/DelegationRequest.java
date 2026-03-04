@@ -18,7 +18,7 @@ import lombok.Value;
  * <p>The {@link #taskId} is auto-generated as a UUID v4 when not explicitly provided via the
  * builder. This enables correlation with the matching {@link DelegationResponse}.
  *
- * <p>Build via the {@link DelegationRequest#builder()} factory:
+ * <p>Build via the {@code DelegationRequest.builder()} factory:
  * <pre>
  * DelegationRequest request = DelegationRequest.builder()
  *     .agentRole("Analyst")
