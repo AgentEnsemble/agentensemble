@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.9.0...v1.0.0) (2026-03-04)
+
+
+### Features
+
+* enhanced tool model - AbstractAgentTool, per-tool modules, remote tools, metrics (Closes [#60](https://github.com/AgentEnsemble/agentensemble/issues/60), Closes [#73](https://github.com/AgentEnsemble/agentensemble/issues/73)) ([#72](https://github.com/AgentEnsemble/agentensemble/issues/72)) ([706305e](https://github.com/AgentEnsemble/agentensemble/commit/706305e122c9e7ef607052276a3d9357c5aa81dc))
+
+
+### Miscellaneous Chores
+
+* target 1.0.0 release ([13b39eb](https://github.com/AgentEnsemble/agentensemble/commit/13b39ebdc6b71a6e1f4990d14e1561bdb5ac561e))
+
 ## [0.9.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.8.0...v0.9.0) (2026-03-03)
 
 
