@@ -21,10 +21,9 @@ dependencies {
     implementation(project(":agentensemble-metrics-micrometer"))
     implementation(libs.micrometer.core)
 
-    // OpenAI LangChain4j provider - example only
+    // LangChain4j provider and main artifact exposed as api so they are
+    // available on the compile classpath of any module that depends on examples.
     api(libs.langchain4j.open.ai)
-
-    // langchain4j main artifact -- provides InMemoryEmbeddingStore used in the memory example
     api(libs.langchain4j)
 
     // SLF4J implementation with Logback for examples
