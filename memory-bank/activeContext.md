@@ -74,8 +74,62 @@ Original flat `net.agentensemble.tools` package with 7 tools; replaced by per-mo
 
 - Release-please will open a Release PR for v1.0.0 (the squash commit was a `feat:` Conventional
   Commit, which triggers a minor/major bump depending on release-please config)
-- Issue #74 (Tool Pipeline/Chaining) is the next planned feature
+- Issues #77-#81 (Structured Delegation API and related features) are the next planned features
+- Issue #74 (Tool Pipeline/Chaining) remains open for future development
 - Consider future work: MCP (Model Context Protocol) integration, GraalVM polyglot tools
+
+## Planned Issues: Structured Delegation API (#77-#81)
+
+Five GitHub issues were created to enhance the delegation infrastructure. They follow a dependency
+order: #77 is foundational; #78 and #79 depend on #77; #80 is independent; #81 depends on all
+of #77-#79.
+
+### #77 -- Structured delegation contract: DelegationRequest and DelegationResponse
+- `DelegationRequest` (immutable builder): `taskId`, `agentRole`, `taskDescription`, `scope`,
+  `priority` (enum: NORMAL/HIGH/CRITICAL), `expectedOutputSchema`, `maxOutputRetries`, `metadata`
+- `DelegationResponse` (record): `taskId`, `status` (enum: SUCCESS/FAILURE/VALIDATION_ERROR),
+  `workerRole`, `rawOutput`, `parsedOutput`, `artifacts`, `errors`, `metadata`, `duration`
+- LLM-facing `@Tool` method keeps 2-param signature (Option C hybrid); DelegationRequest
+  constructed internally; DelegationResponse serialized as JSON (Jackson) returned to LLM
+- When `expectedOutputSchema` set: parse + validate via StructuredOutputParser; retry-on-invalid
+  bounded by `maxOutputRetries`; VALIDATION_ERROR on exhaustion
+- Applies to both `AgentDelegationTool` (peer) and `HierarchicalWorkflowExecutor` (manager) paths
+
+### #78 -- Delegation policy hooks: DelegationPolicy
+- New package `net.agentensemble.delegation.policy`
+- `DelegationPolicy` (@FunctionalInterface): `evaluate(DelegationRequest, DelegationPolicyContext)`
+- `DelegationPolicyResult` (sealed): `allow()`, `reject(String reason)`, `modify(DelegationRequest)`
+- `DelegationPolicyContext` (record): `delegatingAgentRole`, `currentDepth`, `maxDepth`, `availableWorkerRoles`
+- Policies registered via `Ensemble.Builder.delegationPolicy(DelegationPolicy...)` and threaded
+  via `DelegationContext` (propagated through `descend()`)
+- Evaluation: REJECT short-circuits; MODIFY replaces working request; ALLOW passes through
+- Policy REJECT produces FAILURE `DelegationResponse` without invoking the worker executor
+
+### #79 -- Delegation lifecycle events and correlation IDs
+- New event records in `net.agentensemble.callback`:
+  - `DelegationStartedEvent`: `delegationId`, `managerRole`, `workerRole`, `taskDescription`, `scope`, `priority`, `timestamp`
+  - `DelegationCompletedEvent`: `delegationId`, `managerRole`, `workerRole`, `status`, `duration`, `timestamp`
+  - `DelegationFailedEvent`: `delegationId`, `managerRole`, `workerRole`, `failureReason`, `duration`, `timestamp`
+- `EnsembleListener` gains 3 new default no-op methods: `onDelegationStarted/Completed/Failed`
+- `Ensemble.Builder` gains 3 lambda convenience methods: `onDelegationStarted/Completed/Failed`
+- `ExecutionContext` gains 3 fire methods with exception isolation
+- `delegationId` (from `DelegationRequest.taskId()`) set as MDC key during worker execution
+
+### #80 -- Manager prompt extension hook: ManagerPromptStrategy
+- `ManagerPromptStrategy` (interface): `buildSystemPrompt(ManagerPromptContext)`, `buildUserPrompt(ManagerPromptContext)`
+- `ManagerPromptContext` (record): `agents`, `currentTask`, `previousOutputs`, `workflowDescription`
+- `DefaultManagerPromptStrategy`: public class containing existing `ManagerPromptBuilder` logic; exposes `DEFAULT` singleton
+- `ManagerPromptBuilder` deprecated in favor of `DefaultManagerPromptStrategy`
+- `Ensemble.Builder.managerPromptStrategy(ManagerPromptStrategy)` -- defaults to `DefaultManagerPromptStrategy.DEFAULT`
+- `HierarchicalWorkflowExecutor` calls registered strategy; no direct use of `ManagerPromptBuilder` remains
+
+### #81 -- Constrained hierarchical mode: HierarchicalConstraints
+- `HierarchicalConstraints` (builder): `requiredWorkers`, `allowedWorkers`, `maxCallsPerWorker`, `globalMaxDelegations`, `requiredStages`
+- `ConstraintViolationException` (extends AgentEnsembleException): carries list of unsatisfied constraints
+- Enforcement via built-in `DelegationPolicy` (registered before user policies): allowlist REJECT, per-worker cap REJECT, global cap REJECT
+- Post-execution validation: required workers + required stages checked; `ConstraintViolationException` if unsatisfied
+- Constraint status injected into manager system prompt via `ManagerPromptStrategy`
+- `Ensemble.Builder.hierarchicalConstraints(HierarchicalConstraints)` -- no-op for non-HIERARCHICAL workflows
 
 ## Post-PR Review Fixes (commits 5e81c70 and 1134b52)
 

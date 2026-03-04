@@ -1,5 +1,30 @@
 # Changelog
 
+## [Planned] Issues #77-#81 -- Structured Delegation API -- Created 2026-03-04
+
+### Architecture Decisions Recorded
+
+Five GitHub issues created to enhance the delegation infrastructure. Dependency order:
+#77 foundational -> #78/#79 depend on #77 -> #81 depends on #77/#78/#79; #80 independent.
+
+| Issue | Feature | New Types |
+|-------|---------|-----------|
+| #77 | Structured delegation contract (DelegationRequest / DelegationResponse) | `DelegationRequest`, `DelegationResponse`, `DelegationPriority`, `DelegationStatus` in `net.agentensemble.delegation` |
+| #78 | Delegation policy hooks | `DelegationPolicy`, `DelegationPolicyResult`, `DelegationPolicyContext` in `net.agentensemble.delegation.policy` |
+| #79 | Delegation lifecycle events + correlation IDs | `DelegationStartedEvent`, `DelegationCompletedEvent`, `DelegationFailedEvent` in `net.agentensemble.callback` |
+| #80 | Manager prompt extension hook | `ManagerPromptStrategy`, `ManagerPromptContext`, `DefaultManagerPromptStrategy` in `net.agentensemble.workflow` |
+| #81 | Constrained hierarchical mode | `HierarchicalConstraints`, `ConstraintViolationException` in `net.agentensemble.workflow` |
+
+Key design decisions:
+- **Option C (hybrid)**: LLM-facing `@Tool` method keeps 2-param signature `(agentRole, taskDescription)`;
+  `DelegationRequest` constructed internally; `DelegationResponse` serialized as Jackson JSON returned to LLM
+- **Jackson**: used for all DelegationRequest/Response serialization (already on classpath via LangChain4j)
+- **DelegationPolicy as sealed type**: ALLOW / REJECT(reason) / MODIFY(newRequest) -- first-failure-wins for REJECT; MODIFY chains
+- **Constraint enforcement via built-in policies**: `HierarchicalConstraints` registers policies before user policies
+- **ManagerPromptBuilder deprecated**: existing logic extracted to public `DefaultManagerPromptStrategy`; `ManagerPromptBuilder` kept one cycle
+
+---
+
 ## [Unreleased / merged to main] -- Issues #60 + #73, PR #72 (squash `706305e`) -- MERGED 2026-03-04
 
 ### Fixed (PR #72 post-review -- commits 5e81c70, 1134b52)
