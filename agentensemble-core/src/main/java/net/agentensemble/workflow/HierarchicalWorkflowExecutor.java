@@ -26,8 +26,9 @@ import org.slf4j.MDC;
  *
  * The Manager is a virtual agent created at runtime with:
  * <ul>
- *   <li>A system prompt listing all available worker agents (via ManagerPromptBuilder)</li>
- *   <li>A user prompt listing all tasks to complete (via ManagerPromptBuilder)</li>
+ *   <li>A system prompt produced by the configured {@link ManagerPromptStrategy}
+ *       (default: {@link DefaultManagerPromptStrategy#DEFAULT})</li>
+ *   <li>A user prompt produced by the same strategy</li>
  *   <li>The delegateTask tool that dispatches tasks to workers</li>
  * </ul>
  *
@@ -65,8 +66,11 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     private final int managerMaxIterations;
     private final int maxDelegationDepth;
     private final AgentExecutor agentExecutor;
+    private final ManagerPromptStrategy promptStrategy;
 
     /**
+     * Creates an executor using the {@link DefaultManagerPromptStrategy}.
+     *
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
      * @param managerMaxIterations maximum number of tool call iterations for the manager
@@ -74,11 +78,31 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
      */
     public HierarchicalWorkflowExecutor(
             ChatModel managerLlm, List<Agent> workerAgents, int managerMaxIterations, int maxDelegationDepth) {
+        this(managerLlm, workerAgents, managerMaxIterations, maxDelegationDepth, DefaultManagerPromptStrategy.DEFAULT);
+    }
+
+    /**
+     * Creates an executor with a custom {@link ManagerPromptStrategy}.
+     *
+     * @param managerLlm           LLM for the manager agent
+     * @param workerAgents         the worker agents available for delegation
+     * @param managerMaxIterations maximum number of tool call iterations for the manager
+     * @param maxDelegationDepth   maximum peer-delegation depth for worker agents
+     * @param promptStrategy       strategy for building the manager's system and user prompts;
+     *                             must not be null
+     */
+    public HierarchicalWorkflowExecutor(
+            ChatModel managerLlm,
+            List<Agent> workerAgents,
+            int managerMaxIterations,
+            int maxDelegationDepth,
+            ManagerPromptStrategy promptStrategy) {
         this.managerLlm = managerLlm;
         this.workerAgents = List.copyOf(workerAgents);
         this.managerMaxIterations = managerMaxIterations;
         this.maxDelegationDepth = maxDelegationDepth;
         this.agentExecutor = new AgentExecutor();
+        this.promptStrategy = promptStrategy != null ? promptStrategy : DefaultManagerPromptStrategy.DEFAULT;
     }
 
     @Override
@@ -101,24 +125,38 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             DelegateTaskTool delegateTool =
                     new DelegateTaskTool(workerAgents, agentExecutor, executionContext, workerDelegationContext);
 
-            // 3. Build the virtual Manager agent
+            // 3. Build the ManagerPromptContext and invoke the configured strategy to produce prompts
+            ManagerPromptContext promptContext = new ManagerPromptContext(workerAgents, resolvedTasks, List.of(), null);
+            String systemPrompt = promptStrategy.buildSystemPrompt(promptContext);
+            String userPrompt = promptStrategy.buildUserPrompt(promptContext);
+
+            // Validation of strategy output is the caller's responsibility (per ManagerPromptStrategy
+            // contract). The Task model requires a non-blank description, so fall back to a sensible
+            // default when the strategy returns null or blank, rather than propagating a ValidationException
+            // that would be confusing for callers who intentionally use minimal prompts.
+            String effectiveUserPrompt = (userPrompt != null && !userPrompt.isBlank())
+                    ? userPrompt
+                    : "Coordinate your team to complete all assigned tasks and synthesize a comprehensive final response.";
+
+            // 4. Build the virtual Manager agent using the strategy-provided system prompt.
+            //    The background field is optional; null/blank from the strategy is passed through as-is.
             Agent manager = Agent.builder()
                     .role(MANAGER_ROLE)
                     .goal(MANAGER_GOAL)
-                    .background(ManagerPromptBuilder.buildBackground(workerAgents))
+                    .background(systemPrompt != null ? systemPrompt : "")
                     .llm(managerLlm)
                     .maxIterations(managerMaxIterations)
                     .tools(List.of(delegateTool))
                     .build();
 
-            // 4. Build the meta-task that drives the manager
+            // 5. Build the meta-task that drives the manager using the effective user prompt
             Task managerTask = Task.builder()
-                    .description(ManagerPromptBuilder.buildTaskDescription(resolvedTasks))
+                    .description(effectiveUserPrompt)
                     .expectedOutput(MANAGER_EXPECTED_OUTPUT)
                     .agent(manager)
                     .build();
 
-            // 5. The manager uses disabled memory (it is a meta-orchestrator) but still
+            // 6. The manager uses disabled memory (it is a meta-orchestrator) but still
             //    participates in listeners (taskIndex=1, totalTasks=1 for the meta-task).
             ExecutionContext managerContext = ExecutionContext.of(
                     MemoryContext.disabled(), executionContext.isVerbose(), executionContext.listeners());
@@ -159,7 +197,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             executionContext.fireTaskComplete(new TaskCompleteEvent(
                     managerTask.getDescription(), MANAGER_ROLE, managerOutput, managerOutput.getDuration(), 1, 1));
 
-            // 6. Assemble output: worker outputs first, manager final output last
+            // 7. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
             allOutputs.add(managerOutput);
 
