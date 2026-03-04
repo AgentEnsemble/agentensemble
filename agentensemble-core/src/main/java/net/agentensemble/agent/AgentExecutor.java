@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
@@ -29,23 +31,29 @@ import net.agentensemble.guardrail.GuardrailViolationException.GuardrailType;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.task.TaskOutput;
+import net.agentensemble.tool.ToolResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Executes a single agent on a single task.
  *
- * Manages the ReAct-style tool-calling loop: the agent reasons, optionally calls
+ * <p>Manages the ReAct-style tool-calling loop: the agent reasons, optionally calls
  * tools, incorporates results, and eventually produces a final text answer.
  *
- * When the {@link ExecutionContext} carries an active {@link net.agentensemble.memory.MemoryContext},
+ * <p><strong>Parallel tool execution:</strong> When the LLM requests multiple tools in a
+ * single turn, they are executed concurrently using the {@link ExecutionContext#toolExecutor()}.
+ * The default is a virtual-thread-per-task executor, so I/O-bound tools (HTTP, subprocess)
+ * do not block platform threads. Single tool calls execute directly without async overhead.
+ *
+ * <p>When the {@link ExecutionContext} carries an active {@link net.agentensemble.memory.MemoryContext},
  * relevant memories are injected into the user prompt before execution and the task output
  * is recorded into memory after execution.
  *
- * When the {@link ExecutionContext} carries {@link net.agentensemble.callback.EnsembleListener}
+ * <p>When the {@link ExecutionContext} carries {@link net.agentensemble.callback.EnsembleListener}
  * instances, a {@link ToolCallEvent} is fired after each tool execution in the ReAct loop.
  *
- * Stateless -- all state is held in local variables during execution.
+ * <p>Stateless -- all state is held in local variables during execution.
  */
 public class AgentExecutor {
 
@@ -62,8 +70,8 @@ public class AgentExecutor {
      *
      * @param task             the task to execute
      * @param contextOutputs   outputs from prior tasks to include as context
-     * @param executionContext execution context bundling memory, verbose flag, and listeners;
-     *                         if null, {@link ExecutionContext#disabled()} is used
+     * @param executionContext execution context bundling memory, verbose flag, listeners,
+     *                         tool executor, and tool metrics; if null, {@link ExecutionContext#disabled()} is used
      * @return the task output
      * @throws AgentExecutionException        if the LLM throws an error
      * @throws MaxIterationsExceededException if the agent exceeds its iteration limit
@@ -76,14 +84,9 @@ public class AgentExecutor {
      * Execute the given task using the agent specified in the task, with optional
      * agent delegation support.
      *
-     * When {@code delegationContext} is non-null and the agent has
-     * {@code allowDelegation = true}, an {@link AgentDelegationTool} is auto-injected
-     * into the agent's effective tool list for this execution.
-     *
      * @param task              the task to execute
      * @param contextOutputs    outputs from prior tasks to include as context
-     * @param executionContext  execution context bundling memory, verbose flag, and listeners;
-     *                          if null, {@link ExecutionContext#disabled()} is used
+     * @param executionContext  execution context; if null, {@link ExecutionContext#disabled()} is used
      * @param delegationContext delegation state for this run; pass {@code null} when
      *                          delegation is not enabled for this ensemble
      * @return the task output
@@ -96,7 +99,6 @@ public class AgentExecutor {
             ExecutionContext executionContext,
             DelegationContext delegationContext) {
 
-        // Normalize null executionContext defensively
         if (executionContext == null) {
             executionContext = ExecutionContext.disabled();
         }
@@ -107,10 +109,8 @@ public class AgentExecutor {
         Agent agent = task.getAgent();
         boolean effectiveVerbose = verbose || agent.isVerbose();
 
-        // Run input guardrails before any LLM call -- throws GuardrailViolationException on failure
         runInputGuardrails(task, contextOutputs);
 
-        // Build prompts -- memory context injects STM, LTM, and entity knowledge as applicable
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
         String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
 
@@ -122,7 +122,6 @@ public class AgentExecutor {
             log.debug("User prompt ({} chars):\n{}", userPrompt.length(), userPrompt);
         }
 
-        // Build effective tool list -- inject delegation tool when allowed
         List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext);
 
         log.info(
@@ -131,8 +130,9 @@ public class AgentExecutor {
                 effectiveTools.size(),
                 agent.isAllowDelegation());
 
-        // Resolve tools
-        ToolResolver.ResolvedTools resolvedTools = ToolResolver.resolve(effectiveTools);
+        // Resolve tools, injecting ToolContext into AbstractAgentTool instances
+        ToolResolver.ResolvedTools resolvedTools =
+                ToolResolver.resolve(effectiveTools, executionContext.toolMetrics(), executionContext.toolExecutor());
         AtomicInteger toolCallCounter = new AtomicInteger(0);
 
         String finalResponse;
@@ -169,13 +169,11 @@ public class AgentExecutor {
             log.trace("Full agent response:\n{}", finalResponse);
         }
 
-        // Structured output parsing and retry loop (only when task has outputType set)
         Object parsedOutput = null;
         if (task.getOutputType() != null) {
             parsedOutput = StructuredOutputHandler.parse(agent, task, finalResponse, systemPrompt);
         }
 
-        // Run output guardrails after response (and after structured output parsing)
         runOutputGuardrails(task, finalResponse, parsedOutput);
 
         Duration duration = Duration.between(startTime, Instant.now());
@@ -193,7 +191,6 @@ public class AgentExecutor {
                 .outputType(task.getOutputType())
                 .build();
 
-        // Record this output in memory (no-op when memory is disabled)
         executionContext.memoryContext().record(output);
 
         return output;
@@ -201,10 +198,8 @@ public class AgentExecutor {
 
     /**
      * Build the effective tool list for this execution.
-     *
      * When the agent has {@code allowDelegation = true} and a non-null
-     * {@code delegationContext} is provided, an {@link AgentDelegationTool} is prepended
-     * to the agent's configured tools.
+     * {@code delegationContext} is provided, an {@link AgentDelegationTool} is prepended.
      */
     private List<Object> buildEffectiveTools(Agent agent, DelegationContext delegationContext) {
         if (agent.isAllowDelegation() && delegationContext != null) {
@@ -249,6 +244,8 @@ public class AgentExecutor {
 
         int stopMessageCount = 0;
         int maxIterations = agent.getMaxIterations();
+        Executor toolExecutor = executionContext.toolExecutor();
+        String agentRole = agent.getRole();
 
         while (true) {
             ChatRequest request = ChatRequest.builder()
@@ -260,83 +257,193 @@ public class AgentExecutor {
             AiMessage aiMessage = response.aiMessage();
             messages.add(aiMessage);
 
-            if (aiMessage.hasToolExecutionRequests()) {
-                for (ToolExecutionRequest toolRequest : aiMessage.toolExecutionRequests()) {
-                    // Check limit before incrementing so toolCallCount reflects executed calls only
-                    if (toolCallCounter.get() >= maxIterations) {
-                        stopMessageCount++;
-                        String stopText = "STOP: Maximum tool iterations (" + maxIterations
-                                + ") reached. You must provide your best final answer now "
-                                + "based on information gathered so far.";
-
-                        if (stopMessageCount >= MAX_STOP_MESSAGES) {
-                            throw new MaxIterationsExceededException(
-                                    agent.getRole(), task.getDescription(), maxIterations, toolCallCounter.get());
-                        }
-
-                        log.warn(
-                                "Agent '{}' exceeded max iterations ({}). Stop message sent ({}/{}).",
-                                agent.getRole(),
-                                maxIterations,
-                                stopMessageCount,
-                                MAX_STOP_MESSAGES);
-                        messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), stopText));
-                    } else {
-                        // Execute the tool and count only executed calls
-                        toolCallCounter.incrementAndGet();
-                        Instant toolStart = Instant.now();
-                        String toolResult = resolvedTools.execute(toolRequest);
-                        Duration toolDuration = Duration.between(toolStart, Instant.now());
-
-                        if (toolResult != null && toolResult.startsWith("Error:")) {
-                            log.warn(
-                                    "Tool error: {}({}) -> {} [{}ms]",
-                                    toolRequest.name(),
-                                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                                    truncate(toolResult, LOG_TRUNCATE_LENGTH),
-                                    toolDuration.toMillis());
-                        } else {
-                            log.info(
-                                    "Tool call: {}({}) -> {} [{}ms]",
-                                    toolRequest.name(),
-                                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                                    truncate(toolResult, LOG_TRUNCATE_LENGTH),
-                                    toolDuration.toMillis());
-                        }
-
-                        // Fire ToolCallEvent to all registered listeners
-                        executionContext.fireToolCall(new ToolCallEvent(
-                                toolRequest.name(),
-                                toolRequest.arguments(),
-                                toolResult,
-                                agent.getRole(),
-                                toolDuration));
-
-                        messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResult));
-                    }
-                }
-                // Continue the loop for the next LLM response
-            } else {
-                // LLM produced a text response -- we're done
+            if (!aiMessage.hasToolExecutionRequests()) {
+                // LLM produced a text response -- done
                 return aiMessage.text();
             }
+
+            List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
+
+            if (toolRequests.size() == 1) {
+                // Single tool: execute directly without async overhead
+                ToolExecutionRequest toolRequest = toolRequests.get(0);
+                ToolExecutionResultMessage resultMsg = executeSingleTool(
+                        toolRequest,
+                        resolvedTools,
+                        toolCallCounter,
+                        maxIterations,
+                        agentRole,
+                        executionContext,
+                        messages);
+                if (resultMsg == null) {
+                    // Over limit: stop message was added by executeSingleTool
+                    stopMessageCount++;
+                    if (stopMessageCount >= MAX_STOP_MESSAGES) {
+                        throw new MaxIterationsExceededException(
+                                agentRole, task.getDescription(), maxIterations, toolCallCounter.get());
+                    }
+                }
+            } else {
+                // Multiple tools: execute in parallel using the tool executor
+                stopMessageCount = executeParallelTools(
+                        toolRequests,
+                        resolvedTools,
+                        toolCallCounter,
+                        maxIterations,
+                        agentRole,
+                        executionContext,
+                        toolExecutor,
+                        task,
+                        messages,
+                        stopMessageCount);
+            }
         }
+    }
+
+    /**
+     * Execute a single tool call. Returns null if the iteration limit was hit
+     * (a stop message has been added to {@code messages}).
+     */
+    private ToolExecutionResultMessage executeSingleTool(
+            ToolExecutionRequest toolRequest,
+            ToolResolver.ResolvedTools resolvedTools,
+            AtomicInteger toolCallCounter,
+            int maxIterations,
+            String agentRole,
+            ExecutionContext executionContext,
+            List<ChatMessage> messages) {
+
+        if (toolCallCounter.get() >= maxIterations) {
+            String stopText = buildStopText(maxIterations);
+            messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), stopText));
+            log.warn(
+                    "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
+                    agentRole,
+                    maxIterations,
+                    toolRequest.name());
+            return null;
+        }
+
+        toolCallCounter.incrementAndGet();
+        Instant toolStart = Instant.now();
+        ToolResult toolResult = resolvedTools.execute(toolRequest, agentRole);
+        Duration toolDuration = Duration.between(toolStart, Instant.now());
+        String toolResultText = toText(toolResult);
+
+        logToolCall(agentRole, toolRequest, toolResultText, toolDuration);
+        executionContext.fireToolCall(new ToolCallEvent(
+                toolRequest.name(),
+                toolRequest.arguments(),
+                toolResultText,
+                toolResult.getStructuredOutput(),
+                agentRole,
+                toolDuration));
+
+        ToolExecutionResultMessage resultMsg =
+                new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResultText);
+        messages.add(resultMsg);
+        return resultMsg;
+    }
+
+    /**
+     * Execute multiple tool calls in parallel using the tool executor.
+     * Results are added to {@code messages} in the same order as the requests.
+     * Returns the updated {@code stopMessageCount}.
+     */
+    private int executeParallelTools(
+            List<ToolExecutionRequest> toolRequests,
+            ToolResolver.ResolvedTools resolvedTools,
+            AtomicInteger toolCallCounter,
+            int maxIterations,
+            String agentRole,
+            ExecutionContext executionContext,
+            Executor toolExecutor,
+            Task task,
+            List<ChatMessage> messages,
+            int stopMessageCount) {
+
+        log.debug("Agent '{}' executing {} tools in parallel", agentRole, toolRequests.size());
+
+        // Pre-check per request whether we can execute it
+        record PendingTool(ToolExecutionRequest request, boolean withinLimit) {}
+
+        List<PendingTool> pending = new ArrayList<>();
+        for (ToolExecutionRequest req : toolRequests) {
+            // Atomically check-and-increment: only increment if within limit
+            int current = toolCallCounter.get();
+            if (current < maxIterations) {
+                toolCallCounter.incrementAndGet();
+                pending.add(new PendingTool(req, true));
+            } else {
+                pending.add(new PendingTool(req, false));
+            }
+        }
+
+        // Launch all executable tools in parallel
+        record ToolExecution(ToolExecutionRequest request, ToolResult result, Duration duration, boolean withinLimit) {}
+
+        List<CompletableFuture<ToolExecution>> futures = new ArrayList<>();
+        for (PendingTool pt : pending) {
+            if (pt.withinLimit()) {
+                CompletableFuture<ToolExecution> future = CompletableFuture.supplyAsync(
+                        () -> {
+                            Instant start = Instant.now();
+                            ToolResult result = resolvedTools.execute(pt.request(), agentRole);
+                            Duration dur = Duration.between(start, Instant.now());
+                            return new ToolExecution(pt.request(), result, dur, true);
+                        },
+                        toolExecutor);
+                futures.add(future);
+            } else {
+                // Over limit: resolve immediately as a stop message
+                CompletableFuture<ToolExecution> immediate =
+                        CompletableFuture.completedFuture(new ToolExecution(pt.request(), null, Duration.ZERO, false));
+                futures.add(immediate);
+            }
+        }
+
+        // Wait for all futures then process in order
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        int updatedStopCount = stopMessageCount;
+        for (CompletableFuture<ToolExecution> future : futures) {
+            ToolExecution te = future.join();
+            if (!te.withinLimit()) {
+                String stopText = buildStopText(maxIterations);
+                messages.add(new ToolExecutionResultMessage(
+                        te.request().id(), te.request().name(), stopText));
+                log.warn(
+                        "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
+                        agentRole,
+                        maxIterations,
+                        te.request().name());
+                updatedStopCount++;
+                if (updatedStopCount >= MAX_STOP_MESSAGES) {
+                    throw new MaxIterationsExceededException(
+                            agentRole, task.getDescription(), maxIterations, toolCallCounter.get());
+                }
+            } else {
+                String toolResultText = toText(te.result());
+                logToolCall(agentRole, te.request(), toolResultText, te.duration());
+                executionContext.fireToolCall(new ToolCallEvent(
+                        te.request().name(),
+                        te.request().arguments(),
+                        toolResultText,
+                        te.result().getStructuredOutput(),
+                        agentRole,
+                        te.duration()));
+                messages.add(new ToolExecutionResultMessage(
+                        te.request().id(), te.request().name(), toolResultText));
+            }
+        }
+
+        return updatedStopCount;
     }
 
     // ========================
     // Guardrail invocation
     // ========================
 
-    /**
-     * Evaluate all input guardrails on the task before the LLM call.
-     *
-     * Guardrails are evaluated in order. The first failure stops evaluation and throws
-     * {@link GuardrailViolationException} with type INPUT.
-     *
-     * @param task           the task being executed
-     * @param contextOutputs outputs from prior tasks passed as context
-     * @throws GuardrailViolationException if any input guardrail fails
-     */
     private void runInputGuardrails(Task task, List<TaskOutput> contextOutputs) {
         List<InputGuardrail> guardrails = task.getInputGuardrails();
         if (guardrails.isEmpty()) {
@@ -360,17 +467,6 @@ public class AgentExecutor {
         }
     }
 
-    /**
-     * Evaluate all output guardrails on the agent response after the LLM call.
-     *
-     * Guardrails are evaluated in order. The first failure stops evaluation and throws
-     * {@link GuardrailViolationException} with type OUTPUT.
-     *
-     * @param task         the task that was executed
-     * @param rawResponse  the raw text response from the agent
-     * @param parsedOutput the parsed structured output, or {@code null} if not applicable
-     * @throws GuardrailViolationException if any output guardrail fails
-     */
     private void runOutputGuardrails(Task task, String rawResponse, Object parsedOutput) {
         List<OutputGuardrail> guardrails = task.getOutputGuardrails();
         if (guardrails.isEmpty()) {
@@ -396,6 +492,42 @@ public class AgentExecutor {
     // ========================
     // Private utilities
     // ========================
+
+    private static String toText(ToolResult result) {
+        if (result == null) return "";
+        if (result.isSuccess()) {
+            return result.getOutput();
+        } else {
+            return "Error: " + result.getErrorMessage();
+        }
+    }
+
+    private static String buildStopText(int maxIterations) {
+        return "STOP: Maximum tool iterations (" + maxIterations
+                + ") reached. You must provide your best final answer now "
+                + "based on information gathered so far.";
+    }
+
+    private static void logToolCall(
+            String agentRole, ToolExecutionRequest toolRequest, String toolResultText, Duration toolDuration) {
+        if (toolResultText != null && toolResultText.startsWith("Error:")) {
+            log.warn(
+                    "[{}] Tool error: {}({}) -> {} [{}ms]",
+                    agentRole,
+                    toolRequest.name(),
+                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                    truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                    toolDuration.toMillis());
+        } else {
+            log.info(
+                    "[{}] Tool call: {}({}) -> {} [{}ms]",
+                    agentRole,
+                    toolRequest.name(),
+                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                    truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                    toolDuration.toMillis());
+        }
+    }
 
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";

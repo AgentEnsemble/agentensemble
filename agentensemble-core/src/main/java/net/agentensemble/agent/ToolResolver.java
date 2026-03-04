@@ -7,15 +7,26 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.LangChain4jToolAdapter;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolContext;
+import net.agentensemble.tool.ToolContextInjector;
+import net.agentensemble.tool.ToolMetrics;
+import net.agentensemble.tool.ToolResult;
 
 /**
  * Resolves a mixed list of tools (AgentTool instances and @Tool-annotated objects)
  * into a unified structure that can generate LangChain4j ToolSpecifications and
  * dispatch tool execution requests.
  *
- * This class is package-private -- it is an implementation detail of AgentExecutor.
+ * <p>During resolution, {@link AbstractAgentTool} instances receive an injected
+ * {@link ToolContext} containing the configured {@link ToolMetrics} and {@link Executor}.
+ * This happens once per execution before any tool calls begin.
+ *
+ * <p>This class is package-private -- it is an implementation detail of AgentExecutor.
  */
 final class ToolResolver {
 
@@ -27,10 +38,15 @@ final class ToolResolver {
      * Resolve a mixed list of tools into AgentTool and @Tool-annotated object maps,
      * plus the complete list of LangChain4j ToolSpecifications.
      *
-     * @param tools list of AgentTool instances and/or @Tool-annotated objects
+     * <p>{@link AbstractAgentTool} instances in the list are automatically injected with
+     * a {@link ToolContext} built from the supplied {@code metrics} and {@code executor}.
+     *
+     * @param tools    list of AgentTool instances and/or @Tool-annotated objects
+     * @param metrics  the ToolMetrics backend to inject into AbstractAgentTool instances
+     * @param executor the Executor to inject into AbstractAgentTool instances
      * @return a ResolvedTools value encapsulating all resolution results
      */
-    static ResolvedTools resolve(List<Object> tools) {
+    static ResolvedTools resolve(List<Object> tools, ToolMetrics metrics, Executor executor) {
         Map<String, AgentTool> agentToolMap = new HashMap<>();
         Map<String, Object> annotatedObjectMap = new HashMap<>();
         List<ToolSpecification> allSpecs = new ArrayList<>();
@@ -39,6 +55,12 @@ final class ToolResolver {
             if (tool instanceof AgentTool agentTool) {
                 agentToolMap.put(agentTool.name(), agentTool);
                 allSpecs.add(LangChain4jToolAdapter.toSpecification(agentTool));
+
+                // Inject ToolContext into AbstractAgentTool instances
+                if (agentTool instanceof AbstractAgentTool abstractTool) {
+                    ToolContext ctx = ToolContext.of(agentTool.name(), metrics, executor);
+                    ToolContextInjector.injectContext(abstractTool, ctx);
+                }
             } else {
                 // @Tool-annotated object
                 List<ToolSpecification> specs = ToolSpecifications.toolSpecificationsFrom(tool);
@@ -53,9 +75,21 @@ final class ToolResolver {
     }
 
     /**
+     * Resolve using the default no-op metrics and virtual-thread executor.
+     * Convenience overload for call sites where metrics and executor are not configured.
+     *
+     * @param tools list of AgentTool instances and/or @Tool-annotated objects
+     * @return a ResolvedTools value
+     */
+    static ResolvedTools resolve(List<Object> tools) {
+        return resolve(
+                tools, NoOpToolMetrics.INSTANCE, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    /**
      * Encapsulates the result of resolving a tool list.
      *
-     * Provides fast lookup by tool name and dispatches execution requests to the
+     * <p>Provides fast lookup by tool name and dispatches execution requests to the
      * correct backing implementation (AgentTool or @Tool-annotated method).
      */
     record ResolvedTools(
@@ -73,28 +107,45 @@ final class ToolResolver {
         /**
          * Dispatch a tool execution request to the correct tool implementation.
          *
-         * AgentTool instances take precedence over @Tool-annotated objects when
+         * <p>AgentTool instances take precedence over @Tool-annotated objects when
          * both share the same name.
          *
-         * @param request the tool execution request from the LLM
-         * @return the tool's result string, or "Error: ..." on failure or unknown tool
+         * <p>Before executing an {@link AbstractAgentTool}, the supplied {@code agentRole}
+         * is set on the current thread's agent-role thread-local so that metrics are
+         * tagged correctly. The thread-local is cleared after execution.
+         *
+         * @param request   the tool execution request from the LLM
+         * @param agentRole the role of the agent invoking this tool; used for metrics tagging
+         * @return the full ToolResult, or a failure ToolResult on unknown tool
          */
-        String execute(ToolExecutionRequest request) {
+        ToolResult execute(ToolExecutionRequest request, String agentRole) {
             String toolName = request.name();
 
             // AgentTool takes precedence
             AgentTool agentTool = agentToolMap.get(toolName);
             if (agentTool != null) {
-                return LangChain4jToolAdapter.execute(agentTool, request.arguments());
+                ToolContextInjector.setCurrentAgentRole(agentRole);
+                try {
+                    return LangChain4jToolAdapter.executeForResult(agentTool, request.arguments());
+                } finally {
+                    ToolContextInjector.clearCurrentAgentRole();
+                }
             }
 
             // @Tool-annotated object
             Object annotatedObj = annotatedObjectMap.get(toolName);
             if (annotatedObj != null) {
-                return LangChain4jToolAdapter.executeAnnotatedTool(annotatedObj, toolName, request.arguments());
+                String result =
+                        LangChain4jToolAdapter.executeAnnotatedTool(annotatedObj, toolName, request.arguments());
+                // Annotated tools return plain strings; wrap as success or failure
+                if (result != null && result.startsWith("Error:")) {
+                    return ToolResult.failure(
+                            result.substring("Error:".length()).trim());
+                }
+                return ToolResult.success(result != null ? result : "");
             }
 
-            return "Error: Unknown tool '" + toolName + "'";
+            return ToolResult.failure("Unknown tool '" + toolName + "'");
         }
     }
 }
