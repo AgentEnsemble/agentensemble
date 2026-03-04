@@ -94,6 +94,38 @@ class CalculatorToolTest {
         assertThat(tool.execute("(-3) * 4").getOutput()).isEqualTo("-12");
     }
 
+    @Test
+    void execute_doubleUnaryMinus_returnsPositive() {
+        // --5 = 5
+        assertThat(tool.execute("--5").getOutput()).isEqualTo("5");
+    }
+
+    @Test
+    void execute_unaryPlusThenMinus_returnsNegative() {
+        // +-3 = -3
+        assertThat(tool.execute("+-3").getOutput()).isEqualTo("-3");
+    }
+
+    // --- exponentiation and unary precedence ---
+
+    @Test
+    void execute_unaryMinusBeforeExponentiation_bindsLoosely() {
+        // Standard math: -2^2 = -(2^2) = -4, not (-2)^2 = 4
+        assertThat(tool.execute("-2^2").getOutput()).isEqualTo("-4");
+    }
+
+    @Test
+    void execute_negativeBaseInParentheses_exponentiation() {
+        // Explicit parentheses preserve the negative base: (-2)^2 = 4
+        assertThat(tool.execute("(-2)^2").getOutput()).isEqualTo("4");
+    }
+
+    @Test
+    void execute_exponentiationWithNegativeExponent() {
+        // 2^-3 = 0.125
+        assertThat(tool.execute("2^-3").getOutput()).isEqualTo("0.125");
+    }
+
     // --- decimals ---
 
     @Test

@@ -60,12 +60,16 @@ public final class CalculatorTool extends AbstractAgentTool {
      *
      * <pre>
      * Expression := Term (('+' | '-') Term)*
-     * Term       := Power (('*' | '/' | '%') Power)*
-     * Power      := Unary ('^' Unary)?
-     * Unary      := ('-' | '+') Unary | Primary
+     * Term       := Unary (('*' | '/' | '%') Unary)*
+     * Unary      := ('-' | '+') Unary | Power
+     * Power      := Primary ('^' Unary)?
      * Primary    := Number | '(' Expression ')'
      * Number     := digit+ ('.' digit+)?
      * </pre>
+     *
+     * <p>Unary is placed above Power in the call chain so that unary minus binds looser than
+     * exponentiation: {@code -2^2} parses as {@code -(2^2) = -4}, not {@code (-2)^2 = 4}.
+     * This matches standard mathematical convention.
      */
     private static final class ExpressionParser {
 
@@ -105,22 +109,22 @@ public final class CalculatorTool extends AbstractAgentTool {
         }
 
         private double parseTerm() {
-            double left = parsePower();
+            double left = parseUnary();
             while (true) {
                 skipWhitespace();
                 if (pos < input.length() && input.charAt(pos) == '*') {
                     pos++;
-                    left *= parsePower();
+                    left *= parseUnary();
                 } else if (pos < input.length() && input.charAt(pos) == '/') {
                     pos++;
-                    double divisor = parsePower();
+                    double divisor = parseUnary();
                     if (divisor == 0.0) {
                         throw new ArithmeticException("Division by zero");
                     }
                     left /= divisor;
                 } else if (pos < input.length() && input.charAt(pos) == '%') {
                     pos++;
-                    double divisor = parsePower();
+                    double divisor = parseUnary();
                     if (divisor == 0.0) {
                         throw new ArithmeticException("Modulo by zero");
                     }
@@ -133,7 +137,7 @@ public final class CalculatorTool extends AbstractAgentTool {
         }
 
         private double parsePower() {
-            double base = parseUnary();
+            double base = parsePrimary();
             skipWhitespace();
             if (pos < input.length() && input.charAt(pos) == '^') {
                 pos++;
@@ -147,12 +151,13 @@ public final class CalculatorTool extends AbstractAgentTool {
             skipWhitespace();
             if (pos < input.length() && input.charAt(pos) == '-') {
                 pos++;
-                return -parsePrimary();
+                return -parseUnary();
             }
             if (pos < input.length() && input.charAt(pos) == '+') {
                 pos++;
+                return parseUnary();
             }
-            return parsePrimary();
+            return parsePower();
         }
 
         private double parsePrimary() {

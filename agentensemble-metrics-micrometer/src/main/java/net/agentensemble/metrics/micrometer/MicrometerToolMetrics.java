@@ -1,12 +1,10 @@
 package net.agentensemble.metrics.micrometer;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import net.agentensemble.tool.ToolMetrics;
@@ -125,14 +123,15 @@ public final class MicrometerToolMetrics implements ToolMetrics {
 
     @Override
     public void recordValue(String metricName, String toolName, double value, Map<String, String> tags) {
-        List<Tag> tagList = new ArrayList<>();
-        tagList.add(Tag.of(TAG_TOOL_NAME, toolName));
+        DistributionSummary.Builder builder = DistributionSummary.builder(metricName)
+                .description("Custom value recording from tool: " + toolName)
+                .tag(TAG_TOOL_NAME, toolName);
         if (tags != null) {
             for (Map.Entry<String, String> entry : tags.entrySet()) {
-                tagList.add(Tag.of(entry.getKey(), entry.getValue()));
+                builder.tag(entry.getKey(), entry.getValue());
             }
         }
-        registry.gauge(metricName, tagList, value);
+        builder.register(registry).record(value);
     }
 
     // ========================

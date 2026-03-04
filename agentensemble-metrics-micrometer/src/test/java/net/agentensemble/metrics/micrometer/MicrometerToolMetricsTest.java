@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -190,22 +191,43 @@ class MicrometerToolMetricsTest {
     }
 
     // ========================
-    // recordValue (custom gauge)
+    // recordValue (DistributionSummary)
     // ========================
 
     @Test
-    void recordValue_withoutTags_registersGauge() {
+    void recordValue_withoutTags_registersDistributionSummary() {
         metrics.recordValue("result.size", "json_parser", 42.0, null);
 
-        // Gauge exists in registry
-        assertThat(registry.find("result.size").gauges()).isNotEmpty();
+        DistributionSummary summary = registry.find("result.size")
+                .tag(MicrometerToolMetrics.TAG_TOOL_NAME, "json_parser")
+                .summary();
+
+        assertThat(summary).isNotNull();
+        assertThat(summary.count()).isEqualTo(1L);
+        assertThat(summary.totalAmount()).isEqualTo(42.0);
     }
 
     @Test
-    void recordValue_withTags_registersGaugeWithTags() {
+    void recordValue_withTags_registersDistributionSummaryWithTags() {
         metrics.recordValue("response.length", "http_tool", 1024.0, Map.of("endpoint", "/api"));
 
-        assertThat(registry.find("response.length").tag("endpoint", "/api").gauges())
+        assertThat(registry.find("response.length").tag("endpoint", "/api").summaries())
                 .isNotEmpty();
+    }
+
+    @Test
+    void recordValue_multipleCalls_accumulatesObservations() {
+        // Each call must add an independent observation -- not overwrite the previous value
+        metrics.recordValue("result.size", "json_parser", 10.0, null);
+        metrics.recordValue("result.size", "json_parser", 20.0, null);
+        metrics.recordValue("result.size", "json_parser", 30.0, null);
+
+        DistributionSummary summary = registry.find("result.size")
+                .tag(MicrometerToolMetrics.TAG_TOOL_NAME, "json_parser")
+                .summary();
+
+        assertThat(summary).isNotNull();
+        assertThat(summary.count()).isEqualTo(3L);
+        assertThat(summary.totalAmount()).isEqualTo(60.0);
     }
 }
