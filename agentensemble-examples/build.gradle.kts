@@ -1,4 +1,5 @@
 plugins {
+    `java-library`
     application
 }
 
@@ -21,10 +22,10 @@ dependencies {
     implementation(libs.micrometer.core)
 
     // OpenAI LangChain4j provider - example only
-    implementation(libs.langchain4j.open.ai)
+    api(libs.langchain4j.open.ai)
 
     // langchain4j main artifact -- provides InMemoryEmbeddingStore used in the memory example
-    implementation(libs.langchain4j)
+    api(libs.langchain4j)
 
     // SLF4J implementation with Logback for examples
     implementation(libs.logback.classic)
