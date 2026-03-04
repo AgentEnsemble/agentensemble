@@ -177,4 +177,33 @@ class FileReadToolTest {
             file.toFile().setReadable(true);
         }
     }
+
+    // --- symlink sandbox escape ---
+
+    @Test
+    void execute_symlinkPointingOutsideSandbox_returnsAccessDenied() throws IOException {
+        // Create a real file outside the sandbox
+        Path outsideDir = Files.createTempDirectory("agentensemble-outside");
+        Path outsideFile = outsideDir.resolve("secret.txt");
+        Files.writeString(outsideFile, "secret content");
+
+        // Create a symlink inside the sandbox pointing to the outside file
+        Path symlinkPath = tempDir.resolve("link.txt");
+        try {
+            Files.createSymbolicLink(symlinkPath, outsideFile);
+        } catch (UnsupportedOperationException | java.nio.file.FileSystemException e) {
+            assumeTrue(false, "Symbolic links not supported on this system: " + e.getMessage());
+            return;
+        }
+
+        try {
+            var result = tool.execute("link.txt");
+            assertThat(result.isSuccess()).isFalse();
+            assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
+        } finally {
+            Files.deleteIfExists(symlinkPath);
+            Files.deleteIfExists(outsideFile);
+            Files.deleteIfExists(outsideDir);
+        }
+    }
 }

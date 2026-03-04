@@ -3,6 +3,7 @@ package net.agentensemble.tools.process;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -122,16 +123,38 @@ public final class ProcessAgentTool extends AbstractAgentTool {
                             e.getMessage());
         }
 
+        // Drain stdout and stderr concurrently on virtual threads before waiting.
+        // Without concurrent draining a process that writes more than the OS pipe
+        // buffer (~64 KB on Linux) will block on write and waitFor() will deadlock.
+        ByteArrayOutputStream stdoutCapture = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderrCapture = new ByteArrayOutputStream();
+        Thread stdoutDrain = Thread.ofVirtual().start(() -> {
+            try {
+                process.getInputStream().transferTo(stdoutCapture);
+            } catch (IOException ignored) {
+            }
+        });
+        Thread stderrDrain = Thread.ofVirtual().start(() -> {
+            try {
+                process.getErrorStream().transferTo(stderrCapture);
+            } catch (IOException ignored) {
+            }
+        });
+
         // Wait for completion with timeout
         boolean completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
         if (!completed) {
             process.destroyForcibly();
+            stdoutDrain.join();
+            stderrDrain.join();
             return ToolResult.failure("Process timed out after " + timeout.toSeconds() + " seconds: " + command.get(0));
         }
 
+        stdoutDrain.join();
+        stderrDrain.join();
         int exitCode = process.exitValue();
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        String stdout = stdoutCapture.toString(StandardCharsets.UTF_8).trim();
+        String stderr = stderrCapture.toString(StandardCharsets.UTF_8).trim();
 
         if (exitCode != 0) {
             String errorMsg = !stderr.isBlank() ? stderr : "Process exited with code " + exitCode;

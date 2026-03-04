@@ -234,6 +234,14 @@ var scraper = WebScraperTool.withMaxContentLength(3000);
 
 **Input:** a URL string, e.g. `"https://example.com/article"`
 
+> **Security note:** `WebScraperTool` will attempt to fetch whatever URL string it is given.
+> When the URL comes from untrusted input (for example, an end user or an LLM prompt injection),
+> this can create a server-side request forgery (SSRF) risk, allowing access to internal services
+> such as cloud metadata endpoints or intra-VPC APIs. In untrusted contexts, validate and restrict
+> URLs before passing them to the tool (for example, allowlisting schemes and external hostnames
+> and blocking private/link-local address ranges), or route requests through a hardened URL
+> fetcher/proxy that enforces these constraints. Only expose this tool directly to trusted inputs.
+
 ---
 
 ### ProcessAgentTool

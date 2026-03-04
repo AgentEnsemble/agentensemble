@@ -75,6 +75,17 @@ public final class FileReadTool extends AbstractAgentTool {
         if (!Files.isRegularFile(resolved)) {
             return ToolResult.failure("Not a regular file: " + relativePath);
         }
+        // Reject symlinks that point outside the sandbox.
+        // normalize()+startsWith() above blocks path traversal via "../" sequences,
+        // but does not prevent a symlink inside baseDir that resolves to a path
+        // outside the sandbox. Resolve to the real path and re-validate.
+        try {
+            if (!resolved.toRealPath().startsWith(baseDir.toRealPath())) {
+                return ToolResult.failure("Access denied: path resolves outside the sandbox directory");
+            }
+        } catch (IOException e) {
+            return ToolResult.failure("Access denied: cannot resolve file path");
+        }
         try {
             String content = Files.readString(resolved, StandardCharsets.UTF_8);
             return ToolResult.success(content);

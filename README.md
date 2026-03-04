@@ -34,8 +34,14 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 dependencies {
     implementation("net.agentensemble:agentensemble-core:1.0.0")
 
-    // Optional: built-in tools (calculator, datetime, file I/O, web search, and more)
-    implementation("net.agentensemble:agentensemble-tools:1.0.0")
+    // Optional: import the tools BOM to manage built-in tool versions, then add
+    // only the individual tool modules you need.
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:1.0.0"))
+    implementation("net.agentensemble:agentensemble-tools-calculator")    // optional
+    implementation("net.agentensemble:agentensemble-tools-datetime")      // optional
+    // Other modules: agentensemble-tools-json-parser, agentensemble-tools-file-read,
+    // agentensemble-tools-file-write, agentensemble-tools-web-search,
+    // agentensemble-tools-web-scraper, agentensemble-tools-process, agentensemble-tools-http
 
     // Add your preferred LangChain4j model provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")

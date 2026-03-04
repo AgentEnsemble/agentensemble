@@ -18,6 +18,12 @@ dependencies {
 }
 
 mavenPublishing {
+    coordinates(
+        groupId = "net.agentensemble",
+        artifactId = "agentensemble-tools-bom",
+        version = "${project.version}",
+    )
+
     publishToMavenCentral()
     signAllPublications()
 

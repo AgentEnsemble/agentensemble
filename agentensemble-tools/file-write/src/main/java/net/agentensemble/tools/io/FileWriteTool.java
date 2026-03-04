@@ -105,6 +105,15 @@ public final class FileWriteTool extends AbstractAgentTool {
             if (resolved.getParent() != null) {
                 Files.createDirectories(resolved.getParent());
             }
+            // Reject symlinks that point outside the sandbox.
+            // normalize()+startsWith() blocks path traversal via "../" sequences,
+            // but does not prevent a symlink inside baseDir that resolves to a path
+            // outside the sandbox. Check the real path of the parent directory after
+            // it has been created so that toRealPath() can resolve it.
+            Path checkDir = resolved.getParent() != null ? resolved.getParent() : baseDir;
+            if (!checkDir.toRealPath().startsWith(baseDir.toRealPath())) {
+                return ToolResult.failure("Access denied: path resolves outside the sandbox directory");
+            }
             Files.writeString(resolved, content, StandardCharsets.UTF_8);
             return ToolResult.success("Successfully wrote to: " + relativePath);
         } catch (IOException e) {

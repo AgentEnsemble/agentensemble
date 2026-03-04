@@ -194,4 +194,31 @@ class FileWriteToolTest {
             subDir.toFile().setWritable(true);
         }
     }
+
+    // --- symlink sandbox escape ---
+
+    @Test
+    void execute_symlinkDirectoryPointingOutsideSandbox_returnsAccessDenied() throws IOException {
+        // Create a real directory outside the sandbox
+        Path outsideDir = Files.createTempDirectory("agentensemble-outside");
+
+        // Create a symlink inside the sandbox pointing to the outside directory
+        Path symlinkPath = tempDir.resolve("link");
+        try {
+            Files.createSymbolicLink(symlinkPath, outsideDir);
+        } catch (UnsupportedOperationException | java.nio.file.FileSystemException e) {
+            assumeTrue(false, "Symbolic links not supported on this system: " + e.getMessage());
+            return;
+        }
+
+        try {
+            // Attempt to write through the symlink into the outside directory
+            var result = tool.execute("{\"path\": \"link/secret.txt\", \"content\": \"evil\"}");
+            assertThat(result.isSuccess()).isFalse();
+            assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
+        } finally {
+            Files.deleteIfExists(symlinkPath);
+            Files.deleteIfExists(outsideDir);
+        }
+    }
 }
