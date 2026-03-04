@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/AgentEnsemble/agentensemble/compare/v1.0.0...v1.0.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* expose langchain4j dependencies as api for downstream consumers ([ed071f7](https://github.com/AgentEnsemble/agentensemble/commit/ed071f7ff6d90dec540a28ae01b3211b65c31b45))
+
 ## [1.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v0.9.0...v1.0.0) (2026-03-04)
 
 
