@@ -4,8 +4,10 @@ import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
     java
-    alias(libs.plugins.spotless) apply false
-    alias(libs.plugins.errorprone) apply false
+    // spotless and errorprone are provided via buildSrc convention plugins;
+    // declare without version here to avoid classpath conflicts.
+    id("com.diffplug.spotless") apply false
+    id("net.ltgt.errorprone") apply false
 }
 
 // Capture catalog references on the root project before entering subprojects {}.
@@ -14,6 +16,13 @@ plugins {
 val errorproneCoreLib = libs.errorprone.core
 
 subprojects {
+    // Skip projects that manage themselves via convention plugins:
+    // - "bom" is a java-platform project (cannot have java plugin applied)
+    // - sub-modules of :agentensemble-tools use the agentensemble.tool-conventions plugin
+    if (name == "bom" || parent?.path == ":agentensemble-tools") {
+        return@subprojects
+    }
+
     apply(plugin = "java")
     apply(plugin = "com.diffplug.spotless")
     apply(plugin = "net.ltgt.errorprone")

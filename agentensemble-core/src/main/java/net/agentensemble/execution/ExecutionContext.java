@@ -1,31 +1,46 @@
 package net.agentensemble.execution;
 
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Immutable execution context bundling all cross-cutting concerns for a single
- * ensemble run: memory state, verbosity, and event listeners.
+ * ensemble run: memory state, verbosity, event listeners, tool executor, and tool metrics.
  *
- * An {@code ExecutionContext} is created once per {@link net.agentensemble.Ensemble#run()}
+ * <p>An {@code ExecutionContext} is created once per {@link net.agentensemble.Ensemble#run()}
  * invocation and threaded through the entire execution stack -- workflow executors,
  * {@link net.agentensemble.agent.AgentExecutor}, delegation tools, and delegation
- * contexts -- replacing the previously separate {@code verbose} and
- * {@link MemoryContext} parameters.
+ * contexts.
  *
- * Fire methods ({@link #fireTaskStart}, {@link #fireTaskComplete}, {@link #fireTaskFailed},
+ * <p><strong>Tool execution:</strong> The {@link #toolExecutor()} is used by
+ * {@link net.agentensemble.agent.AgentExecutor} to parallelize concurrent tool calls
+ * within a single LLM turn. The default is a virtual-thread-per-task executor (Java 21),
+ * making blocking tool calls (I/O, subprocess) cheap without dedicated platform threads.
+ * Configure via {@code Ensemble.builder().toolExecutor(executor)}.
+ *
+ * <p><strong>Tool metrics:</strong> The {@link #toolMetrics()} backend is injected into
+ * every {@link net.agentensemble.tool.AbstractAgentTool} via a
+ * {@link net.agentensemble.tool.ToolContext}. The default is {@link NoOpToolMetrics},
+ * which discards all measurements.
+ * Configure via {@code Ensemble.builder().toolMetrics(metrics)}.
+ *
+ * <p>Fire methods ({@link #fireTaskStart}, {@link #fireTaskComplete}, {@link #fireTaskFailed},
  * {@link #fireToolCall}) dispatch events to all registered listeners. Each listener is
  * called independently; an exception from one listener is caught, logged, and does not
  * prevent subsequent listeners from being notified or abort task execution.
  *
- * Thread safety: this class is immutable. Fire methods may be called concurrently from
+ * <p>Thread safety: this class is immutable. Fire methods may be called concurrently from
  * parallel workflow virtual threads. Listener implementations must be thread-safe when
  * used with parallel workflows.
  */
@@ -36,11 +51,20 @@ public final class ExecutionContext {
     private final MemoryContext memoryContext;
     private final boolean verbose;
     private final List<EnsembleListener> listeners;
+    private final Executor toolExecutor;
+    private final ToolMetrics toolMetrics;
 
-    private ExecutionContext(MemoryContext memoryContext, boolean verbose, List<EnsembleListener> listeners) {
+    private ExecutionContext(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
+        this.toolExecutor = toolExecutor;
+        this.toolMetrics = toolMetrics;
     }
 
     /**
@@ -51,41 +75,79 @@ public final class ExecutionContext {
      * @param verbose       when true, elevates execution logging to INFO level
      * @param listeners     event listeners to notify during execution; must not be null;
      *                      an immutable defensive copy is stored
+     * @param toolExecutor  executor for parallel tool calls within a single LLM turn;
+     *                      must not be null; use a virtual-thread executor by default
+     * @param toolMetrics   metrics backend for tool execution measurements; must not be null
      * @return a new ExecutionContext
-     * @throws IllegalArgumentException if memoryContext or listeners is null
+     * @throws IllegalArgumentException if any required parameter is null
      */
-    public static ExecutionContext of(MemoryContext memoryContext, boolean verbose, List<EnsembleListener> listeners) {
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics) {
         if (memoryContext == null) {
             throw new IllegalArgumentException("memoryContext must not be null");
         }
         if (listeners == null) {
             throw new IllegalArgumentException("listeners must not be null");
         }
-        return new ExecutionContext(memoryContext, verbose, List.copyOf(listeners));
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(memoryContext, verbose, List.copyOf(listeners), toolExecutor, toolMetrics);
     }
 
     /**
-     * Create an ExecutionContext with no event listeners.
+     * Create an ExecutionContext with the default tool executor (virtual threads)
+     * and no-op tool metrics.
+     *
+     * @param memoryContext runtime memory state for this run; must not be null
+     * @param verbose       when true, elevates execution logging to INFO level
+     * @param listeners     event listeners to notify during execution; must not be null
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(MemoryContext memoryContext, boolean verbose, List<EnsembleListener> listeners) {
+        return of(
+                memoryContext,
+                verbose,
+                listeners,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                NoOpToolMetrics.INSTANCE);
+    }
+
+    /**
+     * Create an ExecutionContext with no event listeners, the default tool executor,
+     * and no-op tool metrics.
      *
      * @param memoryContext runtime memory state for this run; must not be null
      * @param verbose       when true, elevates execution logging to INFO level
      * @return a new ExecutionContext with an empty listeners list
-     * @throws IllegalArgumentException if memoryContext is null
      */
     public static ExecutionContext of(MemoryContext memoryContext, boolean verbose) {
         return of(memoryContext, verbose, List.of());
     }
 
     /**
-     * Create an ExecutionContext with disabled memory, verbose=false, and no listeners.
+     * Create an ExecutionContext with disabled memory, verbose=false, no listeners,
+     * default virtual-thread executor, and no-op metrics.
      *
-     * Suitable for backward-compatible use in tests and delegation tools where the
+     * <p>Suitable for backward-compatible use in tests and delegation tools where the
      * full context is not available or not needed.
      *
      * @return a new disabled ExecutionContext
      */
     public static ExecutionContext disabled() {
-        return new ExecutionContext(MemoryContext.disabled(), false, List.of());
+        return new ExecutionContext(
+                MemoryContext.disabled(),
+                false,
+                List.of(),
+                Executors.newVirtualThreadPerTaskExecutor(),
+                NoOpToolMetrics.INSTANCE);
     }
 
     // ========================
@@ -113,6 +175,26 @@ public final class ExecutionContext {
         return listeners;
     }
 
+    /**
+     * The executor used to parallelize concurrent tool calls within a single LLM turn.
+     * Default is a virtual-thread-per-task executor.
+     *
+     * @return the tool executor; never null
+     */
+    public Executor toolExecutor() {
+        return toolExecutor;
+    }
+
+    /**
+     * The metrics backend for recording tool execution measurements.
+     * Default is {@link NoOpToolMetrics#INSTANCE}.
+     *
+     * @return the tool metrics; never null
+     */
+    public ToolMetrics toolMetrics() {
+        return toolMetrics;
+    }
+
     // ========================
     // Event dispatch
     // ========================
@@ -120,7 +202,7 @@ public final class ExecutionContext {
     /**
      * Fire a {@link TaskStartEvent} to all registered listeners.
      *
-     * Exceptions from individual listeners are caught and logged. All listeners
+     * <p>Exceptions from individual listeners are caught and logged. All listeners
      * are called regardless of whether a previous listener threw.
      *
      * @param event the event to fire; must not be null
@@ -138,7 +220,7 @@ public final class ExecutionContext {
     /**
      * Fire a {@link TaskCompleteEvent} to all registered listeners.
      *
-     * Exceptions from individual listeners are caught and logged.
+     * <p>Exceptions from individual listeners are caught and logged.
      *
      * @param event the event to fire; must not be null
      */
@@ -155,7 +237,7 @@ public final class ExecutionContext {
     /**
      * Fire a {@link TaskFailedEvent} to all registered listeners.
      *
-     * Exceptions from individual listeners are caught and logged.
+     * <p>Exceptions from individual listeners are caught and logged.
      *
      * @param event the event to fire; must not be null
      */
@@ -172,7 +254,7 @@ public final class ExecutionContext {
     /**
      * Fire a {@link ToolCallEvent} to all registered listeners.
      *
-     * Exceptions from individual listeners are caught and logged.
+     * <p>Exceptions from individual listeners are caught and logged.
      *
      * @param event the event to fire; must not be null
      */

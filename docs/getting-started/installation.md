@@ -14,20 +14,44 @@
 
 ```kotlin
 repositories {
-    maven {
-        url = uri("https://maven.pkg.github.com/AgentEnsemble/agentensemble")
-        credentials {
-            username = System.getenv("GITHUB_ACTOR")
-            password = System.getenv("GITHUB_TOKEN")
-        }
-    }
+    mavenCentral()
 }
 
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:0.4.0")
+    implementation("net.agentensemble:agentensemble-core:1.0.0")
+
+    // Optional: add individual tools -- only include what you need.
+    // Use the BOM (see below) to align all tool versions automatically.
+    implementation("net.agentensemble:agentensemble-tools-calculator:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-datetime:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-web-search:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-web-scraper:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-json-parser:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-file-read:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-file-write:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-process:1.0.0")
+    implementation("net.agentensemble:agentensemble-tools-http:1.0.0")
+
+    // Optional: Micrometer metrics integration
+    implementation("net.agentensemble:agentensemble-metrics-micrometer:1.0.0")
 
     // Add the LangChain4j integration for your LLM provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
+}
+```
+
+### Using the BOM
+
+The BOM (Bill of Materials) aligns all tool versions automatically:
+
+```kotlin
+dependencies {
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:1.0.0"))
+    implementation("net.agentensemble:agentensemble-core:1.0.0")
+
+    // No version needed for tools -- resolved from BOM
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-web-search")
 }
 ```
 
@@ -35,17 +59,12 @@ dependencies {
 
 ```groovy
 repositories {
-    maven {
-        url 'https://maven.pkg.github.com/AgentEnsemble/agentensemble'
-        credentials {
-            username System.getenv('GITHUB_ACTOR')
-            password System.getenv('GITHUB_TOKEN')
-        }
-    }
+    mavenCentral()
 }
 
 dependencies {
-    implementation 'net.agentensemble:agentensemble-core:0.4.0'
+    implementation 'net.agentensemble:agentensemble-core:1.0.0'
+    implementation 'net.agentensemble:agentensemble-tools-calculator:1.0.0'
     implementation 'dev.langchain4j:langchain4j-open-ai:1.11.0'
 }
 ```
@@ -53,19 +72,25 @@ dependencies {
 ### Maven
 
 ```xml
-<repositories>
-    <repository>
-        <id>agentensemble-github</id>
-        <url>https://maven.pkg.github.com/AgentEnsemble/agentensemble</url>
-    </repository>
-</repositories>
-
 <dependencies>
     <dependency>
         <groupId>net.agentensemble</groupId>
         <artifactId>agentensemble-core</artifactId>
-        <version>0.4.0</version>
+        <version>1.0.0</version>
     </dependency>
+
+    <!-- Individual tool modules -->
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools-calculator</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools-web-search</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+
     <dependency>
         <groupId>dev.langchain4j</groupId>
         <artifactId>langchain4j-open-ai</artifactId>
@@ -74,20 +99,47 @@ dependencies {
 </dependencies>
 ```
 
----
+**With BOM (Maven):**
 
-## GitHub Packages Authentication
-
-AgentEnsemble is published to GitHub Packages. Authentication is required to download packages from GitHub Packages, even for public repositories.
-
-**Set environment variables:**
-
-```bash
-export GITHUB_ACTOR=your-github-username
-export GITHUB_TOKEN=your-personal-access-token
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>net.agentensemble</groupId>
+            <artifactId>agentensemble-tools-bom</artifactId>
+            <version>1.0.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+<dependencies>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-tools-calculator</artifactId>
+        <!-- version from BOM -->
+    </dependency>
+</dependencies>
 ```
 
-Your personal access token needs the `read:packages` scope. Create one at: **GitHub Settings > Developer Settings > Personal Access Tokens**.
+---
+
+## Available Modules
+
+| Module | Description |
+|--------|-------------|
+| `agentensemble-core` | Framework core -- required |
+| `agentensemble-tools-calculator` | Arithmetic expression evaluator |
+| `agentensemble-tools-datetime` | Date/time operations |
+| `agentensemble-tools-json-parser` | JSON path extraction |
+| `agentensemble-tools-file-read` | Sandboxed file reading |
+| `agentensemble-tools-file-write` | Sandboxed file writing |
+| `agentensemble-tools-web-search` | Web search (Tavily/SerpAPI) |
+| `agentensemble-tools-web-scraper` | Web page text extraction |
+| `agentensemble-tools-process` | Subprocess execution (cross-language) |
+| `agentensemble-tools-http` | HTTP endpoint wrapping |
+| `agentensemble-tools-bom` | Version alignment BOM |
+| `agentensemble-metrics-micrometer` | Micrometer metrics integration |
 
 ---
 
@@ -126,3 +178,5 @@ See the [Logging guide](../guides/logging.md) for configuration details.
 
 - [Quickstart](quickstart.md) -- Build your first ensemble
 - [Core Concepts](concepts.md) -- Understand the key abstractions
+- [Built-in Tools](../guides/built-in-tools.md) -- Ready-to-use tool reference
+- [Remote Tools](../guides/remote-tools.md) -- Cross-language tools with Python, Node.js, etc.

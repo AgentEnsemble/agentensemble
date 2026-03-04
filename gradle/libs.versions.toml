@@ -3,6 +3,7 @@ vanniktech-publish = "0.36.0"
 langchain4j      = "1.11.0"
 lombok           = "1.18.42"
 jackson          = "2.21.1"
+jsoup            = "1.18.3"
 slf4j            = "2.0.17"
 junit            = "6.0.3"
 junit-platform   = "6.0.3"
@@ -12,6 +13,7 @@ logback          = "1.5.32"
 spotless         = "8.3.0"
 errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
+micrometer       = "1.14.4"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -19,6 +21,7 @@ langchain4j-core          = { group = "dev.langchain4j", name = "langchain4j-cor
 langchain4j-open-ai       = { group = "dev.langchain4j", name = "langchain4j-open-ai",  version.ref = "langchain4j" }
 lombok                    = { group = "org.projectlombok",              name = "lombok",                   version.ref = "lombok"   }
 jackson-databind          = { group = "com.fasterxml.jackson.core",     name = "jackson-databind",         version.ref = "jackson"  }
+jsoup                     = { group = "org.jsoup",                       name = "jsoup",                    version.ref = "jsoup"    }
 slf4j-api                 = { group = "org.slf4j",                      name = "slf4j-api",                version.ref = "slf4j"    }
 slf4j-simple              = { group = "org.slf4j",                      name = "slf4j-simple",             version.ref = "slf4j"    }
 junit-jupiter             = { group = "org.junit.jupiter",              name = "junit-jupiter",            version.ref = "junit"    }
@@ -27,6 +30,7 @@ assertj-core              = { group = "org.assertj",                    name = "
 mockito-core              = { group = "org.mockito",                    name = "mockito-core",             version.ref = "mockito"  }
 logback-classic           = { group = "ch.qos.logback",                 name = "logback-classic",          version.ref = "logback"  }
 errorprone-core           = { group = "com.google.errorprone",          name = "error_prone_core",         version.ref = "errorprone-core" }
+micrometer-core           = { group = "io.micrometer",                  name = "micrometer-core",          version.ref = "micrometer"      }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

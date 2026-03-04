@@ -2,136 +2,116 @@
 
 ## Current Work Focus
 
-Feature branch `feature/58-guardrails` implements Issue #58 (Guardrails: pre/post execution
-validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
+Feature branch `feature/60-built-in-tool-library` implemented Issues #60 and #73
+(Enhanced Tool Model: AbstractAgentTool, Async, Metrics, Remote Tools, Per-Tool Modules).
+PR #72 is open against main. All tests pass across all modules.
 
 ## Recent Changes
 
-- **Class-size refactoring** (6 commits on main):
-  - Extracted `EnsembleValidator` (package-private) from `Ensemble`: all 10 validate*()
-    methods + detectCycle() + warnUnusedAgents() moved out; `Ensemble` delegates via
-    `new EnsembleValidator(this).validate()`. Ensemble.java: 523 -> 342 lines.
-  - Extracted `StructuredOutputHandler` (package-private) from `AgentExecutor`:
-    `parseStructuredOutput()` + `buildStructuredOutputCorrectionPrompt()` moved out;
-    AgentExecutor delegates via `StructuredOutputHandler.parse(agent, task, response, prompt)`.
-    AgentExecutor.java: 411 -> 321 lines.
-  - Extracted `ParallelTaskCoordinator` (package-private) from `ParallelWorkflowExecutor`:
-    `submitTask()`, `resolveDependent()`, `shouldSkip()` moved into coordinator class that
-    holds all per-execution shared state as fields (eliminates 16-parameter method signatures).
-    ParallelWorkflowExecutor.java: 510 -> 243 lines.
-  - Split test files by concern (all tests preserved, zero new assertions):
-    - `EnsembleTest` (386) -> `EnsembleTest` (141 builder/listeners) + `EnsembleValidationTest` (265)
-    - `TaskTest` (438) -> `TaskTest` (264 builder/defaults) + `TaskValidationTest` (199)
-    - `ParallelWorkflowExecutorTest` (505) -> 3 files + shared base class
-    - `ParallelEnsembleIntegrationTest` (558) -> basic (376) + error strategy (212)
-    - `HierarchicalEnsembleIntegrationTest` (385) -> execution (289) + validation+callbacks (95)
-    - `DelegationEnsembleIntegrationTest` (376) -> core scenarios (224) + config/memory (209)
-  - No file in the project now exceeds 380 lines.
+### Issue #73 -- Enhanced Tool Model (builds on #60)
 
-- Issue #57 (Callbacks + ExecutionContext refactor) implemented on feature branch:
+**Framework infrastructure in `agentensemble-core`:**
+- Added `AbstractAgentTool`: base class with template method (`doExecute`), automatic
+  timing/counting/logging, exception safety; `log()`, `metrics()`, `executor()` accessors
+- Added `ToolContext`: immutable record carrying Logger, ToolMetrics, Executor -- injected
+  by framework into `AbstractAgentTool` instances before first execution
+- Added `ToolMetrics` interface + `NoOpToolMetrics` singleton default
+- Added `ToolContextInjector`: friend-bridge so `ToolResolver` (different package) can
+  inject `ToolContext` and manage the agentRole thread-local
+- Enhanced `ToolResult` with optional `structuredOutput` field and typed `getStructuredOutput(Class<T>)` accessor
+- Enhanced `ToolCallEvent` with `structuredResult` field; all metrics tagged by `(toolName, agentRole)`
+- Updated `ToolResolver`: injects `ToolContext`, sets/clears agentRole thread-local, returns `ToolResult`
+- Updated `AgentExecutor`: parallelizes multi-tool LLM turns via `CompletableFuture` + virtual threads;
+  single-tool calls remain synchronous for efficiency
+- Updated `ExecutionContext`: added `toolExecutor` and `toolMetrics` fields
+- Updated `Ensemble.builder()`: exposes `toolExecutor(Executor)` and `toolMetrics(ToolMetrics)`
 
-  **New packages and classes:**
-  - `net.agentensemble.execution.ExecutionContext`: immutable value bundling `MemoryContext`,
-    `verbose` flag, and `List<EnsembleListener>`. Factory methods: `of(mc, verbose, listeners)`,
-    `of(mc, verbose)`, `disabled()`. Fire methods (`fireTaskStart`, `fireTaskComplete`,
-    `fireTaskFailed`, `fireToolCall`) catch per-listener exceptions and log at WARN without
-    aborting execution or blocking subsequent listeners.
-  - `net.agentensemble.callback.EnsembleListener`: interface with 4 default no-op methods:
-    `onTaskStart`, `onTaskComplete`, `onTaskFailed`, `onToolCall`.
-  - `net.agentensemble.callback.TaskStartEvent`: record(taskDescription, agentRole, taskIndex, totalTasks)
-  - `net.agentensemble.callback.TaskCompleteEvent`: record(taskDescription, agentRole, taskOutput, duration, taskIndex, totalTasks)
-  - `net.agentensemble.callback.TaskFailedEvent`: record(taskDescription, agentRole, cause, duration, taskIndex, totalTasks)
-  - `net.agentensemble.callback.ToolCallEvent`: record(toolName, toolArguments, toolResult, agentRole, duration)
-  - `net.agentensemble.agent.ToolResolver`: package-private class extracted from AgentExecutor;
-    `resolve(List<Object>)` -> `ResolvedTools` nested record with `hasTools()` and `execute(request)`.
+**Per-tool module restructure:**
+- Added `buildSrc/` with `agentensemble.tool-conventions` precompiled convention plugin
+  (java-library, vanniktech-publish, spotless, errorprone, jacoco, common test deps, coverage thresholds)
+- All 7 existing tools migrated to sub-modules under `agentensemble-tools/<name>/`:
+  `calculator`, `datetime`, `json-parser`, `file-read`, `file-write`, `web-search`, `web-scraper`
+- Each tool converted to extend `AbstractAgentTool` (`doExecute` instead of `execute`)
+- New sub-packages: `net.agentensemble.tools.{calculator,datetime,json,io,web.search,web.scraper}`
+- Added BOM module at `agentensemble-tools/bom/`
+- `settings.gradle.kts`: updated with all sub-modules + `pluginManagement` for plugin version resolution
 
-  **Changes to existing classes:**
-  - `WorkflowExecutor.execute()`: signature changed from `(List<Task>, boolean, MemoryContext)` to
-    `(List<Task>, ExecutionContext)`.
-  - `AgentExecutor`: 3 overloads collapsed to 2: `execute(task, ctx, ExecutionContext)` and
-    `execute(task, ctx, ExecutionContext, DelegationContext)`. Fires `ToolCallEvent` after each
-    tool execution in the ReAct loop. `ToolResolver` replaces inline `resolveTools()` and
-    `ResolvedTools` inner record.
-  - `DelegationContext`: replaced separate `memoryContext` + `verbose` fields with single
-    `ExecutionContext executionContext`. `create()` signature: `(peers, maxDepth, executionContext,
-    executor)`. `getExecutionContext()` replaces `getMemoryContext()` + `isVerbose()`.
-  - `DelegateTaskTool`: constructor changed from `(agents, executor, verbose, memoryContext, dc)` to
-    `(agents, executor, executionContext, dc)`.
-  - `AgentDelegationTool.delegate()`: uses `delegationContext.getExecutionContext()` for execute call.
-  - `SequentialWorkflowExecutor.execute()`: fires `TaskStartEvent` before each task, `TaskCompleteEvent`
-    after success, `TaskFailedEvent` in catch block before re-throwing.
-  - `ParallelWorkflowExecutor.execute()`: same event firing pattern; parallel taskIndex=0 (unordered).
-  - `HierarchicalWorkflowExecutor.execute()`: same event firing for manager meta-task; manager runs
-    with `ExecutionContext.of(MemoryContext.disabled(), verbose, listeners)` (disabled memory, same listeners).
-  - `Ensemble`: added `@Singular List<EnsembleListener> listeners` field; custom `EnsembleBuilder`
-    inner class with convenience methods `onTaskStart(Consumer)`, `onTaskComplete(Consumer)`,
-    `onTaskFailed(Consumer)`, `onToolCall(Consumer)` -- each wraps the Consumer in an anonymous
-    `EnsembleListener` and delegates to Lombok-generated `listener(EnsembleListener)`.
-    `run()` builds `ExecutionContext.of(memoryContext, verbose, listeners)`.
+**Remote tools:**
+- Added `ProcessAgentTool` (`agentensemble-tools/process/`) with formal subprocess protocol spec:
+  - Input: `{"input":"..."}` → stdin; output: `{"output":"...","success":true}` or structured variant
+  - Non-zero exit → failure using stderr; configurable timeout + process kill on expiry
+  - Gracefully handles processes that do not read stdin (BrokenPipe caught and logged)
+- Added `HttpAgentTool` (`agentensemble-tools/http/`) wrapping REST endpoints:
+  - GET: input as `?input=<encoded>` query param
+  - POST: input as request body (auto `application/json` for JSON input, `text/plain` otherwise)
+  - Custom headers, timeout, injectable HttpClient; GET/POST factory methods
 
-  **Updated test files:**
-  - `AgentExecutorTest`: 8 call sites -> `ExecutionContext.disabled()`
-  - `DelegationContextTest`: rewritten with `ExecutionContext` (removed memoryContext/verbose params)
-  - `AgentDelegationToolTest`: `execute()` mock updated, `DelegationContext.create()` updated
-  - `DelegateTaskToolTest`: constructor and create() updated
-  - `ParallelWorkflowExecutorTest`: `execute()` calls + memory test updated; imports updated
-  - `HierarchicalWorkflowExecutorTest`: `execute()` calls updated; imports updated
-  - `EnsembleTest`: 7 listener builder tests added
+**Micrometer integration:**
+- Added `agentensemble-metrics-micrometer` module with `MicrometerToolMetrics`:
+  - `agentensemble.tool.executions` counter tagged by `(tool_name, agent_role, outcome)`
+  - `agentensemble.tool.duration` timer tagged by `(tool_name, agent_role)`
+  - Custom metric support via `incrementCounter()` and `recordValue()`
+  - All tag constants are public for external registry queries
 
-  **New test files:** 499 total (up from 440 baseline)
-  - `ExecutionContextTest`: 20 tests (factory methods, immutability, fire-method exception safety)
-  - `EnsembleListenerTest`: 10 tests (default no-ops, event record fields, override patterns)
-  - `ToolResolverTest`: 10 tests (AgentTool resolution, @Tool resolution, dispatch, unknown tool)
-  - `CallbackIntegrationTest`: 14 tests (full lifecycle via mocked LLMs)
+**Documentation:**
+- Updated `getting-started/installation.md` with per-tool deps, BOM, module table
+- Updated `guides/tools.md` with AbstractAgentTool, ToolContext, parallel execution
+- Updated `guides/built-in-tools.md` with per-module installation, updated package names
+- Added `guides/remote-tools.md`: ProcessAgentTool, HttpAgentTool, protocol spec
+- Added `guides/metrics.md`: ToolMetrics, MicrometerToolMetrics, Prometheus queries, custom metrics
+- Updated `mkdocs.yml` navigation
 
-  **Documentation:**
-  - `docs/guides/callbacks.md`: new guide covering quick start, event types, full interface impl,
-    multiple listeners, exception safety, thread safety, practical examples
-  - `docs/design/13-future-roadmap.md`: Phase 7 marked COMPLETE with implementation notes;
-    old Phase 7 advanced features section renamed Phase 8
-  - `mkdocs.yml`: Callbacks guide added to Guides nav section
+**Examples:**
+- Added `RemoteToolExample.java`: ProcessAgentTool (Python) + HttpAgentTool
+- Added `MetricsExample.java`: MicrometerToolMetrics with SimpleMeterRegistry, prints metrics
+- Updated `agentensemble-examples/build.gradle.kts` with all tool module deps
+
+### Issue #60 -- agentensemble-tools module (v1.0.0) [superseded by #73 restructure]
+Original flat `net.agentensemble.tools` package with 7 tools; replaced by per-module layout.
 
 ## Next Steps
 
-1. Open PR for `feature/57-callbacks-execution-context` -> main, get review + merge
-2. Release v0.7.0 (callbacks milestone, via release-please)
-3. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput (v0.7.x)
-4. Issue #58 + #59 (v0.8.0): Guardrails + Rate Limiting
-5. Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
-6. Issue #61 (v1.0.0): Streaming Output
+- CI re-run for PR #72 (should pass with javadoc + security fixes committed)
+- Review and merge PR #72 (feature/60-built-in-tool-library)
+- Issue #74 (Tool Pipeline/Chaining) is open for future work
+- Consider future work: MCP (Model Context Protocol) integration, GraalVM polyglot tools
 
-## Important Notes
+## Post-PR Review Fixes (commits 5e81c70 and 1134b52)
 
-- LangChain4j 1.11.0: EmbeddingModel.embed(String) returns Response<Embedding>
-- EmbeddingStore.add(Embedding, TextSegment) -- store method with explicit embedding
-- Metadata.from(key, value) -- static factory
-- EmbeddingSearchRequest.builder().queryEmbedding(e).maxResults(n).minScore(0.0).build()
-- Lombok @Builder.Default + custom build() causes static context errors -- always
-  use field initializers in the inner builder class instead
-- Custom builder methods: declare inner `public static class EnsembleBuilder` and add methods
-  that delegate to Lombok-generated @Singular methods. Lombok fills in the rest.
+After PR #72 was opened, CI and Copilot review identified additional issues:
 
-## Active Decisions
+1. **Javadoc failure**: `ExecutionContext.java` had `{@link}` references to Lombok-generated
+   builder methods (`toolExecutor(Executor)`, `toolMetrics(ToolMetrics)`) that Javadoc cannot
+   resolve. Fixed by replacing with `{@code}` examples.
 
-- **ExecutionContext threading**: created once per Ensemble.run(), threaded through entire
-  execution stack (WorkflowExecutor -> AgentExecutor -> DelegationContext -> tools)
-- **Fire method exception safety**: catch per-listener, log WARN, continue to next listener
-- **DelegationContext.getMemoryContext()/isVerbose() removed**: callers use
-  `delegationContext.getExecutionContext().memoryContext()` and `.isVerbose()`
-- **HierarchicalWorkflowExecutor manager context**: disabled memory + same listeners
-  (manager is meta-orchestrator, shouldn't record to shared memory)
-- **Parallel taskIndex**: 0 (meaningless for parallel -- order not guaranteed)
-- **ToolResolver visibility**: package-private (implementation detail of agent package)
-- **ParseResult visibility**: public (accessed from AgentExecutor in different package)
-- **Schema generation**: prompt-based JSON schema (not LangChain4j ResponseFormat.JSON)
-- **Parallel execution**: `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21)
+2. **FileReadTool/FileWriteTool symlink escape**: The `normalize()+startsWith()` sandbox check
+   blocks `../` traversal but not symlinks inside `baseDir` pointing outside. Fixed by calling
+   `toRealPath()` after verifying the file/directory exists, then re-validating against
+   `baseDir.toRealPath()`. Tests added for both tools.
 
-## Important Patterns and Preferences
+3. **ProcessAgentTool pipe buffer deadlock**: Sequential drain (wait-then-read) could deadlock
+   if a child process wrote more than the OS pipe buffer (~64 KB) before the streams were read.
+   Fixed by draining stdout/stderr concurrently on virtual threads before calling `waitFor()`.
 
-- TDD: Write tests first, then implementation
-- Feature branches per GitHub issue
-- No git commit --amend (linear history)
-- No emoji/unicode in code or developer docs
-- Production-grade quality, not prototype
-- Lombok @Builder + custom builder class: use field initializers, NOT @Builder.Default
-- ExecutionContext.disabled() is the backward-compat factory for tests and internal uses
+4. **BOM artifact coordinates**: The `agentensemble-tools/bom` module had no explicit Maven
+   coordinates; without them it would publish as `net.agentensemble:bom:1.0.0`. Added
+   `coordinates("net.agentensemble", "agentensemble-tools-bom", ...)` to the BOM build file.
+
+5. **README dependency snippet**: The quickstart showed `agentensemble-tools:1.0.0` which no
+   longer exists as a published artifact. Updated to show the BOM + individual tool modules.
+
+6. **WebScraperTool SSRF**: Added a security note in `docs/guides/built-in-tools.md` explaining
+   the SSRF risk for untrusted URL inputs and recommended mitigations.
+
+7. **Issue #74 created**: Tool Pipeline/Chaining feature (Unix-pipe-style `search -> filter -> format`)
+   tracked as a future issue with design sketch and key questions.
+
+## Active Decisions and Considerations
+
+- **Async strategy**: Java 21 virtual threads handle I/O-bound tools; no `AsyncAgentTool`
+  interface needed -- blocking is cheap and the JVM handles parallelism transparently
+- **Tool executor**: Configurable via `Ensemble.builder().toolExecutor(executor)`; default is
+  `Executors.newVirtualThreadPerTaskExecutor()`
+- **Module layout**: Per-tool modules under `agentensemble-tools/` parent directory; users
+  add exactly the tools they need; BOM for version alignment
+- **Metrics**: Pluggable via `ToolMetrics` interface; no metrics overhead by default (NoOpToolMetrics)

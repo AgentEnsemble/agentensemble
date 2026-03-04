@@ -65,23 +65,40 @@ public final class LangChain4jToolAdapter {
      *
      * @param tool the AgentTool to execute
      * @param argumentsJson the JSON arguments from the LLM tool call
-     * @return the tool's output, or an "Error: ..." string on failure
+     * @return the tool's output string, or an "Error: ..." string on failure
      */
     public static String execute(AgentTool tool, String argumentsJson) {
+        ToolResult result = executeForResult(tool, argumentsJson);
+        if (result.isSuccess()) {
+            return result.getOutput();
+        } else {
+            return "Error: " + result.getErrorMessage();
+        }
+    }
+
+    /**
+     * Execute an {@link AgentTool} with arguments provided as a JSON string, returning
+     * the full {@link ToolResult} including any structured output.
+     *
+     * <p>The arguments JSON is expected to contain an "input" key with the string value
+     * to pass to {@link AgentTool#execute(String)}. If the JSON is malformed or the
+     * "input" key is absent, the raw arguments string is passed directly to execute().
+     *
+     * @param tool          the AgentTool to execute
+     * @param argumentsJson the JSON arguments from the LLM tool call
+     * @return the ToolResult; never null
+     */
+    public static ToolResult executeForResult(AgentTool tool, String argumentsJson) {
         String input = extractInput(argumentsJson);
         try {
             ToolResult result = tool.execute(input);
             if (result == null) {
-                return "";
+                return ToolResult.success("");
             }
-            if (result.isSuccess()) {
-                return result.getOutput();
-            } else {
-                return "Error: " + result.getErrorMessage();
-            }
+            return result;
         } catch (Exception e) {
             log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
-            return "Error: " + e.getMessage();
+            return ToolResult.failure(e.getMessage());
         }
     }
 
