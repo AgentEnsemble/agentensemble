@@ -2,9 +2,10 @@
 
 ## Current Work Focus
 
-Feature branch `feature/60-built-in-tool-library` implemented Issues #60 and #73
-(Enhanced Tool Model: AbstractAgentTool, Async, Metrics, Remote Tools, Per-Tool Modules).
-PR #72 is open against main. All tests pass across all modules.
+Issues #60 and #73 (Enhanced Tool Model: AbstractAgentTool, Per-Tool Modules, Remote Tools,
+Metrics) were implemented on `feature/60-built-in-tool-library` and merged to main via PR #72
+(squash commit `706305e`). The feature branch was deleted. The project is now on main at the
+post-merge state, ready for the next release.
 
 ## Recent Changes
 
@@ -71,9 +72,9 @@ Original flat `net.agentensemble.tools` package with 7 tools; replaced by per-mo
 
 ## Next Steps
 
-- CI re-run for PR #72 (should pass with javadoc + security fixes committed)
-- Review and merge PR #72 (feature/60-built-in-tool-library)
-- Issue #74 (Tool Pipeline/Chaining) is open for future work
+- Release-please will open a Release PR for v1.0.0 (the squash commit was a `feat:` Conventional
+  Commit, which triggers a minor/major bump depending on release-please config)
+- Issue #74 (Tool Pipeline/Chaining) is the next planned feature
 - Consider future work: MCP (Model Context Protocol) integration, GraalVM polyglot tools
 
 ## Post-PR Review Fixes (commits 5e81c70 and 1134b52)
