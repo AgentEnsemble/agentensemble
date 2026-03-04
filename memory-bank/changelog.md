@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased] -- feature/60-built-in-tool-library (Issues #60 + #73)
+
+### Added
+- `AbstractAgentTool` base class: template method (`doExecute`), automatic timing/success/failure/
+  error counters, structured logging via `log()`, custom metrics via `metrics()`, executor
+  access via `executor()`, exception safety (uncaught exceptions converted to ToolResult.failure)
+- `ToolContext`: immutable record (Logger, ToolMetrics, Executor) injected by framework into
+  AbstractAgentTool instances before first execution
+- `ToolMetrics` interface + `NoOpToolMetrics` singleton default (zero overhead)
+- `ToolContextInjector`: friend-bridge enabling cross-package ToolContext injection
+- `ProcessAgentTool`: subprocess execution with formal AgentEnsemble subprocess protocol spec
+  (JSON-over-stdio; success/failure/structured output; timeout + process kill; handles non-reading stdin)
+- `HttpAgentTool`: REST endpoint wrapping (GET with query param, POST with body; custom headers;
+  auto Content-Type for JSON input; injectable HttpClient)
+- `agentensemble-metrics-micrometer` module: `MicrometerToolMetrics` bridging `ToolMetrics` to
+  Micrometer; `agentensemble.tool.executions` counter + `agentensemble.tool.duration` timer;
+  tagged by `(tool_name, agent_role, outcome)`
+- buildSrc `agentensemble.tool-conventions` precompiled Gradle convention plugin
+- `agentensemble-tools/bom` BOM platform module for version alignment
+- `pluginManagement` in `settings.gradle.kts` resolving plugin version conflicts with buildSrc
+- All 9 built-in tools as independent sub-modules under `agentensemble-tools/`
+- `RemoteToolExample.java` and `MetricsExample.java` examples
+- New guides: `remote-tools.md`, `metrics.md`
+
+### Changed
+- `ToolResult` enhanced with optional `structuredOutput` field and typed accessor
+- `ToolCallEvent` enhanced with `structuredResult` field; metrics tagged by `(toolName, agentRole)`
+- `ToolResolver` injects ToolContext, sets/clears agentRole thread-local, returns `ToolResult`
+- `AgentExecutor` parallelizes multi-tool turns via CompletableFuture + virtual threads
+- `ExecutionContext` gains `toolExecutor` and `toolMetrics` fields
+- `Ensemble.builder()` gains `toolExecutor(Executor)` and `toolMetrics(ToolMetrics)` options
+- All 7 original tools converted to extend `AbstractAgentTool` (`doExecute` instead of `execute`)
+- All 7 original tools moved to per-module sub-packages; old flat `agentensemble-tools/src/` removed
+- `guides/tools.md`, `guides/built-in-tools.md`, `getting-started/installation.md` updated
+- `mkdocs.yml` navigation updated with Remote Tools and Metrics guides
+- `agentensemble-examples/build.gradle.kts` updated with all tool module dependencies
+
+
 ## [1.0.0] - 2026-03-03 (Issue #60, feature/60-built-in-tool-library)
 
 ### Added
