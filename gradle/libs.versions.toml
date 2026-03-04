@@ -13,6 +13,7 @@ logback          = "1.5.32"
 spotless         = "8.3.0"
 errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
+micrometer       = "1.14.4"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -29,6 +30,7 @@ assertj-core              = { group = "org.assertj",                    name = "
 mockito-core              = { group = "org.mockito",                    name = "mockito-core",             version.ref = "mockito"  }
 logback-classic           = { group = "ch.qos.logback",                 name = "logback-classic",          version.ref = "logback"  }
 errorprone-core           = { group = "com.google.errorprone",          name = "error_prone_core",         version.ref = "errorprone-core" }
+micrometer-core           = { group = "io.micrometer",                  name = "micrometer-core",          version.ref = "micrometer"      }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

@@ -6,9 +6,6 @@ plugins {
 }
 
 // Coverage verification -- wired into check so CI fails if coverage drops below thresholds.
-// Thresholds are set conservatively below the current measured levels:
-//   LINE:   actual 94.1%  -> minimum 90%
-//   BRANCH: actual 81.4%  -> minimum 75%
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     violationRules {
         rule {
@@ -29,28 +26,17 @@ tasks.named("check") {
 }
 
 dependencies {
-    // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
-    api(libs.langchain4j.core)
+    api(project(":agentensemble-core"))
 
-    // JSON serialization for tool I/O
-    implementation(libs.jackson.databind)
+    // Micrometer: compileOnly so users who don't want it don't pull it transitively
+    compileOnly(libs.micrometer.core)
 
-    // Logging facade - no implementation, users bring their own
-    implementation(libs.slf4j.api)
+    // For tests: the real micrometer implementation
+    testImplementation(libs.micrometer.core)
 
-    // Lombok - compile-time only, not shipped in the jar
-    compileOnly(libs.lombok)
-    annotationProcessor(libs.lombok)
-
-    // Test dependencies
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
-    testImplementation(libs.mockito.core)
     testImplementation(libs.slf4j.simple)
-
-    testCompileOnly(libs.lombok)
-    testAnnotationProcessor(libs.lombok)
-
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
@@ -59,8 +45,8 @@ mavenPublishing {
     signAllPublications()
 
     pom {
-        name = "AgentEnsemble Core"
-        description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
+        name = "AgentEnsemble Metrics: Micrometer"
+        description = "Micrometer integration for AgentEnsemble tool metrics"
         url = "https://github.com/AgentEnsemble/agentensemble"
 
         licenses {
