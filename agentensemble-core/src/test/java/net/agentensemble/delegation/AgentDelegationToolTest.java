@@ -245,4 +245,147 @@ class AgentDelegationToolTest {
         assertThat(capturedContext[0]).isNotNull();
         assertThat(capturedContext[0].getCurrentDepth()).isEqualTo(1);
     }
+
+    // ========================
+    // DelegationResponse tests
+    // ========================
+
+    @Test
+    void getDelegationResponses_emptyBeforeDelegation() {
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+
+        assertThat(tool.getDelegationResponses()).isEmpty();
+    }
+
+    @Test
+    void delegate_successfulDelegation_producesDelegationResponse() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("writer result"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+    }
+
+    @Test
+    void delegate_successfulDelegation_responseHasSuccessStatus() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("writer result"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.SUCCESS);
+    }
+
+    @Test
+    void delegate_successfulDelegation_responseContainsRawOutput() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("writer result"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses().get(0).rawOutput()).isEqualTo("writer result");
+    }
+
+    @Test
+    void delegate_successfulDelegation_responseContainsWorkerRole() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("writer result"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses().get(0).workerRole()).isEqualTo("Writer");
+    }
+
+    @Test
+    void delegate_successfulDelegation_responseHasNonNullTaskId() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("output"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses().get(0).taskId()).isNotNull().isNotBlank();
+    }
+
+    @Test
+    void delegate_successfulDelegation_responseHasPositiveDuration() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("output"));
+
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses().get(0).duration()).isGreaterThanOrEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void delegate_depthLimitBlocked_producesFailureDelegationResponse() {
+        DelegationContext limitedCtx = DelegationContext.create(List.of(writer), 1, executionContext, executor)
+                .descend();
+
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", limitedCtx);
+        tool.delegate("Writer", "Write something");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        assertThat(tool.getDelegationResponses().get(0).errors()).isNotEmpty();
+    }
+
+    @Test
+    void delegate_selfDelegationBlocked_producesFailureDelegationResponse() {
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("Researcher", "Self task");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+    }
+
+    @Test
+    void delegate_unknownAgent_producesFailureDelegationResponse() {
+        delegationContext = DelegationContext.create(List.of(researcher), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+        tool.delegate("UnknownAgent", "Task");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        assertThat(tool.getDelegationResponses().get(0).errors()).isNotEmpty();
+    }
+
+    @Test
+    void delegate_multipleDelegations_allResponsesAccumulated() {
+        when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
+                .thenReturn(makeOutput("output A"))
+                .thenReturn(makeOutput("output B"));
+
+        delegationContext = DelegationContext.create(List.of(researcher, writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Caller", delegationContext);
+        tool.delegate("Researcher", "Task A");
+        tool.delegate("Writer", "Task B");
+
+        assertThat(tool.getDelegationResponses()).hasSize(2);
+        assertThat(tool.getDelegationResponses().get(0).rawOutput()).isEqualTo("output A");
+        assertThat(tool.getDelegationResponses().get(1).rawOutput()).isEqualTo("output B");
+    }
+
+    @Test
+    void getDelegationResponses_returnsImmutableList() {
+        delegationContext = DelegationContext.create(List.of(writer), 3, executionContext, executor);
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
+
+        List<DelegationResponse> responses = tool.getDelegationResponses();
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class, () -> responses.add(null));
+    }
 }

@@ -2,12 +2,18 @@ package net.agentensemble.workflow;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.delegation.DelegationRequest;
+import net.agentensemble.delegation.DelegationResponse;
+import net.agentensemble.delegation.DelegationStatus;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
@@ -25,6 +31,13 @@ import org.slf4j.LoggerFactory;
  * execution participates in shared memory: prior run outputs are injected into the
  * worker's prompt and the worker's output is recorded into memory after completion.
  *
+ * For each invocation the framework internally constructs a {@link DelegationRequest} and
+ * produces a {@link DelegationResponse}. Successful delegations accumulate as
+ * {@link TaskOutput} objects (accessible via {@link #getDelegatedOutputs()}) and as typed
+ * {@link DelegationResponse} objects (accessible via {@link #getDelegationResponses()}).
+ * Guard failures produce a {@link DelegationResponse} with {@link DelegationStatus#FAILURE}
+ * status so all delegation attempts are auditable.
+ *
  * This class is stateful -- a new instance must be created for each ensemble run.
  */
 public class DelegateTaskTool {
@@ -39,6 +52,7 @@ public class DelegateTaskTool {
     private final ExecutionContext executionContext;
     private final DelegationContext delegationContext;
     private final List<TaskOutput> delegatedOutputs = new ArrayList<>();
+    private final List<DelegationResponse> delegationResponses = new ArrayList<>();
 
     /**
      * @param agents            the worker agents available for delegation
@@ -61,9 +75,13 @@ public class DelegateTaskTool {
      * Delegate a task to a specific worker agent.
      *
      * The tool locates the agent by role name (case-insensitive), creates a task
-     * with the provided description, executes it, and returns the output. If no
-     * agent is found for the given role, an error message listing available roles
-     * is returned instead.
+     * with the provided description, executes it, and returns the output as a plain
+     * String (preserving the LLM-facing tool contract). Internally a
+     * {@link DelegationRequest} is constructed and a {@link DelegationResponse} is
+     * produced and accumulated.
+     *
+     * If no agent is found for the given role, an error message listing available roles
+     * is returned and a {@link DelegationStatus#FAILURE} response is recorded.
      *
      * @param agentRole       the exact role of the worker agent to delegate to
      * @param taskDescription a clear description of the task for the agent to complete
@@ -85,11 +103,20 @@ public class DelegateTaskTool {
             return "Error: taskDescription must not be null or blank.";
         }
 
+        // Build the typed request; taskId is auto-generated
+        DelegationRequest request = DelegationRequest.builder()
+                .agentRole(agentRole)
+                .taskDescription(taskDescription)
+                .build();
+
+        Instant requestStart = Instant.now();
+
         Agent agent = findAgentByRole(agentRole);
         if (agent == null) {
             List<String> availableRoles = agents.stream().map(Agent::getRole).toList();
             String error = "No agent found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation failed: {}", error);
+            delegationResponses.add(failureResponse(request, agentRole, error, requestStart));
             return error;
         }
 
@@ -104,16 +131,49 @@ public class DelegateTaskTool {
                 .agent(agent)
                 .build();
 
-        TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, delegationContext);
-        delegatedOutputs.add(output);
+        try {
+            TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, delegationContext);
+            delegatedOutputs.add(output);
 
-        log.info(
-                "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                agent.getRole(),
-                output.getToolCallCount(),
-                output.getDuration());
+            Duration elapsed = Duration.between(requestStart, Instant.now());
+            DelegationResponse response = new DelegationResponse(
+                    request.getTaskId(),
+                    DelegationStatus.SUCCESS,
+                    agent.getRole(),
+                    output.getRaw(),
+                    output.getParsedOutput(),
+                    Collections.emptyMap(),
+                    Collections.emptyList(),
+                    Collections.emptyMap(),
+                    elapsed);
+            delegationResponses.add(response);
 
-        return output.getRaw();
+            log.info(
+                    "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
+                    agent.getRole(),
+                    output.getToolCallCount(),
+                    output.getDuration());
+
+            return output.getRaw();
+
+        } catch (Exception e) {
+            Duration elapsed = Duration.between(requestStart, Instant.now());
+            DelegationResponse response = new DelegationResponse(
+                    request.getTaskId(),
+                    DelegationStatus.FAILURE,
+                    agent.getRole(),
+                    null,
+                    null,
+                    Collections.emptyMap(),
+                    List.of(
+                            e.getMessage() != null
+                                    ? e.getMessage()
+                                    : e.getClass().getSimpleName()),
+                    Collections.emptyMap(),
+                    elapsed);
+            delegationResponses.add(response);
+            throw e;
+        }
     }
 
     /**
@@ -124,6 +184,35 @@ public class DelegateTaskTool {
      */
     public List<TaskOutput> getDelegatedOutputs() {
         return List.copyOf(delegatedOutputs);
+    }
+
+    /**
+     * Returns an immutable snapshot of all {@link DelegationResponse} objects produced
+     * by this tool instance, in invocation order. Includes both successful delegations and
+     * guard-blocked attempts ({@link DelegationStatus#FAILURE}).
+     *
+     * @return immutable list of delegation responses
+     */
+    public List<DelegationResponse> getDelegationResponses() {
+        return List.copyOf(delegationResponses);
+    }
+
+    // ========================
+    // Internal helpers
+    // ========================
+
+    private DelegationResponse failureResponse(
+            DelegationRequest request, String targetRole, String errorMessage, Instant startedAt) {
+        return new DelegationResponse(
+                request.getTaskId(),
+                DelegationStatus.FAILURE,
+                targetRole,
+                null,
+                null,
+                Collections.emptyMap(),
+                List.of(errorMessage),
+                Collections.emptyMap(),
+                Duration.between(startedAt, Instant.now()));
     }
 
     private Agent findAgentByRole(String role) {
