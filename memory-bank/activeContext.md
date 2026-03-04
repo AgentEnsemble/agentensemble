@@ -2,103 +2,65 @@
 
 ## Current Work Focus
 
-Feature branch `feature/58-guardrails` implements Issue #58 (Guardrails: pre/post execution
-validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
+Feature branch `feature/60-built-in-tool-library` implemented Issue #60 (Built-in Tool Library:
+agentensemble-tools module) for v1.0.0. PR to be opened against main. All tests pass.
 
 ## Recent Changes
 
-- **Class-size refactoring** (6 commits on main):
-  - Extracted `EnsembleValidator` (package-private) from `Ensemble`: all 10 validate*()
-    methods + detectCycle() + warnUnusedAgents() moved out; `Ensemble` delegates via
-    `new EnsembleValidator(this).validate()`. Ensemble.java: 523 -> 342 lines.
-  - Extracted `StructuredOutputHandler` (package-private) from `AgentExecutor`:
-    `parseStructuredOutput()` + `buildStructuredOutputCorrectionPrompt()` moved out;
-    AgentExecutor delegates via `StructuredOutputHandler.parse(agent, task, response, prompt)`.
-    AgentExecutor.java: 411 -> 321 lines.
-  - Extracted `ParallelTaskCoordinator` (package-private) from `ParallelWorkflowExecutor`:
-    `submitTask()`, `resolveDependent()`, `shouldSkip()` moved into coordinator class that
-    holds all per-execution shared state as fields (eliminates 16-parameter method signatures).
-    ParallelWorkflowExecutor.java: 510 -> 243 lines.
-  - Split test files by concern (all tests preserved, zero new assertions):
-    - `EnsembleTest` (386) -> `EnsembleTest` (141 builder/listeners) + `EnsembleValidationTest` (265)
-    - `TaskTest` (438) -> `TaskTest` (264 builder/defaults) + `TaskValidationTest` (199)
-    - `ParallelWorkflowExecutorTest` (505) -> 3 files + shared base class
-    - `ParallelEnsembleIntegrationTest` (558) -> basic (376) + error strategy (212)
-    - `HierarchicalEnsembleIntegrationTest` (385) -> execution (289) + validation+callbacks (95)
-    - `DelegationEnsembleIntegrationTest` (376) -> core scenarios (224) + config/memory (209)
-  - No file in the project now exceeds 380 lines.
+### Issue #60 -- agentensemble-tools module (v1.0.0)
 
-- Issue #57 (Callbacks + ExecutionContext refactor) implemented on feature branch:
+New Gradle module `agentensemble-tools` added with 7 built-in `AgentTool` implementations:
 
-  **New packages and classes:**
-  - `net.agentensemble.execution.ExecutionContext`: immutable value bundling `MemoryContext`,
-    `verbose` flag, and `List<EnsembleListener>`. Factory methods: `of(mc, verbose, listeners)`,
-    `of(mc, verbose)`, `disabled()`. Fire methods (`fireTaskStart`, `fireTaskComplete`,
-    `fireTaskFailed`, `fireToolCall`) catch per-listener exceptions and log at WARN without
-    aborting execution or blocking subsequent listeners.
-  - `net.agentensemble.callback.EnsembleListener`: interface with 4 default no-op methods:
-    `onTaskStart`, `onTaskComplete`, `onTaskFailed`, `onToolCall`.
-  - `net.agentensemble.callback.TaskStartEvent`: record(taskDescription, agentRole, taskIndex, totalTasks)
-  - `net.agentensemble.callback.TaskCompleteEvent`: record(taskDescription, agentRole, taskOutput, duration, taskIndex, totalTasks)
-  - `net.agentensemble.callback.TaskFailedEvent`: record(taskDescription, agentRole, cause, duration, taskIndex, totalTasks)
-  - `net.agentensemble.callback.ToolCallEvent`: record(toolName, toolArguments, toolResult, agentRole, duration)
-  - `net.agentensemble.agent.ToolResolver`: package-private class extracted from AgentExecutor;
-    `resolve(List<Object>)` -> `ResolvedTools` nested record with `hasTools()` and `execute(request)`.
+**New module:** `net.agentensemble:agentensemble-tools`
+- `agentensemble-tools/build.gradle.kts`: `java-library` + `vanniktech-publish`; depends on
+  `:agentensemble-core` via `api()`; adds Jsoup for WebScraperTool, Jackson for JsonParserTool/
+  providers; JaCoCo coverage thresholds (LINE >= 90%, BRANCH >= 75%)
+- `settings.gradle.kts`: added `include("agentensemble-tools")`
+- `gradle/libs.versions.toml`: added `jsoup = "1.18.3"` version + `jsoup` library entry
 
-  **Changes to existing classes:**
-  - `WorkflowExecutor.execute()`: signature changed from `(List<Task>, boolean, MemoryContext)` to
-    `(List<Task>, ExecutionContext)`.
-  - `AgentExecutor`: 3 overloads collapsed to 2: `execute(task, ctx, ExecutionContext)` and
-    `execute(task, ctx, ExecutionContext, DelegationContext)`. Fires `ToolCallEvent` after each
-    tool execution in the ReAct loop. `ToolResolver` replaces inline `resolveTools()` and
-    `ResolvedTools` inner record.
-  - `DelegationContext`: replaced separate `memoryContext` + `verbose` fields with single
-    `ExecutionContext executionContext`. `create()` signature: `(peers, maxDepth, executionContext,
-    executor)`. `getExecutionContext()` replaces `getMemoryContext()` + `isVerbose()`.
-  - `DelegateTaskTool`: constructor changed from `(agents, executor, verbose, memoryContext, dc)` to
-    `(agents, executor, executionContext, dc)`.
-  - `AgentDelegationTool.delegate()`: uses `delegationContext.getExecutionContext()` for execute call.
-  - `SequentialWorkflowExecutor.execute()`: fires `TaskStartEvent` before each task, `TaskCompleteEvent`
-    after success, `TaskFailedEvent` in catch block before re-throwing.
-  - `ParallelWorkflowExecutor.execute()`: same event firing pattern; parallel taskIndex=0 (unordered).
-  - `HierarchicalWorkflowExecutor.execute()`: same event firing for manager meta-task; manager runs
-    with `ExecutionContext.of(MemoryContext.disabled(), verbose, listeners)` (disabled memory, same listeners).
-  - `Ensemble`: added `@Singular List<EnsembleListener> listeners` field; custom `EnsembleBuilder`
-    inner class with convenience methods `onTaskStart(Consumer)`, `onTaskComplete(Consumer)`,
-    `onTaskFailed(Consumer)`, `onToolCall(Consumer)` -- each wraps the Consumer in an anonymous
-    `EnsembleListener` and delegates to Lombok-generated `listener(EnsembleListener)`.
-    `run()` builds `ExecutionContext.of(memoryContext, verbose, listeners)`.
+**New classes in `net.agentensemble.tools`:**
 
-  **Updated test files:**
-  - `AgentExecutorTest`: 8 call sites -> `ExecutionContext.disabled()`
-  - `DelegationContextTest`: rewritten with `ExecutionContext` (removed memoryContext/verbose params)
-  - `AgentDelegationToolTest`: `execute()` mock updated, `DelegationContext.create()` updated
-  - `DelegateTaskToolTest`: constructor and create() updated
-  - `ParallelWorkflowExecutorTest`: `execute()` calls + memory test updated; imports updated
-  - `HierarchicalWorkflowExecutorTest`: `execute()` calls updated; imports updated
-  - `EnsembleTest`: 7 listener builder tests added
+| Class | Public API | Description |
+|-------|-----------|-------------|
+| `CalculatorTool` | `new CalculatorTool()` | Recursive-descent parser; +,-,*,/,%,^, parens, unary minus |
+| `DateTimeTool` | `new DateTimeTool()` | now, today, date arithmetic, timezone conversion; package-private `Clock` constructor for testing |
+| `FileReadTool` | `FileReadTool.of(Path)` | Sandboxed file reads; path traversal rejected via normalize()+startsWith() |
+| `FileWriteTool` | `FileWriteTool.of(Path)` | Sandboxed file writes; JSON input {"path":...,"content":...}; creates parent dirs |
+| `WebSearchProvider` | `@FunctionalInterface` | Provider interface for WebSearchTool; `search(String) throws IOException, InterruptedException` |
+| `WebSearchTool` | `of(WebSearchProvider)`, `ofTavily(key)`, `ofSerpApi(key)` | Delegates to WebSearchProvider |
+| `TavilySearchProvider` | package-private | Tavily API; injectable HttpClient constructor for testing |
+| `SerpApiSearchProvider` | package-private | SerpAPI/Google; injectable HttpClient constructor for testing |
+| `WebScraperTool` | `new WebScraperTool()`, `withMaxContentLength(int)` | HTTP GET + Jsoup text extraction; UrlFetcher injectable for testing |
+| `UrlFetcher` | package-private `@FunctionalInterface` | HTTP fetching abstraction for WebScraperTool testing |
+| `HttpUrlFetcher` | package-private | Real HttpClient implementation; injectable HttpClient constructor for testing |
+| `JsonParserTool` | `new JsonParserTool()` | Dot-notation + array-index path extraction; input: "path\nJSON" format |
 
-  **New test files:** 499 total (up from 440 baseline)
-  - `ExecutionContextTest`: 20 tests (factory methods, immutability, fire-method exception safety)
-  - `EnsembleListenerTest`: 10 tests (default no-ops, event record fields, override patterns)
-  - `ToolResolverTest`: 10 tests (AgentTool resolution, @Tool resolution, dispatch, unknown tool)
-  - `CallbackIntegrationTest`: 14 tests (full lifecycle via mocked LLMs)
+**Test files (`agentensemble-tools/src/test/java/net/agentensemble/tools/`):**
+- `CalculatorToolTest` (31 tests): arithmetic, precedence, parens, unary minus, decimals, errors
+- `DateTimeToolTest` (22 tests): now, today, timezone, date arithmetic, convert, failures
+- `FileReadToolTest` (16 tests): reads, subdirs, traversal rejection, not-found, factory validation
+- `FileWriteToolTest` (20 tests): writes, auto-create dirs, overwrite, traversal rejection, JSON parsing
+- `WebSearchToolTest` (14 tests): provider delegation, trims, IO exception, null/blank, factories
+- `TavilySearchProviderTest` (9 tests): parseResults(), search() with mock HttpClient
+- `SerpApiSearchProviderTest` (9 tests): parseResults(), search() with mock HttpClient
+- `WebScraperToolTest` (14 tests): HTML text extraction, truncation, mock UrlFetcher, failures
+- `HttpUrlFetcherTest` (5 tests): 200 success, 404/500 errors, IO exception, default constructor
+- `JsonParserToolTest` (19 tests): top-level, nested, array access, object/array serialization, errors
+- `BuiltInToolsIntegrationTest` (6 tests): all tools implement AgentTool, multi-tool scenarios
 
-  **Documentation:**
-  - `docs/guides/callbacks.md`: new guide covering quick start, event types, full interface impl,
-    multiple listeners, exception safety, thread safety, practical examples
-  - `docs/design/13-future-roadmap.md`: Phase 7 marked COMPLETE with implementation notes;
-    old Phase 7 advanced features section renamed Phase 8
-  - `mkdocs.yml`: Callbacks guide added to Guides nav section
+**Documentation updated:**
+- `docs/guides/built-in-tools.md`: new guide (dependency, one section per tool, combined usage)
+- `docs/design/13-future-roadmap.md`: Phase 9 Built-in Tools marked COMPLETE
+- `docs/getting-started/installation.md`: updated to v1.0.0 + agentensemble-tools optional dep
+- `mkdocs.yml`: Built-in Tools added to Guides nav
+- `README.md`: agentensemble-tools dep in quickstart, v1.0.0 roadmap entry struck through
 
 ## Next Steps
 
-1. Open PR for `feature/57-callbacks-execution-context` -> main, get review + merge
-2. Release v0.7.0 (callbacks milestone, via release-please)
-3. Issue #42: Execution metrics -- ExecutionMetrics on EnsembleOutput (v0.7.x)
-4. Issue #58 + #59 (v0.8.0): Guardrails + Rate Limiting
-5. Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
-6. Issue #61 (v1.0.0): Streaming Output
+1. Open PR for `feature/60-built-in-tool-library` -> main, get review + merge
+2. Release v1.0.0 (via release-please after PR merge)
+3. Issue #59: Rate Limiting (v1.x) -- deferred from original v0.8.0 target
+4. Issue #61: Streaming Output (future)
 
 ## Important Notes
 
@@ -113,18 +75,18 @@ validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
 
 ## Active Decisions
 
-- **ExecutionContext threading**: created once per Ensemble.run(), threaded through entire
-  execution stack (WorkflowExecutor -> AgentExecutor -> DelegationContext -> tools)
-- **Fire method exception safety**: catch per-listener, log WARN, continue to next listener
-- **DelegationContext.getMemoryContext()/isVerbose() removed**: callers use
-  `delegationContext.getExecutionContext().memoryContext()` and `.isVerbose()`
-- **HierarchicalWorkflowExecutor manager context**: disabled memory + same listeners
-  (manager is meta-orchestrator, shouldn't record to shared memory)
-- **Parallel taskIndex**: 0 (meaningless for parallel -- order not guaranteed)
-- **ToolResolver visibility**: package-private (implementation detail of agent package)
+- **agentensemble-tools is optional**: separate artifact, not bundled in core; users add it only
+  if they want the built-in tools
+- **WebSearchProvider is public API**: functional interface; users can create custom providers
+- **UrlFetcher is package-private**: not part of public API; injectable only for testing
+- **Provider HttpClient injection**: package-private constructors accept HttpClient for testing
+  (avoids real HTTP in unit tests); public constructors use default HttpClient
+- **FileRead/WriteToolSandboxing**: normalize() + startsWith(baseDir) -- catches all traversal
+- **JsonParserTool input format**: first line = path, remaining lines = JSON (LLM-friendly)
+- **DateTimeTool Clock injection**: package-private Clock constructor for deterministic tests
+- **Coverage thresholds on tools module**: same as core (LINE >= 90%, BRANCH >= 75%)
+- **ExecutionContext threading**: created once per Ensemble.run(), threaded through entire stack
 - **ParseResult visibility**: public (accessed from AgentExecutor in different package)
-- **Schema generation**: prompt-based JSON schema (not LangChain4j ResponseFormat.JSON)
-- **Parallel execution**: `Executors.newVirtualThreadPerTaskExecutor()` (stable Java 21)
 
 ## Important Patterns and Preferences
 
@@ -135,3 +97,4 @@ validation hooks) for v0.8.0. PR to be opened against main. All 563 tests pass.
 - Production-grade quality, not prototype
 - Lombok @Builder + custom builder class: use field initializers, NOT @Builder.Default
 - ExecutionContext.disabled() is the backward-compat factory for tests and internal uses
+- Package-private constructors for testability (Clock, HttpClient, UrlFetcher injection)

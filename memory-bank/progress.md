@@ -142,10 +142,11 @@
   - RateLimitedChatModel decorator (token-bucket, thread-safe)
   - RateLimit value object with factory methods
   - Agent.rateLimit() optional builder convenience
-- [ ] Issue #60 (v0.9.0): Built-in Tool Library (agentensemble-tools module)
-  - New Gradle module: agentensemble-tools
+- [x] Issue #60 (v1.0.0): Built-in Tool Library (agentensemble-tools module) -- feature/60-built-in-tool-library
+  - New Gradle module: agentensemble-tools (published as net.agentensemble:agentensemble-tools)
   - 7 tools: CalculatorTool, DateTimeTool, FileReadTool, FileWriteTool,
-    WebSearchTool, WebScraperTool, JsonParserTool
+    WebSearchTool (Tavily+SerpAPI+custom), WebScraperTool (Jsoup), JsonParserTool
+  - 165 new tests across 11 test classes; LINE >= 90%, BRANCH >= 75% coverage enforced
   - Code execution deferred (security complexity)
 - [ ] Issue #61 (v1.0.0): Streaming Output
   - Agent.streamingLlm optional field (StreamingChatLanguageModel)
@@ -165,11 +166,11 @@
 
 ## Current Status
 
-**Phase**: Phase 7 in progress -- Issue #57 (callbacks) done on feature branch; PR pending
-**Total tests**: 499 passing on main (post-refactor; tests relocated not added)
-**Current version**: 0.6.0-SNAPSHOT (main); v0.7.0 targeting after PR merge
-**Last release**: v0.4.2 -- Maven Central + GitHub Packages (v0.6.0 pending release-please)
-**Next action**: PR for Issue #57, then v0.7.0 release, then Issue #42 (Execution Metrics)
+**Phase**: Phase 7 complete -- Issue #60 (built-in tools) done on feature branch; PR pending
+**Total tests**: 563 passing on main (agentensemble-core) + 165 new in agentensemble-tools = 728
+**Current version**: 0.8.1-SNAPSHOT (main); v1.0.0 targeting after PR merge
+**Last release**: v0.8.0 -- Maven Central + GitHub Packages
+**Next action**: PR for Issue #60, then v1.0.0 release, then Issue #59 (Rate Limiting) and #61 (Streaming)
 
 ## Known Issues
 

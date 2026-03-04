@@ -1,5 +1,68 @@
 # Changelog
 
+## [1.0.0] - 2026-03-03 (Issue #60, feature/60-built-in-tool-library)
+
+### Added
+- New Gradle module `agentensemble-tools` published as separate artifact
+  `net.agentensemble:agentensemble-tools`; optional -- users add it only when they want built-in tools
+- `gradle/libs.versions.toml`: `jsoup = "1.18.3"` version + `jsoup` library entry
+- `settings.gradle.kts`: `include("agentensemble-tools")`
+- `net.agentensemble.tools` package with 7 built-in `AgentTool` implementations:
+  - `CalculatorTool`: arithmetic expression evaluation via recursive-descent parser;
+    supports +, -, *, /, % (modulo), ^ (power), parentheses, unary minus, decimal numbers;
+    integer results formatted without decimal point
+  - `DateTimeTool`: current date/time (now, today), timezone conversion, date/datetime arithmetic;
+    uses `java.time`; package-private `Clock` constructor for deterministic testing;
+    `DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")` for consistent output
+  - `FileReadTool`: sandboxed file reads via `FileReadTool.of(Path baseDir)` factory;
+    path traversal rejected via `normalize() + startsWith(baseDir)` check
+  - `FileWriteTool`: sandboxed file writes; JSON input format `{"path": ..., "content": ...}`;
+    parent directories created automatically; same traversal protection as FileReadTool
+  - `WebSearchProvider`: public `@FunctionalInterface`; `search(String) throws IOException, InterruptedException`
+  - `WebSearchTool`: delegates to WebSearchProvider; factory methods `of(WebSearchProvider)`,
+    `ofTavily(String apiKey)`, `ofSerpApi(String apiKey)`
+  - `WebScraperTool`: HTTP GET + Jsoup HTML-to-text extraction; strips scripts/nav/footer/header;
+    truncates at configurable character limit; `new WebScraperTool()` and
+    `WebScraperTool.withMaxContentLength(int)` factory
+  - `JsonParserTool`: dot-notation + array-index path extraction from JSON;
+    input format: first line = path expression, remaining lines = JSON
+- Package-private classes (testability infrastructure):
+  - `TavilySearchProvider`: Tavily API implementation; injectable `HttpClient` constructor
+  - `SerpApiSearchProvider`: SerpAPI/Google implementation; injectable `HttpClient` constructor
+  - `UrlFetcher`: `@FunctionalInterface` for URL fetching (injectable in WebScraperTool tests)
+  - `HttpUrlFetcher`: real `java.net.http.HttpClient` implementation; injectable `HttpClient` constructor
+- 165 new tests across 11 test classes in `agentensemble-tools`:
+  - `CalculatorToolTest` (31), `DateTimeToolTest` (22), `FileReadToolTest` (16),
+    `FileWriteToolTest` (20), `WebSearchToolTest` (14), `TavilySearchProviderTest` (9),
+    `SerpApiSearchProviderTest` (9), `WebScraperToolTest` (14), `HttpUrlFetcherTest` (5),
+    `JsonParserToolTest` (19), `BuiltInToolsIntegrationTest` (6)
+- `docs/guides/built-in-tools.md`: new comprehensive guide with one section per tool
+- `docs/design/13-future-roadmap.md`: Phase 9 Built-in Tools section marked COMPLETE with
+  implementation table
+- `docs/getting-started/installation.md`: updated to v1.0.0; added `agentensemble-tools`
+  optional dependency; switched from GitHub Packages to Maven Central in code examples
+- `mkdocs.yml`: Built-in Tools added to Guides nav (between Tools and Memory)
+- `README.md`: quickstart dependency updated to 1.0.0 with `agentensemble-tools` shown as
+  optional; roadmap entry v1.0.0 struck through
+
+### Technical Notes
+- `WebSearchProvider` is public API -- users create custom search backends via lambda or class
+- `UrlFetcher`, `TavilySearchProvider`, `SerpApiSearchProvider`, `HttpUrlFetcher` are all
+  package-private (implementation details not exposed to users)
+- HttpClient injection (package-private constructors) avoids real HTTP in unit tests without
+  requiring WireMock or other server infrastructure
+- `DateTimeTool` uses `DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")` everywhere to
+  ensure consistent second-level precision (Java's `LocalDateTime.toString()` drops trailing
+  `:00` seconds by default)
+- FileRead/WriteTool sandboxing: `baseDir.resolve(input).normalize()` then `startsWith(baseDir)`
+  catches all traversal including `../`, absolute paths, and nested `a/../../b` patterns
+- `JsonParserTool` path parser handles dot-notation, bracket array indices, and mixed
+  combinations like `users[1].address.city`
+- `BuiltInToolsIntegrationTest` verifies tool interoperability: all 7 tools implement `AgentTool`,
+  FileWrite+FileRead round-trip, JsonParser+FileWrite pipeline, WebSearch+Calculator scenario
+
+---
+
 ## [Unreleased]
 
 ### Fixed (PR #66 -- fix/javadoc-link-error-add-to-ci)
