@@ -38,16 +38,21 @@ jobs:
       - name: Build and test
         run: ./gradlew build :agentensemble-core:plainJavadocJar -Pversion=${{ steps.version.outputs.version }}
 
-      - name: Publish to Maven Central
-        run: ./gradlew :agentensemble-core:publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
+      - name: Publish all modules to Maven Central
+        # Runs publishAndReleaseToMavenCentral on every subproject that has the
+        # com.vanniktech.maven.publish plugin applied: agentensemble-core, all 9
+        # tool modules, agentensemble-tools-bom, and agentensemble-metrics-micrometer.
+        # Projects without the plugin (agentensemble-examples, parent containers)
+        # do not have the task and are silently skipped.
+        run: ./gradlew publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
         env:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.ORG_MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.ORG_MAVEN_CENTRAL_PASSWORD }}
 
-      - name: Publish to GitHub Packages
-        run: ./gradlew :agentensemble-core:publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ steps.version.outputs.version }}
+      - name: Publish all modules to GitHub Packages
+        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}

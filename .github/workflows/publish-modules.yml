@@ -1,0 +1,67 @@
+name: Publish Modules to Maven Central
+
+# Manual trigger for publishing one or more modules to Maven Central.
+# Use this to publish modules that were missed in a release, or to re-publish
+# specific modules without re-triggering the full release workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 1.0.0)'
+        required: true
+      modules:
+        description: >
+          Comma-separated Gradle subproject paths to publish.
+          Examples:
+            agentensemble-tools:calculator,agentensemble-tools:datetime
+            agentensemble-metrics-micrometer
+          Leave empty to publish ALL modules (use with caution on existing releases).
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to Maven Central
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build
+        run: ./gradlew build -Pversion=${{ inputs.version }}
+
+      - name: Publish specified modules to Maven Central
+        run: |
+          VERSION="${{ inputs.version }}"
+          MODULES="${{ inputs.modules }}"
+          if [ -z "${MODULES}" ]; then
+            echo "Publishing ALL modules at version ${VERSION}"
+            ./gradlew publishAndReleaseToMavenCentral -Pversion="${VERSION}"
+          else
+            echo "Publishing modules: ${MODULES} at version ${VERSION}"
+            # Convert comma-separated list to :module:publishAndReleaseToMavenCentral tasks
+            TASKS=$(echo "${MODULES}" | tr ',' '\n' | sed 's|^|:|; s|$|:publishAndReleaseToMavenCentral|' | tr '\n' ' ')
+            echo "Gradle tasks: ${TASKS}"
+            # shellcheck disable=SC2086
+            ./gradlew ${TASKS} -Pversion="${VERSION}"
+          fi
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GPG_SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.ORG_MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.ORG_MAVEN_CENTRAL_PASSWORD }}
