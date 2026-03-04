@@ -71,8 +71,40 @@ Original flat `net.agentensemble.tools` package with 7 tools; replaced by per-mo
 
 ## Next Steps
 
+- CI re-run for PR #72 (should pass with javadoc + security fixes committed)
 - Review and merge PR #72 (feature/60-built-in-tool-library)
+- Issue #74 (Tool Pipeline/Chaining) is open for future work
 - Consider future work: MCP (Model Context Protocol) integration, GraalVM polyglot tools
+
+## Post-PR Review Fixes (commits 5e81c70 and 1134b52)
+
+After PR #72 was opened, CI and Copilot review identified additional issues:
+
+1. **Javadoc failure**: `ExecutionContext.java` had `{@link}` references to Lombok-generated
+   builder methods (`toolExecutor(Executor)`, `toolMetrics(ToolMetrics)`) that Javadoc cannot
+   resolve. Fixed by replacing with `{@code}` examples.
+
+2. **FileReadTool/FileWriteTool symlink escape**: The `normalize()+startsWith()` sandbox check
+   blocks `../` traversal but not symlinks inside `baseDir` pointing outside. Fixed by calling
+   `toRealPath()` after verifying the file/directory exists, then re-validating against
+   `baseDir.toRealPath()`. Tests added for both tools.
+
+3. **ProcessAgentTool pipe buffer deadlock**: Sequential drain (wait-then-read) could deadlock
+   if a child process wrote more than the OS pipe buffer (~64 KB) before the streams were read.
+   Fixed by draining stdout/stderr concurrently on virtual threads before calling `waitFor()`.
+
+4. **BOM artifact coordinates**: The `agentensemble-tools/bom` module had no explicit Maven
+   coordinates; without them it would publish as `net.agentensemble:bom:1.0.0`. Added
+   `coordinates("net.agentensemble", "agentensemble-tools-bom", ...)` to the BOM build file.
+
+5. **README dependency snippet**: The quickstart showed `agentensemble-tools:1.0.0` which no
+   longer exists as a published artifact. Updated to show the BOM + individual tool modules.
+
+6. **WebScraperTool SSRF**: Added a security note in `docs/guides/built-in-tools.md` explaining
+   the SSRF risk for untrusted URL inputs and recommended mitigations.
+
+7. **Issue #74 created**: Tool Pipeline/Chaining feature (Unix-pipe-style `search -> filter -> format`)
+   tracked as a future issue with design sketch and key questions.
 
 ## Active Decisions and Considerations
 
