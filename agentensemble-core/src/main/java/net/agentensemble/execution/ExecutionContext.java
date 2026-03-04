@@ -27,13 +27,13 @@ import org.slf4j.LoggerFactory;
  * {@link net.agentensemble.agent.AgentExecutor} to parallelize concurrent tool calls
  * within a single LLM turn. The default is a virtual-thread-per-task executor (Java 21),
  * making blocking tool calls (I/O, subprocess) cheap without dedicated platform threads.
- * Configure via {@link net.agentensemble.Ensemble.Builder#toolExecutor(Executor)}.
+ * Configure via {@code Ensemble.builder().toolExecutor(executor)}.
  *
  * <p><strong>Tool metrics:</strong> The {@link #toolMetrics()} backend is injected into
  * every {@link net.agentensemble.tool.AbstractAgentTool} via a
  * {@link net.agentensemble.tool.ToolContext}. The default is {@link NoOpToolMetrics},
  * which discards all measurements.
- * Configure via {@link net.agentensemble.Ensemble.Builder#toolMetrics(ToolMetrics)}.
+ * Configure via {@code Ensemble.builder().toolMetrics(metrics)}.
  *
  * <p>Fire methods ({@link #fireTaskStart}, {@link #fireTaskComplete}, {@link #fireTaskFailed},
  * {@link #fireToolCall}) dispatch events to all registered listeners. Each listener is
