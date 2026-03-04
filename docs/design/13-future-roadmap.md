@@ -275,21 +275,27 @@ var task = Task.builder()
 
 ## Phase 9: Advanced Features
 
+### Built-In Tool Library (COMPLETE -- v1.0.0)
+
+**Implemented**: `agentensemble-tools` module with 7 built-in `AgentTool` implementations,
+published as a separate artifact `net.agentensemble:agentensemble-tools`.
+
+| Tool | Class | Description |
+|------|-------|-------------|
+| Calculator | `CalculatorTool` | Arithmetic expression evaluation via recursive-descent parser |
+| Date/Time | `DateTimeTool` | Current time, timezone conversion, date arithmetic using `java.time` |
+| File Read | `FileReadTool` | Sandboxed file reading; path traversal rejected |
+| File Write | `FileWriteTool` | Sandboxed file writing; parent dirs auto-created |
+| Web Search | `WebSearchTool` | HTTP web search via `WebSearchProvider` (Tavily, SerpAPI, or custom) |
+| Web Scraper | `WebScraperTool` | HTTP GET + Jsoup HTML-to-text extraction with configurable length limit |
+| JSON Parser | `JsonParserTool` | Dot-notation path extraction from JSON (supports array indexing) |
+
+See [Built-in Tools guide](../guides/built-in-tools.md) for usage.
+
 ### Streaming Output
 
 - Stream agent responses token-by-token using LangChain4j's `StreamingChatLanguageModel`
 - Useful for real-time UIs showing agent progress
-
-### Built-In Tool Library
-
-A separate module `agentensemble-tools` providing common tools:
-- Web search (via SerpAPI, Tavily, etc.)
-- Web scraping
-- File read/write
-- Code execution (sandboxed)
-- Calculator
-- Date/time utilities
-- JSON/XML parsing
 
 ### Rate Limiting
 

@@ -1,6 +1,7 @@
 # Tools
 
-Agents can be equipped with tools that they invoke during execution using a ReAct-style reasoning loop. There are two supported tool patterns.
+Agents can be equipped with tools that they invoke during execution using a ReAct-style
+reasoning loop. There are three supported tool patterns.
 
 ---
 
@@ -14,11 +15,83 @@ When an agent has tools, the execution loop works as follows:
 4. The agent incorporates the tool result and decides on the next step (another tool call or a final answer)
 5. This loop continues until the agent produces a final text answer or `maxIterations` is reached
 
+**Parallel execution:** When the LLM requests multiple tools in a single turn, AgentEnsemble
+executes them concurrently using Java 21 virtual threads. Single tool calls are executed
+directly without async overhead.
+
 ---
 
-## Option 1: Implement `AgentTool`
+## Option 1: Extend `AbstractAgentTool` (Recommended)
 
-The `AgentTool` interface provides a simple, string-in / string-out contract:
+`AbstractAgentTool` is the recommended base class. It provides:
+
+- **Automatic metrics** -- timing, success/failure/error counters tagged by `(tool_name, agent_role)`
+- **Structured logging** -- SLF4J logger pre-scoped to the tool name (`net.agentensemble.tool.<name>`)
+- **Exception safety** -- any uncaught exception from `doExecute()` is caught, logged, and converted to `ToolResult.failure()`
+- **Executor access** -- the framework tool executor for scheduling sub-tasks
+
+Override `doExecute(String input)` instead of `execute(String input)`:
+
+```java
+public class TranslationTool extends AbstractAgentTool {
+
+    private final TranslationClient client;
+
+    public TranslationTool(TranslationClient client) {
+        this.client = client;
+    }
+
+    @Override
+    public String name() {
+        return "translate";
+    }
+
+    @Override
+    public String description() {
+        return "Translates text. Input format: '<target_language>: <text to translate>'.";
+    }
+
+    @Override
+    protected ToolResult doExecute(String input) {
+        if (input == null || !input.contains(":")) {
+            return ToolResult.failure("Input must be in format 'language: text'");
+        }
+        String[] parts = input.split(":", 2);
+        String targetLang = parts[0].trim();
+        String text = parts[1].trim();
+
+        log().debug("Translating {} chars to {}", text.length(), targetLang);
+
+        String translated = client.translate(text, targetLang);
+        metrics().incrementCounter("translations.completed", name(),
+            Map.of("target_lang", targetLang));
+
+        return ToolResult.success(translated);
+    }
+}
+```
+
+### Structured Output
+
+Tools can return typed structured output alongside the plain-text response for the LLM:
+
+```java
+record SearchResult(String url, String title, String snippet) {}
+
+@Override
+protected ToolResult doExecute(String input) {
+    List<SearchResult> results = searchEngine.query(input);
+    String formatted = formatForLlm(results);
+    // Structured payload available to listeners via ToolCallEvent.structuredResult()
+    return ToolResult.success(formatted, results);
+}
+```
+
+---
+
+## Option 2: Implement `AgentTool` Directly
+
+The `AgentTool` interface provides the minimal contract for simple tools:
 
 ```java
 public interface AgentTool {
@@ -28,177 +101,139 @@ public interface AgentTool {
 }
 ```
 
-### Example: Web Search Tool
+Use this approach for the simplest cases where you don't need metrics, structured logging,
+or automatic exception handling:
 
 ```java
-public class WebSearchTool implements AgentTool {
-
-    private final SearchClient client;
-
-    public WebSearchTool(SearchClient client) {
-        this.client = client;
-    }
+public class UpperCaseTool implements AgentTool {
 
     @Override
     public String name() {
-        return "web_search";
+        return "uppercase";
     }
 
     @Override
     public String description() {
-        return "Search the web for current information. " +
-               "Input: a search query string. " +
-               "Returns: search results as text.";
+        return "Converts text to uppercase. Input: any text string.";
     }
 
     @Override
     public ToolResult execute(String input) {
-        try {
-            String results = client.search(input);
-            return ToolResult.success(results);
-        } catch (Exception e) {
-            return ToolResult.failure("Search failed: " + e.getMessage());
+        if (input == null) {
+            return ToolResult.failure("Input must not be null");
         }
+        return ToolResult.success(input.toUpperCase());
     }
 }
 ```
 
-### `ToolResult`
-
-Use `ToolResult.success(content)` for successful results and `ToolResult.failure(reason)` for errors. The failure message is returned to the agent so it can decide how to proceed.
-
-```java
-ToolResult.success("Found 3 results: ...");
-ToolResult.failure("API rate limit exceeded. Try again later.");
-```
-
-### Registering an `AgentTool`
-
-```java
-Agent agent = Agent.builder()
-    .role("Researcher")
-    .goal("Find current information")
-    .tools(List.of(new WebSearchTool(searchClient)))
-    .llm(model)
-    .build();
-```
-
 ---
 
-## Option 2: LangChain4j `@Tool` Annotation
+## Option 3: Use `@Tool`-Annotated Methods
 
-Objects with `@Tool`-annotated methods are supported directly. The method signature is used to generate the tool specification. Multi-parameter methods are supported (the `-parameters` compiler flag is required; the framework's `build.gradle.kts` already enables this).
-
-### Example: Math and Lookup Tools
+Register a plain Java object with methods annotated with `@dev.langchain4j.agent.tool.Tool`.
+This is useful for tools with multiple methods or when integrating with existing LangChain4j code.
 
 ```java
-import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.agent.tool.P;
+public class DateUtils {
 
-public class DataTools {
-
-    @Tool("Calculate the percentage change between two values. " +
-          "Use this to compute growth rates.")
-    public double percentageChange(
-            @P("The original value") double original,
-            @P("The new value") double newValue) {
-        return ((newValue - original) / original) * 100.0;
+    @Tool("Returns the current date in yyyy-MM-dd format")
+    public String today() {
+        return LocalDate.now().toString();
     }
 
-    @Tool("Look up the current stock price for a ticker symbol. " +
-          "Input: a stock ticker symbol like 'AAPL'.")
-    public String stockPrice(String ticker) {
-        return fetchStockPrice(ticker);
+    @Tool("Adds the specified number of days to a date (format: yyyy-MM-dd)")
+    public String addDays(
+            @P("the starting date in yyyy-MM-dd format") String date,
+            @P("number of days to add") int days) {
+        return LocalDate.parse(date).plusDays(days).toString();
     }
 }
 ```
 
-### Registering `@Tool`-Annotated Objects
+Both tool types can be mixed freely:
 
 ```java
-Agent agent = Agent.builder()
-    .role("Financial Analyst")
-    .goal("Analyse financial data using available tools")
-    .tools(List.of(new DataTools()))
-    .llm(model)
-    .build();
-```
-
----
-
-## Combining Both Tool Types
-
-Both types can be used together in a single agent:
-
-```java
-Agent agent = Agent.builder()
-    .role("Research Analyst")
-    .goal("Find and analyse data")
+Agent.builder()
+    .role("Scheduler")
     .tools(List.of(
-        new WebSearchTool(searchClient),   // AgentTool
-        new DataTools()                     // @Tool annotated
+        new TranslationTool(client),    // AbstractAgentTool
+        new DateUtils()                  // @Tool-annotated
     ))
-    .llm(model)
+    .llm(chatModel)
     .build();
 ```
 
 ---
 
-## Writing Good Tool Descriptions
+## ToolResult
 
-The description is critical -- it is the only information the LLM uses to decide when and how to call the tool.
-
-**Best practices:**
-
-1. Start with a verb that describes what the tool does: `"Search..."`, `"Calculate..."`, `"Look up..."`, `"Convert..."`.
-2. Describe the input format clearly: `"Input: a search query string"`, `"Input: a company name"`.
-3. Describe the output: `"Returns: a JSON object with price and volume"`.
-4. List any constraints: `"Only use this for publicly traded companies"`.
-
-**Good description:**
-```
-"Search the web for recent news and articles. Input: a concise search query of 2-8 words. Returns: a summary of the top results including source names and publication dates."
-```
-
-**Poor description:**
-```
-"Web search tool"
-```
-
----
-
-## Tool Parameter Annotations (`@P`)
-
-For `@Tool` annotated methods with multiple parameters, use `@P` to describe each parameter:
+`ToolResult` is the return type for all tools. Use the factory methods:
 
 ```java
-@Tool("Calculate compound interest.")
-public double compoundInterest(
-        @P("Principal amount in dollars") double principal,
-        @P("Annual interest rate as a decimal, e.g. 0.05 for 5%") double rate,
-        @P("Number of years") int years) {
-    return principal * Math.pow(1 + rate, years);
-}
+// Successful result with plain text
+ToolResult.success("The capital of France is Paris");
+
+// Successful result with typed structured payload for listeners
+ToolResult.success("Found 3 results", myStructuredObject);
+
+// Failure result
+ToolResult.failure("Could not connect to the database");
 ```
 
 ---
 
-## Max Iterations
+## Tool Execution Context
 
-When an agent has tools, the `maxIterations` field limits the number of tool calls. The default is 25. Set it lower for tasks where you want the agent to be concise, or higher for complex analytical tasks:
+`AbstractAgentTool` provides three context accessors available in `doExecute()`:
+
+| Accessor       | Type           | Description                                              |
+|----------------|----------------|----------------------------------------------------------|
+| `log()`        | `Logger`       | SLF4J logger named `net.agentensemble.tool.<toolName>`   |
+| `metrics()`    | `ToolMetrics`  | Metrics backend for custom measurements                  |
+| `executor()`   | `Executor`     | Framework tool executor (virtual threads by default)     |
+
+These are safe to call even without the framework injecting a `ToolContext` (e.g., in unit tests).
+Before injection, sensible defaults are used (class-level logger, no-op metrics, virtual thread executor).
+
+---
+
+## Thread Safety
+
+Tool instances may be called concurrently from multiple virtual threads when:
+- The agent uses parallel workflows
+- The LLM requests multiple tools in a single turn
+
+Tool implementations must be **thread-safe**. Prefer immutable state and local variables in
+`doExecute()`. Shared state requires synchronization.
+
+---
+
+## Remote Tools
+
+For tools implemented in Python, Node.js, or any other language, see:
+
+- [Remote Tools](remote-tools.md) -- `ProcessAgentTool` and `HttpAgentTool`
+- [Built-in Tools](built-in-tools.md) -- ready-to-use tool library
+
+---
+
+## Configuring Tool Execution
+
+Configure tool execution at the Ensemble level:
 
 ```java
-Agent agent = Agent.builder()
-    .role("Data Analyst")
-    .goal("Perform thorough data analysis")
-    .tools(List.of(new DataTools()))
-    .llm(model)
-    .maxIterations(50)
-    .build();
+Ensemble.builder()
+    .agent(agent)
+    .task(task)
+    // Virtual threads by default -- optimal for I/O-bound tools
+    .toolExecutor(Executors.newVirtualThreadPerTaskExecutor())
+    // Bounded pool for rate-limited APIs
+    // .toolExecutor(Executors.newFixedThreadPool(4))
+    // Pluggable metrics backend
+    .toolMetrics(new MicrometerToolMetrics(registry))
+    .build()
+    .run();
 ```
 
----
-
-## Delegation Tool
-
-When `allowDelegation = true`, an additional `delegate` tool is automatically injected at execution time. This is distinct from the tools you configure on the agent. See the [Delegation guide](delegation.md).
+See [Metrics](metrics.md) for full details on observability.

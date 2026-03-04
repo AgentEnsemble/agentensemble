@@ -5,6 +5,21 @@ plugins {
 dependencies {
     implementation(project(":agentensemble-core"))
 
+    // Built-in tool modules used by examples
+    implementation(project(":agentensemble-tools:calculator"))
+    implementation(project(":agentensemble-tools:datetime"))
+    implementation(project(":agentensemble-tools:web-search"))
+    implementation(project(":agentensemble-tools:web-scraper"))
+    implementation(project(":agentensemble-tools:json-parser"))
+    implementation(project(":agentensemble-tools:file-read"))
+    implementation(project(":agentensemble-tools:file-write"))
+    implementation(project(":agentensemble-tools:process"))
+    implementation(project(":agentensemble-tools:http"))
+
+    // Metrics integration for MetricsExample
+    implementation(project(":agentensemble-metrics-micrometer"))
+    implementation(libs.micrometer.core)
+
     // OpenAI LangChain4j provider - example only
     implementation(libs.langchain4j.open.ai)
 
@@ -38,6 +53,8 @@ mapOf(
     "runMemoryAcrossRuns" to "net.agentensemble.examples.MemoryAcrossRunsExample",
     "runStructuredOutput" to "net.agentensemble.examples.StructuredOutputExample",
     "runCallbacks" to "net.agentensemble.examples.CallbackExample",
+    "runRemoteTool" to "net.agentensemble.examples.RemoteToolExample",
+    "runMetrics" to "net.agentensemble.examples.MetricsExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

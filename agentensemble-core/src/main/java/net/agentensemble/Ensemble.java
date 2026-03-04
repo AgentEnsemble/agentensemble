@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,6 +26,8 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.ParallelWorkflowExecutor;
@@ -110,6 +114,45 @@ public class Ensemble {
      */
     @Builder.Default
     private final ParallelErrorStrategy parallelErrorStrategy = ParallelErrorStrategy.FAIL_FAST;
+
+    /**
+     * Executor for running tool calls within a single LLM turn.
+     *
+     * <p>When the LLM requests multiple tools in one response, they are executed
+     * concurrently using this executor. The default creates a new virtual thread per
+     * tool call (Java 21), making I/O-bound tools (HTTP, subprocess) cheap without
+     * blocking platform threads.
+     *
+     * <p>Provide a bounded {@link java.util.concurrent.ExecutorService} to cap
+     * concurrency for rate-limited APIs:
+     * <pre>
+     * Ensemble.builder()
+     *     .toolExecutor(Executors.newFixedThreadPool(4))
+     *     .build();
+     * </pre>
+     *
+     * <p>Default: virtual-thread-per-task executor.
+     */
+    @Builder.Default
+    private final Executor toolExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+    /**
+     * Metrics backend for recording tool execution measurements.
+     *
+     * <p>Implement {@link ToolMetrics} or use the {@code MicrometerToolMetrics} adapter
+     * from the {@code agentensemble-metrics-micrometer} module to integrate with your
+     * metrics infrastructure. The default discards all measurements.
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .toolMetrics(new MicrometerToolMetrics(meterRegistry))
+     *     .build();
+     * </pre>
+     *
+     * <p>Default: {@link NoOpToolMetrics} (no-op).
+     */
+    @Builder.Default
+    private final ToolMetrics toolMetrics = NoOpToolMetrics.INSTANCE;
 
     /**
      * Event listeners that will be notified of task lifecycle events during execution.
@@ -206,9 +249,10 @@ public class Ensemble {
                         memoryContext.hasEntityMemory());
             }
 
-            // Step 4: Build execution context -- bundles memory, verbosity, and listeners
-            ExecutionContext executionContext =
-                    ExecutionContext.of(memoryContext, verbose, listeners != null ? listeners : List.of());
+            // Step 4: Build execution context -- bundles memory, verbosity, listeners,
+            // tool executor, and tool metrics
+            ExecutionContext executionContext = ExecutionContext.of(
+                    memoryContext, verbose, listeners != null ? listeners : List.of(), toolExecutor, toolMetrics);
 
             // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();

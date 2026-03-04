@@ -92,17 +92,19 @@ class ToolResolverTest {
     @Test
     void execute_agentTool_dispatchesAndReturnsResult() {
         AgentTool tool = mockAgentTool("calculator");
-        when(tool.execute("{\"expression\":\"1+1\"}")).thenReturn(ToolResult.success("2"));
+        when(tool.execute(any())).thenReturn(ToolResult.success("2"));
 
         ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(tool));
         ToolExecutionRequest request = ToolExecutionRequest.builder()
                 .id("req1")
                 .name("calculator")
-                .arguments("{\"expression\":\"1+1\"}")
+                .arguments("{\"input\":\"1+1\"}")
                 .build();
 
-        String result = resolved.execute(request);
-        assertThat(result).isEqualTo("2");
+        ToolResult result = resolved.execute(request, "test-agent");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("2");
+        assertThat(result.getStructuredOutput()).isNull();
     }
 
     @Test
@@ -114,12 +116,13 @@ class ToolResolverTest {
                 .arguments("{\"query\":\"Java 21\"}")
                 .build();
 
-        String result = resolved.execute(request);
-        assertThat(result).isEqualTo("search result for: Java 21");
+        ToolResult result = resolved.execute(request, "test-agent");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("search result for: Java 21");
     }
 
     @Test
-    void execute_unknownToolName_returnsErrorMessage() {
+    void execute_unknownToolName_returnsFailureResult() {
         ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(mockAgentTool("calculator")));
         ToolExecutionRequest request = ToolExecutionRequest.builder()
                 .id("req3")
@@ -127,8 +130,9 @@ class ToolResolverTest {
                 .arguments("{}")
                 .build();
 
-        String result = resolved.execute(request);
-        assertThat(result).startsWith("Error:").contains("nonexistent_tool");
+        ToolResult result = resolved.execute(request, "test-agent");
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("nonexistent_tool");
     }
 
     @Test
@@ -141,10 +145,31 @@ class ToolResolverTest {
         ToolExecutionRequest request = ToolExecutionRequest.builder()
                 .id("req4")
                 .name("search")
-                .arguments("{\"query\":\"test\"}")
+                .arguments("{\"input\":\"test\"}")
                 .build();
 
-        String result = resolved.execute(request);
-        assertThat(result).isEqualTo("from AgentTool");
+        ToolResult result = resolved.execute(request, "test-agent");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("from AgentTool");
+    }
+
+    @Test
+    void execute_agentTool_withStructuredOutput_preservesStructuredResult() {
+        AgentTool tool = mockAgentTool("enricher");
+        record SearchResults(String query, int count) {}
+        SearchResults structured = new SearchResults("Java", 42);
+        when(tool.execute(any())).thenReturn(ToolResult.success("Found 42 results", structured));
+
+        ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(tool));
+        ToolExecutionRequest request = ToolExecutionRequest.builder()
+                .id("req5")
+                .name("enricher")
+                .arguments("{\"input\":\"Java\"}")
+                .build();
+
+        ToolResult result = resolved.execute(request, "test-agent");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("Found 42 results");
+        assertThat(result.getStructuredOutput(SearchResults.class)).isEqualTo(structured);
     }
 }

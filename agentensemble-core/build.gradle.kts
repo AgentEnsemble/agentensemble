@@ -2,7 +2,7 @@ import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 
 plugins {
     `java-library`
-    alias(libs.plugins.vanniktech.publish)
+    id("com.vanniktech.maven.publish")
 }
 
 // Coverage verification -- wired into check so CI fails if coverage drops below thresholds.

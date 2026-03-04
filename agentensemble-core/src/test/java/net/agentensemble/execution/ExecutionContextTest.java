@@ -273,7 +273,7 @@ class ExecutionContextTest {
         };
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
 
-        ctx.fireToolCall(new ToolCallEvent("search", "{}", "result", "Researcher", Duration.ofMillis(200)));
+        ctx.fireToolCall(new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(200)));
 
         assertThat(callCount.get()).isEqualTo(2);
     }
@@ -289,6 +289,6 @@ class ExecutionContextTest {
         ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
 
         // Must not throw
-        ctx.fireToolCall(new ToolCallEvent("search", "{}", "result", "Researcher", Duration.ofMillis(100)));
+        ctx.fireToolCall(new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(100)));
     }
 }

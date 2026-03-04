@@ -41,7 +41,7 @@ class EnsembleListenerTest {
     @Test
     void defaultOnToolCall_doesNotThrow() {
         EnsembleListener listener = new EnsembleListener() {};
-        listener.onToolCall(new ToolCallEvent("search", "{}", "result", "Researcher", Duration.ofMillis(200)));
+        listener.onToolCall(new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(200)));
     }
 
     // ========================
@@ -106,10 +106,11 @@ class EnsembleListenerTest {
     void toolCallEvent_fieldsAccessible() {
         Duration duration = Duration.ofMillis(500);
         ToolCallEvent event =
-                new ToolCallEvent("web_search", "{\"query\":\"AI\"}", "results...", "Researcher", duration);
+                new ToolCallEvent("web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", duration);
         assertThat(event.toolName()).isEqualTo("web_search");
         assertThat(event.toolArguments()).isEqualTo("{\"query\":\"AI\"}");
         assertThat(event.toolResult()).isEqualTo("results...");
+        assertThat(event.structuredResult()).isNull();
         assertThat(event.agentRole()).isEqualTo("Researcher");
         assertThat(event.duration()).isEqualTo(duration);
     }
@@ -134,7 +135,7 @@ class EnsembleListenerTest {
         // Other default methods still work without override
         listener.onTaskComplete(new TaskCompleteEvent("task", "Agent", buildTaskOutput("done"), Duration.ZERO, 1, 1));
         listener.onTaskFailed(new TaskFailedEvent("task", "Agent", new RuntimeException(), Duration.ZERO, 1, 1));
-        listener.onToolCall(new ToolCallEvent("tool", "{}", "result", "Agent", Duration.ZERO));
+        listener.onToolCall(new ToolCallEvent("tool", "{}", "result", null, "Agent", Duration.ZERO));
     }
 
     // ========================

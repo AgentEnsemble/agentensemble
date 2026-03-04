@@ -75,6 +75,9 @@ nav:
     - Tasks: guides/tasks.md
     - Workflows: guides/workflows.md
     - Tools: guides/tools.md
+    - Built-in Tools: guides/built-in-tools.md
+    - Remote Tools: guides/remote-tools.md
+    - Metrics: guides/metrics.md
     - Memory: guides/memory.md
     - Delegation: guides/delegation.md
     - Error Handling: guides/error-handling.md
