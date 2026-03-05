@@ -310,10 +310,64 @@ EnsembleOutput output = builder.build().run();
 **Context size consideration:** with a large number of specialists each producing verbose output,
 the aggregation task's context can become very large. Use `outputType(RecordClass.class)` on
 specialist tasks to produce compact structured JSON, reducing aggregation context by 5-10x.
-For very large N, a tree-reduction approach (planned for `MapReduceEnsemble` in v2.0.0) can
-aggregate results in batches across multiple levels.
+For very large N, use `MapReduceEnsemble` (see below) to aggregate results in bounded batches
+across multiple levels.
 
 **Full documentation:** [Dynamic Agent Creation Example](https://docs.agentensemble.net/examples/dynamic-agents/)
+
+### MapReduceEnsemble (v2.0.0)
+
+When N is large or each agent's output is verbose, `MapReduceEnsemble` automatically builds a
+**tree-reduction DAG** that keeps each reducer's context bounded by `chunkSize`. The full DAG is
+pre-built at `build()` time and executed as a single `Workflow.PARALLEL` run:
+
+```java
+record DishResult(String dish, List<String> ingredients, int prepMinutes, String plating) {}
+
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(order.getItems())
+
+    .mapAgent(item -> Agent.builder()
+        .role(item.getDish() + " Chef")
+        .goal("Prepare " + item.getDish())
+        .llm(model)
+        .build())
+    .mapTask((item, agent) -> Task.builder()
+        .description("Execute the recipe for: " + item.getDish())
+        .expectedOutput("Recipe with ingredients, steps, and timing")
+        .agent(agent)
+        .outputType(DishResult.class)
+        .build())
+
+    .reduceAgent(() -> Agent.builder()
+        .role("Sub-Chef")
+        .goal("Consolidate dish preparations")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Consolidate these preparations.")
+        .expectedOutput("Consolidated plan")
+        .agent(agent)
+        .context(chunkTasks)   // must wire context explicitly
+        .build())
+
+    .chunkSize(3)
+    .build()
+    .run();
+```
+
+For N=7, chunkSize=3 this produces a three-level DAG: 7 map tasks run concurrently, then
+3 L1 reduce tasks run concurrently, then 1 final reduce. Each reducer's context stays
+bounded at `chunkSize` inputs. Tree depth is O(log_K(N)).
+
+Call `toEnsemble()` to inspect or export the pre-built DAG before execution:
+
+```java
+DagModel dag = DagExporter.build(mapReduceEnsemble);  // enriched with MAP/REDUCE/AGGREGATE badges
+dag.toJson(Path.of("./traces/my-run.dag.json"));
+```
+
+**Full documentation:** [MapReduceEnsemble Guide](https://docs.agentensemble.net/guides/map-reduce/) | [Kitchen Example](https://docs.agentensemble.net/examples/map-reduce/)
 
 ---
 
@@ -997,6 +1051,9 @@ export OPENAI_API_KEY=your-api-key
 ./gradlew :agentensemble-examples:runDynamicAgents
 ./gradlew :agentensemble-examples:runDynamicAgents --args="Risotto Steak Tiramisu"
 
+# MapReduceEnsemble -- tree-reduction DAG with bounded context per reducer
+./gradlew :agentensemble-examples:runMapReduceKitchen
+
 # Memory across runs -- long-term memory over 3 weekly cycles
 ./gradlew :agentensemble-examples:runMemoryAcrossRuns
 
@@ -1039,6 +1096,7 @@ See [`docs/design/`](docs/design/) for full specifications:
 - [11 - Configuration Reference](docs/design/11-configuration.md)
 - [12 - Testing Strategy](docs/design/12-testing-strategy.md)
 - [13 - Future Roadmap](docs/design/13-future-roadmap.md)
+- [14 - MapReduceEnsemble](docs/design/14-map-reduce.md)
 
 ---
 
@@ -1068,6 +1126,10 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v0.7.0~~ | ~~Callbacks and event listeners~~ |
 | ~~v0.8.0~~ | ~~Guardrails: pre/post execution validation~~ |
 | ~~v1.0.0~~ | ~~Built-in tool library (agentensemble-tools module)~~ |
+| ~~v2.0.0~~ | ~~MapReduceEnsemble: static tree-reduction DAG with chunkSize~~ |
+| v2.1.0 | MapReduceEnsemble: adaptive reduction with targetTokenBudget |
+| v2.2.0 | MapReduceEnsemble: short-circuit optimization for small inputs |
+| Future | MCP (Model Context Protocol) integration, GraalVM polyglot tools |
 
 ---
 
