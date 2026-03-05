@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  *   ./gradlew :agentensemble-examples:runParallelWorkflow
  *
  * To analyse a different company:
- *   ./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla"
+ *   ./gradlew :agentensemble-examples:runParallelWorkflow --args="Acme Corp enterprise software"
  */
 public class ParallelCompetitiveIntelligenceExample {
 

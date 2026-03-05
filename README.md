@@ -261,6 +261,60 @@ When using `CONTINUE_ON_ERROR`, a `ParallelExecutionException` is thrown if any 
 
 **Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Parallel Workflow Example](https://docs.agentensemble.net/examples/parallel-workflow/)
 
+### Dynamic Agent Creation
+
+`Workflow.PARALLEL` works equally well when agents and tasks are constructed programmatically at
+runtime. Because `Agent` and `Task` are plain Java objects, you can build them in a loop from any
+dynamic collection -- the framework does not distinguish between statically-declared and
+dynamically-constructed instances:
+
+```java
+List<Agent> specialistAgents = new ArrayList<>();
+List<Task> dishTasks = new ArrayList<>();
+
+for (OrderItem item : order.getItems()) {
+    Agent specialist = Agent.builder()
+            .role(item.getDish() + " Specialist")
+            .goal("Prepare " + item.getDish())
+            .llm(model)
+            .build();
+
+    Task dishTask = Task.builder()
+            .description("Prepare the recipe for " + item.getDish())
+            .expectedOutput("Recipe with ingredients, steps, and timing")
+            .agent(specialist)
+            .build();
+
+    specialistAgents.add(specialist);
+    dishTasks.add(dishTask);
+}
+
+// Fan-in: Head Chef aggregates all specialist outputs
+Task mealPlan = Task.builder()
+        .description("Coordinate all dish preparations into a final meal service plan.")
+        .expectedOutput("Meal plan with serving order and timing.")
+        .agent(headChef)
+        .context(dishTasks)  // depends on ALL specialist tasks
+        .build();
+
+Ensemble.EnsembleBuilder builder = Ensemble.builder().workflow(Workflow.PARALLEL);
+specialistAgents.forEach(builder::agent);
+builder.agent(headChef);
+dishTasks.forEach(builder::task);
+builder.task(mealPlan);
+
+EnsembleOutput output = builder.build().run();
+// Specialists run concurrently; Head Chef runs after all specialists complete.
+```
+
+**Context size consideration:** with a large number of specialists each producing verbose output,
+the aggregation task's context can become very large. Use `outputType(RecordClass.class)` on
+specialist tasks to produce compact structured JSON, reducing aggregation context by 5-10x.
+For very large N, a tree-reduction approach (planned for `MapReduceEnsemble` in v2.0.0) can
+aggregate results in batches across multiple levels.
+
+**Full documentation:** [Dynamic Agent Creation Example](https://docs.agentensemble.net/examples/dynamic-agents/)
+
 ---
 
 ## Memory System
@@ -933,11 +987,15 @@ export OPENAI_API_KEY=your-api-key
 
 # Hierarchical team -- manager coordinates specialists
 ./gradlew :agentensemble-examples:runHierarchicalTeam
-./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
+./gradlew :agentensemble-examples:runHierarchicalTeam --args="Acme Corp"
 
 # Parallel workflow -- concurrent DAG-based execution
 ./gradlew :agentensemble-examples:runParallelWorkflow
-./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla automotive"
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Acme Corp enterprise software"
+
+# Dynamic agent creation -- fan-out/fan-in with runtime-constructed agents
+./gradlew :agentensemble-examples:runDynamicAgents
+./gradlew :agentensemble-examples:runDynamicAgents --args="Risotto Steak Tiramisu"
 
 # Memory across runs -- long-term memory over 3 weekly cycles
 ./gradlew :agentensemble-examples:runMemoryAcrossRuns

@@ -1,5 +1,67 @@
 # Changelog
 
+## [Unreleased] - Dynamic Agent Creation + MapReduceEnsemble Design -- 2026-03-05
+
+### Added (Dynamic Agent Creation -- current framework documentation)
+
+- `docs/examples/dynamic-agents.md`: full "Chef's Kitchen" example walkthrough documenting
+  how to create agents and tasks programmatically at runtime using the existing
+  `Workflow.PARALLEL` API. Covers fan-out/fan-in pattern, context size considerations,
+  structured output tip, execution timeline diagram.
+- `agentensemble-examples/.../DynamicAgentsExample.java`: runnable example with default
+  4-dish order and configurable dishes via command-line args; demonstrates the complete
+  fan-out (N specialist agents) + fan-in (Head Chef aggregation) pattern.
+- `agentensemble-examples/build.gradle.kts`: added `runDynamicAgents` Gradle task.
+- `docs/guides/workflows.md`: added "Dynamic Agent Creation" subsection under PARALLEL
+  workflow with code example, execution pattern diagram, and context size warning.
+- `mkdocs.yml`: added "Dynamic Agent Creation" to Examples nav section.
+- `README.md`: added Dynamic Agent Creation subsection under Parallel Workflow section;
+  added `runDynamicAgents` command to examples section; added MapReduceEnsemble mention
+  in roadmap.
+
+### Changed (Tesla reference removal)
+
+- Replaced `--args="Tesla"` / `--args="Tesla automotive"` with `--args="Acme Corp"` /
+  `--args="Acme Corp enterprise software"` across:
+  - `README.md`
+  - `agentensemble-examples/build.gradle.kts`
+  - `docs/examples/hierarchical-team.md`
+  - `docs/examples/parallel-workflow.md`
+  - `agentensemble-examples/src/.../HierarchicalTeamExample.java`
+  - `agentensemble-examples/src/.../ParallelCompetitiveIntelligenceExample.java`
+
+### Added (MapReduceEnsemble Design -- v2.0.0)
+
+- `docs/design/14-map-reduce.md`: comprehensive design document for `MapReduceEnsemble`.
+  17 sections covering: problem statement, two reduction strategies (static with chunkSize /
+  adaptive with targetTokenBudget), short-circuit optimization, full API design, return
+  types, static DAG construction algorithm (O(log_K(N)) tree depth), adaptive execution
+  algorithm (level-by-level with bin-packing), three-tier token estimation, first-fit-
+  decreasing bin-packing algorithm, trace/metrics aggregation across multiple Ensemble.run()
+  calls, visualization layer changes (DagModel schemaVersion 1.1, DagTaskNode.nodeType /
+  mapReduceLevel fields, DagModel.mapReduceMode, TypeScript types, TaskNode.tsx badge
+  rendering), error handling, validation rules, edge cases table, full code examples,
+  implementation class structure.
+- `docs/design/13-future-roadmap.md`: added Phase 10 (v2.0.0) with MapReduceEnsemble
+  three-issue delivery plan; added table entry.
+- `mkdocs.yml`: added "MapReduceEnsemble: design/14-map-reduce.md" to Design nav.
+
+### Added (GitHub Issues)
+
+- Issue #98: "feat: Static MapReduceEnsemble with chunkSize (v2.0.0)" -- comprehensive
+  acceptance criteria checklist covering core implementation, edge cases, tests (unit +
+  integration), visualization layer (devtools + viz), example, documentation, memory bank,
+  build.
+- Issue #99: "feat: Adaptive MapReduceEnsemble with targetTokenBudget (v2.0.0)" -- depends
+  on #98; covers targetTokenBudget, contextWindowSize/budgetRatio convenience, maxReduceLevels,
+  tokenEstimator, bin-packing, trace/metrics aggregation, adaptive execution loop, full
+  test matrix.
+- Issue #100: "feat: MapReduceEnsemble short-circuit optimization for small inputs (v2.0.0)"
+  -- depends on #99; covers directAgent, directTask, inputEstimator, decision tree, input
+  size estimation, full test matrix.
+
+---
+
 ## [Unreleased] - Issue #94 -- Homebrew Tap Distribution -- 2026-03-05
 
 ### Added (Issue #94 -- Distribute agentensemble-viz via Homebrew tap)

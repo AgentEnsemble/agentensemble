@@ -130,6 +130,27 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 
 ## What's Left to Build
 
+### v2.0.0 -- MapReduceEnsemble (Issues #98, #99, #100)
+
+Three-issue series targeting v2.0.0:
+
+| Issue | Title | Strategy |
+|---|---|---|
+| #98 | Static MapReduceEnsemble with chunkSize | Fixed DAG, pre-built before execution |
+| #99 | Adaptive MapReduceEnsemble with targetTokenBudget | Level-by-level, token-budget-driven |
+| #100 | Short-circuit optimization | Skip map-reduce when input fits in budget |
+
+Design fully specified in `docs/design/14-map-reduce.md`.
+
+Key implementation work in #98:
+- `net.agentensemble.mapreduce.MapReduceEnsemble<T>` class
+- Static DAG construction algorithm (O(log_K(N)) tree depth)
+- `toEnsemble()` for devtools inspection
+- `DagTaskNode.nodeType` + `DagTaskNode.mapReduceLevel` fields (devtools)
+- `DagModel.mapReduceMode` field (devtools)
+- TypeScript types + TaskNode.tsx badge rendering (viz)
+- Full unit + integration tests, `MapReduceKitchenExample.java`
+
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
 - GraalVM polyglot tool support

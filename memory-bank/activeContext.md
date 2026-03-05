@@ -2,6 +2,50 @@
 
 ## Current Work Focus
 
+Dynamic agent creation pattern documented (using current framework) and MapReduceEnsemble
+designed (v2.0.0). Three GitHub issues created (#98, #99, #100) covering the full
+MapReduceEnsemble feature across static, adaptive, and short-circuit strategies.
+
+## Recent Changes
+
+### Dynamic Agent Creation Documentation
+
+Added documentation and example for the fan-out/fan-in pattern using the existing
+`Workflow.PARALLEL` API:
+
+- **`docs/examples/dynamic-agents.md`** -- full example walkthrough with kitchen metaphor
+- **`agentensemble-examples/.../DynamicAgentsExample.java`** -- runnable example (4-dish order,
+  fan-out to specialist agents, fan-in to Head Chef aggregation)
+- **`docs/guides/workflows.md`** -- added "Dynamic Agent Creation" section under PARALLEL
+- **`agentensemble-examples/build.gradle.kts`** -- added `runDynamicAgents` Gradle task
+- **`mkdocs.yml`** -- added "Dynamic Agent Creation" to Examples nav
+- **`README.md`** -- added Dynamic Agent Creation subsection under Parallel Workflow, added
+  `runDynamicAgents` command to examples section
+- All "Tesla" references in docs/examples/source replaced with "Acme Corp"
+
+### MapReduceEnsemble Design (v2.0.0)
+
+- **`docs/design/14-map-reduce.md`** -- comprehensive design document covering: problem
+  statement, two reduction strategies (static/adaptive), short-circuit optimization, full
+  API design, return types, static DAG construction algorithm (O(log_K(N)) depth), adaptive
+  execution algorithm, token estimation (3-tier: provider count, custom, heuristic),
+  bin-packing (first-fit-decreasing), trace/metrics aggregation across multiple runs,
+  visualization layer changes (DagModel schemaVersion 1.1, nodeType/mapReduceLevel fields,
+  TypeScript types, TaskNode.tsx badges), error handling, validation rules, edge cases,
+  full code examples, implementation class structure
+- **`docs/design/13-future-roadmap.md`** -- added Phase 10 (v2.0.0) section + table entry
+- **`mkdocs.yml`** -- added "MapReduceEnsemble: design/14-map-reduce.md" to Design nav
+
+### GitHub Issues Created
+
+- **#98** -- Static MapReduceEnsemble with chunkSize (v2.0.0)
+- **#99** -- Adaptive MapReduceEnsemble with targetTokenBudget (v2.0.0), depends on #98
+- **#100** -- MapReduceEnsemble short-circuit optimization for small inputs (v2.0.0), depends on #99
+
+---
+
+## Previous Work Focus
+
 Issue #94 (Distribute agentensemble-viz via Homebrew tap) has been implemented. The
 `agentensemble-viz` CLI is now distributed as a self-contained binary via a Homebrew tap
 (`agentensemble/tap/agentensemble-viz`) in addition to the existing npm/npx path. Releases

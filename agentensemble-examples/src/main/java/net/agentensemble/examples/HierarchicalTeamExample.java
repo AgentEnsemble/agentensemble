@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  *   ./gradlew :agentensemble-examples:runHierarchicalTeam
  *
  * To analyse a different company:
- *   ./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
+ *   ./gradlew :agentensemble-examples:runHierarchicalTeam --args="Acme Corp"
  */
 public class HierarchicalTeamExample {
 

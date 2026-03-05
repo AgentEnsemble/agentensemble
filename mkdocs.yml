@@ -98,6 +98,7 @@ nav:
     - Research and Writer: examples/research-writer.md
     - Hierarchical Team: examples/hierarchical-team.md
     - Parallel Workflow: examples/parallel-workflow.md
+    - Dynamic Agent Creation: examples/dynamic-agents.md
     - Memory Across Runs: examples/memory-across-runs.md
     - Structured Output: examples/structured-output.md
     - Callbacks: examples/callbacks.md
@@ -118,3 +119,4 @@ nav:
     - Configuration Reference: design/11-configuration.md
     - Testing Strategy: design/12-testing-strategy.md
     - Future Roadmap: design/13-future-roadmap.md
+    - MapReduceEnsemble: design/14-map-reduce.md

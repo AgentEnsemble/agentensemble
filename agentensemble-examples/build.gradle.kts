@@ -40,8 +40,10 @@ application {
 //
 // Usage:
 //   ./gradlew :agentensemble-examples:runResearchWriter
-//   ./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
-//   ./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla"
+//   ./gradlew :agentensemble-examples:runHierarchicalTeam --args="Acme Corp"
+//   ./gradlew :agentensemble-examples:runParallelWorkflow --args="Acme Corp enterprise software"
+//   ./gradlew :agentensemble-examples:runDynamicAgents
+//   ./gradlew :agentensemble-examples:runDynamicAgents --args="Risotto Steak Tiramisu"
 //   ./gradlew :agentensemble-examples:runMemoryAcrossRuns
 //   ./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
 //   ./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
@@ -51,6 +53,7 @@ mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
     "runHierarchicalTeam" to "net.agentensemble.examples.HierarchicalTeamExample",
     "runParallelWorkflow" to "net.agentensemble.examples.ParallelCompetitiveIntelligenceExample",
+    "runDynamicAgents" to "net.agentensemble.examples.DynamicAgentsExample",
     "runMemoryAcrossRuns" to "net.agentensemble.examples.MemoryAcrossRunsExample",
     "runStructuredOutput" to "net.agentensemble.examples.StructuredOutputExample",
     "runCallbacks" to "net.agentensemble.examples.CallbackExample",
