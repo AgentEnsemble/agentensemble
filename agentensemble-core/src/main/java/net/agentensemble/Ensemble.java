@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,6 +35,8 @@ import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
+import net.agentensemble.synthesis.AgentSynthesizer;
+import net.agentensemble.synthesis.SynthesisContext;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.trace.AgentSummary;
@@ -56,21 +59,40 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
- * An ensemble of agents collaborating on a sequence of tasks.
+ * An ensemble of tasks executed by synthesized or explicit agents.
  *
- * The ensemble orchestrates task execution according to the configured workflow
+ * <p>The ensemble orchestrates task execution according to the configured workflow
  * strategy, passing context between tasks as declared in each task's context list.
  *
- * Example:
+ * <p>In the v2 task-first paradigm, agents are optional. When a task has no explicit
+ * agent, the framework synthesizes one automatically from the task description using
+ * the configured {@link AgentSynthesizer} (default: template-based, no extra LLM call).
+ *
+ * <p>For zero-ceremony use, prefer the static {@link #run(ChatModel, Task...)} factory:
+ * <pre>
+ * EnsembleOutput result = Ensemble.run(model,
+ *     Task.of("Research AI trends"),
+ *     Task.of("Write a summary report"));
+ * </pre>
+ *
+ * <p>For full control, use the builder:
  * <pre>
  * EnsembleOutput result = Ensemble.builder()
- *     .agent(researcher)
- *     .agent(writer)
+ *     .chatLanguageModel(model)
  *     .task(researchTask)
  *     .task(writeTask)
  *     .workflow(Workflow.SEQUENTIAL)
  *     .build()
  *     .run();
+ * </pre>
+ *
+ * <p>Explicit agents (power-user escape hatch) are declared on the task itself:
+ * <pre>
+ * Task task = Task.builder()
+ *     .description("Research AI trends")
+ *     .expectedOutput("A report")
+ *     .agent(researcherAgent)
+ *     .build();
  * </pre>
  */
 @Builder
@@ -79,13 +101,44 @@ public class Ensemble {
 
     private static final Logger log = LoggerFactory.getLogger(Ensemble.class);
 
-    /** All agents participating in this ensemble. */
-    @Singular
-    private final List<Agent> agents;
-
     /** All tasks to execute. */
     @Singular
     private final List<Task> tasks;
+
+    /**
+     * Default LLM for all tasks that do not carry their own {@code chatLanguageModel}
+     * or explicit {@code agent}.
+     *
+     * <p>When a task is agentless (no explicit agent) and has no task-level
+     * {@code chatLanguageModel}, this model is used to build the synthesized agent.
+     * For hierarchical workflow, this is also used as the Manager's LLM if
+     * {@link #managerLlm} is not set.
+     *
+     * <p>Default: null.
+     */
+    private final ChatModel chatLanguageModel;
+
+    /**
+     * Strategy for synthesizing agents for tasks that have no explicit agent.
+     *
+     * <p>The default ({@link AgentSynthesizer#template()}) derives role, goal, and
+     * backstory from the task description using a verb-to-role lookup table. No extra
+     * LLM call is made. Use {@link AgentSynthesizer#llmBased()} for higher-quality
+     * personas at the cost of one additional LLM call per agentless task.
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .chatLanguageModel(model)
+     *     .agentSynthesizer(AgentSynthesizer.llmBased())
+     *     .task(Task.of("Research AI trends"))
+     *     .build()
+     *     .run();
+     * </pre>
+     *
+     * <p>Default: {@link AgentSynthesizer#template()}.
+     */
+    @Builder.Default
+    private final AgentSynthesizer agentSynthesizer = AgentSynthesizer.template();
 
     /** How tasks are executed. Default: SEQUENTIAL. */
     @Builder.Default
@@ -93,7 +146,8 @@ public class Ensemble {
 
     /**
      * Optional LLM for the Manager agent in hierarchical workflow.
-     * If not set, defaults to the first registered agent's LLM.
+     * If not set, falls back to {@link #chatLanguageModel}, then to the first
+     * resolved agent's LLM.
      */
     private final ChatModel managerLlm;
 
@@ -137,29 +191,10 @@ public class Ensemble {
      * workflow.
      *
      * <p>The default ({@link DefaultManagerPromptStrategy#DEFAULT}) lists worker agents in the
-     * system prompt and tasks in the user prompt, matching the built-in behaviour.
-     * Provide a custom implementation to inject domain-specific context, alter persona, or
-     * completely replace the prompts without forking framework internals.
+     * system prompt and tasks in the user prompt. Provide a custom implementation to inject
+     * domain-specific context without forking framework internals.
      *
-     * <p>Only exercised when {@code workflow = Workflow.HIERARCHICAL}; sequential and parallel
-     * workflows are unaffected.
-     *
-     * <pre>
-     * Ensemble.builder()
-     *     .workflow(Workflow.HIERARCHICAL)
-     *     .managerPromptStrategy(new ManagerPromptStrategy() {
-     *         {@literal @}Override
-     *         public String buildSystemPrompt(ManagerPromptContext ctx) {
-     *             return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
-     *                 + "\n\nAlways prefer the Analyst for data tasks.";
-     *         }
-     *         {@literal @}Override
-     *         public String buildUserPrompt(ManagerPromptContext ctx) {
-     *             return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
-     *         }
-     *     })
-     *     .build();
-     * </pre>
+     * <p>Only exercised when {@code workflow = Workflow.HIERARCHICAL}.
      *
      * <p>Default: {@link DefaultManagerPromptStrategy#DEFAULT}.
      */
@@ -171,16 +206,7 @@ public class Ensemble {
      *
      * <p>When the LLM requests multiple tools in one response, they are executed
      * concurrently using this executor. The default creates a new virtual thread per
-     * tool call (Java 21), making I/O-bound tools (HTTP, subprocess) cheap without
-     * blocking platform threads.
-     *
-     * <p>Provide a bounded {@link java.util.concurrent.ExecutorService} to cap
-     * concurrency for rate-limited APIs:
-     * <pre>
-     * Ensemble.builder()
-     *     .toolExecutor(Executors.newFixedThreadPool(4))
-     *     .build();
-     * </pre>
+     * tool call (Java 21).
      *
      * <p>Default: virtual-thread-per-task executor.
      */
@@ -190,16 +216,6 @@ public class Ensemble {
     /**
      * Metrics backend for recording tool execution measurements.
      *
-     * <p>Implement {@link ToolMetrics} or use the {@code MicrometerToolMetrics} adapter
-     * from the {@code agentensemble-metrics-micrometer} module to integrate with your
-     * metrics infrastructure. The default discards all measurements.
-     *
-     * <pre>
-     * Ensemble.builder()
-     *     .toolMetrics(new MicrometerToolMetrics(meterRegistry))
-     *     .build();
-     * </pre>
-     *
      * <p>Default: {@link NoOpToolMetrics} (no-op).
      */
     @Builder.Default
@@ -207,33 +223,12 @@ public class Ensemble {
 
     /**
      * Event listeners that will be notified of task lifecycle events during execution.
-     *
-     * Use the builder's {@code EnsembleBuilder.listener(EnsembleListener)} or
-     * {@code EnsembleBuilder.listeners(Collection)} methods to add full listener
-     * implementations, or the lambda convenience methods:
-     * {@link EnsembleBuilder#onTaskStart}, {@link EnsembleBuilder#onTaskComplete},
-     * {@link EnsembleBuilder#onTaskFailed}, {@link EnsembleBuilder#onToolCall}.
      */
     @Singular
     private final List<EnsembleListener> listeners;
 
     /**
      * Template variable inputs for task description and expected output substitution.
-     *
-     * Use {@code .input("key", "value")} on the builder to supply individual entries, or
-     * {@code .inputs(map)} to supply a batch. These values are applied on every {@link #run()}
-     * call. When the same key is also present in a {@link #run(Map)} invocation, the run-time
-     * value takes precedence over the builder value.
-     *
-     * Example:
-     * <pre>
-     * Ensemble.builder()
-     *     .agent(researcher)
-     *     .task(researchTask)
-     *     .input("topic", "AI agents")
-     *     .build()
-     *     .run();
-     * </pre>
      */
     @Singular("input")
     private final Map<String, String> inputs;
@@ -241,61 +236,12 @@ public class Ensemble {
     /**
      * Optional guardrails for the delegation graph in hierarchical workflow.
      *
-     * <p>When set, a {@code HierarchicalConstraintEnforcer} is created for each run. The enforcer
-     * is prepended to the delegation policy chain to enforce
-     * pre-delegation checks: allowed workers, per-worker caps, global delegation cap, and stage
-     * ordering. After the Manager finishes, the enforcer validates that all required workers were
-     * called; if not, a {@link net.agentensemble.exception.ConstraintViolationException} is thrown
-     * carrying the violations and any partial worker outputs.
-     *
-     * <p>Only exercised when {@code workflow = Workflow.HIERARCHICAL}. Ignored for sequential and
-     * parallel workflows.
-     *
      * <p>Default: null (no constraints).
-     *
-     * <pre>
-     * Ensemble.builder()
-     *     .workflow(Workflow.HIERARCHICAL)
-     *     .hierarchicalConstraints(HierarchicalConstraints.builder()
-     *         .requiredWorker("Researcher")
-     *         .allowedWorker("Researcher")
-     *         .allowedWorker("Analyst")
-     *         .globalMaxDelegations(5)
-     *         .build())
-     *     .build();
-     * </pre>
      */
     private final HierarchicalConstraints hierarchicalConstraints;
 
     /**
      * Delegation policies evaluated before each delegation attempt.
-     *
-     * <p>Policies run after built-in guards (self-delegation, depth limit, unknown agent)
-     * and before the worker agent executes. They are evaluated in registration order.
-     * A {@link DelegationPolicy} can {@link net.agentensemble.delegation.policy.DelegationPolicyResult#allow() allow},
-     * {@link net.agentensemble.delegation.policy.DelegationPolicyResult#reject(String) reject}, or
-     * {@link net.agentensemble.delegation.policy.DelegationPolicyResult#modify(net.agentensemble.delegation.DelegationRequest) modify}
-     * each delegation request.
-     *
-     * <p>Use the builder's {@link Ensemble.EnsembleBuilder#delegationPolicy(DelegationPolicy)} method
-     * to register individual policies (callable multiple times), or
-     * {@link Ensemble.EnsembleBuilder#delegationPolicies(java.util.Collection) delegationPolicies(Collection)} for
-     * batch registration. Multiple calls accumulate; none overwrite each other.
-     *
-     * <p>Policies apply to both peer delegation ({@code AgentDelegationTool}) and hierarchical
-     * delegation ({@code DelegateTaskTool}).
-     *
-     * Example:
-     * <pre>
-     * Ensemble.builder()
-     *     .delegationPolicy((request, ctx) -> {
-     *         if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
-     *             return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
-     *         }
-     *         return DelegationPolicyResult.allow();
-     *     })
-     *     .build();
-     * </pre>
      */
     @Singular("delegationPolicy")
     private final List<DelegationPolicy> delegationPolicies;
@@ -303,38 +249,12 @@ public class Ensemble {
     /**
      * Optional per-token cost rates for cost estimation.
      *
-     * <p>When set, each task's LLM token usage is converted to a monetary cost estimate
-     * and made available on {@link net.agentensemble.metrics.TaskMetrics#getCostEstimate()}
-     * and {@link net.agentensemble.metrics.ExecutionMetrics#getTotalCostEstimate()}.
-     *
-     * <p>Token counts are derived from {@code ChatResponse} usage metadata. When the LLM
-     * provider does not populate token counts, cost estimates are omitted.
-     *
-     * <pre>
-     * Ensemble.builder()
-     *     .costConfiguration(CostConfiguration.builder()
-     *         .inputTokenRate(new BigDecimal("0.0000025"))
-     *         .outputTokenRate(new BigDecimal("0.0000100"))
-     *         .build())
-     *     .build();
-     * </pre>
-     *
      * <p>Default: null (cost estimation disabled).
      */
     private final CostConfiguration costConfiguration;
 
     /**
-     * Optional exporter called at the end of each {@link #run()} invocation with the
-     * complete {@link ExecutionTrace}.
-     *
-     * <p>Use {@link net.agentensemble.trace.export.JsonTraceExporter} to write traces to
-     * JSON files, or implement {@link ExecutionTraceExporter} for custom destinations.
-     *
-     * <pre>
-     * Ensemble.builder()
-     *     .traceExporter(new JsonTraceExporter(Path.of("traces/")))
-     *     .build();
-     * </pre>
+     * Optional exporter called at the end of each {@link #run()} invocation.
      *
      * <p>Default: null (no automatic export).
      */
@@ -343,37 +263,49 @@ public class Ensemble {
     /**
      * Depth of data collection during each run.
      *
-     * <p>The default is {@link CaptureMode#OFF} (current behavior: prompts, tool args/results,
-     * timing, token counts). Set to {@link CaptureMode#STANDARD} to also capture full LLM
-     * message history per iteration and wire memory operation counts into the trace. Set to
-     * {@link CaptureMode#FULL} to additionally auto-export traces to {@code ./traces/} and
-     * enrich tool I/O with parsed JSON arguments.
-     *
-     * <p>The effective capture mode is resolved in the following order (first wins):
-     * <ol>
-     *   <li>This field when not {@link CaptureMode#OFF}</li>
-     *   <li>JVM system property {@code agentensemble.captureMode}</li>
-     *   <li>Environment variable {@code AGENTENSEMBLE_CAPTURE_MODE}</li>
-     *   <li>{@link CaptureMode#OFF}</li>
-     * </ol>
-     *
-     * <p>This means the same application can be put into debug mode without any code changes:
-     * <pre>
-     * java -Dagentensemble.captureMode=FULL -jar my-app.jar
-     * </pre>
-     * or:
-     * <pre>
-     * AGENTENSEMBLE_CAPTURE_MODE=STANDARD java -jar my-app.jar
-     * </pre>
-     *
-     * <p>{@link CaptureMode#OFF} has zero performance impact beyond what the base trace
-     * infrastructure already adds. {@link CaptureMode} is orthogonal to {@code verbose}
-     * and {@code traceExporter}; all three can be combined independently.
-     *
      * <p>Default: {@link CaptureMode#OFF}.
      */
     @Builder.Default
     private final CaptureMode captureMode = CaptureMode.OFF;
+
+    // ========================
+    // Static zero-ceremony factory
+    // ========================
+
+    /**
+     * Zero-ceremony static factory: create an ensemble with the given LLM and tasks,
+     * then run it immediately with a sequential workflow.
+     *
+     * <p>Agents are synthesized automatically from the task descriptions. This is the
+     * simplest possible way to use AgentEnsemble:
+     *
+     * <pre>
+     * EnsembleOutput result = Ensemble.run(model,
+     *     Task.of("Research AI trends"),
+     *     Task.of("Write a summary report based on the research"));
+     * </pre>
+     *
+     * @param model the LLM to use for all synthesized agents; must not be null
+     * @param tasks the tasks to execute in order; must not be empty
+     * @return the execution output
+     */
+    public static EnsembleOutput run(ChatModel model, Task... tasks) {
+        if (model == null) {
+            throw new IllegalArgumentException("model must not be null");
+        }
+        if (tasks == null || tasks.length == 0) {
+            throw new IllegalArgumentException("tasks must not be null or empty");
+        }
+        EnsembleBuilder builder = Ensemble.builder().chatLanguageModel(model);
+        for (Task task : tasks) {
+            builder.task(task);
+        }
+        return builder.build().run();
+    }
+
+    // ========================
+    // Run methods
+    // ========================
 
     /**
      * Execute the ensemble's tasks using the inputs configured on the builder.
@@ -390,11 +322,6 @@ public class Ensemble {
      * configured on the builder. When the same key appears in both, the run-time value
      * takes precedence.
      *
-     * Use this overload when the same {@code Ensemble} instance is executed multiple times
-     * with different variable values (for example, iterating over a list of topics or weeks).
-     * For the common single-run case, prefer setting inputs on the builder via
-     * {@code .input("key", "value")} and calling the no-arg {@link #run()}.
-     *
      * @param runtimeInputs additional or overriding variable values
      * @return EnsembleOutput containing all results
      * @throws ValidationException if the ensemble configuration is invalid
@@ -408,33 +335,62 @@ public class Ensemble {
         return runWithInputs(Collections.unmodifiableMap(merged));
     }
 
+    /**
+     * Returns the unique agents participating in this ensemble, derived from the tasks.
+     *
+     * <p>Agents are collected from tasks that have an explicit agent set, deduplicated
+     * by object identity, and returned in task-list order.
+     *
+     * <p>In the v2 task-first paradigm, agents are synthesized at runtime for agentless
+     * tasks and are not included in this list (they are ephemeral).
+     *
+     * @return an immutable list of unique agents from tasks with explicit agents
+     */
+    public List<Agent> getAgents() {
+        IdentityHashMap<Agent, Boolean> seen = new IdentityHashMap<>();
+        List<Agent> result = new ArrayList<>();
+        for (Task task : tasks) {
+            if (task.getAgent() != null && seen.putIfAbsent(task.getAgent(), Boolean.TRUE) == null) {
+                result.add(task.getAgent());
+            }
+        }
+        return List.copyOf(result);
+    }
+
     private EnsembleOutput runWithInputs(Map<String, String> resolvedInputs) {
         String ensembleId = UUID.randomUUID().toString();
         MDC.put("ensemble.id", ensembleId);
         Instant runStartedAt = Instant.now();
 
-        // Resolve the effective capture mode: builder field wins unless OFF, then
-        // fall back to system property / env var / OFF via CaptureMode.resolve().
+        // Resolve the effective capture mode
         CaptureMode effectiveCaptureMode = CaptureMode.resolve(captureMode);
         if (effectiveCaptureMode != CaptureMode.OFF) {
             log.info("CaptureMode active: {}", effectiveCaptureMode);
         }
 
         try {
-            log.info(
-                    "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
-                    workflow,
-                    tasks.size(),
-                    agents.size());
+            log.info("Ensemble run initializing | Workflow: {} | Tasks: {}", workflow, tasks.size());
             log.debug("Input variables: {}", resolvedInputs);
 
             // Step 1: Validate configuration
             new EnsembleValidator(this).validate();
 
             // Step 2: Resolve template variables in task descriptions and expected outputs
-            List<Task> resolvedTasks = resolveTasks(resolvedInputs);
+            List<Task> templateResolvedTasks = resolveTasks(resolvedInputs);
 
-            // Step 3: Create memory context for this run (no-op when memory is not configured)
+            // Step 3: Resolve agents -- synthesize for tasks without an explicit agent
+            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks);
+
+            // Step 4: Derive unique agents (for delegation context, trace, hierarchical)
+            List<Agent> derivedAgents = deriveAgents(agentResolvedTasks);
+
+            log.info(
+                    "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
+                    workflow,
+                    agentResolvedTasks.size(),
+                    derivedAgents.size());
+
+            // Step 5: Create memory context for this run
             MemoryContext memoryContext = memory != null ? MemoryContext.from(memory) : MemoryContext.disabled();
 
             if (memoryContext.isActive()) {
@@ -445,8 +401,7 @@ public class Ensemble {
                         memoryContext.hasEntityMemory());
             }
 
-            // Step 4: Build execution context -- bundles memory, verbosity, listeners,
-            // tool executor, tool metrics, cost configuration, and capture mode
+            // Step 6: Build execution context
             ExecutionContext executionContext = ExecutionContext.of(
                     memoryContext,
                     verbose,
@@ -456,9 +411,9 @@ public class Ensemble {
                     costConfiguration,
                     effectiveCaptureMode);
 
-            // Step 5: Select and execute WorkflowExecutor
-            WorkflowExecutor executor = selectExecutor();
-            EnsembleOutput output = executor.execute(resolvedTasks, executionContext);
+            // Step 7: Select and execute WorkflowExecutor
+            WorkflowExecutor executor = selectExecutor(derivedAgents);
+            EnsembleOutput output = executor.execute(agentResolvedTasks, executionContext);
 
             Instant runCompletedAt = Instant.now();
 
@@ -468,11 +423,17 @@ public class Ensemble {
                     output.getTaskOutputs().size(),
                     output.getTotalToolCalls());
 
-            // Step 6: Build ExecutionTrace from collected task traces
+            // Step 8: Build ExecutionTrace
             ExecutionTrace trace = buildExecutionTrace(
-                    ensembleId, runStartedAt, runCompletedAt, resolvedInputs, output, effectiveCaptureMode);
+                    ensembleId,
+                    runStartedAt,
+                    runCompletedAt,
+                    resolvedInputs,
+                    output,
+                    effectiveCaptureMode,
+                    derivedAgents);
 
-            // Step 7: Attach trace to EnsembleOutput
+            // Step 9: Attach trace to EnsembleOutput
             EnsembleOutput outputWithTrace = EnsembleOutput.builder()
                     .raw(output.getRaw())
                     .taskOutputs(output.getTaskOutputs())
@@ -482,9 +443,7 @@ public class Ensemble {
                     .trace(trace)
                     .build();
 
-            // Step 8: Export trace.
-            // When captureMode == FULL and no explicit exporter is configured,
-            // auto-register a JsonTraceExporter writing to ./traces/
+            // Step 10: Export trace
             ExecutionTraceExporter effectiveExporter = traceExporter;
             if (effectiveExporter == null && effectiveCaptureMode == CaptureMode.FULL) {
                 effectiveExporter = new JsonTraceExporter(java.nio.file.Path.of("./traces/"));
@@ -511,15 +470,78 @@ public class Ensemble {
         }
     }
 
+    /**
+     * Resolve agents for tasks that do not have an explicit agent set.
+     *
+     * <p>For each task without an agent, the configured {@link AgentSynthesizer} is
+     * invoked with the task-level or ensemble-level LLM. Task-level tools and
+     * maxIterations are applied to the synthesized agent. Tasks with explicit agents
+     * are returned unchanged.
+     */
+    private List<Task> resolveAgents(List<Task> templateResolvedTasks) {
+        List<Task> resolved = new ArrayList<>(templateResolvedTasks.size());
+        for (Task task : templateResolvedTasks) {
+            if (task.getAgent() != null) {
+                // Explicit agent: use as-is (power-user escape hatch)
+                resolved.add(task);
+            } else {
+                // Synthesize agent: use task-level LLM if set, else ensemble-level LLM
+                ChatModel llm = task.getChatLanguageModel() != null ? task.getChatLanguageModel() : chatLanguageModel;
+                if (llm == null) {
+                    // Should have been caught by EnsembleValidator.validateTasksHaveLlm()
+                    throw new ValidationException("No LLM available for task '" + task.getDescription()
+                            + "'. Provide a task-level chatLanguageModel or an ensemble-level chatLanguageModel.");
+                }
+
+                SynthesisContext ctx = new SynthesisContext(llm, Locale.getDefault());
+                Agent synthesized = agentSynthesizer.synthesize(task, ctx);
+
+                // Apply task-level maxIterations and tools to the synthesized agent
+                Agent.AgentBuilder agentBuilder = synthesized.toBuilder();
+                if (task.getMaxIterations() != null) {
+                    agentBuilder.maxIterations(task.getMaxIterations());
+                }
+                if (!task.getTools().isEmpty()) {
+                    agentBuilder.tools(task.getTools());
+                }
+
+                Task withAgent = task.toBuilder().agent(agentBuilder.build()).build();
+                resolved.add(withAgent);
+
+                log.debug(
+                        "Synthesized agent '{}' for task '{}'",
+                        withAgent.getAgent().getRole(),
+                        truncate(task.getDescription(), 80));
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Derive a list of unique agent instances from the resolved tasks.
+     * Agents are deduplicated by object identity and returned in task-list order.
+     */
+    private static List<Agent> deriveAgents(List<Task> resolvedTasks) {
+        IdentityHashMap<Agent, Boolean> seen = new IdentityHashMap<>();
+        List<Agent> agents = new ArrayList<>();
+        for (Task task : resolvedTasks) {
+            if (task.getAgent() != null && seen.putIfAbsent(task.getAgent(), Boolean.TRUE) == null) {
+                agents.add(task.getAgent());
+            }
+        }
+        return List.copyOf(agents);
+    }
+
     private ExecutionTrace buildExecutionTrace(
             String ensembleId,
             Instant startedAt,
             Instant completedAt,
             Map<String, String> resolvedInputs,
             EnsembleOutput output,
-            CaptureMode effectiveCaptureMode) {
+            CaptureMode effectiveCaptureMode,
+            List<Agent> derivedAgents) {
 
-        List<AgentSummary> agentSummaries = agents.stream()
+        List<AgentSummary> agentSummaries = derivedAgents.stream()
                 .map(agent -> AgentSummary.builder()
                         .role(agent.getRole())
                         .goal(agent.getGoal())
@@ -545,11 +567,6 @@ public class Ensemble {
                 .captureMode(effectiveCaptureMode)
                 .startedAt(startedAt)
                 .completedAt(completedAt)
-                // Use Duration.between(startedAt, completedAt) so that totalDuration is
-                // consistent with the startedAt and completedAt timestamps on this trace.
-                // output.getTotalDuration() covers workflow execution only and would not
-                // match completedAt - startedAt (which also includes validation, template
-                // resolution, and memory setup).
                 .totalDuration(java.time.Duration.between(startedAt, completedAt))
                 .inputs(Map.copyOf(resolvedInputs != null ? resolvedInputs : Map.of()))
                 .metrics(metrics);
@@ -569,40 +586,25 @@ public class Ensemble {
 
     /**
      * Resolve template variables in task descriptions and expected outputs.
-     *
-     * Two-pass approach: first resolve descriptions/expectedOutputs and build an
-     * original-to-resolved mapping, then rewrite context lists so they reference the
-     * resolved Task instances. Without the second pass, context lookups in
-     * SequentialWorkflowExecutor would fail when a task with a template variable is
-     * also referenced by another task's context list (value equality would not match
-     * the original and resolved copies).
      */
-    private List<Task> resolveTasks(Map<String, String> inputs) {
+    private List<Task> resolveTasks(Map<String, String> resolvedInputsMap) {
         // Pass 1: resolve description and expectedOutput; build original -> resolved map.
-        // Use identity-based map because Task uses value equality and two pre-resolution
-        // tasks with different descriptions must be treated as distinct keys.
         IdentityHashMap<Task, Task> originalToResolved = new IdentityHashMap<>();
         for (Task task : tasks) {
             Task resolved = task.toBuilder()
-                    .description(TemplateResolver.resolve(task.getDescription(), inputs))
-                    .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), inputs))
+                    .description(TemplateResolver.resolve(task.getDescription(), resolvedInputsMap))
+                    .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), resolvedInputsMap))
                     .build();
             originalToResolved.put(task, resolved);
         }
 
         // Pass 2: rewrite context lists to reference resolved instances.
-        // IMPORTANT: update originalToResolved as each final task is created so that
-        // later tasks in this pass (e.g., task D depending on task B) pick up the
-        // fully-rewritten version (with correct context) rather than the pass-1 draft.
-        // Without this update, a diamond A->B->D / A->C->D would produce D with stale
-        // context references not present in the result list, breaking DAG lookup.
         List<Task> result = new ArrayList<>(tasks.size());
         for (Task original : tasks) {
             Task resolvedBase = originalToResolved.get(original);
             List<Task> originalContext = original.getContext();
             if (originalContext.isEmpty()) {
                 result.add(resolvedBase);
-                // resolvedBase == originalToResolved.get(original) already; no update needed
             } else {
                 List<Task> resolvedContext = new ArrayList<>(originalContext.size());
                 for (Task ctxTask : originalContext) {
@@ -610,7 +612,6 @@ public class Ensemble {
                 }
                 Task finalTask =
                         resolvedBase.toBuilder().context(resolvedContext).build();
-                // Update the mapping so subsequent tasks in this pass see the final version
                 originalToResolved.put(original, finalTask);
                 result.add(finalTask);
             }
@@ -618,24 +619,34 @@ public class Ensemble {
         return result;
     }
 
-    private WorkflowExecutor selectExecutor() {
+    private WorkflowExecutor selectExecutor(List<Agent> derivedAgents) {
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         return switch (workflow) {
-            case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth, policies);
+            case SEQUENTIAL -> new SequentialWorkflowExecutor(derivedAgents, maxDelegationDepth, policies);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
-                    resolveManagerLlm(),
-                    agents,
+                    resolveManagerLlm(derivedAgents),
+                    derivedAgents,
                     managerMaxIterations,
                     maxDelegationDepth,
                     managerPromptStrategy,
                     policies,
                     hierarchicalConstraints);
-            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy, policies);
+            case PARALLEL -> new ParallelWorkflowExecutor(
+                    derivedAgents, maxDelegationDepth, parallelErrorStrategy, policies);
         };
     }
 
-    private ChatModel resolveManagerLlm() {
-        return managerLlm != null ? managerLlm : agents.get(0).getLlm();
+    private ChatModel resolveManagerLlm(List<Agent> derivedAgents) {
+        if (managerLlm != null) return managerLlm;
+        if (chatLanguageModel != null) return chatLanguageModel;
+        if (!derivedAgents.isEmpty()) return derivedAgents.get(0).getLlm();
+        throw new ValidationException("No Manager LLM available for hierarchical workflow. "
+                + "Set ensemble-level chatLanguageModel or managerLlm.");
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null) return "";
+        return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
     }
 
     // ========================
@@ -645,18 +656,11 @@ public class Ensemble {
     /**
      * Extends the Lombok-generated builder with lambda convenience methods for registering
      * event listeners without implementing the full {@link EnsembleListener} interface.
-     *
-     * Each method wraps the provided {@link Consumer} in an anonymous {@link EnsembleListener}
-     * and delegates to {@code listener(EnsembleListener)}, which is generated by Lombok's
-     * {@code @Singular} annotation. Multiple calls accumulate; none overwrite each other.
      */
     public static class EnsembleBuilder {
 
         /**
          * Register a lambda that is called immediately before each task starts.
-         *
-         * @param handler consumer receiving a {@link TaskStartEvent}
-         * @return this builder
          */
         public EnsembleBuilder onTaskStart(Consumer<TaskStartEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -670,9 +674,6 @@ public class Ensemble {
 
         /**
          * Register a lambda that is called immediately after each task completes successfully.
-         *
-         * @param handler consumer receiving a {@link TaskCompleteEvent}
-         * @return this builder
          */
         public EnsembleBuilder onTaskComplete(Consumer<TaskCompleteEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -686,9 +687,6 @@ public class Ensemble {
 
         /**
          * Register a lambda that is called when a task fails, before the exception propagates.
-         *
-         * @param handler consumer receiving a {@link TaskFailedEvent}
-         * @return this builder
          */
         public EnsembleBuilder onTaskFailed(Consumer<TaskFailedEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -702,9 +700,6 @@ public class Ensemble {
 
         /**
          * Register a lambda that is called after each tool execution in the ReAct loop.
-         *
-         * @param handler consumer receiving a {@link ToolCallEvent}
-         * @return this builder
          */
         public EnsembleBuilder onToolCall(Consumer<ToolCallEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -717,11 +712,7 @@ public class Ensemble {
         }
 
         /**
-         * Register a lambda that is called immediately before a delegation is handed off to
-         * a worker agent. Only fired for delegations that pass all guards and policies.
-         *
-         * @param handler consumer receiving a {@link DelegationStartedEvent}
-         * @return this builder
+         * Register a lambda that is called immediately before a delegation is handed off.
          */
         public EnsembleBuilder onDelegationStarted(Consumer<DelegationStartedEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -735,9 +726,6 @@ public class Ensemble {
 
         /**
          * Register a lambda that is called immediately after a delegation completes successfully.
-         *
-         * @param handler consumer receiving a {@link DelegationCompletedEvent}
-         * @return this builder
          */
         public EnsembleBuilder onDelegationCompleted(Consumer<DelegationCompletedEvent> handler) {
             Objects.requireNonNull(handler, "handler");
@@ -750,11 +738,7 @@ public class Ensemble {
         }
 
         /**
-         * Register a lambda that is called when a delegation fails, whether due to a guard
-         * violation, policy rejection, or worker agent exception.
-         *
-         * @param handler consumer receiving a {@link DelegationFailedEvent}
-         * @return this builder
+         * Register a lambda that is called when a delegation fails.
          */
         public EnsembleBuilder onDelegationFailed(Consumer<DelegationFailedEvent> handler) {
             Objects.requireNonNull(handler, "handler");

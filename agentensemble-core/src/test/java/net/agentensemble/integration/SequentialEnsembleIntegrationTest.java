@@ -48,7 +48,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent)
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run();
+        var output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("AI is growing fast in 2026.");
         assertThat(output.getTaskOutputs()).hasSize(1);
@@ -72,13 +72,8 @@ class SequentialEnsembleIntegrationTest {
                 .agent(writer)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(researchTask)
-                .task(writeTask)
-                .build()
-                .run();
+        var output =
+                Ensemble.builder().task(researchTask).task(writeTask).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Blog post about AI trends");
         assertThat(output.getTaskOutputs()).hasSize(2);
@@ -103,13 +98,8 @@ class SequentialEnsembleIntegrationTest {
                 .context(List.of(researchTask))
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(researchTask)
-                .task(writeTask)
-                .build()
-                .run();
+        var output =
+                Ensemble.builder().task(researchTask).task(writeTask).build().run();
 
         // Both tasks executed and context was passed (verified by taskOutputs having 2 entries)
         assertThat(output.getTaskOutputs()).hasSize(2);
@@ -133,13 +123,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent2)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent)
-                .agent(agent2)
-                .task(task1)
-                .task(task2)
-                .build()
-                .run();
+        var output = Ensemble.builder().task(task1).task(task2).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Second result");
     }
@@ -160,13 +144,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent2)
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(agent)
-                .agent(agent2)
-                .task(task1)
-                .task(task2)
-                .build()
-                .run();
+        var output = Ensemble.builder().task(task1).task(task2).build().run();
 
         assertThat(output.getTaskOutputs().get(0).getAgentRole()).isEqualTo("Agent");
         assertThat(output.getTaskOutputs().get(1).getAgentRole()).isEqualTo("Agent2");
@@ -185,7 +163,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent)
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run(Map.of("topic", "AI Agents"));
+        var output = Ensemble.builder().task(task).build().run(Map.of("topic", "AI Agents"));
 
         // The task description stored in output reflects the resolved template
         assertThat(output.getTaskOutputs().get(0).getTaskDescription()).isEqualTo("Research AI Agents developments");
@@ -201,7 +179,6 @@ class SequentialEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .input("topic", "AI Agents")
                 .build()
@@ -220,7 +197,6 @@ class SequentialEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .input("topic", "AI Agents") // builder default
                 .build()
@@ -240,7 +216,6 @@ class SequentialEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .input("year", "2026") // builder provides year
                 .build()
@@ -258,7 +233,7 @@ class SequentialEnsembleIntegrationTest {
     void testValidationFailure_noTasksExecuted() {
         var researcher = agentWithResponse("Researcher", "result");
 
-        var ensemble = Ensemble.builder().agent(researcher).build(); // No tasks
+        var ensemble = Ensemble.builder().build(); // No tasks
 
         assertThatThrownBy(ensemble::run).isInstanceOf(ValidationException.class);
     }
@@ -283,12 +258,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(writer)
                 .build();
 
-        var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(task1)
-                .task(task2)
-                .build();
+        var ensemble = Ensemble.builder().task(task1).task(task2).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(TaskExecutionException.class)
@@ -315,8 +285,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent)
                 .build();
 
-        var output =
-                Ensemble.builder().agent(agent).task(task).verbose(true).build().run();
+        var output = Ensemble.builder().task(task).verbose(true).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Research result");
     }

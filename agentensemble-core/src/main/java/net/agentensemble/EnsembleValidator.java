@@ -1,33 +1,31 @@
 package net.agentensemble;
 
-import java.util.Collections;
+import dev.langchain4j.model.chat.ChatModel;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.Workflow;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Validates the configuration of an {@link Ensemble} before execution.
  *
- * Package-private. Called by {@link Ensemble#run(java.util.Map)} before the
+ * <p>Package-private. Called by {@link Ensemble#run(java.util.Map)} before the
  * workflow executor is selected and invoked.
+ *
+ * <p>In v2, agents are no longer required on the ensemble -- they may be synthesized
+ * at runtime. Validation ensures each task has an LLM source (explicit agent, task-level
+ * {@code chatLanguageModel}, or ensemble-level {@code chatLanguageModel}).
  */
 class EnsembleValidator {
 
-    private static final Logger log = LoggerFactory.getLogger(EnsembleValidator.class);
-
-    private final List<Agent> agents;
     private final List<Task> tasks;
+    private final ChatModel ensembleLlm;
     private final Workflow workflow;
     private final int maxDelegationDepth;
     private final int managerMaxIterations;
@@ -35,8 +33,8 @@ class EnsembleValidator {
     private final HierarchicalConstraints hierarchicalConstraints;
 
     EnsembleValidator(Ensemble ensemble) {
-        this.agents = ensemble.getAgents();
         this.tasks = ensemble.getTasks();
+        this.ensembleLlm = ensemble.getChatLanguageModel();
         this.workflow = ensemble.getWorkflow();
         this.maxDelegationDepth = ensemble.getMaxDelegationDepth();
         this.managerMaxIterations = ensemble.getManagerMaxIterations();
@@ -46,16 +44,14 @@ class EnsembleValidator {
 
     void validate() {
         validateTasksNotEmpty();
-        validateAgentsNotEmpty();
+        validateTasksHaveLlm();
         validateMaxDelegationDepth();
         validateManagerMaxIterations();
         validateParallelErrorStrategy();
-        validateAgentMembership();
         validateHierarchicalRoles();
         validateHierarchicalConstraints();
         validateNoCircularContextDependencies();
         validateContextOrdering();
-        warnUnusedAgents();
     }
 
     private void validateTasksNotEmpty() {
@@ -64,9 +60,25 @@ class EnsembleValidator {
         }
     }
 
-    private void validateAgentsNotEmpty() {
-        if (agents == null || agents.isEmpty()) {
-            throw new ValidationException("Ensemble must have at least one agent");
+    /**
+     * Validate that every task has an LLM source, in this priority order:
+     * <ol>
+     *   <li>Task has an explicit agent (which carries its own LLM)</li>
+     *   <li>Task has a {@code chatLanguageModel} set directly</li>
+     *   <li>The ensemble has a {@code chatLanguageModel} (used for synthesis)</li>
+     * </ol>
+     *
+     * <p>If none of the above are present for a task, a {@link ValidationException} is thrown.
+     */
+    private void validateTasksHaveLlm() {
+        for (Task task : tasks) {
+            boolean hasLlm =
+                    (task.getAgent() != null) || (task.getChatLanguageModel() != null) || (ensembleLlm != null);
+            if (!hasLlm) {
+                throw new ValidationException("Task '" + task.getDescription() + "' has no LLM available. "
+                        + "Provide an explicit agent, a task-level chatLanguageModel, "
+                        + "or an ensemble-level chatLanguageModel.");
+            }
         }
     }
 
@@ -89,33 +101,23 @@ class EnsembleValidator {
         }
     }
 
-    private void validateAgentMembership() {
-        // Use identity-based lookup per design spec (docs/design/03-domain-model.md):
-        // two Agent objects with identical field values must be treated as distinct agents.
-        Set<Agent> registeredAgents = Collections.newSetFromMap(new IdentityHashMap<>());
-        registeredAgents.addAll(agents);
-
-        for (Task task : tasks) {
-            if (!registeredAgents.contains(task.getAgent())) {
-                throw new ValidationException("Task '" + task.getDescription()
-                        + "' references agent '" + task.getAgent().getRole()
-                        + "' which is not in the ensemble's agent list");
-            }
-        }
-    }
-
     /**
-     * For HIERARCHICAL workflow: validate that no registered agent uses the reserved
-     * "Manager" role (which is auto-assigned to the virtual manager agent), and that
-     * all agent roles are unique (case-insensitively) to avoid ambiguous delegation.
+     * For HIERARCHICAL workflow: validate that no task's explicit agent uses the reserved
+     * "Manager" role, and that all explicit-agent roles are unique (case-insensitively).
+     *
+     * <p>Tasks without an explicit agent are excluded from this check since their agents
+     * are synthesized at runtime and will not conflict with the Manager role.
      */
     private void validateHierarchicalRoles() {
         if (workflow != Workflow.HIERARCHICAL) {
             return;
         }
         Set<String> seenRoles = new HashSet<>();
-        for (Agent agent : agents) {
-            String role = agent.getRole();
+        for (Task task : tasks) {
+            if (task.getAgent() == null) {
+                continue; // synthesized agents are checked at runtime
+            }
+            String role = task.getAgent().getRole();
             if ("Manager".equalsIgnoreCase(role)) {
                 throw new ValidationException(
                         "Agent role 'Manager' is reserved for the virtual manager in HIERARCHICAL "
@@ -130,32 +132,25 @@ class EnsembleValidator {
 
     /**
      * Validates the optional {@link HierarchicalConstraints} configuration against the
-     * registered agents.
+     * explicitly registered agents (derived from tasks that have an explicit agent set).
      *
      * <p>Only runs when {@code workflow == HIERARCHICAL} and constraints are non-null.
-     * Checks:
-     * <ul>
-     *   <li>All {@code requiredWorkers} roles exist in registered agents</li>
-     *   <li>All {@code allowedWorkers} roles exist in registered agents</li>
-     *   <li>When both sets are non-empty, {@code requiredWorkers} must be a subset of
-     *       {@code allowedWorkers}</li>
-     *   <li>All {@code maxCallsPerWorker} keys exist in registered agents</li>
-     *   <li>All {@code maxCallsPerWorker} values are positive ({@code > 0})</li>
-     *   <li>{@code globalMaxDelegations >= 0}</li>
-     *   <li>All roles in every {@code requiredStages} stage exist in registered agents</li>
-     * </ul>
      */
     private void validateHierarchicalConstraints() {
         if (workflow != Workflow.HIERARCHICAL || hierarchicalConstraints == null) {
             return;
         }
 
-        Set<String> registeredRoles = agents.stream().map(Agent::getRole).collect(Collectors.toSet());
+        Set<String> registeredRoles = new HashSet<>();
+        for (Task task : tasks) {
+            if (task.getAgent() != null) {
+                registeredRoles.add(task.getAgent().getRole());
+            }
+        }
 
         Set<String> requiredWorkers = hierarchicalConstraints.getRequiredWorkers();
         Set<String> allowedWorkers = hierarchicalConstraints.getAllowedWorkers();
 
-        // requiredWorkers must reference registered agents
         for (String role : requiredWorkers) {
             if (!registeredRoles.contains(role)) {
                 throw new ValidationException("HierarchicalConstraints.requiredWorkers contains role '" + role
@@ -163,7 +158,6 @@ class EnsembleValidator {
             }
         }
 
-        // allowedWorkers must reference registered agents
         for (String role : allowedWorkers) {
             if (!registeredRoles.contains(role)) {
                 throw new ValidationException("HierarchicalConstraints.allowedWorkers contains role '" + role
@@ -171,7 +165,6 @@ class EnsembleValidator {
             }
         }
 
-        // When allowedWorkers is non-empty, requiredWorkers must be a subset of it
         if (!allowedWorkers.isEmpty()) {
             for (String requiredRole : requiredWorkers) {
                 if (!allowedWorkers.contains(requiredRole)) {
@@ -183,7 +176,6 @@ class EnsembleValidator {
             }
         }
 
-        // maxCallsPerWorker: keys must be registered agents, values must be positive
         for (Map.Entry<String, Integer> entry :
                 hierarchicalConstraints.getMaxCallsPerWorker().entrySet()) {
             String role = entry.getKey();
@@ -198,13 +190,11 @@ class EnsembleValidator {
             }
         }
 
-        // globalMaxDelegations must be >= 0
         if (hierarchicalConstraints.getGlobalMaxDelegations() < 0) {
             throw new ValidationException("HierarchicalConstraints.globalMaxDelegations must be >= 0, got: "
                     + hierarchicalConstraints.getGlobalMaxDelegations());
         }
 
-        // requiredStages: all roles must be registered agents and must not appear in multiple stages
         List<List<String>> stages = hierarchicalConstraints.getRequiredStages();
         Map<String, Integer> roleFirstStageIndex = new HashMap<>();
         for (int i = 0; i < stages.size(); i++) {
@@ -225,19 +215,16 @@ class EnsembleValidator {
     }
 
     private void validateNoCircularContextDependencies() {
-        // Build adjacency map: task -> tasks it depends on (its context)
         Map<Task, List<Task>> graph = new HashMap<>();
         for (Task task : tasks) {
             graph.put(task, task.getContext());
         }
-        // Also include tasks only referenced in context (not in the tasks list)
         for (Task task : tasks) {
             for (Task ctx : task.getContext()) {
                 graph.putIfAbsent(ctx, ctx.getContext());
             }
         }
 
-        // DFS cycle detection
         Set<Task> visited = new HashSet<>();
         Set<Task> inStack = new HashSet<>();
         for (Task task : graph.keySet()) {
@@ -265,20 +252,14 @@ class EnsembleValidator {
     }
 
     private void validateContextOrdering() {
-        // Hierarchical and parallel workflows do not require sequential task ordering:
-        // HIERARCHICAL: the Manager agent decides execution order at runtime.
-        // PARALLEL: the dependency graph (from context declarations) drives execution order.
-        // In both cases, the user-supplied task list order is irrelevant to execution.
+        // Hierarchical and parallel workflows do not require sequential task ordering.
         if (workflow == Workflow.HIERARCHICAL || workflow == Workflow.PARALLEL) {
             return;
         }
 
-        // Use identity-based membership to be consistent with resolveTasks() and
-        // validateAgentMembership(): two Task objects with identical field values must
-        // be treated as distinct tasks. A value-equal but identity-distinct context task
-        // would pass equals()-based validation but then fail remapping in resolveTasks().
-        Set<Task> executedSoFar = Collections.newSetFromMap(new IdentityHashMap<>());
-        Set<Task> ensureTaskSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        // Use identity-based membership to be consistent with resolveTasks().
+        java.util.Set<Task> executedSoFar = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        java.util.Set<Task> ensureTaskSet = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         ensureTaskSet.addAll(tasks);
 
         for (Task task : tasks) {
@@ -298,18 +279,6 @@ class EnsembleValidator {
                 }
             }
             executedSoFar.add(task);
-        }
-    }
-
-    private void warnUnusedAgents() {
-        Set<Agent> usedAgents = new HashSet<>();
-        for (Task task : tasks) {
-            usedAgents.add(task.getAgent());
-        }
-        for (Agent agent : agents) {
-            if (!usedAgents.contains(agent)) {
-                log.warn("Agent '{}' is registered with the ensemble but not assigned to any task", agent.getRole());
-            }
         }
     }
 }

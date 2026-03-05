@@ -44,11 +44,16 @@ class EnsembleConstraintValidationTest {
     }
 
     private Ensemble baseEnsemble(HierarchicalConstraints constraints) {
+        // Include both researcher and analyst tasks so both roles are registered for constraints.
+        Task analystTask = Task.builder()
+                .description("Analyse data")
+                .expectedOutput("Analysis output")
+                .agent(analyst)
+                .build();
         return Ensemble.builder()
                 .workflow(Workflow.HIERARCHICAL)
-                .agent(researcher)
-                .agent(analyst)
                 .task(task)
+                .task(analystTask)
                 .hierarchicalConstraints(constraints)
                 .build();
     }
@@ -115,11 +120,8 @@ class EnsembleConstraintValidationTest {
 
     @Test
     void nullConstraints_hierarchicalWorkflow_noValidationException() {
-        var ensemble = Ensemble.builder()
-                .workflow(Workflow.HIERARCHICAL)
-                .agent(researcher)
-                .task(task)
-                .build();
+        var ensemble =
+                Ensemble.builder().workflow(Workflow.HIERARCHICAL).task(task).build();
 
         assertThatNoException().isThrownBy(() -> new EnsembleValidator(ensemble).validate());
     }
@@ -275,7 +277,6 @@ class EnsembleConstraintValidationTest {
         // (this is the documented behavior: constraints are HIERARCHICAL-only)
         var ensemble = Ensemble.builder()
                 .workflow(Workflow.SEQUENTIAL)
-                .agent(researcher)
                 .task(researcherTask)
                 .build();
 

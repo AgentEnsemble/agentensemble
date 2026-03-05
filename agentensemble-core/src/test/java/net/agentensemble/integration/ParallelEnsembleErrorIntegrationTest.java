@@ -65,8 +65,6 @@ class ParallelEnsembleErrorIntegrationTest {
                 .build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(good)
-                        .agent(bad)
                         .task(tGood)
                         .task(tBad)
                         .workflow(Workflow.PARALLEL)
@@ -92,7 +90,6 @@ class ParallelEnsembleErrorIntegrationTest {
 
         // No explicit parallelErrorStrategy set -- default is FAIL_FAST
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(bad)
                         .task(tBad)
                         .workflow(Workflow.PARALLEL)
                         .build()
@@ -120,8 +117,6 @@ class ParallelEnsembleErrorIntegrationTest {
                 .build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(good)
-                        .agent(bad)
                         .task(tGood)
                         .task(tBad)
                         .workflow(Workflow.PARALLEL)
@@ -162,9 +157,6 @@ class ParallelEnsembleErrorIntegrationTest {
                 .build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(good)
-                        .agent(bad)
-                        .agent(skip)
                         .task(tGood)
                         .task(tBad)
                         .task(tSkip)
@@ -198,8 +190,6 @@ class ParallelEnsembleErrorIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
                 .task(ta)
                 .task(tb)
                 .workflow(Workflow.PARALLEL)

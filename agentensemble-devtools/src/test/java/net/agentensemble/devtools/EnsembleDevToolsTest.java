@@ -52,11 +52,7 @@ class EnsembleDevToolsTest {
                 .expectedOutput("A report")
                 .agent(agent)
                 .build();
-        ensemble = Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .workflow(Workflow.SEQUENTIAL)
-                .build();
+        ensemble = Ensemble.builder().task(task).workflow(Workflow.SEQUENTIAL).build();
 
         ExecutionTrace trace = ExecutionTrace.builder()
                 .ensembleId("test-id")
