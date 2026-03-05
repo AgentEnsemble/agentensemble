@@ -1,0 +1,56 @@
+name: Documentation Improvement
+description: Report missing, incorrect, or unclear documentation.
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve the AgentEnsemble documentation. Please describe the issue clearly so we can address it.
+
+  - type: input
+    id: page
+    attributes:
+      label: Page or Section
+      description: Which documentation page or section does this relate to?
+      placeholder: "e.g. Getting Started / Quickstart, Guides / Workflows, Reference / Agent Configuration"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Type of Documentation Issue
+      options:
+        - Missing documentation
+        - Incorrect or outdated information
+        - Unclear or confusing explanation
+        - Missing code example
+        - Broken link
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe what is missing, wrong, or could be improved.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Change
+      description: If you have a specific suggestion for how to improve it, provide it here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any other information that may be helpful.
+    validations:
+      required: false

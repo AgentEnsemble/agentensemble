@@ -1,0 +1,58 @@
+name: Feature Request
+description: Propose a new feature or enhancement for AgentEnsemble.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature. Please provide as much detail as possible so we can evaluate the request effectively.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What limitation or gap exists today?
+      placeholder: "When I try to... I cannot... because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature or behavior you would like to see added.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative approaches or workarounds?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: Which part of AgentEnsemble does this feature relate to?
+      options:
+        - Core (Agent, Task, Ensemble)
+        - Workflows (Sequential, Hierarchical, Parallel)
+        - Tools
+        - Memory
+        - Metrics
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any other context, examples, or references that support this request.
+    validations:
+      required: false
