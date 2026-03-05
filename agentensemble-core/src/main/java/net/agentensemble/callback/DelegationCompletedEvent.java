@@ -10,8 +10,7 @@ import net.agentensemble.delegation.DelegationResponse;
  * hierarchical-delegation ({@code DelegateTaskTool}) paths.
  *
  * <p>The {@link #delegationId()} correlates with the {@link DelegationStartedEvent} that
- * was fired at the start of the same delegation and with the originating
- * {@link net.agentensemble.delegation.DelegationRequest#getTaskId()}.
+ * was fired at the start of the same delegation.
  *
  * @param delegationId         unique correlation ID for this delegation; matches the
  *                             corresponding {@link DelegationStartedEvent#delegationId()}

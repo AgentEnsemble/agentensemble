@@ -31,7 +31,7 @@ import net.agentensemble.delegation.DelegationResponse;
  * fired in those cases).
  *
  * @param delegationId         unique correlation ID for this delegation; matches the
- *                             {@link net.agentensemble.delegation.DelegationRequest#getTaskId()}
+ *                             originating {@code DelegationRequest.getTaskId()}
  * @param delegatingAgentRole  role of the agent that initiated the delegation
  * @param workerRole           role of the intended target agent
  * @param failureReason        human-readable description of why the delegation failed;
