@@ -6,12 +6,20 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.mapreduce.MapReduceEnsemble;
+import net.agentensemble.metrics.ExecutionMetrics;
+import net.agentensemble.metrics.TaskMetrics;
+import net.agentensemble.trace.AgentSummary;
+import net.agentensemble.trace.ExecutionTrace;
+import net.agentensemble.trace.MapReduceLevelSummary;
+import net.agentensemble.trace.TaskTrace;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -399,6 +407,129 @@ class DagExporterTest {
     }
 
     // ========================
+    // ExecutionTrace overload (post-execution adaptive DAG export)
+    // ========================
+
+    @Test
+    void build_nullTrace_throwsIllegalArgument() {
+        assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build((ExecutionTrace) null));
+    }
+
+    @Test
+    void build_traceWithNoTaskTraces_throwsIllegalArgument() {
+        ExecutionTrace emptyTrace = ExecutionTrace.builder()
+                .ensembleId("test-id")
+                .workflow("MAP_REDUCE_ADAPTIVE")
+                .startedAt(Instant.now())
+                .completedAt(Instant.now())
+                .totalDuration(Duration.ZERO)
+                .metrics(ExecutionMetrics.EMPTY)
+                .build();
+        assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build(emptyTrace));
+    }
+
+    @Test
+    void build_adaptiveTrace_mapReduceModeIsAdaptive() {
+        ExecutionTrace trace = buildAdaptiveTrace(List.of(
+                stubTaskTrace("map A", "Agent-A", "map", 0), stubTaskTrace("final", "Reducer", "final-reduce", 1)));
+
+        DagModel dag = DagExporter.build(trace);
+
+        assertThat(dag.getMapReduceMode()).isEqualTo("ADAPTIVE");
+    }
+
+    @Test
+    void build_adaptiveTrace_workflowIsPreserved() {
+        ExecutionTrace trace = buildAdaptiveTrace(List.of(
+                stubTaskTrace("map A", "Agent-A", "map", 0), stubTaskTrace("final", "Reducer", "final-reduce", 1)));
+
+        DagModel dag = DagExporter.build(trace);
+
+        assertThat(dag.getWorkflow()).isEqualTo("MAP_REDUCE_ADAPTIVE");
+    }
+
+    @Test
+    void build_adaptiveTrace_taskNodesHaveCorrectNodeTypeAndLevel() {
+        List<TaskTrace> traces = List.of(
+                stubTaskTrace("map A", "Map-A", "map", 0),
+                stubTaskTrace("map B", "Map-B", "map", 0),
+                stubTaskTrace("reduce", "Reducer-1", "reduce", 1),
+                stubTaskTrace("final", "Final-Reducer", "final-reduce", 2));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        assertThat(dag.getTasks()).hasSize(4);
+        assertThat(dag.getTasks().get(0).getNodeType()).isEqualTo("map");
+        assertThat(dag.getTasks().get(0).getMapReduceLevel()).isEqualTo(0);
+        assertThat(dag.getTasks().get(1).getNodeType()).isEqualTo("map");
+        assertThat(dag.getTasks().get(2).getNodeType()).isEqualTo("reduce");
+        assertThat(dag.getTasks().get(2).getMapReduceLevel()).isEqualTo(1);
+        assertThat(dag.getTasks().get(3).getNodeType()).isEqualTo("final-reduce");
+        assertThat(dag.getTasks().get(3).getMapReduceLevel()).isEqualTo(2);
+    }
+
+    @Test
+    void build_adaptiveTrace_parallelGroupsGroupByLevel() {
+        List<TaskTrace> traces = List.of(
+                stubTaskTrace("map A", "Map-A", "map", 0),
+                stubTaskTrace("map B", "Map-B", "map", 0),
+                stubTaskTrace("final", "Reducer", "final-reduce", 1));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        // Level 0: 2 map tasks, level 1: 1 final reduce
+        assertThat(dag.getParallelGroups()).hasSize(2);
+        assertThat(dag.getParallelGroups().get(0)).hasSize(2);
+        assertThat(dag.getParallelGroups().get(1)).hasSize(1);
+    }
+
+    @Test
+    void build_adaptiveTrace_agentsFromTraceSummaries() {
+        List<TaskTrace> traces = List.of(stubTaskTrace("map A", "Map-A", "map", 0));
+        AgentSummary summary = AgentSummary.builder()
+                .role("Map-A")
+                .goal("map goal")
+                .allowDelegation(false)
+                .build();
+        ExecutionTrace trace = ExecutionTrace.builder()
+                .ensembleId("test-id")
+                .workflow("MAP_REDUCE_ADAPTIVE")
+                .startedAt(Instant.now())
+                .completedAt(Instant.now())
+                .totalDuration(Duration.ZERO)
+                .metrics(ExecutionMetrics.EMPTY)
+                .taskTrace(traces.get(0))
+                .agent(summary)
+                .mapReduceLevel(MapReduceLevelSummary.builder()
+                        .level(0)
+                        .taskCount(1)
+                        .duration(Duration.ZERO)
+                        .workflow("PARALLEL")
+                        .build())
+                .build();
+
+        DagModel dag = DagExporter.build(trace);
+
+        assertThat(dag.getAgents()).hasSize(1);
+        assertThat(dag.getAgents().get(0).getRole()).isEqualTo("Map-A");
+        assertThat(dag.getAgents().get(0).getGoal()).isEqualTo("map goal");
+    }
+
+    @Test
+    void build_adaptiveTrace_toJson_includesAdaptiveFields() {
+        List<TaskTrace> traces = List.of(
+                stubTaskTrace("map A", "Map-A", "map", 0), stubTaskTrace("final", "Reducer", "final-reduce", 1));
+
+        String json = DagExporter.build(buildAdaptiveTrace(traces)).toJson();
+
+        assertThat(json).contains("\"mapReduceMode\" : \"ADAPTIVE\"");
+        assertThat(json).contains("\"nodeType\" : \"map\"");
+        assertThat(json).contains("\"nodeType\" : \"final-reduce\"");
+        assertThat(json).contains("\"mapReduceLevel\" : 0");
+        assertThat(json).contains("\"mapReduceLevel\" : 1");
+    }
+
+    // ========================
     // JSON round-trip
     // ========================
 
@@ -480,6 +611,43 @@ class DagExporterTest {
                         .build())
                 .chunkSize(chunkSize)
                 .build();
+    }
+
+    /** Build a stub TaskTrace annotated with nodeType and mapReduceLevel. */
+    private static TaskTrace stubTaskTrace(String description, String agentRole, String nodeType, int level) {
+        return TaskTrace.builder()
+                .taskDescription(description)
+                .expectedOutput("expected")
+                .agentRole(agentRole)
+                .startedAt(Instant.now())
+                .completedAt(Instant.now())
+                .duration(Duration.ZERO)
+                .finalOutput("output of " + description)
+                .metrics(TaskMetrics.EMPTY)
+                .nodeType(nodeType)
+                .mapReduceLevel(level)
+                .build();
+    }
+
+    /** Build an adaptive ExecutionTrace containing the given task traces. */
+    private static ExecutionTrace buildAdaptiveTrace(List<TaskTrace> taskTraces) {
+        ExecutionTrace.ExecutionTraceBuilder builder = ExecutionTrace.builder()
+                .ensembleId("test-adaptive-id")
+                .workflow("MAP_REDUCE_ADAPTIVE")
+                .startedAt(Instant.now())
+                .completedAt(Instant.now())
+                .totalDuration(Duration.ZERO)
+                .metrics(ExecutionMetrics.EMPTY)
+                .mapReduceLevel(MapReduceLevelSummary.builder()
+                        .level(0)
+                        .taskCount(1)
+                        .duration(Duration.ZERO)
+                        .workflow("PARALLEL")
+                        .build());
+        for (TaskTrace t : taskTraces) {
+            builder.taskTrace(t);
+        }
+        return builder.build();
     }
 
     /**

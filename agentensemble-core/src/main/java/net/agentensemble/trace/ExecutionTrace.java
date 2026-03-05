@@ -138,6 +138,17 @@ public class ExecutionTrace {
     List<ErrorTrace> errors;
 
     /**
+     * Per-level summaries for adaptive map-reduce runs.
+     *
+     * <p>Populated only when the trace was produced by an adaptive
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble} run. Each entry corresponds
+     * to one level of execution: level 0 = map phase, level 1+ = intermediate reduce levels,
+     * the highest index = final reduce level. Empty for all other run types.
+     */
+    @Singular("mapReduceLevel")
+    List<MapReduceLevelSummary> mapReduceLevels;
+
+    /**
      * Optional caller-supplied metadata for the entire run.
      * Usable by framework extensions or application code for custom annotations.
      */

@@ -2,59 +2,68 @@
 
 ## Current Work Focus
 
-v2.0.0 architecture design documented on branch `v2-architecture-design`.
-GitHub issues being created to track implementation work.
-
-Issue #98 (Static MapReduceEnsemble with chunkSize) is complete on branch
-`feat/issue-98-static-map-reduce-ensemble`. MapReduce (#98, #99, #100) ships
-in the v1.x API before v2.0.0 work begins.
+Issue #99 (Adaptive MapReduceEnsemble with targetTokenBudget) is complete on branch
+`feat/issue-99-adaptive-map-reduce-ensemble`. PR #119 is open.
 
 ## Recent Changes
+
+### Issue #99: Adaptive MapReduceEnsemble
+
+Extends `MapReduceEnsemble<T>` with an adaptive strategy that drives tree reduction based on
+actual output token counts at runtime.
+
+**New classes in `agentensemble-core`:**
+- `MapReduceTokenEstimator` - 3-tier token estimation (provider count -> custom function -> heuristic)
+- `MapReduceBinPacker` - first-fit-decreasing bin-packing algorithm
+- `MapReduceAdaptiveExecutor<T>` - level-by-level adaptive execution engine
+- `PassthroughChatModel` - returns fixed text; used for carrier tasks between adaptive levels
+- `MapReduceLevelSummary` - per-level summary in `ExecutionTrace`
+
+**Modified classes:**
+- `MapReduceEnsemble` - new builder fields (`targetTokenBudget`, `contextWindowSize`,
+  `budgetRatio`, `maxReduceLevels`, `tokenEstimator`), adaptive/static dispatch,
+  `isAdaptiveMode()`, `toEnsemble()` throws in adaptive mode
+- `TaskTrace` - added `nodeType` and `mapReduceLevel` fields
+- `ExecutionTrace` - added `mapReduceLevels` list (List<MapReduceLevelSummary>)
+- `DagExporter` - added `build(ExecutionTrace)` for post-execution adaptive DAG export
+
+**Key design decision:** Carrier tasks backed by `PassthroughChatModel` propagate context
+from one adaptive level to the next. Carrier task traces and outputs are filtered from the
+aggregated `EnsembleOutput` and `ExecutionTrace`.
+
+**Tests added:**
+- Unit: `MapReduceTokenEstimatorTest` (12), `MapReduceBinPackerTest` (13),
+  `MapReduceEnsembleAdaptiveValidationTest` (22)
+- Integration: `MapReduceEnsembleAdaptiveRunTest` (10) using mock ChatModels
+- Devtools: `DagExporterTest` + 8 new `build(ExecutionTrace)` tests
 
 ### v2.0.0 Architecture Design (branch: v2-architecture-design)
 
 - `docs/design/15-v2-architecture.md`: full design document covering all v2.0.0
   architectural decisions
-- `mkdocs.yml`: v2.0.0 Architecture added to Design nav section
-
-**Core paradigm shift**: task-first, agent-invisible. Users define tasks; agent
-composition is handled by `AgentSynthesizer` behind the scenes. `Agent` remains
-available as an optional power-user escape hatch via `Task.agent()`.
-
-**Four pillars of v2.0.0:**
-1. Task-First API -- `Ensemble.run(model, Task.of(...), Task.of(...))` zero-ceremony path
-2. Task-scoped cross-execution memory -- named scopes, `MemoryStore` SPI, persists across runs
-3. Human-in-the-loop review gates -- `ReviewHandler` SPI, before/during/after timing,
-   timeout + continue/edit/exit-early; `ConsoleReviewHandler` for CLI
-4. Partial results -- `EnsembleOutput` redesigned with `isComplete()`, `exitReason()`,
-   `completedTasks()`; exit-early guarantees memory persistence
-
-**Breaking changes** (clean break, no compat shim):
-- `Ensemble.builder().agents()` removed
-- `Task.agent()` optional (auto-synthesized when absent)
-- Tools, LLM, maxIterations move to Task
-- `Ensemble.memory(EnsembleMemory)` replaced by `Task.memory(scope)` + `Ensemble.memoryStore()`
-- Module split: agentensemble-core -> core + agentensemble-memory + agentensemble-review
-
-**SPI contracts defined** in design doc section 7:
-- `AgentSynthesizer` (core)
-- `MemoryStore` (agentensemble-memory)
-- `ReviewHandler` (agentensemble-review)
-
-**Parallel workstreams** (Groups A-F, see design doc section 9):
-- Groups A (core refactor), B (memory), C (review) can run in parallel
-- Group D (output/workflow) depends on Group A
-- Group E (MapReduce refactor) depends on Group A + #98-100
-- Group F (BOM + migration) depends on A+B+C
-
-### Issue #98 -- Static MapReduceEnsemble with chunkSize (v2.0.0)
-
-Implementation complete on `feat/issue-98-static-map-reduce-ensemble`.
-(See previous activeContext entry for full details.)
+- Task-First API, task-scoped cross-execution memory, human-in-the-loop review gates,
+  partial results redesign
+- SPI contracts: `AgentSynthesizer`, `MemoryStore`, `ReviewHandler`
 
 ## Next Steps
 
-- Create GitHub epic + issues for v2.0.0 workstreams
-- Open PR for v2-architecture-design branch
-- Continue MapReduce work: issue #99 (Adaptive), then #100 (short-circuit)
-- After #98-100 land, begin v2.0.0 Group A (core refactor) work
+- Merge/close PR #119 (issue #99)
+- Issue #100: Short-circuit optimization (`directAgent`/`directTask`) - v2.1.0
+  Depends on issue #99 (this work)
+- After #100, begin v2.0.0 workstreams (Groups A-F per design doc)
+
+## Important Patterns and Preferences
+
+- Static MapReduce: single `Ensemble.run()` with pre-built DAG, `toEnsemble()` works
+- Adaptive MapReduce: multiple `Ensemble.run()` calls, one per level; carrier tasks
+  bridge context between levels; `toEnsemble()` throws `UnsupportedOperationException`
+- `CONTINUE_ON_ERROR` with partial map failures: `ParallelExecutionException` carries
+  surviving `completedTaskOutputs`; adaptive executor extracts these to proceed
+- Trace aggregation: all traces from all levels combined into single `ExecutionTrace`
+  with `workflow = "MAP_REDUCE_ADAPTIVE"` and per-level summaries in `mapReduceLevels`
+- Post-execution DAG export: `DagExporter.build(ExecutionTrace)` for adaptive runs
+- Carrier tasks use `__carry__:` role prefix for filtering from aggregated output
+
+## Active Branch
+
+`feat/issue-99-adaptive-map-reduce-ensemble`

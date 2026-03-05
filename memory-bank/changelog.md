@@ -708,6 +708,29 @@ Key design decisions:
   FAIL_FAST, CONTINUE_ON_ERROR, runtime input overrides, metadata accessor tests.
 - `DagExporterTest`: 11 new tests for `build(MapReduceEnsemble<?>)` overload.
 
+## [2.0.0-issue-99] - 2026-03-05
+### Added
+- `MapReduceEnsemble`: adaptive strategy (`targetTokenBudget`, `contextWindowSize`,
+  `budgetRatio`, `maxReduceLevels`, `tokenEstimator`) in addition to existing static strategy
+- `MapReduceTokenEstimator`: 3-tier token estimation (provider -> custom -> heuristic)
+- `MapReduceBinPacker`: first-fit-decreasing bin-packing for adaptive reduce grouping
+- `MapReduceAdaptiveExecutor`: level-by-level adaptive execution using PassthroughChatModel
+  carrier tasks to propagate context between levels
+- `PassthroughChatModel`: package-private ChatModel returning fixed text for carriers
+- `MapReduceLevelSummary`: per-level timing/task-count summary in `ExecutionTrace`
+- `ExecutionTrace.mapReduceLevels`: list of per-level summaries for adaptive runs
+- `TaskTrace.nodeType` / `TaskTrace.mapReduceLevel`: annotation for adaptive trace tasks
+- `DagExporter.build(ExecutionTrace)`: post-execution DAG export for adaptive runs
+- `MapReduceEnsemble.isAdaptiveMode()`: mode query accessor
+- Tests: MapReduceTokenEstimatorTest (12), MapReduceBinPackerTest (13),
+  MapReduceEnsembleAdaptiveValidationTest (22), MapReduceEnsembleAdaptiveRunTest (9),
+  DagExporterTest additions (8)
+### Changed
+- `MapReduceEnsemble.toEnsemble()` throws `UnsupportedOperationException` in adaptive mode
+- `docs/guides/map-reduce.md`: adaptive mode section added
+- `docs/examples/map-reduce.md`: adaptive mode kitchen example added
+- `docs/reference/ensemble-configuration.md`: adaptive fields, updated methods table
+
 ## [Unreleased]
 
 ### Fixed (PR #66 -- fix/javadoc-link-error-add-to-ci)
