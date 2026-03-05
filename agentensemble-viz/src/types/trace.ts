@@ -120,6 +120,18 @@ export interface TaskTrace {
   finalOutput: string;
   parsedOutput: unknown;
   metrics: TaskMetrics;
+  /**
+   * Map-reduce node type for adaptive runs.
+   * One of "map", "reduce", or "final-reduce".
+   * Absent for tasks executed outside of an adaptive map-reduce run.
+   */
+  nodeType?: 'map' | 'reduce' | 'final-reduce';
+  /**
+   * Map-reduce tree level for adaptive runs.
+   * 0 = map phase, 1+ = reduce levels.
+   * Absent for tasks executed outside of an adaptive map-reduce run.
+   */
+  mapReduceLevel?: number;
   metadata: Record<string, unknown>;
 }
 
@@ -141,13 +153,30 @@ export interface ErrorTrace {
 }
 
 export type CaptureMode = 'OFF' | 'STANDARD' | 'FULL';
-export type Workflow = 'SEQUENTIAL' | 'PARALLEL' | 'HIERARCHICAL';
+export type Workflow = 'SEQUENTIAL' | 'PARALLEL' | 'HIERARCHICAL' | 'MAP_REDUCE_ADAPTIVE';
+
+/**
+ * Per-level summary for an adaptive map-reduce run.
+ *
+ * Populated in {@link ExecutionTrace.mapReduceLevels} when the trace was produced
+ * by an adaptive {@code MapReduceEnsemble} run.
+ */
+export interface MapReduceLevelSummary {
+  /** Zero-based level index. 0 = map phase, 1+ = reduce levels. */
+  level: number;
+  /** Number of tasks that ran at this level. */
+  taskCount: number;
+  /** Wall-clock duration of this level's Ensemble.run() call (ISO-8601). */
+  duration: string;
+  /** Workflow type used at this level. Always "PARALLEL" for adaptive runs. */
+  workflow: string;
+}
 
 export interface ExecutionTrace {
   schemaVersion: string;
   captureMode: CaptureMode;
   ensembleId: string;
-  workflow: Workflow;
+  workflow: Workflow | string;
   startedAt: string;
   completedAt: string;
   totalDuration: string;
@@ -157,5 +186,10 @@ export interface ExecutionTrace {
   metrics: ExecutionMetrics;
   totalCostEstimate: CostEstimate | null;
   errors: ErrorTrace[];
+  /**
+   * Per-level summaries for adaptive map-reduce runs.
+   * Empty for standard (non-adaptive) runs.
+   */
+  mapReduceLevels: MapReduceLevelSummary[];
   metadata: Record<string, unknown>;
 }

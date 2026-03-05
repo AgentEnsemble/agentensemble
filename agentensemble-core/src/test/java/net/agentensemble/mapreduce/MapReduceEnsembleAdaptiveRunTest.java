@@ -246,6 +246,88 @@ class MapReduceEnsembleAdaptiveRunTest {
     }
 
     // ========================
+    // Test: 6 items with 2 intermediate reduce levels (4 ensemble runs total)
+    // ========================
+
+    @Test
+    void run_sixItems_twoIntermediateReduceLevels_fourEnsembleRuns() {
+        // 6 map outputs at 100 tokens each = 600 > budget(250)
+        // L1 bin-pack: 3 bins of 2 (100+100=200 <= 250) -> 3 reduce tasks
+        // L1 outputs = 100 tokens each = 300 > budget(250) -> still need reduction
+        // L2 bin-pack: 2 bins (100+100=200 <= 250, 100 alone) -> 2 reduce tasks
+        // L2 outputs = 25 tokens each = 50 <= budget(250) -> final reduce
+        // Total: 4 ensemble runs (map + L1 + L2 + final)
+        SequenceResponseChatModel llm = new SequenceResponseChatModel(
+                // 6 map responses (100 tokens each)
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                // 3 L1 reduce responses (100 tokens each -- still over budget)
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                LONG_OUTPUT,
+                // 2 L2 reduce responses (25 tokens each -- now under budget)
+                SHORT_OUTPUT,
+                SHORT_OUTPUT,
+                // 1 final reduce response
+                "Final 4-level result");
+
+        MapReduceEnsemble<String> mre = MapReduceEnsemble.<String>builder()
+                .items(List.of("A", "B", "C", "D", "E", "F"))
+                .mapAgent(item -> agent("M-" + item, llm))
+                .mapTask((item, a) -> task("map " + item, a))
+                .reduceAgent(() -> agent("R-" + agentCounter.incrementAndGet(), llm))
+                .reduceTask((a, chunk) -> reduceTask(a, chunk))
+                .targetTokenBudget(250)
+                .maxReduceLevels(10) // enough for 2 intermediate levels
+                .build();
+
+        EnsembleOutput output = mre.run();
+
+        assertThat(output.getRaw()).isEqualTo("Final 4-level result");
+
+        ExecutionTrace trace = output.getTrace();
+        assertThat(trace).isNotNull();
+        assertThat(trace.getWorkflow()).isEqualTo("MAP_REDUCE_ADAPTIVE");
+
+        // 4 levels: map(0) + L1-reduce(1) + L2-reduce(2) + final-reduce(3)
+        assertThat(trace.getMapReduceLevels()).hasSize(4);
+        assertThat(trace.getMapReduceLevels().get(0).getLevel()).isEqualTo(0);
+        assertThat(trace.getMapReduceLevels().get(0).getTaskCount()).isEqualTo(6);
+        assertThat(trace.getMapReduceLevels().get(1).getLevel()).isEqualTo(1);
+        assertThat(trace.getMapReduceLevels().get(1).getTaskCount()).isEqualTo(3);
+        assertThat(trace.getMapReduceLevels().get(2).getLevel()).isEqualTo(2);
+        assertThat(trace.getMapReduceLevels().get(2).getTaskCount()).isEqualTo(2);
+        assertThat(trace.getMapReduceLevels().get(3).getLevel()).isEqualTo(3);
+        assertThat(trace.getMapReduceLevels().get(3).getTaskCount()).isEqualTo(1);
+
+        // Task traces: 6 map + 3 L1-reduce + 2 L2-reduce + 1 final = 12
+        List<TaskTrace> taskTraces = trace.getTaskTraces();
+        assertThat(taskTraces).hasSize(12);
+
+        long mapCount = taskTraces.stream()
+                .filter(t -> MapReduceEnsemble.NODE_TYPE_MAP.equals(t.getNodeType()))
+                .count();
+        long l1ReduceCount = taskTraces.stream()
+                .filter(t -> MapReduceEnsemble.NODE_TYPE_REDUCE.equals(t.getNodeType()) && t.getMapReduceLevel() == 1)
+                .count();
+        long l2ReduceCount = taskTraces.stream()
+                .filter(t -> MapReduceEnsemble.NODE_TYPE_REDUCE.equals(t.getNodeType()) && t.getMapReduceLevel() == 2)
+                .count();
+        long finalCount = taskTraces.stream()
+                .filter(t -> MapReduceEnsemble.NODE_TYPE_FINAL_REDUCE.equals(t.getNodeType()))
+                .count();
+
+        assertThat(mapCount).isEqualTo(6);
+        assertThat(l1ReduceCount).isEqualTo(3);
+        assertThat(l2ReduceCount).isEqualTo(2);
+        assertThat(finalCount).isEqualTo(1);
+    }
+
+    // ========================
     // Test: FAIL_FAST - one map task fails
     // ========================
 
