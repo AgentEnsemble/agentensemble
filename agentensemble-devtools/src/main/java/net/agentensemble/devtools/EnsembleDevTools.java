@@ -19,8 +19,10 @@ import net.agentensemble.ensemble.EnsembleOutput;
  *
  * <pre>
  * Ensemble ensemble = Ensemble.builder()
- *     .agents(researcher, writer)
- *     .tasks(researchTask, writeTask)
+ *     .agent(researcher)
+ *     .agent(writer)
+ *     .task(researchTask)
+ *     .task(writeTask)
  *     .workflow(Workflow.PARALLEL)
  *     .captureMode(CaptureMode.STANDARD)
  *     .build();
@@ -35,7 +37,7 @@ import net.agentensemble.ensemble.EnsembleOutput;
  * EnsembleDevTools.exportTrace(output, Path.of("./traces/"));
  *
  * // Or: export both in one call
- * EnsembleDevTools.exportDag(ensemble, output, Path.of("./traces/"));
+ * EnsembleDevTools.export(ensemble, output, Path.of("./traces/"));
  * </pre>
  *
  * <p>Load the exported files in the {@code agentensemble-viz} viewer:
@@ -86,6 +88,9 @@ public final class EnsembleDevTools {
      * @throws IllegalArgumentException if ensemble is null or has no tasks
      */
     public static Path exportDag(Ensemble ensemble, Path outputDir) {
+        if (outputDir == null) {
+            throw new IllegalArgumentException("outputDir must not be null");
+        }
         DagModel dag = DagExporter.build(ensemble);
         String timestamp = FILE_TIMESTAMP.format(Instant.now());
         Path outputPath = outputDir.resolve("ensemble-dag-" + timestamp + ".dag.json");
@@ -117,9 +122,14 @@ public final class EnsembleDevTools {
         if (output == null) {
             throw new IllegalArgumentException("output must not be null");
         }
+        if (outputDir == null) {
+            throw new IllegalArgumentException("outputDir must not be null");
+        }
         if (output.getTrace() == null) {
             throw new IllegalArgumentException(
-                    "output has no execution trace -- ensure captureMode is configured on the ensemble");
+                    "output has no execution trace attached; this usually means the EnsembleOutput"
+                            + " was not produced by Ensemble.run() or comes from an older"
+                            + " AgentEnsemble version");
         }
         String timestamp = FILE_TIMESTAMP.format(Instant.now());
         Path outputPath = outputDir.resolve("ensemble-trace-" + timestamp + ".trace.json");

@@ -191,7 +191,7 @@ export default function TimelineView({ trace }: TimelineViewProps) {
 
                     return (
                       <g
-                        key={task.taskDescription}
+                        key={`${task.taskDescription}-${task.startedAt}-${task.completedAt}`}
                         onClick={() => setSelected({ kind: 'task', trace: task })}
                         className="cursor-pointer"
                       >

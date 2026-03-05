@@ -46,12 +46,14 @@ function FlowViewInner({ dag, trace }: FlowViewProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
 
-  // Build a map of agentRole -> TaskTrace for trace enrichment
+  // Build a map of "agentRole:taskDescription" -> TaskTrace for trace enrichment.
+  // Using a composite key prevents key collisions when the same agent runs multiple
+  // tasks (a plain agentRole key would overwrite earlier entries with later ones).
   const traceByAgentRole = useMemo(() => {
     if (!trace) return undefined;
     const map = new Map<string, TaskTrace>();
     for (const taskTrace of trace.taskTraces) {
-      map.set(taskTrace.agentRole, taskTrace);
+      map.set(`${taskTrace.agentRole}:${taskTrace.taskDescription}`, taskTrace);
     }
     return map;
   }, [trace]);
@@ -92,7 +94,9 @@ function FlowViewInner({ dag, trace }: FlowViewProps) {
     : null;
 
   const selectedTaskTrace =
-    selectedTask && traceByAgentRole ? traceByAgentRole.get(selectedTask.agentRole) ?? null : null;
+    selectedTask && traceByAgentRole
+      ? traceByAgentRole.get(`${selectedTask.agentRole}:${selectedTask.description}`) ?? null
+      : null;
 
   return (
     <div className="flex flex-1 overflow-hidden">

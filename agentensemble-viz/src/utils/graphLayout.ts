@@ -60,9 +60,13 @@ export function layoutDagGraph(
   // Run dagre layout
   dagre.layout(g);
 
-  // Convert to ReactFlow nodes
+  // Convert to ReactFlow nodes.
+  // Lookup trace data by composite key "agentRole:taskDescription" to handle the case
+  // where the same agent runs multiple tasks (a plain agentRole key would lose all but
+  // the last task's trace for that agent).
   const nodes: TaskFlowNode[] = dag.tasks.map((task) => {
     const pos = g.node(task.id);
+    const traceKey = `${task.agentRole}:${task.description}`;
     return {
       id: task.id,
       type: 'taskNode' as const,
@@ -71,24 +75,37 @@ export function layoutDagGraph(
         task,
         agentColor: getAgentColor(task.agentRole),
         isSelected: task.id === selectedNodeId,
-        traceData: traceByAgentRole?.get(task.agentRole),
+        traceData: traceByAgentRole?.get(traceKey),
       },
     };
   });
 
+  // Build set of critical-path edge IDs: only edges where source and target are
+  // adjacent nodes in the critical path are considered critical.
+  // Marking all incoming edges to a critical-path node as red is incorrect --
+  // only the one edge that is actually on the critical path should be highlighted.
+  const criticalEdgeSet = new Set<string>();
+  for (let i = 0; i < dag.criticalPath.length - 1; i++) {
+    criticalEdgeSet.add(`${dag.criticalPath[i]}->${dag.criticalPath[i + 1]}`);
+  }
+
   // Convert to ReactFlow edges
   const edges: Edge[] = dag.tasks.flatMap((task) =>
-    task.dependsOn.map((depId) => ({
-      id: `${depId}->${task.id}`,
-      source: depId,
-      target: task.id,
-      type: 'smoothstep',
-      style: {
-        stroke: task.onCriticalPath ? '#EF4444' : '#94A3B8',
-        strokeWidth: task.onCriticalPath ? 2 : 1.5,
-      },
-      animated: false,
-    })),
+    task.dependsOn.map((depId) => {
+      const edgeId = `${depId}->${task.id}`;
+      const isCritical = criticalEdgeSet.has(edgeId);
+      return {
+        id: edgeId,
+        source: depId,
+        target: task.id,
+        type: 'smoothstep',
+        style: {
+          stroke: isCritical ? '#EF4444' : '#94A3B8',
+          strokeWidth: isCritical ? 2 : 1.5,
+        },
+        animated: false,
+      };
+    }),
   );
 
   return { nodes, edges };

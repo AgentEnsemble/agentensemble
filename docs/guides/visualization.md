@@ -60,8 +60,12 @@ agentensemble-viz ./traces/
 import net.agentensemble.devtools.EnsembleDevTools;
 
 Ensemble ensemble = Ensemble.builder()
-    .agents(researcher, writer, analyst)
-    .tasks(researchTask, analysisTask, writeTask)
+    .agent(researcher)
+    .agent(writer)
+    .agent(analyst)
+    .task(researchTask)
+    .task(analysisTask)
+    .task(writeTask)
     .workflow(Workflow.PARALLEL)
     .build();
 

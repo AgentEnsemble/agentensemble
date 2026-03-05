@@ -133,6 +133,13 @@ class EnsembleDevToolsTest {
         assertThatIllegalArgumentException().isThrownBy(() -> EnsembleDevTools.exportDag(null, tempDir));
     }
 
+    @Test
+    void exportDag_nullOutputDir_throwsIllegalArgument() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> EnsembleDevTools.exportDag(ensemble, null))
+                .withMessageContaining("outputDir");
+    }
+
     // ========================
     // exportTrace
     // ========================
@@ -162,6 +169,13 @@ class EnsembleDevToolsTest {
     }
 
     @Test
+    void exportTrace_nullOutputDir_throwsIllegalArgument() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> EnsembleDevTools.exportTrace(outputWithTrace, null))
+                .withMessageContaining("outputDir");
+    }
+
+    @Test
     void exportTrace_outputWithNoTrace_throwsIllegalArgument() {
         EnsembleOutput noTrace = EnsembleOutput.builder()
                 .raw("output")
@@ -174,7 +188,7 @@ class EnsembleDevToolsTest {
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> EnsembleDevTools.exportTrace(noTrace, tempDir))
-                .withMessageContaining("captureMode");
+                .withMessageContaining("no execution trace attached");
     }
 
     // ========================

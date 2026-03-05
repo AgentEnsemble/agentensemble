@@ -108,11 +108,9 @@ export function formatDuration(ms: number): string {
  * Format an ISO-8601 instant string to a short local time string.
  */
 export function formatInstant(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString();
-  } catch {
-    return iso;
-  }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString();
 }
 
 /**
