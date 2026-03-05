@@ -166,7 +166,7 @@ class MapReduceEnsembleShortCircuitRunTest {
     // ========================
 
     @Test
-    void run_largeInput_exceeedsBudget_directFactoriesConfigured_normalMapReduceRuns() {
+    void run_largeInput_exceedsBudget_directFactoriesConfigured_normalMapReduceRuns() {
         // 3 items of 400 chars each -> 100 tokens each -> 300 total
         // Budget = 200 -> 300 > 200 -> short-circuit does NOT fire -> normal map-reduce
         // Normal run: 3 map tasks + 1 final reduce

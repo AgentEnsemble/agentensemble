@@ -438,12 +438,14 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * <b>Adaptive mode, short-circuit:</b> function that converts each input item to
-         * a text representation used for input size estimation. When not provided, defaults
-         * to {@code Object::toString}.
+         * Function that converts each input item to a text representation used for adaptive
+         * short-circuit input size estimation. When not provided, defaults to
+         * {@code Object::toString}.
          *
          * <p>Providing a compact representation (e.g., a JSON summary) allows more accurate
-         * short-circuit decisions when the full {@code toString()} is verbose.
+         * short-circuit decisions when the full {@code toString()} is verbose. This setting
+         * is only used when adaptive short-circuiting is enabled; it has no effect in purely
+         * static configurations.
          *
          * @param estimator function from item to its text representation
          * @return this builder
@@ -623,13 +625,14 @@ public final class MapReduceEnsemble<T> {
                         + "Both must be configured together for the short-circuit optimization.");
             }
 
-            // Short-circuit only applies to adaptive mode
+            // Short-circuit only applies to adaptive mode, not static (chunkSize) mode
             if (resolvedBudget == 0) {
-                throw new ValidationException("directAgent and directTask are only supported in adaptive mode. "
-                        + "Short-circuit optimization requires targetTokenBudget (or "
-                        + "contextWindowSize + budgetRatio) to be set. "
-                        + "Remove directAgent/directTask or switch to adaptive mode to use "
-                        + "this feature in static mode.");
+                throw new ValidationException(
+                        "directAgent and directTask are not supported in static (chunkSize) mode. "
+                                + "Short-circuit optimization requires targetTokenBudget (or "
+                                + "contextWindowSize + budgetRatio) to be set. "
+                                + "Remove directAgent/directTask or switch to adaptive mode to use "
+                                + "this feature.");
             }
         }
 

@@ -62,7 +62,7 @@ aggregated `EnsembleOutput` and `ExecutionTrace`.
 - Post-execution DAG export: `DagExporter.build(ExecutionTrace)` for adaptive runs
 - Carrier tasks use `__carry__:` role prefix for filtering from aggregated output
 
-## Recent Changes
+## Issue #100 Details
 
 ### Issue #100: MapReduceEnsemble Short-Circuit Optimization
 

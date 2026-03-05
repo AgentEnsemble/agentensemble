@@ -153,7 +153,7 @@ final class MapReduceAdaptiveExecutor<T> {
         // bypass the entire map-reduce pipeline and run a single direct task.
         if (directAgentFactory != null && directTaskFactory != null) {
             long estimatedInputTokens = estimateInputTokens();
-            log.info(
+            log.debug(
                     "Adaptive MapReduce: estimated input tokens = {} (budget = {})",
                     estimatedInputTokens,
                     targetTokenBudget);
@@ -161,7 +161,7 @@ final class MapReduceAdaptiveExecutor<T> {
                 log.info("Adaptive MapReduce: short-circuit fires, running direct task for {} items", items.size());
                 return runDirectPhase(ensembleId, inputs);
             }
-            log.info("Adaptive MapReduce: estimated input exceeds budget, running normal map-reduce pipeline");
+            log.debug("Adaptive MapReduce: estimated input exceeds budget, running normal map-reduce pipeline");
         }
 
         List<LevelRun> levelRuns = new ArrayList<>();
