@@ -2,78 +2,74 @@
 
 ## Current Work Focus
 
-Issue #89 (CaptureMode: transparent debug/capture mode for complete execution recording) has
-been implemented on `feature/89-capture-mode`.
+Issue #44 (Interactive execution graph visualization) has been implemented, incorporating the
+work from issues #42 (Execution metrics) and #89 (CaptureMode) which were already completed.
+Two new modules were created: `agentensemble-devtools` (Java) and `agentensemble-viz` (TypeScript).
 
 ## Recent Changes
 
-### Issue #89 -- CaptureMode
+### Issue #44 -- Interactive Execution Graph Visualization
 
-**New types:**
+**New Java module: `agentensemble-devtools`**
 
-**`net.agentensemble.trace.CaptureMode`** (enum) -- Three capture levels:
-- `OFF` (default): base trace behavior, zero overhead
-- `STANDARD`: adds full LLM message history per ReAct iteration (`LlmInteraction.messages`)
-  and wires memory operation counts via `MemoryOperationListener`
-- `FULL`: adds auto-export to `./traces/` and enriched tool I/O (`ToolCallTrace.parsedInput`)
+`net.agentensemble.devtools` package:
 
-Resolution order: builder field > JVM system property `agentensemble.captureMode` > env var
-`AGENTENSEMBLE_CAPTURE_MODE` > OFF. Zero code change required to activate from CLI.
+- **`DagAgentNode`** (`@Value @Builder`) -- agent configuration snapshot (role, goal, background,
+  toolNames, allowDelegation)
+- **`DagTaskNode`** (`@Value @Builder`) -- task node with: id (index-based), description,
+  expectedOutput, agentRole, dependsOn (List<String>), parallelGroup (topological level),
+  onCriticalPath (boolean)
+- **`DagModel`** (`@Value @Builder`) -- complete pre-execution DAG snapshot; `schemaVersion="1.0"`,
+  `type="dag"`, workflow, generatedAt, agents, tasks, parallelGroups (List<List<String>>),
+  criticalPath; `toJson()` / `toJson(Path)` methods via Jackson
+- **`DagExporter`** -- static `build(Ensemble)` method: builds `TaskDependencyGraph`, computes
+  topological levels via memoized recursion, computes parallel groups, computes critical path
+  via endpoint backtracking, serializes to `DagModel`
+- **`EnsembleDevTools`** -- facade with static methods:
+  - `buildDag(Ensemble)` -- returns `DagModel` without writing any file
+  - `exportDag(Ensemble, Path)` -- writes `ensemble-dag-<timestamp>.dag.json`, returns path
+  - `exportTrace(EnsembleOutput, Path)` -- writes `ensemble-trace-<timestamp>.trace.json`, returns path
+  - `export(Ensemble, EnsembleOutput, Path)` -- exports both, returns `ExportResult` record
 
-**`net.agentensemble.trace.CapturedMessage`** (`@Value @Builder`) -- Serializable snapshot
-of one LangChain4j `ChatMessage` (system/user/assistant/tool). Static factory `from(ChatMessage)`
-and `fromAll(List<ChatMessage>)`.
+**Tests (all pass, coverage >= 90%):**
+- `DagExporterTest` (17 tests): null/empty validation, single task, linear chain, fan-out,
+  diamond, two independent roots, workflow preservation, agent node inclusion, JSON round-trip
+- `EnsembleDevToolsTest` (12 tests): all facade methods including null handling, file creation,
+  directory creation, JSON content validation
 
-**`net.agentensemble.memory.MemoryOperationListener`** (interface) -- Callback interface with
-default no-op methods: `onStmWrite()`, `onLtmStore()`, `onLtmRetrieval(Duration)`,
-`onEntityLookup(Duration)`. Wired into `MemoryContext` via `setOperationListener()`.
+**New TypeScript module: `agentensemble-viz`**
 
-**Modified types:**
+Located at `agentensemble-viz/` in the project root (npm package, not a Gradle module).
 
-- `LlmInteraction`: added `@Singular List<CapturedMessage> messages` (empty at OFF)
-- `ToolCallTrace`: added `Map<String, Object> parsedInput` (null at OFF/STANDARD, populated at FULL)
-- `ExecutionTrace`: added `@NonNull @Builder.Default CaptureMode captureMode = OFF`;
-  schema version bumped to `1.1`
-- `ExecutionContext`: added `CaptureMode captureMode` field; new 7-param `of()` overload
-- `TaskTraceAccumulator`: new 5-param constructor accepting `CaptureMode`; new
-  `setCurrentMessages(List<CapturedMessage>)` method; `finalizeIteration()` includes
-  message snapshot when STANDARD+
-- `MemoryContext`: added `setOperationListener()` / `clearOperationListener()`; `record()`,
-  `queryLongTerm()`, `getEntityFacts()` fire listener callbacks with timing
-- `AgentExecutor`: passes captureMode to accumulator; snapshots messages at STANDARD+;
-  parses tool arguments at FULL; wires memory listener at STANDARD+; clears listener
-  in `finally` block
-- `Ensemble`: added `@Builder.Default CaptureMode captureMode = OFF`; resolves effective
-  mode via `CaptureMode.resolve()`; auto-registers `JsonTraceExporter(./traces/)` at FULL
-  when no explicit exporter set; passes captureMode to `ExecutionContext` and `ExecutionTrace`
+Key files:
+- `package.json` -- `@agentensemble/viz` npm package; bin: `agentensemble-viz`
+- `cli.js` -- Node.js CLI server; serves static app + `/api/files` and `/api/file` endpoints
+- `src/types/trace.ts` -- TypeScript types for ExecutionTrace JSON (schema version 1.1)
+- `src/types/dag.ts` -- TypeScript types for DagModel JSON (schema version 1.0)
+- `src/utils/parser.ts` -- file parsing, type detection, duration/token formatting
+- `src/utils/colors.ts` -- agent color palette, tool outcome colors, opacity utilities
+- `src/utils/graphLayout.ts` -- dagre-based DAG layout for ReactFlow
+- `src/pages/LoadTrace.tsx` -- landing page (CLI server file list + drag-and-drop)
+- `src/pages/FlowView.tsx` -- DAG visualization with ReactFlow + dagre layout
+- `src/pages/TimelineView.tsx` -- SVG Gantt timeline with agent swimlanes
+- `src/components/graph/TaskNode.tsx` -- custom ReactFlow node
+- `src/components/shared/DetailPanel.tsx` -- flow view detail panel
+- `src/components/shared/MetricsBadge.tsx` -- metrics display badges
+
+**Tests (41/41 pass):**
+- `src/__tests__/parser.test.ts` -- 28 tests: file detection, parsing, duration, formatting
+- `src/__tests__/colors.test.ts` -- 13 tests: color assignment, seeding, opacity, outcomes
 
 **Documentation:**
+- `docs/guides/visualization.md` -- new guide
+- `docs/examples/visualization.md` -- new example
+- `mkdocs.yml` -- both pages added to nav
 
-- `docs/guides/capture-mode.md` -- new guide
-- `docs/examples/capture-mode.md` -- new example (Markdown)
-- `agentensemble-examples/src/main/java/.../CaptureModeExample.java` -- runnable Java example
-  (`./gradlew :agentensemble-examples:runCaptureMode`)
-- Updated: `docs/design/02-architecture.md` (added trace/metrics/memory packages)
-- Updated: `docs/design/04-execution-engine.md` (added trace accumulation + CaptureMode sections)
-- Updated: `docs/design/09-logging.md` (added JsonTraceExporter + CaptureMode log entries)
-- Updated: `docs/design/11-configuration.md` (added all missing Ensemble builder fields from #42/#89)
-- Updated: `docs/design/13-future-roadmap.md` (added completed #42 and #89 sections)
-- Updated: `docs/reference/ensemble-configuration.md` (added captureMode row)
-- Updated: `README.md` (added CaptureMode section after Metrics)
-- Updated: `mkdocs.yml` (added guide and example pages)
-
-**Tests:**
-
-- `CaptureModeTest` -- 15 unit tests covering enum, isAtLeast, resolve() chain
-- `CapturedMessageTest` -- 10 unit tests covering all ChatMessage type conversions
-- `TaskTraceAccumulatorCaptureModeTest` -- 8 unit tests for OFF/STANDARD/FULL behavior
-- `AgentExecutorCaptureModeTest` -- 8 integration tests using mocked LLMs
-- `ExecutionTraceTest` -- updated for schema version 1.1
-
-All tests pass. Full build (`./gradlew build :agentensemble-core:javadoc --continue`) green.
+**GitHub issue:**
+- #94 created: "Distribute agentensemble-viz via Homebrew tap" (follow-up for future)
 
 ## Next Steps
 
-- PR review for `feature/89-capture-mode`
-- Issue #44 (interactive execution graph visualization) can now use `CaptureMode.STANDARD`
-  or `FULL` data for replay and visualization
+- PR for issue #44 -- close out the issue
+- Issue #94 (Homebrew tap distribution) for future
+- See `design/13-future-roadmap.md` for overall roadmap

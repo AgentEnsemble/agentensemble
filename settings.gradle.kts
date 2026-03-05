@@ -32,6 +32,9 @@ include("agentensemble-tools:bom")
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 
+// Developer tooling module (DAG export, trace utilities)
+include("agentensemble-devtools")
+
 // Examples
 include("agentensemble-examples")
 

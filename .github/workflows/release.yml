@@ -35,12 +35,13 @@ jobs:
           echo "Releasing version: ${VERSION} (tag: ${TAG})"
 
       - name: Build and test
-        run: ./gradlew build :agentensemble-core:plainJavadocJar -Pversion=${{ steps.version.outputs.version }}
+        run: ./gradlew build :agentensemble-core:plainJavadocJar :agentensemble-devtools:plainJavadocJar -Pversion=${{ steps.version.outputs.version }}
 
       - name: Publish all modules to Maven Central
         # Runs publishAndReleaseToMavenCentral on every subproject that has the
-        # com.vanniktech.maven.publish plugin applied: agentensemble-core, all 9
-        # tool modules, agentensemble-tools-bom, and agentensemble-metrics-micrometer.
+        # com.vanniktech.maven.publish plugin applied: agentensemble-core,
+        # agentensemble-devtools, all 9 tool modules, agentensemble-tools-bom,
+        # and agentensemble-metrics-micrometer.
         # Projects without the plugin (agentensemble-examples, parent containers)
         # do not have the task and are silently skipped.
         run: ./gradlew publishAndReleaseToMavenCentral -Pversion=${{ steps.version.outputs.version }}
@@ -63,11 +64,15 @@ jobs:
       - name: Upload artifacts to GitHub Release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          LIBS=agentensemble-core/build/libs
+          CORE_LIBS=agentensemble-core/build/libs
+          DEVTOOLS_LIBS=agentensemble-devtools/build/libs
           gh release upload ${{ steps.version.outputs.tag }} \
-            "${LIBS}/agentensemble-core-${VERSION}.jar" \
-            "${LIBS}/agentensemble-core-${VERSION}-sources.jar" \
-            "${LIBS}/agentensemble-core-${VERSION}-javadoc.jar"
+            "${CORE_LIBS}/agentensemble-core-${VERSION}.jar" \
+            "${CORE_LIBS}/agentensemble-core-${VERSION}-sources.jar" \
+            "${CORE_LIBS}/agentensemble-core-${VERSION}-javadoc.jar" \
+            "${DEVTOOLS_LIBS}/agentensemble-devtools-${VERSION}.jar" \
+            "${DEVTOOLS_LIBS}/agentensemble-devtools-${VERSION}-sources.jar" \
+            "${DEVTOOLS_LIBS}/agentensemble-devtools-${VERSION}-javadoc.jar"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
