@@ -9,6 +9,12 @@ import java.util.Collections;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.callback.DelegationCompletedEvent;
+import net.agentensemble.callback.DelegationFailedEvent;
+import net.agentensemble.callback.DelegationStartedEvent;
+import net.agentensemble.delegation.policy.DelegationPolicy;
+import net.agentensemble.delegation.policy.DelegationPolicyContext;
+import net.agentensemble.delegation.policy.DelegationPolicyResult;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +35,18 @@ import org.slf4j.MDC;
  *   <li>Depth limit: delegation depth is capped at {@link DelegationContext#getMaxDepth()}</li>
  *   <li>Unknown agent: the target role must match an agent registered with the ensemble</li>
  * </ul>
+ *
+ * After all built-in guards pass, registered
+ * {@link net.agentensemble.delegation.policy.DelegationPolicy} instances are evaluated in
+ * order. A REJECT result blocks worker execution; a MODIFY result replaces the working request
+ * for subsequent policies and for the worker invocation.
+ *
+ * Lifecycle events ({@link DelegationStartedEvent}, {@link DelegationCompletedEvent},
+ * {@link DelegationFailedEvent}) are fired to all registered
+ * {@link net.agentensemble.callback.EnsembleListener} instances through the
+ * {@link net.agentensemble.execution.ExecutionContext}. Guard and policy rejections fire a
+ * {@link DelegationFailedEvent} directly (no corresponding start event). Worker execution
+ * failures fire both start and failed events.
  *
  * For each invocation the framework internally constructs a {@link DelegationRequest} and
  * produces a {@link DelegationResponse}. Successful delegations accumulate as
@@ -70,14 +88,15 @@ public class AgentDelegationTool {
     /**
      * Delegate a subtask to another agent.
      *
-     * The target agent is located by role name (case-insensitive). If found, the subtask
+     * The target agent is located by role name (case-insensitive). If found, all registered
+     * {@link DelegationPolicy} instances are evaluated. If all policies allow, the subtask
      * is executed and the result returned as a plain String (preserving the LLM-facing
      * tool contract). Internally a {@link DelegationRequest} is constructed and a
      * {@link DelegationResponse} is produced and accumulated.
      *
-     * If any guard fails (depth limit, self-delegation, unknown role), a descriptive error
-     * message is returned to the calling agent and a {@link DelegationStatus#FAILURE} response
-     * is recorded.
+     * If any guard fails (depth limit, self-delegation, unknown role) or any policy rejects
+     * the delegation, a descriptive error message is returned to the calling agent and a
+     * {@link DelegationStatus#FAILURE} response is recorded.
      *
      * @param agentRole       the role of the target agent
      * @param taskDescription a description of the subtask for the target agent to complete
@@ -114,7 +133,18 @@ public class AgentDelegationTool {
                     + ", current: " + delegationContext.getCurrentDepth()
                     + "). Complete this task yourself without further delegation.";
             log.warn("Delegation blocked for agent '{}': {}", callerRole, msg);
-            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
+            DelegationResponse response = failureResponse(request, agentRole, msg, requestStart);
+            delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            request.getTaskId(),
+                            callerRole,
+                            agentRole,
+                            msg,
+                            null,
+                            response,
+                            Duration.between(requestStart, Instant.now())));
             return msg;
         }
 
@@ -123,7 +153,18 @@ public class AgentDelegationTool {
         if (target != null && target.getRole().equalsIgnoreCase(callerRole)) {
             String msg = "Cannot delegate to yourself (role: '" + callerRole + "'). Choose a different agent.";
             log.warn("{}", msg);
-            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
+            DelegationResponse response = failureResponse(request, agentRole, msg, requestStart);
+            delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            request.getTaskId(),
+                            callerRole,
+                            agentRole,
+                            msg,
+                            null,
+                            response,
+                            Duration.between(requestStart, Instant.now())));
             return msg;
         }
 
@@ -134,28 +175,87 @@ public class AgentDelegationTool {
                     .toList();
             String msg = "Agent not found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation from '{}' failed: {}", callerRole, msg);
-            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
+            DelegationResponse response = failureResponse(request, agentRole, msg, requestStart);
+            delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            request.getTaskId(),
+                            callerRole,
+                            agentRole,
+                            msg,
+                            null,
+                            response,
+                            Duration.between(requestStart, Instant.now())));
             return msg;
         }
 
+        // Policy evaluation: evaluate all registered policies in order.
+        // A REJECT short-circuits immediately. A MODIFY replaces the working request.
+        DelegationRequest workingRequest = request;
+        List<String> availableWorkerRoles =
+                delegationContext.getPeerAgents().stream().map(Agent::getRole).toList();
+        DelegationPolicyContext policyCtx = new DelegationPolicyContext(
+                callerRole, delegationContext.getCurrentDepth(), delegationContext.getMaxDepth(), availableWorkerRoles);
+
+        for (DelegationPolicy policy : delegationContext.getPolicies()) {
+            DelegationPolicyResult result = policy.evaluate(workingRequest, policyCtx);
+            if (result instanceof DelegationPolicyResult.Reject reject) {
+                String msg = "Delegation rejected by policy: " + reject.reason();
+                log.warn("Delegation from '{}' to '{}' rejected by policy: {}", callerRole, agentRole, reject.reason());
+                DelegationResponse response = failureResponse(workingRequest, agentRole, msg, requestStart);
+                delegationResponses.add(response);
+                delegationContext
+                        .getExecutionContext()
+                        .fireDelegationFailed(new DelegationFailedEvent(
+                                workingRequest.getTaskId(),
+                                callerRole,
+                                agentRole,
+                                msg,
+                                null,
+                                response,
+                                Duration.between(requestStart, Instant.now())));
+                return msg;
+            } else if (result instanceof DelegationPolicyResult.Modify modify) {
+                log.debug("Delegation from '{}' to '{}' modified by policy", callerRole, agentRole);
+                workingRequest = modify.modifiedRequest();
+            }
+            // Allow: continue to next policy
+        }
+
+        // All guards and policies passed -- fire DelegationStartedEvent
+        int childDepth = delegationContext.getCurrentDepth() + 1;
         log.info(
                 "Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
                 callerRole,
                 target.getRole(),
-                delegationContext.getCurrentDepth() + 1,
+                childDepth,
                 delegationContext.getMaxDepth(),
-                taskDescription.length() > 80 ? taskDescription.substring(0, 80) + "..." : taskDescription);
+                workingRequest.getTaskDescription().length() > 80
+                        ? workingRequest.getTaskDescription().substring(0, 80) + "..."
+                        : workingRequest.getTaskDescription());
+
+        delegationContext
+                .getExecutionContext()
+                .fireDelegationStarted(new DelegationStartedEvent(
+                        workingRequest.getTaskId(),
+                        callerRole,
+                        target.getRole(),
+                        workingRequest.getTaskDescription(),
+                        childDepth,
+                        workingRequest));
 
         // Save prior MDC values so nested delegations (A->B->C) restore the outer
         // context correctly when the inner finally block runs
         String priorDepth = MDC.get(MDC_DELEGATION_DEPTH);
         String priorParent = MDC.get(MDC_DELEGATION_PARENT);
-        MDC.put(MDC_DELEGATION_DEPTH, String.valueOf(delegationContext.getCurrentDepth() + 1));
+        MDC.put(MDC_DELEGATION_DEPTH, String.valueOf(childDepth));
         MDC.put(MDC_DELEGATION_PARENT, callerRole);
 
+        final DelegationRequest finalRequest = workingRequest;
         try {
             Task delegatedTask = Task.builder()
-                    .description(taskDescription)
+                    .description(finalRequest.getTaskDescription())
                     .expectedOutput(DEFAULT_EXPECTED_OUTPUT)
                     .agent(target)
                     .build();
@@ -171,7 +271,7 @@ public class AgentDelegationTool {
 
             Duration elapsed = Duration.between(requestStart, Instant.now());
             DelegationResponse response = new DelegationResponse(
-                    request.getTaskId(),
+                    finalRequest.getTaskId(),
                     DelegationStatus.SUCCESS,
                     target.getRole(),
                     output.getRaw(),
@@ -188,6 +288,11 @@ public class AgentDelegationTool {
                     output.getToolCallCount(),
                     output.getDuration());
 
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationCompleted(new DelegationCompletedEvent(
+                            finalRequest.getTaskId(), callerRole, target.getRole(), response, elapsed));
+
             // Option C hybrid design: the @Tool method returns the worker's plain-text output to
             // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
             // are framework-internal observability contracts, not serialized to the LLM.
@@ -196,7 +301,7 @@ public class AgentDelegationTool {
         } catch (Exception e) {
             Duration elapsed = Duration.between(requestStart, Instant.now());
             DelegationResponse response = new DelegationResponse(
-                    request.getTaskId(),
+                    finalRequest.getTaskId(),
                     DelegationStatus.FAILURE,
                     target.getRole(),
                     null,
@@ -209,6 +314,18 @@ public class AgentDelegationTool {
                     Collections.emptyMap(),
                     elapsed);
             delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            finalRequest.getTaskId(),
+                            callerRole,
+                            target.getRole(),
+                            e.getMessage() != null
+                                    ? e.getMessage()
+                                    : e.getClass().getSimpleName(),
+                            e,
+                            response,
+                            elapsed));
             throw e;
         } finally {
             // Restore prior MDC values rather than unconditionally removing them.

@@ -15,12 +15,16 @@ import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
+import net.agentensemble.callback.DelegationCompletedEvent;
+import net.agentensemble.callback.DelegationFailedEvent;
+import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
+import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
@@ -224,6 +228,38 @@ public class Ensemble {
     private final Map<String, String> inputs;
 
     /**
+     * Delegation policies evaluated before each delegation attempt.
+     *
+     * <p>Policies run after built-in guards (self-delegation, depth limit, unknown agent)
+     * and before the worker agent executes. They are evaluated in registration order.
+     * A {@link DelegationPolicy} can {@link net.agentensemble.delegation.policy.DelegationPolicyResult#allow() allow},
+     * {@link net.agentensemble.delegation.policy.DelegationPolicyResult#reject(String) reject}, or
+     * {@link net.agentensemble.delegation.policy.DelegationPolicyResult#modify(net.agentensemble.delegation.DelegationRequest) modify}
+     * each delegation request.
+     *
+     * <p>Use the builder's {@link EnsembleBuilder#delegationPolicy(DelegationPolicy...)} method
+     * to register individual policies (varargs), or {@code delegationPolicies(Collection)} for
+     * batch registration. Multiple calls accumulate; none overwrite each other.
+     *
+     * <p>Policies apply to both peer delegation ({@code AgentDelegationTool}) and hierarchical
+     * delegation ({@code DelegateTaskTool}).
+     *
+     * Example:
+     * <pre>
+     * Ensemble.builder()
+     *     .delegationPolicy((request, ctx) -> {
+     *         if ("UNKNOWN".equals(request.scope().get("project_key"))) {
+     *             return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
+     *         }
+     *         return DelegationPolicyResult.allow();
+     *     })
+     *     .build();
+     * </pre>
+     */
+    @Singular("delegationPolicy")
+    private final List<DelegationPolicy> delegationPolicies;
+
+    /**
      * Execute the ensemble's tasks using the inputs configured on the builder.
      *
      * @return EnsembleOutput containing all results
@@ -365,11 +401,17 @@ public class Ensemble {
     }
 
     private WorkflowExecutor selectExecutor() {
+        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         return switch (workflow) {
-            case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth);
+            case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth, policies);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
-                    resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth, managerPromptStrategy);
-            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy);
+                    resolveManagerLlm(),
+                    agents,
+                    managerMaxIterations,
+                    maxDelegationDepth,
+                    managerPromptStrategy,
+                    policies);
+            case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy, policies);
         };
     }
 
@@ -450,6 +492,56 @@ public class Ensemble {
             return listener(new EnsembleListener() {
                 @Override
                 public void onToolCall(ToolCallEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Register a lambda that is called immediately before a delegation is handed off to
+         * a worker agent. Only fired for delegations that pass all guards and policies.
+         *
+         * @param handler consumer receiving a {@link DelegationStartedEvent}
+         * @return this builder
+         */
+        public EnsembleBuilder onDelegationStarted(Consumer<DelegationStartedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onDelegationStarted(DelegationStartedEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Register a lambda that is called immediately after a delegation completes successfully.
+         *
+         * @param handler consumer receiving a {@link DelegationCompletedEvent}
+         * @return this builder
+         */
+        public EnsembleBuilder onDelegationCompleted(Consumer<DelegationCompletedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onDelegationCompleted(DelegationCompletedEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Register a lambda that is called when a delegation fails, whether due to a guard
+         * violation, policy rejection, or worker agent exception.
+         *
+         * @param handler consumer receiving a {@link DelegationFailedEvent}
+         * @return this builder
+         */
+        public EnsembleBuilder onDelegationFailed(Consumer<DelegationFailedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onDelegationFailed(DelegationFailedEvent event) {
                     handler.accept(event);
                 }
             });
