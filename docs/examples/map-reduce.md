@@ -1,14 +1,19 @@
-# MapReduce Kitchen Example
+# MapReduce Kitchen Examples
 
-This example demonstrates the **static `MapReduceEnsemble`** with a restaurant kitchen
-scenario. A large order with 7 dishes is processed using tree-reduction with `chunkSize=3`,
-automatically keeping each reducer's context bounded while all independent tasks run
-concurrently.
+This page demonstrates both the **static** and **adaptive** `MapReduceEnsemble` strategies
+using a restaurant kitchen scenario. A large order with 7 dishes is processed using
+tree-reduction, keeping each reducer's context bounded at every level.
 
-Full source: `agentensemble-examples/src/main/java/net/agentensemble/examples/MapReduceKitchenExample.java`
+**Static mode** (`chunkSize=3`): Full source: `agentensemble-examples/src/main/java/net/agentensemble/examples/MapReduceKitchenExample.java`
 
 ```
 ./gradlew :agentensemble-examples:runMapReduceKitchen
+```
+
+**Adaptive mode** (`targetTokenBudget=4000`): Full source: `agentensemble-examples/src/main/java/net/agentensemble/examples/MapReduceAdaptiveKitchenExample.java`
+
+```
+./gradlew :agentensemble-examples:runMapReduceAdaptiveKitchen
 ```
 
 ---
