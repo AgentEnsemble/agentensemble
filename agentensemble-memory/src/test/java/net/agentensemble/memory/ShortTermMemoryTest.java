@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,9 +24,8 @@ class ShortTermMemoryTest {
     private MemoryEntry entry(String content, String role) {
         return MemoryEntry.builder()
                 .content(content)
-                .agentRole(role)
-                .taskDescription("task")
-                .timestamp(Instant.now())
+                .storedAt(Instant.now())
+                .metadata(Map.of(MemoryEntry.META_AGENT_ROLE, role, MemoryEntry.META_TASK_DESCRIPTION, "task"))
                 .build();
     }
 

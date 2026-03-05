@@ -2,9 +2,47 @@
 
 ## Current Work Focus
 
-Issues #104 and #105 (v2.0.0 Task-First Architecture, Group A) are complete.
+Issues #104 and #105 (v2.0.0 Task-First Architecture, Group A) and issues #106 and #107
+(agentensemble-memory module and task-scoped memory, Group B) are both complete on their
+respective branches:
+- `feat/106-107-memory-module-and-scoped-memory` (PR #123, open)
+- main already includes #104 and #105
 
 ## Recent Changes
+
+### Issue #106: Extract agentensemble-memory module
+
+Moved all memory classes from `agentensemble-core` into a new dedicated
+`agentensemble-memory` Gradle module with a clean SPI boundary.
+
+**Key decisions:**
+- Introduced `MemoryRecord` (carrier record) so `MemoryContext.record()` accepts task
+  output metadata without importing `TaskOutput` from core -- breaks circular dependency
+- `EnsembleMemory` builder throws `IllegalArgumentException` (no dependency on core
+  `ValidationException`)
+- `agentensemble-core` declares `compileOnly(agentensemble-memory)` -- memory is optional
+- All 9 main classes + 6 original test classes moved; 1 new test class
+  (`MemoryOperationListenerTest`) and expanded `MemoryContextTest` for listener callbacks
+
+### Issue #107: Task-scoped cross-execution memory with named scopes
+
+Added `MemoryStore` SPI, `MemoryScope`, `EvictionPolicy`, and `MemoryTool` to
+`agentensemble-memory`. Replaced `Ensemble.builder().memory(EnsembleMemory)` with
+`Ensemble.builder().memoryStore(MemoryStore)` as the primary v2.0.0 memory API.
+
+**New types in `agentensemble-memory`:**
+- `MemoryStore` interface + `InMemoryStore` + `EmbeddingMemoryStore`
+- `MemoryScope` with `MemoryScopeBuilder`
+- `EvictionPolicy` with `keepLastEntries()` and `keepEntriesWithin()` factories
+- `MemoryTool` with `@Tool storeMemory` and `@Tool retrieveMemory`
+- `MemoryEntry` updated: `{content, structuredContent, storedAt, metadata}` (breaking)
+
+**Core changes:**
+- `Task.builder().memory(String)`, `memory(String...)`, `memory(MemoryScope)` -- declare scopes
+- `Ensemble.builder().memoryStore(MemoryStore)` -- replaces `memory(EnsembleMemory)`
+- `ExecutionContext.memoryStore()` -- new accessor
+- `AgentPromptBuilder.buildUserPrompt()` -- injects `## Memory: {scope}` sections
+- `AgentExecutor` -- stores task output in declared scopes after completion
 
 ### Issue #104: Task-First Core -- Task absorbs Agent responsibilities
 
@@ -15,52 +53,37 @@ Static `Ensemble.run(ChatModel, Task...)` convenience method.
 **Modified classes in `agentensemble-core`:**
 - `Task` -- `agent` is now optional (nullable). New fields: `chatLanguageModel`, `tools` (`List<Object>`),
   `maxIterations` (`Integer`). Static factories `Task.of(String)` and `Task.of(String, String)`.
-  Validation updated: agent no longer required; `maxIterations` validated when set; `tools` validated.
 - `Ensemble` -- `agents` field removed from builder. New fields: `chatLanguageModel`, `agentSynthesizer`.
-  Static `Ensemble.run(ChatModel, Task...)` method. `runWithInputs()` now has an agent resolution step
-  after template resolution. `getAgents()` derives from tasks (identity dedup). `selectExecutor()` takes
-  derived agents list. `resolveManagerLlm()` falls back to `chatLanguageModel` then derived agents.
+  Static `Ensemble.run(ChatModel, Task...)` method.
 - `EnsembleValidator` -- `validateAgentsNotEmpty()` and `validateAgentMembership()` removed. New
-  `validateTasksHaveLlm()`: every task must have agent, task-level LLM, or ensemble-level LLM.
-  Hierarchical validation derives roles from tasks with explicit agents.
-- `MapReduceEnsemble` -- removed `ensembleBuilder.agent(agent)` calls (agents on tasks only).
-- `MapReduceAdaptiveExecutor` -- removed all `builder.agent()` calls (agents on tasks only).
+  `validateTasksHaveLlm()`.
 
 **New classes in `agentensemble-core`:**
-- `net.agentensemble.synthesis.SynthesisContext` -- record(ChatModel model, Locale locale)
-- `net.agentensemble.synthesis.AgentSynthesizer` -- SPI interface with static factories
-- `net.agentensemble.synthesis.TemplateAgentSynthesizer` -- verb-to-role lookup, deterministic
-- `net.agentensemble.synthesis.LlmBasedAgentSynthesizer` -- LLM JSON call with template fallback
-
-**Also fixed in other modules:**
-- `agentensemble-examples` -- removed `.agent()` from Ensemble builder calls
-- `agentensemble-devtools` -- removed `.agent()` from Ensemble builder calls in tests
-
-**Tests added:**
-- Unit: `TemplateAgentSynthesizerTest` (25), `LlmBasedAgentSynthesizerTest` (10), `SynthesisContextTest` (3)
-- Unit: Added Task.of(), task-level fields to `TaskTest`
-- Unit: Added maxIterations and tools validation to `TaskValidationTest`
-- Validation: `EnsembleValidationTest` updated (testRun_withEmptyAgents -> testRun_taskWithNoLlm),
-  `HierarchicalEnsembleValidationIntegrationTest` updated
-- All integration tests updated to remove `.agent()` from Ensemble.builder()
+- `net.agentensemble.synthesis.SynthesisContext`
+- `net.agentensemble.synthesis.AgentSynthesizer`
+- `net.agentensemble.synthesis.TemplateAgentSynthesizer`
+- `net.agentensemble.synthesis.LlmBasedAgentSynthesizer`
 
 ### Issue #105: AgentSynthesizer SPI
 
-Delivered as part of Issue #104 above. The AgentSynthesizer SPI is fully integrated.
-
-**Key integration details:**
-- `Ensemble.resolveAgents()` called after template resolution, before workflow execution
-- Task-level `chatLanguageModel` takes precedence over ensemble-level for synthesis
-- Task-level `tools` and `maxIterations` override synthesis defaults
-- Synthesized agents are ephemeral (not cached, not returned by `getAgents()`)
+Delivered as part of Issue #104 above. Fully integrated.
 
 ## Next Steps
 
-- Begin other v2.0.0 workstreams (Groups B-F per design doc)
+- Issues #108+ (human-in-the-loop review gates, partial results redesign)
+- Merge PR #123 (feat/106-107-memory-module-and-scoped-memory)
 
 ## Important Patterns and Preferences
 
-### v2 Task-First API
+### v2.0.0 Memory API (Issues #106/#107)
+- MemoryStore + task scopes is the v2.0.0 primary memory API (replaces EnsembleMemory)
+- Tasks declare scopes with `.memory("name")` -- framework auto-reads before and auto-writes after
+- InMemoryStore: insertion order, most-recent retrieval, eviction supported
+- EmbeddingMemoryStore: semantic similarity via LangChain4j, eviction is no-op
+- MemoryEntry.metadata uses string map -- standard keys "agentRole" and "taskDescription"
+- Scope isolation is absolute: tasks only read from scopes they explicitly declare
+
+### v2 Task-First API (Issues #104/#105)
 - `Task.of(description)` -- zero-ceremony, default expectedOutput, no agent required
 - `Task.of(description, expectedOutput)` -- zero-ceremony with custom output
 - `Ensemble.run(model, tasks...)` -- static factory, single-line ensemble execution
@@ -77,30 +100,7 @@ Delivered as part of Issue #104 above. The AgentSynthesizer SPI is fully integra
 3. Apply task-level maxIterations and tools to synthesized agent
 4. Set resolved agent on task via toBuilder()
 
-### LLM Resolution for Synthesis
-1. task.getChatLanguageModel() != null -> use it
-2. ensemble.getChatLanguageModel() != null -> use it
-3. Neither -> ValidationException ("No LLM available for task")
+## Previous Issues (complete)
 
-### Manager LLM Resolution (hierarchical)
-1. ensemble.managerLlm != null -> use it
-2. ensemble.chatLanguageModel != null -> use it
-3. derivedAgents not empty -> use derivedAgents.get(0).getLlm()
-4. Otherwise -> ValidationException
-
-### getAgents() vs tasks
-- `Ensemble.getAgents()` derives from tasks via identity-based dedup
-- Only tasks with explicit agents contribute
-- Synthesized agents are NOT included (ephemeral)
-- MapReduceEnsembleTest assertions still work (each map task has its own agent)
-
-### Synthesis approach
-- TemplateAgentSynthesizer: first-word verb-to-role lookup (25 verbs mapped), no LLM call
-- LlmBasedAgentSynthesizer: prompt -> JSON parse -> fallback to template on any error
-- Custom: implement AgentSynthesizer interface directly
-
-### Pre-existing patterns (unchanged)
-- Static MapReduce: single `Ensemble.run()` with pre-built DAG, `toEnsemble()` works
-- Adaptive MapReduce: multiple `Ensemble.run()` calls, one per level
-- Carrier tasks use `__carry__:` role prefix for filtering
-- Short-circuit: `directAgent`/`directTask` in adaptive mode
+### Issue #100: MapReduceEnsemble Short-Circuit Optimization (complete)
+### Issue #99: Adaptive MapReduceEnsemble (complete)

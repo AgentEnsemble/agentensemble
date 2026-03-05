@@ -101,7 +101,6 @@ class SequentialEnsembleIntegrationTest {
         var output =
                 Ensemble.builder().task(researchTask).task(writeTask).build().run();
 
-        // Both tasks executed and context was passed (verified by taskOutputs having 2 entries)
         assertThat(output.getTaskOutputs()).hasSize(2);
         assertThat(output.getTaskOutputs().get(0).getRaw()).isEqualTo("Research result: AI is growing");
         assertThat(output.getTaskOutputs().get(1).getRaw()).isEqualTo("Article written with context");
@@ -165,7 +164,6 @@ class SequentialEnsembleIntegrationTest {
 
         var output = Ensemble.builder().task(task).build().run(Map.of("topic", "AI Agents"));
 
-        // The task description stored in output reflects the resolved template
         assertThat(output.getTaskOutputs().get(0).getTaskDescription()).isEqualTo("Research AI Agents developments");
     }
 
@@ -198,9 +196,9 @@ class SequentialEnsembleIntegrationTest {
 
         var output = Ensemble.builder()
                 .task(task)
-                .input("topic", "AI Agents") // builder default
+                .input("topic", "AI Agents")
                 .build()
-                .run(Map.of("topic", "Machine Learning")); // run-time wins
+                .run(Map.of("topic", "Machine Learning"));
 
         assertThat(output.getTaskOutputs().get(0).getTaskDescription())
                 .isEqualTo("Research Machine Learning developments");
@@ -215,11 +213,7 @@ class SequentialEnsembleIntegrationTest {
                 .agent(agent)
                 .build();
 
-        var output = Ensemble.builder()
-                .task(task)
-                .input("year", "2026") // builder provides year
-                .build()
-                .run(Map.of("topic", "AI Agents")); // run-time provides topic
+        var output = Ensemble.builder().task(task).input("year", "2026").build().run(Map.of("topic", "AI Agents"));
 
         assertThat(output.getTaskOutputs().get(0).getTaskDescription())
                 .isEqualTo("Research AI Agents developments in 2026");
@@ -231,10 +225,7 @@ class SequentialEnsembleIntegrationTest {
 
     @Test
     void testValidationFailure_noTasksExecuted() {
-        var researcher = agentWithResponse("Researcher", "result");
-
         var ensemble = Ensemble.builder().build(); // No tasks
-
         assertThatThrownBy(ensemble::run).isInstanceOf(ValidationException.class);
     }
 
@@ -264,7 +255,6 @@ class SequentialEnsembleIntegrationTest {
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var te = (TaskExecutionException) ex;
-                    // The first task's output is preserved
                     assertThat(te.getCompletedTaskOutputs()).hasSize(1);
                     assertThat(te.getCompletedTaskOutputs().get(0).getRaw()).isEqualTo("Research complete");
                     assertThat(te.getTaskDescription()).isEqualTo("Write");
@@ -288,5 +278,91 @@ class SequentialEnsembleIntegrationTest {
         var output = Ensemble.builder().task(task).verbose(true).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Research result");
+    }
+
+    // ========================
+    // v2 task-first: agentless tasks (synthesis path)
+    // ========================
+
+    @Test
+    void testStaticFactory_withTaskLevelLlm_synthesizesAgentAndRuns() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Synthesized result."));
+
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A report")
+                .chatLanguageModel(mockLlm)
+                .build();
+
+        var output = Ensemble.builder().task(task).build().run();
+
+        assertThat(output.getRaw()).isEqualTo("Synthesized result.");
+    }
+
+    @Test
+    void testStaticFactory_ensembleLevelLlm_synthesizesAgentAndRuns() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Result from static factory."));
+
+        var task = Task.of("Summarise the findings", "A three-sentence summary");
+
+        var output = Ensemble.run(mockLlm, task);
+
+        assertThat(output.getRaw()).isEqualTo("Result from static factory.");
+    }
+
+    @Test
+    void testAgentlessTask_withEnsembleLlm_synthesizesAndExecutes() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Output via synthesis."));
+
+        var task = Task.of("Write a blog post about AI");
+
+        var output =
+                Ensemble.builder().chatLanguageModel(mockLlm).task(task).build().run();
+
+        assertThat(output.getRaw()).isEqualTo("Output via synthesis.");
+    }
+
+    @Test
+    void testStaticFactory_nullModel_throwsIllegalArgument() {
+        var task = Task.of("Some task");
+        assertThatThrownBy(() -> Ensemble.run(null, task))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("model must not be null");
+    }
+
+    @Test
+    void testStaticFactory_noTasks_throwsIllegalArgument() {
+        var mockLlm = mock(ChatModel.class);
+        assertThatThrownBy(() -> Ensemble.run(mockLlm))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tasks must not be null or empty");
+    }
+
+    @Test
+    void testAgentlessTask_twoTaskLevelLlms_bothSynthesized() {
+        var llm1 = mock(ChatModel.class);
+        var llm2 = mock(ChatModel.class);
+        when(llm1.chat(any(ChatRequest.class))).thenReturn(textResponse("Task 1 synthesized."));
+        when(llm2.chat(any(ChatRequest.class))).thenReturn(textResponse("Task 2 synthesized."));
+
+        var task1 = Task.builder()
+                .description("Research AI")
+                .expectedOutput("Report")
+                .chatLanguageModel(llm1)
+                .build();
+        var task2 = Task.builder()
+                .description("Summarise AI research")
+                .expectedOutput("Summary")
+                .chatLanguageModel(llm2)
+                .build();
+
+        var output = Ensemble.builder().task(task1).task(task2).build().run();
+
+        assertThat(output.getTaskOutputs()).hasSize(2);
+        assertThat(output.getTaskOutputs().get(0).getRaw()).isEqualTo("Task 1 synthesized.");
+        assertThat(output.getTaskOutputs().get(1).getRaw()).isEqualTo("Task 2 synthesized.");
     }
 }

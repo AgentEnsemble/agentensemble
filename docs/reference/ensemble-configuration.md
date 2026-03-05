@@ -24,7 +24,7 @@ All fields available on `Ensemble.builder()`.
 | `managerPromptStrategy` | `ManagerPromptStrategy` | No | `DefaultManagerPromptStrategy.DEFAULT` | Strategy that builds the Manager agent's system and user prompts. Implement `ManagerPromptStrategy` to inject domain-specific context without forking internals. Only exercised for hierarchical workflow. See [Workflows guide](../guides/workflows.md#customizing-the-manager-prompt). |
 | `parallelErrorStrategy` | `ParallelErrorStrategy` | No | `FAIL_FAST` | Error handling for parallel workflow. `FAIL_FAST` stops on first failure; `CONTINUE_ON_ERROR` lets independent tasks finish and reports all failures in a `ParallelExecutionException`. |
 | `verbose` | `boolean` | No | `false` | When `true`, elevates all agent logging to INFO level. |
-| `memory` | `EnsembleMemory` | No | `null` | Memory configuration. See [Memory Configuration reference](memory-configuration.md). |
+| `memoryStore` | `MemoryStore` | No | `null` | Scoped memory store for cross-execution persistence (v2.0.0). Tasks with declared memory scopes automatically read from and write to this store. Use `MemoryStore.inMemory()` for development/testing or `MemoryStore.embeddings(model, store)` for production. See [Memory guide](../guides/memory.md). |
 | `maxDelegationDepth` | `int` | No | `3` | Maximum peer-delegation depth. Applies when agents have `allowDelegation = true`. Must be greater than zero. |
 | `delegationPolicies` | `List<DelegationPolicy>` | No | `[]` | Pluggable hooks evaluated before each delegation attempt (after built-in guards). Add individual policies with `.delegationPolicy(policy)` (Lombok singular) or a collection with `.delegationPolicies(list)`. Policies run in registration order. A `REJECT` result blocks the delegation; a `MODIFY` result replaces the request; an `ALLOW` result continues evaluation. Applies to both peer and hierarchical delegation. See [Delegation guide](../guides/delegation.md#delegation-policy-hooks). |
 | `hierarchicalConstraints` | `HierarchicalConstraints` | No | `null` | Optional guardrails for the delegation graph (hierarchical workflow only). Enforces required workers, allowed workers, per-worker caps, global delegation cap, and stage ordering. When requiredWorkers are not called by run end, ConstraintViolationException is thrown. See the Delegation guide for full documentation. |
@@ -95,7 +95,7 @@ EnsembleOutput output = Ensemble.builder()
     .input("topic", "AI agents")
     .input("audience", "developers")
     .verbose(false)
-    .memory(EnsembleMemory.builder().shortTerm(true).build())
+    .memoryStore(MemoryStore.inMemory())
     .maxDelegationDepth(2)
     .build()
     .run();

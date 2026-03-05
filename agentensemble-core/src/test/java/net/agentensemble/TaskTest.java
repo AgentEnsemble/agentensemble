@@ -8,6 +8,7 @@ import java.util.List;
 import net.agentensemble.guardrail.GuardrailResult;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
+import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
@@ -502,5 +503,57 @@ class TaskTest {
         assertThat(task.getAgent()).isSameAs(testAgent);
         assertThat(task.getChatLanguageModel()).isSameAs(taskModel);
         assertThat(task.getMaxIterations()).isEqualTo(20);
+    }
+
+    // ========================
+    // v2 memory scope builder methods
+    // ========================
+
+    @Test
+    void testBuild_memorySingleScope_stored() {
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .memory("research")
+                .build();
+
+        assertThat(task.getMemoryScopes()).hasSize(1);
+        assertThat(task.getMemoryScopes().get(0).getName()).isEqualTo("research");
+    }
+
+    @Test
+    void testBuild_memoryVarargScopes_allStored() {
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .memory("scope-a", "scope-b", "scope-c")
+                .build();
+
+        assertThat(task.getMemoryScopes()).hasSize(3);
+        assertThat(task.getMemoryScopes().get(0).getName()).isEqualTo("scope-a");
+        assertThat(task.getMemoryScopes().get(1).getName()).isEqualTo("scope-b");
+        assertThat(task.getMemoryScopes().get(2).getName()).isEqualTo("scope-c");
+    }
+
+    @Test
+    void testBuild_memoryScopeObject_stored() {
+        var scope = MemoryScope.of("weekly-intel");
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .memory(scope)
+                .build();
+
+        assertThat(task.getMemoryScopes()).hasSize(1);
+        assertThat(task.getMemoryScopes().get(0).getName()).isEqualTo("weekly-intel");
+    }
+
+    @Test
+    void testBuild_defaultMemoryScopes_isEmpty() {
+        var task = Task.of("Do something");
+        assertThat(task.getMemoryScopes()).isEmpty();
     }
 }

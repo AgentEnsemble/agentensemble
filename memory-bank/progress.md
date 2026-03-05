@@ -1,5 +1,24 @@
 # Progress
 
+## What Works (as of Issues #106 + #107)
+
+- **agentensemble-memory module** (Issue #106): all memory classes extracted from core
+  into a dedicated module with SPI boundary. `MemoryRecord` carrier decouples `MemoryContext`
+  from core's `TaskOutput`. `agentensemble-core` uses `compileOnly` dependency.
+
+- **Task-scoped cross-execution memory** (Issue #107):
+  - `MemoryStore` SPI with `inMemory()` and `embeddings(model, store)` factories
+  - `InMemoryStore`: insertion-order, most-recent retrieval, eviction supported
+  - `EmbeddingMemoryStore`: LangChain4j-backed semantic similarity, eviction is no-op
+  - `MemoryScope.of(name)` and `MemoryScope.builder()` with eviction config
+  - `EvictionPolicy.keepLastEntries(n)` and `keepEntriesWithin(duration)`
+  - `MemoryTool.of(scope, store)` -- `@Tool storeMemory` and `@Tool retrieveMemory`
+  - `MemoryEntry` updated to `{content, structuredContent, storedAt, metadata}` (v2.0.0 breaking)
+  - `Task.builder().memory(String/String.../MemoryScope)` -- scope declaration
+  - `Ensemble.builder().memoryStore(MemoryStore)` -- replaces old `memory(EnsembleMemory)`
+  - Automatic scope read before task execution and write after completion
+  - Scope isolation enforced by `AgentPromptBuilder` and `AgentExecutor`
+
 ## What Works (as of Issue #100)
 
 - **MapReduceEnsemble short-circuit optimization** (`directAgent`/`directTask`): pre-execution

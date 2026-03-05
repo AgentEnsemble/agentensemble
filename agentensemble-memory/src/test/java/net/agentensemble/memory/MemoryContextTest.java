@@ -12,20 +12,15 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import net.agentensemble.task.TaskOutput;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class MemoryContextTest {
 
-    private TaskOutput taskOutput(String raw, String role, String description) {
-        return TaskOutput.builder()
-                .raw(raw)
-                .agentRole(role)
-                .taskDescription(description)
-                .completedAt(Instant.now())
-                .duration(Duration.ofSeconds(1))
-                .toolCallCount(0)
-                .build();
+    private MemoryRecord memoryRecord(String content, String role, String description) {
+        return new MemoryRecord(content, role, description, Instant.now());
     }
 
     // ========================
@@ -45,10 +40,10 @@ class MemoryContextTest {
     @Test
     void testDisabled_record_isNoOp() {
         MemoryContext ctx = MemoryContext.disabled();
-        TaskOutput output = taskOutput("text", "Agent", "task");
+        MemoryRecord record = memoryRecord("text", "Agent", "task");
 
         // Should not throw
-        ctx.record(output);
+        ctx.record(record);
         assertThat(ctx.getShortTermEntries()).isEmpty();
     }
 
@@ -115,7 +110,6 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().entityMemory(em).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // Entity memory is present but empty -- hasEntityMemory() returns false
         assertThat(ctx.hasEntityMemory()).isFalse();
     }
 
@@ -128,13 +122,13 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        ctx.record(taskOutput("Research complete", "Researcher", "Research AI"));
+        ctx.record(memoryRecord("Research complete", "Researcher", "Research AI"));
 
         List<MemoryEntry> entries = ctx.getShortTermEntries();
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getContent()).isEqualTo("Research complete");
-        assertThat(entries.get(0).getAgentRole()).isEqualTo("Researcher");
-        assertThat(entries.get(0).getTaskDescription()).isEqualTo("Research AI");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_TASK_DESCRIPTION)).isEqualTo("Research AI");
     }
 
     @Test
@@ -142,19 +136,18 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        ctx.record(taskOutput("Output 1", "Agent1", "Task 1"));
-        ctx.record(taskOutput("Output 2", "Agent2", "Task 2"));
-        ctx.record(taskOutput("Output 3", "Agent3", "Task 3"));
+        ctx.record(memoryRecord("Output 1", "Agent1", "Task 1"));
+        ctx.record(memoryRecord("Output 2", "Agent2", "Task 2"));
+        ctx.record(memoryRecord("Output 3", "Agent3", "Task 3"));
 
         assertThat(ctx.getShortTermEntries()).hasSize(3);
     }
 
     @Test
-    void testRecord_nullOutput_isNoOp() {
+    void testRecord_nullRecord_isNoOp() {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // Should not throw
         ctx.record(null);
         assertThat(ctx.getShortTermEntries()).isEmpty();
     }
@@ -169,27 +162,34 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().longTerm(ltm).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        ctx.record(taskOutput("Content", "Agent", "Task"));
+        ctx.record(memoryRecord("Content", "Agent", "Task"));
 
         verify(ltm).store(any(MemoryEntry.class));
     }
 
     @Test
-    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
-        // A MemoryContext configured with short-term only must not route records to any
-        // long-term store. Assert on the observable state rather than using an unwired mock,
-        // which would make verify(mock, never()) vacuously true regardless of behavior.
+    void testRecord_storedEntryHasMetadata() {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // No long-term memory is configured
+        ctx.record(new MemoryRecord("content", "Researcher", "Research task", Instant.now()));
+
+        MemoryEntry entry = ctx.getShortTermEntries().get(0);
+        assertThat(entry.getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
+        assertThat(entry.getMeta(MemoryEntry.META_TASK_DESCRIPTION)).isEqualTo("Research task");
+        assertThat(entry.getStoredAt()).isNotNull();
+    }
+
+    @Test
+    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
         assertThat(ctx.hasLongTerm()).isFalse();
 
-        ctx.record(taskOutput("Content", "Agent", "Task"));
+        ctx.record(memoryRecord("Content", "Agent", "Task"));
 
-        // Short-term was recorded
         assertThat(ctx.getShortTermEntries()).hasSize(1);
-        // Long-term query returns empty (no long-term store)
         assertThat(ctx.queryLongTerm("Content")).isEmpty();
     }
 
@@ -203,9 +203,8 @@ class MemoryContextTest {
         when(ltm.retrieve(anyString(), anyInt()))
                 .thenReturn(List.of(MemoryEntry.builder()
                         .content("past memory")
-                        .agentRole("Agent")
-                        .taskDescription("old task")
-                        .timestamp(Instant.now())
+                        .storedAt(Instant.now())
+                        .metadata(Map.of(MemoryEntry.META_AGENT_ROLE, "Agent"))
                         .build()));
 
         EnsembleMemory config =
@@ -262,9 +261,164 @@ class MemoryContextTest {
         MemoryContext ctx1 = MemoryContext.from(config);
         MemoryContext ctx2 = MemoryContext.from(config);
 
-        ctx1.record(taskOutput("output", "Agent", "task"));
+        ctx1.record(memoryRecord("output", "Agent", "task"));
 
         assertThat(ctx1.getShortTermEntries()).hasSize(1);
         assertThat(ctx2.getShortTermEntries()).isEmpty();
+    }
+
+    // ========================
+    // MemoryRecord with null completedAt uses Instant.now()
+    // ========================
+
+    @Test
+    void testRecord_nullCompletedAt_usesCurrentTime() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        ctx.record(new MemoryRecord("content", "Agent", "task", null));
+
+        List<MemoryEntry> entries = ctx.getShortTermEntries();
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getStoredAt()).isNotNull();
+    }
+
+    // ========================
+    // MemoryOperationListener -- stm write callback
+    // ========================
+
+    @Test
+    void testOperationListener_stmWrite_fireCallback() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicInteger callCount = new AtomicInteger(0);
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onStmWrite() {
+                callCount.incrementAndGet();
+            }
+        });
+
+        ctx.record(memoryRecord("content", "Agent", "task"));
+
+        assertThat(callCount.get()).isEqualTo(1);
+    }
+
+    // ========================
+    // MemoryOperationListener -- ltm store callback
+    // ========================
+
+    @Test
+    void testOperationListener_ltmStore_fireCallback() {
+        LongTermMemory ltm = mock(LongTermMemory.class);
+        EnsembleMemory config = EnsembleMemory.builder().longTerm(ltm).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicInteger callCount = new AtomicInteger(0);
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onLtmStore() {
+                callCount.incrementAndGet();
+            }
+        });
+
+        ctx.record(memoryRecord("content", "Agent", "task"));
+
+        assertThat(callCount.get()).isEqualTo(1);
+    }
+
+    // ========================
+    // MemoryOperationListener -- ltm retrieval callback
+    // ========================
+
+    @Test
+    void testOperationListener_ltmRetrieval_fireCallback() {
+        LongTermMemory ltm = mock(LongTermMemory.class);
+        when(ltm.retrieve(anyString(), anyInt())).thenReturn(List.of());
+        EnsembleMemory config = EnsembleMemory.builder().longTerm(ltm).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicReference<Duration> capturedDuration = new AtomicReference<>();
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onLtmRetrieval(Duration duration) {
+                capturedDuration.set(duration);
+            }
+        });
+
+        ctx.queryLongTerm("some task description");
+
+        assertThat(capturedDuration.get()).isNotNull();
+    }
+
+    // ========================
+    // MemoryOperationListener -- entity lookup callback
+    // ========================
+
+    @Test
+    void testOperationListener_entityLookup_fireCallback() {
+        InMemoryEntityMemory em = new InMemoryEntityMemory();
+        em.put("Entity", "a known fact");
+        EnsembleMemory config = EnsembleMemory.builder().entityMemory(em).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicReference<Duration> capturedDuration = new AtomicReference<>();
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onEntityLookup(Duration duration) {
+                capturedDuration.set(duration);
+            }
+        });
+
+        ctx.getEntityFacts();
+
+        assertThat(capturedDuration.get()).isNotNull();
+    }
+
+    // ========================
+    // setOperationListener(null) removes listener
+    // ========================
+
+    @Test
+    void testSetOperationListener_null_removesListener() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicInteger callCount = new AtomicInteger(0);
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onStmWrite() {
+                callCount.incrementAndGet();
+            }
+        });
+
+        ctx.setOperationListener(null);
+        ctx.record(memoryRecord("content", "Agent", "task"));
+
+        assertThat(callCount.get()).isEqualTo(0);
+    }
+
+    // ========================
+    // clearOperationListener prevents further callbacks
+    // ========================
+
+    @Test
+    void testClearOperationListener_preventsCallback() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
+        AtomicInteger callCount = new AtomicInteger(0);
+        ctx.setOperationListener(new MemoryOperationListener() {
+            @Override
+            public void onStmWrite() {
+                callCount.incrementAndGet();
+            }
+        });
+
+        ctx.clearOperationListener();
+        ctx.record(memoryRecord("content", "Agent", "task"));
+
+        assertThat(callCount.get()).isEqualTo(0);
     }
 }

@@ -19,6 +19,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -44,9 +45,8 @@ class EmbeddingStoreLongTermMemoryTest {
     private MemoryEntry entry(String content, String role) {
         return MemoryEntry.builder()
                 .content(content)
-                .agentRole(role)
-                .taskDescription("Research task")
-                .timestamp(Instant.parse("2026-01-15T10:00:00Z"))
+                .storedAt(Instant.parse("2026-01-15T10:00:00Z"))
+                .metadata(Map.of(MemoryEntry.META_AGENT_ROLE, role, MemoryEntry.META_TASK_DESCRIPTION, "Research task"))
                 .build();
     }
 
@@ -105,9 +105,9 @@ class EmbeddingStoreLongTermMemoryTest {
 
         // Build a realistic TextSegment with metadata
         dev.langchain4j.data.document.Metadata meta = dev.langchain4j.data.document.Metadata.from(
-                        "agentRole", "Researcher")
-                .put("taskDescription", "Research AI trends")
-                .put("timestamp", "2026-01-15T10:00:00Z");
+                        MemoryEntry.META_AGENT_ROLE, "Researcher")
+                .put(MemoryEntry.META_TASK_DESCRIPTION, "Research AI trends")
+                .put("storedAt", "2026-01-15T10:00:00Z");
         TextSegment segment = TextSegment.from("Past research on AI", meta);
         EmbeddingMatch<TextSegment> match = new EmbeddingMatch<>(0.9, "id1", Embedding.from(DUMMY_VECTOR), segment);
         EmbeddingSearchResult<TextSegment> result = new EmbeddingSearchResult<>(List.of(match));
@@ -118,8 +118,8 @@ class EmbeddingStoreLongTermMemoryTest {
 
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getContent()).isEqualTo("Past research on AI");
-        assertThat(entries.get(0).getAgentRole()).isEqualTo("Researcher");
-        assertThat(entries.get(0).getTaskDescription()).isEqualTo("Research AI trends");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_TASK_DESCRIPTION)).isEqualTo("Research AI trends");
     }
 
     @Test

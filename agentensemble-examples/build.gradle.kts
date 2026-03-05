@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":agentensemble-core"))
+    implementation(project(":agentensemble-memory"))
 
     // Built-in tool modules used by examples
     implementation(project(":agentensemble-tools:calculator"))

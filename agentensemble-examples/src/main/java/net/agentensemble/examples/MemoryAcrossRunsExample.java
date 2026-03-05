@@ -1,38 +1,35 @@
 package net.agentensemble.examples;
 
-import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.memory.EmbeddingStoreLongTermMemory;
-import net.agentensemble.memory.EnsembleMemory;
-import net.agentensemble.memory.EntityMemory;
-import net.agentensemble.memory.InMemoryEntityMemory;
-import net.agentensemble.memory.LongTermMemory;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Demonstrates long-term memory persisting task outputs across ensemble runs.
+ * Demonstrates task-scoped cross-execution memory persisting outputs across ensemble runs.
  *
  * A competitive intelligence system that runs three simulated weekly cycles.
- * Each run produces a market analysis. Long-term memory means that each
- * week's agents can draw on all prior weeks' analyses when formulating reports.
+ * Each run produces a market analysis. Because both tasks declare the same
+ * named memory scope ("weekly-intelligence"), each week's agents can draw on
+ * all prior weeks' outputs when formulating reports.
  *
- * Memory types used:
- *   - Short-term memory  -- agents within a run share outputs automatically
- *   - Long-term memory   -- past run outputs retrieved by semantic similarity
- *   - Entity memory      -- stable company facts available to all agents in every run
+ * How it works (v2.0.0 MemoryStore API):
+ *   - A shared {@code MemoryStore.inMemory()} instance is created once
+ *   - Both tasks declare {@code .memory("weekly-intelligence")}
+ *   - Before each task executes, entries from "weekly-intelligence" are injected
+ *     into the agent's prompt automatically
+ *   - After each task completes, the output is stored into "weekly-intelligence"
+ *   - In run 2, the agents see run 1's outputs; in run 3, they see runs 1 and 2
  *
- * Note: This example uses InMemoryEmbeddingStore, which does not persist across
- * JVM restarts. In production, use a durable store (Chroma, Qdrant, pgvector, etc.).
+ * Note: InMemoryStore does not persist across JVM restarts. For production use,
+ * back MemoryStore with a durable embedding store:
+ *   {@code MemoryStore.embeddings(embeddingModel, embeddingStore)}
  *
  * Usage:
  *   Set OPENAI_API_KEY environment variable, then run:
@@ -56,32 +53,9 @@ public class MemoryAcrossRunsExample {
                 .modelName("gpt-4o-mini")
                 .build();
 
-        var embeddingModel = OpenAiEmbeddingModel.builder()
-                .apiKey(apiKey)
-                .modelName("text-embedding-3-small")
-                .build();
-
-        // InMemoryEmbeddingStore for demonstration.
-        // In production, use a durable store (Chroma, Qdrant, etc.) that persists across JVM restarts.
-        EmbeddingStore<TextSegment> store = new InMemoryEmbeddingStore<>();
-        LongTermMemory longTerm = new EmbeddingStoreLongTermMemory(store, embeddingModel);
-
-        // Entity memory: stable facts about the company being analysed
-        EntityMemory entities = new InMemoryEntityMemory();
-        entities.put(
-                "TechCorp",
-                "A publicly traded software company (ticker: TECH) "
-                        + "specialising in cloud infrastructure tools. "
-                        + "Founded 2012. Headquarters: Austin, TX.");
-        entities.put("TechCorp CEO", "Sarah Mitchell. Joined as CEO in 2019 from AWS.");
-
-        // Memory configuration shared across all runs
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .shortTerm(true)
-                .longTerm(longTerm)
-                .entityMemory(entities)
-                .longTermMaxResults(3)
-                .build();
+        // Single MemoryStore shared across all three runs.
+        // Entries accumulate each week so later runs have richer context.
+        MemoryStore store = MemoryStore.inMemory();
 
         // ========================
         // Define agents (reused across runs)
@@ -105,49 +79,65 @@ public class MemoryAcrossRunsExample {
 
         // ========================
         // Define tasks (reused across runs)
+        //
+        // Both tasks declare .memory("weekly-intelligence").
+        // The framework will:
+        //   1. Read prior entries from the scope before each task runs
+        //   2. Inject them into the agent's prompt as "## Memory: weekly-intelligence"
+        //   3. Store each task's output into the scope after it completes
         // ========================
 
         var analysisTask = Task.builder()
                 .description("Analyse TechCorp's competitive environment for week of {week}. "
-                        + "Draw on any relevant historical context from long-term memory.")
+                        + "Draw on any relevant historical context from memory.")
                 .expectedOutput("A 300-word competitive intelligence briefing for the week of {week}")
                 .agent(analyst)
+                .memory("weekly-intelligence")
                 .build();
 
         var recommendationTask = Task.builder()
                 .description("Provide strategic recommendations for TechCorp based on the " + "week of {week} analysis")
                 .expectedOutput("Three specific, actionable strategic recommendations with supporting rationale")
                 .agent(strategist)
+                .memory("weekly-intelligence")
                 .build();
 
-        // Create the ensemble once and reuse it across all runs
+        // Create the ensemble once and reuse it across all runs.
+        // The memoryStore is shared so entries accumulate across runs.
         Ensemble ensemble = Ensemble.builder()
                 .task(analysisTask)
                 .task(recommendationTask)
                 .workflow(Workflow.SEQUENTIAL)
-                .memory(memory)
+                .memoryStore(store)
                 .build();
 
         // ========================
         // Run 1: Week 1
+        // Scope is empty -- agents work from scratch
         // ========================
         System.out.println("\n" + "=".repeat(60));
         System.out.println("RUN 1: WEEK OF 2026-01-06");
         System.out.println("=".repeat(60));
         EnsembleOutput run1 = ensemble.run(Map.of("week", "2026-01-06"));
         System.out.println(run1.getRaw());
-        System.out.printf("Duration: %s%n", run1.getTotalDuration());
+        System.out.printf(
+                "Duration: %s | Scope entries after run: %s%n",
+                run1.getTotalDuration(),
+                store.retrieve("weekly-intelligence", "TechCorp", 100).size());
 
         // ========================
         // Run 2: Week 2
-        // Long-term memory now contains Week 1 outputs
+        // Scope now contains Week 1 outputs; agents see prior context
         // ========================
         System.out.println("\n" + "=".repeat(60));
         System.out.println("RUN 2: WEEK OF 2026-01-13");
         System.out.println("=".repeat(60));
         EnsembleOutput run2 = ensemble.run(Map.of("week", "2026-01-13"));
         System.out.println(run2.getRaw());
-        System.out.printf("Duration: %s%n", run2.getTotalDuration());
+        System.out.printf(
+                "Duration: %s | Scope entries after run: %s%n",
+                run2.getTotalDuration(),
+                store.retrieve("weekly-intelligence", "TechCorp", 100).size());
 
         // ========================
         // Run 3: Week 3
@@ -158,6 +148,9 @@ public class MemoryAcrossRunsExample {
         System.out.println("=".repeat(60));
         EnsembleOutput run3 = ensemble.run(Map.of("week", "2026-01-20"));
         System.out.println(run3.getRaw());
-        System.out.printf("Duration: %s%n", run3.getTotalDuration());
+        System.out.printf(
+                "Duration: %s | Scope entries after run: %s%n",
+                run3.getTotalDuration(),
+                store.retrieve("weekly-intelligence", "TechCorp", 100).size());
     }
 }
