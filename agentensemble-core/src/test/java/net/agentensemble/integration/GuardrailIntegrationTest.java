@@ -65,8 +65,7 @@ class GuardrailIntegrationTest {
                 .inputGuardrails(List.of(input -> GuardrailResult.success()))
                 .build();
 
-        EnsembleOutput output =
-                Ensemble.builder().agent(agent).task(task).build().run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Result from agent");
         verify(mockLlm).chat(any(ChatRequest.class));
@@ -88,8 +87,7 @@ class GuardrailIntegrationTest {
                 .inputGuardrails(List.of(input -> GuardrailResult.failure("prohibited content in task")))
                 .build();
 
-        assertThatThrownBy(
-                        () -> Ensemble.builder().agent(agent).task(task).build().run())
+        assertThatThrownBy(() -> Ensemble.builder().task(task).build().run())
                 .isInstanceOf(TaskExecutionException.class)
                 .cause()
                 .isInstanceOf(GuardrailViolationException.class)
@@ -121,8 +119,7 @@ class GuardrailIntegrationTest {
                 .outputGuardrails(List.of(output -> GuardrailResult.success()))
                 .build();
 
-        EnsembleOutput output =
-                Ensemble.builder().agent(agent).task(task).build().run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Accepted response");
     }
@@ -146,8 +143,7 @@ class GuardrailIntegrationTest {
                         : GuardrailResult.success()))
                 .build();
 
-        assertThatThrownBy(
-                        () -> Ensemble.builder().agent(agent).task(task).build().run())
+        assertThatThrownBy(() -> Ensemble.builder().task(task).build().run())
                 .isInstanceOf(TaskExecutionException.class)
                 .cause()
                 .isInstanceOf(GuardrailViolationException.class)
@@ -185,11 +181,8 @@ class GuardrailIntegrationTest {
                 .inputGuardrails(List.of(input -> GuardrailResult.failure("blocked")))
                 .build();
 
-        assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
-                        .tasks(List.of(task1, task2))
-                        .build()
-                        .run())
+        assertThatThrownBy(() ->
+                        Ensemble.builder().tasks(List.of(task1, task2)).build().run())
                 .isInstanceOf(TaskExecutionException.class)
                 .satisfies(ex -> {
                     var e = (TaskExecutionException) ex;
@@ -224,8 +217,7 @@ class GuardrailIntegrationTest {
                 }))
                 .build();
 
-        assertThatThrownBy(
-                        () -> Ensemble.builder().agent(agent).task(task).build().run())
+        assertThatThrownBy(() -> Ensemble.builder().task(task).build().run())
                 .isInstanceOf(TaskExecutionException.class)
                 .cause()
                 .isInstanceOf(GuardrailViolationException.class)
@@ -258,7 +250,6 @@ class GuardrailIntegrationTest {
 
         try {
             Ensemble.builder()
-                    .agent(agent)
                     .task(task)
                     .onTaskFailed(failedEvents::add)
                     .build()
@@ -289,8 +280,7 @@ class GuardrailIntegrationTest {
                 .outputGuardrails(List.of(output -> GuardrailResult.failure("output rejected")))
                 .build();
 
-        assertThatThrownBy(
-                        () -> Ensemble.builder().agent(agent).task(task).build().run())
+        assertThatThrownBy(() -> Ensemble.builder().task(task).build().run())
                 .isInstanceOf(TaskExecutionException.class)
                 .cause()
                 .isInstanceOf(GuardrailViolationException.class)

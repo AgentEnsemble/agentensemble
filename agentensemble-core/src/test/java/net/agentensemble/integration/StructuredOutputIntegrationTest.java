@@ -59,7 +59,7 @@ class StructuredOutputIntegrationTest {
                 .outputType(ResearchReport.class)
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run();
+        var output = Ensemble.builder().task(task).build().run();
 
         // Raw output is preserved
         assertThat(output.getRaw()).contains("AI Trends");
@@ -90,7 +90,7 @@ class StructuredOutputIntegrationTest {
                 .outputType(ResearchReport.class)
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run();
+        var output = Ensemble.builder().task(task).build().run();
 
         ResearchReport report = output.getTaskOutputs().get(0).getParsedOutput(ResearchReport.class);
         assertThat(report.title()).isEqualTo("Report");
@@ -121,7 +121,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(3)
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run();
+        var output = Ensemble.builder().task(task).build().run();
 
         // LLM was called twice: once for main execution, once for the retry
         verify(mockLlm, times(2)).chat(any(ChatRequest.class));
@@ -152,7 +152,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(maxRetries)
                 .build();
 
-        var ensemble = Ensemble.builder().agent(agent).task(task).build();
+        var ensemble = Ensemble.builder().task(task).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(OutputParsingException.class)
@@ -184,7 +184,7 @@ class StructuredOutputIntegrationTest {
                 .maxOutputRetries(0)
                 .build();
 
-        var ensemble = Ensemble.builder().agent(agent).task(task).build();
+        var ensemble = Ensemble.builder().task(task).build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(OutputParsingException.class)
@@ -217,7 +217,7 @@ class StructuredOutputIntegrationTest {
                 // no outputType
                 .build();
 
-        var output = Ensemble.builder().agent(agent).task(task).build().run();
+        var output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Plain text response");
 
@@ -262,13 +262,8 @@ class StructuredOutputIntegrationTest {
                 // no outputType -- plain text
                 .build();
 
-        var output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(researchTask)
-                .task(writeTask)
-                .build()
-                .run();
+        var output =
+                Ensemble.builder().task(researchTask).task(writeTask).build().run();
 
         // Task 1: structured output available
         var researchOutput = output.getTaskOutputs().get(0);
@@ -315,8 +310,6 @@ class StructuredOutputIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent1)
-                .agent(agent2)
                 .task(task1)
                 .task(task2)
                 .workflow(Workflow.PARALLEL)

@@ -71,12 +71,8 @@ public class MetricsExample {
         // ========================
         // Run with metrics configured
         // ========================
-        EnsembleOutput output = Ensemble.builder()
-                .agent(analyst)
-                .task(task)
-                .toolMetrics(toolMetrics)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().task(task).toolMetrics(toolMetrics).build().run();
 
         System.out.println("=== Agent Output ===");
         System.out.println(output.getRaw());

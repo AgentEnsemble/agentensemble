@@ -177,8 +177,6 @@ public class CallbackExample {
         // Build and run with callbacks
         // ========================
         var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(researchTask)
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)

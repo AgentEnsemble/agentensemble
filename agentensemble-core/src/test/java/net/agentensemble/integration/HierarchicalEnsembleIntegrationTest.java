@@ -68,7 +68,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)
@@ -111,8 +110,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(researchTask)
                 .task(writeTask)
                 .workflow(Workflow.HIERARCHICAL)
@@ -150,7 +147,6 @@ class HierarchicalEnsembleIntegrationTest {
 
         // No managerLlm set -- should default to first agent's LLM
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .build()
@@ -179,7 +175,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(worker)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)
@@ -209,7 +204,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(worker)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)
@@ -231,23 +225,28 @@ class HierarchicalEnsembleIntegrationTest {
 
         when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
 
-        Agent worker =
-                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
+        // Use distinct roles -- HIERARCHICAL requires unique roles for unambiguous delegation
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(workerModel)
+                .build();
+        Agent analyst =
+                Agent.builder().role("Analyst").goal("Analyse").llm(workerModel).build();
         Task task1 = Task.builder()
                 .description("Task one")
                 .expectedOutput("Output one")
-                .agent(worker)
+                .agent(researcher)
                 .build();
         Task task2 = Task.builder()
                 .description("Task two")
                 .expectedOutput("Output two")
-                .agent(worker)
+                .agent(analyst)
                 .context(List.of(task1))
                 .build();
 
         // task2 listed before task1 -- valid for HIERARCHICAL (no ordering constraint)
         assertThatCode(() -> Ensemble.builder()
-                        .agent(worker)
                         .task(task2)
                         .task(task1)
                         .workflow(Workflow.HIERARCHICAL)
@@ -277,7 +276,6 @@ class HierarchicalEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(worker)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)

@@ -55,12 +55,8 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memory(memory)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().task(task).memory(memory).build().run();
 
         // Output is correct regardless of memory
         assertThat(output.getRaw()).isEqualTo("AI is growing fast.");
@@ -97,8 +93,6 @@ class MemoryEnsembleIntegrationTest {
         EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent)
-                .agent(writerAgent)
                 .task(researchTask)
                 .task(writeTask)
                 .memory(memory)
@@ -145,8 +139,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent)
-                .agent(writerAgent)
                 .task(researchTask)
                 .task(writeTask)
                 .memory(EnsembleMemory.builder().shortTerm(true).build())
@@ -181,7 +173,7 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
+        Ensemble.builder().task(task).memory(memory).build().run();
 
         // The task output should be stored into long-term memory
         ArgumentCaptor<MemoryEntry> captor = ArgumentCaptor.forClass(MemoryEntry.class);
@@ -217,7 +209,7 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
 
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
+        Ensemble.builder().task(task).memory(memory).build().run();
 
         // Capture the prompt sent to the LLM
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
@@ -252,7 +244,7 @@ class MemoryEnsembleIntegrationTest {
 
         EnsembleMemory memory = EnsembleMemory.builder().entityMemory(em).build();
 
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
+        Ensemble.builder().task(task).memory(memory).build().run();
 
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
         verify(llm).chat(captor.capture());
@@ -281,7 +273,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .build() // No .memory() call
                 .run();
@@ -328,9 +319,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(analyst)
-                .agent(writer)
                 .task(t1)
                 .task(t2)
                 .task(t3)

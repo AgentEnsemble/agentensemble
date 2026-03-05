@@ -55,7 +55,6 @@ class HierarchicalEnsembleValidationIntegrationTest {
                 Agent.builder().role("Worker").goal("Work").llm(managerModel).build();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
                         .workflow(Workflow.HIERARCHICAL)
                         .managerLlm(managerModel)
                         .build()
@@ -65,25 +64,23 @@ class HierarchicalEnsembleValidationIntegrationTest {
     }
 
     @Test
-    void testHierarchicalWorkflow_emptyAgents_throwsValidation() {
+    void testHierarchicalWorkflow_taskWithNoLlmSource_throwsValidation() {
+        // In v2, a task with no explicit agent requires either a task-level or
+        // ensemble-level chatLanguageModel. Without either, validation fails.
         ChatModel managerModel = mock(ChatModel.class);
-        ChatModel workerModel = mock(ChatModel.class);
-        Agent agent =
-                Agent.builder().role("Worker").goal("Work").llm(workerModel).build();
-        Task task = Task.builder()
-                .description("Task")
+        Task agentlessTask = Task.builder()
+                .description("Task with no LLM source")
                 .expectedOutput("Result")
-                .agent(agent)
-                .build();
+                .build(); // no agent, no chatLanguageModel
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .task(task)
+                        .task(agentlessTask) // no ensemble chatLanguageModel either
                         .workflow(Workflow.HIERARCHICAL)
                         .managerLlm(managerModel)
                         .build()
                         .run())
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("agent");
+                .hasMessageContaining("LLM");
     }
 
     // ========================
@@ -115,7 +112,6 @@ class HierarchicalEnsembleValidationIntegrationTest {
         List<TaskCompleteEvent> completeEvents = new ArrayList<>();
 
         Ensemble.builder()
-                .agent(researcher)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)

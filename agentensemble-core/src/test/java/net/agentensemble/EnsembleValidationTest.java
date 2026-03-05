@@ -34,7 +34,7 @@ class EnsembleValidationTest {
     @Test
     void testRun_withEmptyTasks_throwsValidation() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).build();
+        var ensemble = Ensemble.builder().build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(ValidationException.class)
@@ -42,41 +42,40 @@ class EnsembleValidationTest {
     }
 
     // ========================
-    // Validation: agents
+    // Validation: LLM availability (v2)
     // ========================
 
     @Test
-    void testRun_withEmptyAgents_throwsValidation() {
-        var researcher = agent("Researcher");
-        var researchTask = task("Research task", researcher);
-        var ensemble = Ensemble.builder().task(researchTask).build();
-
-        assertThatThrownBy(ensemble::run)
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("agent");
-    }
-
-    // ========================
-    // Validation: agent membership
-    // ========================
-
-    @Test
-    void testRun_withUnregisteredAgent_throwsValidation() {
-        var registeredAgent = agent("Researcher");
-        var unregisteredAgent = agent("Writer");
-        var researchTask = task("Research task", registeredAgent);
-        var writeTask = task("Write task", unregisteredAgent); // unregistered agent
+    void testRun_taskWithNoAgentAndNoLlm_throwsValidation() {
+        // In v2, a task with no explicit agent requires either a task-level or
+        // ensemble-level chatLanguageModel for synthesis. Without either, validation fails.
+        var agentlessTask = Task.builder()
+                .description("Research task")
+                .expectedOutput("A report")
+                .build(); // no agent, no chatLanguageModel
 
         var ensemble = Ensemble.builder()
-                .agent(registeredAgent) // only researcher registered
-                .task(researchTask)
-                .task(writeTask)
+                .task(agentlessTask) // no ensemble-level chatLanguageModel either
                 .build();
 
         assertThatThrownBy(ensemble::run)
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Writer")
-                .hasMessageContaining("not in the ensemble");
+                .hasMessageContaining("LLM");
+    }
+
+    @Test
+    void testRun_tasksWithExplicitAgents_noRegistrationRequired() {
+        // In v2, agents are on tasks directly -- no separate registration needed.
+        // Two tasks with different explicit agents is always valid.
+        var researcher = agent("Researcher");
+        var writer = agent("Writer");
+        var researchTask = task("Research task", researcher);
+        var writeTask = task("Write task", writer);
+
+        var ensemble = Ensemble.builder().task(researchTask).task(writeTask).build();
+
+        // Both tasks have explicit agents -- no ValidationException should be thrown
+        assertThatThrownBy(ensemble::run).isNotInstanceOf(ValidationException.class);
     }
 
     // ========================
@@ -94,11 +93,7 @@ class EnsembleValidationTest {
                 taskA.toBuilder().description("Task B").context(List.of(taskA)).build();
         var taskAWithDep = taskA.toBuilder().context(List.of(taskB)).build();
 
-        var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .task(taskAWithDep)
-                .task(taskB)
-                .build();
+        var ensemble = Ensemble.builder().task(taskAWithDep).task(taskB).build();
 
         // taskAWithDep references taskB, but taskB appears later in the list
         assertThatThrownBy(ensemble::run)
@@ -124,7 +119,6 @@ class EnsembleValidationTest {
 
         // Adding secondTask BEFORE firstTask in the list violates ordering
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .task(secondTask) // second task first -- violation
                 .task(firstTask)
                 .build();
@@ -147,8 +141,6 @@ class EnsembleValidationTest {
         var taskB = task("Task B", worker);
 
         var ensemble = Ensemble.builder()
-                .agent(manager)
-                .agent(worker)
                 .task(taskA)
                 .task(taskB)
                 .workflow(Workflow.HIERARCHICAL)
@@ -168,8 +160,6 @@ class EnsembleValidationTest {
         var taskB = task("Task B", researcher2);
 
         var ensemble = Ensemble.builder()
-                .agent(researcher1)
-                .agent(researcher2)
                 .task(taskA)
                 .task(taskB)
                 .workflow(Workflow.HIERARCHICAL)
@@ -187,7 +177,6 @@ class EnsembleValidationTest {
         var taskA = task("Task A", worker);
 
         var ensemble = Ensemble.builder()
-                .agent(worker)
                 .task(taskA)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerMaxIterations(0)
@@ -210,7 +199,6 @@ class EnsembleValidationTest {
                 .build();
 
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .task(mainTask) // externalTask not added to ensemble
                 .build();
 
@@ -229,7 +217,6 @@ class EnsembleValidationTest {
         var researchTask = task("Research AI trends", researcher);
 
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .task(researchTask)
                 .workflow(Workflow.SEQUENTIAL)
                 .verbose(true)
@@ -253,8 +240,6 @@ class EnsembleValidationTest {
                 .build();
 
         var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(researchTask) // research first
                 .task(writeTask) // write second (depends on research)
                 .build();
