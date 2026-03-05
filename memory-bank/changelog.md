@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] -- Remove GitHub Packages publishing -- 2026-03-04
+
+### Removed
+- GitHub Packages publish step (`publishAllPublicationsToGitHubPackagesRepository`) removed
+  from `.github/workflows/release.yml`
+- `packages: write` permission removed from `.github/workflows/release.yml`
+  (only `contents: write` is still needed)
+- `publishing { repositories { maven { name = "GitHubPackages" ... } } }` block removed from:
+  - `agentensemble-core/build.gradle.kts`
+  - `agentensemble-metrics-micrometer/build.gradle.kts`
+  - `agentensemble-tools/bom/build.gradle.kts`
+  - `buildSrc/src/main/kotlin/agentensemble.tool-conventions.gradle.kts`
+
+Maven Central remains the sole publication target for all modules.
+
+---
+
 ## [Implemented / branch ready] Issues #78 + #79 -- 2026-03-04
 
 Feature branch: `feature/delegation-policy-hooks-and-lifecycle-events`
