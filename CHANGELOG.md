@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.1.0...v1.2.0) (2026-03-05)
+
+
+### Features
+
+* delegation policy hooks ([#78](https://github.com/AgentEnsemble/agentensemble/issues/78)) and lifecycle events ([#79](https://github.com/AgentEnsemble/agentensemble/issues/79)) ([#84](https://github.com/AgentEnsemble/agentensemble/issues/84)) ([abfe488](https://github.com/AgentEnsemble/agentensemble/commit/abfe48869e5e403a291d1368838cdf739640726e))
+
 ## [1.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.0.1...v1.1.0) (2026-03-05)
 
 
