@@ -2,66 +2,59 @@
 
 ## Current Work Focus
 
-Issue #98 (Static MapReduceEnsemble with chunkSize) is complete on branch
-`feat/issue-98-static-map-reduce-ensemble`. All acceptance criteria satisfied.
+Issue #99 (Adaptive MapReduceEnsemble with targetTokenBudget) is complete on branch
+`feat/issue-99-adaptive-map-reduce-ensemble`.
 
 ## Recent Changes
 
-### Issue #98 -- Static MapReduceEnsemble with chunkSize (v2.0.0)
+### Issue #99: Adaptive MapReduceEnsemble
 
-**New class: `net.agentensemble.mapreduce.MapReduceEnsemble<T>`**
+Extends `MapReduceEnsemble<T>` with an adaptive strategy that drives tree reduction based on
+actual output token counts at runtime.
 
-- Builder with required fields: `items`, `mapAgent`, `mapTask`, `reduceAgent`, `reduceTask`
-- `chunkSize` with default 5, validated >= 2
-- All Ensemble passthrough fields: `verbose`, `listener(s)`, `captureMode`,
-  `parallelErrorStrategy`, `costConfiguration`, `traceExporter`, `toolExecutor`,
-  `toolMetrics`, `input`/`inputs`
-- Static DAG construction algorithm: O(log_K(N)) tree depth
-  - N <= K: N map tasks + 1 final reduce (no intermediate level)
-  - N > K: intermediate reduce levels until level size <= K, then final reduce
-- `toEnsemble()` returns pre-built inner `Ensemble` (Workflow.PARALLEL)
-- `run()` / `run(Map)` delegate to inner Ensemble
-- `getNodeTypes()` / `getMapReduceLevels()` for devtools enrichment
+**New classes in `agentensemble-core`:**
+- `MapReduceTokenEstimator` - 3-tier token estimation (provider count -> custom function -> heuristic)
+- `MapReduceBinPacker` - first-fit-decreasing bin-packing algorithm
+- `MapReduceAdaptiveExecutor<T>` - level-by-level adaptive execution engine
+- `PassthroughChatModel` - returns fixed text; used for carrier tasks between adaptive levels
+- `MapReduceLevelSummary` - per-level summary in `ExecutionTrace`
+
+**Modified classes:**
+- `MapReduceEnsemble` - new builder fields (`targetTokenBudget`, `contextWindowSize`,
+  `budgetRatio`, `maxReduceLevels`, `tokenEstimator`), adaptive/static dispatch,
+  `isAdaptiveMode()`, `toEnsemble()` throws in adaptive mode
+- `TaskTrace` - added `nodeType` and `mapReduceLevel` fields
+- `ExecutionTrace` - added `mapReduceLevels` list (List<MapReduceLevelSummary>)
+- `DagExporter` - added `build(ExecutionTrace)` for post-execution adaptive DAG export
+
+**Key design decision:** Carrier tasks backed by `PassthroughChatModel` propagate context
+from one adaptive level to the next. Carrier task traces and outputs are filtered from the
+aggregated `EnsembleOutput` and `ExecutionTrace`.
 
 **Tests added:**
-- `MapReduceEnsembleTest` (35 unit tests): builder validation, DAG construction
-  for N=1/3/4/9/25/26 with K=3/5, context wiring, agent counts, factory
-  distinct-instance guarantees, all optional builder setter coverage
-- `MapReduceEnsembleIntegrationTest` (13 integration tests): N=6/K=3 end-to-end,
-  FAIL_FAST, CONTINUE_ON_ERROR, runtime input overrides, metadata accessors
-
-**agentensemble-devtools changes:**
-- `DagTaskNode`: added `nodeType` (`"map"`, `"reduce"`, `"final-reduce"`) and
-  `mapReduceLevel` (int) optional fields
-- `DagModel`: added `mapReduceMode` (`"STATIC"`, `"ADAPTIVE"`) optional field;
-  `schemaVersion` bumped from `"1.0"` to `"1.1"`
-- `DagExporter.build(MapReduceEnsemble<?>)`: new overload that enriches task nodes
-  with map-reduce metadata and sets `mapReduceMode = "STATIC"`
-- `DagExporterTest`: 11 new tests for the MapReduceEnsemble overload
-
-**agentensemble-viz changes:**
-- `types/dag.ts`: `nodeType?` and `mapReduceLevel?` on `DagTaskNode`;
-  `mapReduceMode?` on `DagModel`; schema version docs updated to 1.1
-- `TaskNode.tsx`: renders MAP, REDUCE Ln, AGGREGATE, DIRECT badges for
-  map-reduce node types via conditional rendering
-
-**Example:**
-- `MapReduceKitchenExample.java`: 7-dish restaurant order, chunkSize=3,
-  structured output via `DishResult` record
-- `runMapReduceKitchen` Gradle task in `agentensemble-examples/build.gradle.kts`
-
-**Documentation:**
-- `docs/guides/map-reduce.md`: comprehensive guide (algorithm, chunkSize tuning,
-  wiring context, structured output, error handling, devtools, comparison table)
-- `docs/examples/map-reduce.md`: kitchen example walkthrough
-- `docs/reference/ensemble-configuration.md`: MapReduceEnsemble builder tables
-- `mkdocs.yml`: guide and example pages in nav
-- `README.md`: MapReduceEnsemble section, `runMapReduceKitchen` in examples,
-  v2.0.0 in roadmap, `14-map-reduce.md` in design docs
+- Unit: `MapReduceTokenEstimatorTest` (12), `MapReduceBinPackerTest` (13),
+  `MapReduceEnsembleAdaptiveValidationTest` (22)
+- Integration: `MapReduceEnsembleAdaptiveRunTest` (9) using mock ChatModels
+- Devtools: `DagExporterTest` + 8 new `build(ExecutionTrace)` tests
 
 ## Next Steps
 
-- PR for issue #98 -- close out the issue on GitHub
-- Issue #99 -- Adaptive MapReduceEnsemble with `targetTokenBudget` (v2.1.0)
-- Issue #100 -- MapReduceEnsemble short-circuit optimization (v2.2.0)
-- See `design/13-future-roadmap.md` and `design/14-map-reduce.md` for next phases
+- PR and close issue #99
+- Issue #100: Short-circuit optimization (`directAgent`/`directTask`) - v2.1.0
+  Depends on issue #99 (this work)
+
+## Important Patterns and Preferences
+
+- Static MapReduce: single `Ensemble.run()` with pre-built DAG, `toEnsemble()` works
+- Adaptive MapReduce: multiple `Ensemble.run()` calls, one per level; carrier tasks
+  bridge context between levels; `toEnsemble()` throws `UnsupportedOperationException`
+- `CONTINUE_ON_ERROR` with partial map failures: `ParallelExecutionException` carries
+  surviving `completedTaskOutputs`; adaptive executor extracts these to proceed
+- Trace aggregation: all traces from all levels combined into single `ExecutionTrace`
+  with `workflow = "MAP_REDUCE_ADAPTIVE"` and per-level summaries in `mapReduceLevels`
+- Post-execution DAG export: `DagExporter.build(ExecutionTrace)` for adaptive runs
+- Carrier tasks use `__carry__:` role prefix for filtering from aggregated output
+
+## Active Branch
+
+`feat/issue-99-adaptive-map-reduce-ensemble`
