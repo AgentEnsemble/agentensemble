@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.0.1...v1.1.0) (2026-03-05)
+
+
+### Features
+
+* structured delegation contracts ([#77](https://github.com/AgentEnsemble/agentensemble/issues/77)) and manager prompt extension hook ([#80](https://github.com/AgentEnsemble/agentensemble/issues/80)) ([#82](https://github.com/AgentEnsemble/agentensemble/issues/82)) ([e9b1cdc](https://github.com/AgentEnsemble/agentensemble/commit/e9b1cdcec19c870109c0f3db6dd1a353d7a92afb))
+
 ## [1.0.1](https://github.com/AgentEnsemble/agentensemble/compare/v1.0.0...v1.0.1) (2026-03-04)
 
 
