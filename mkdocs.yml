@@ -85,6 +85,7 @@ nav:
     - Guardrails: guides/guardrails.md
     - Logging: guides/logging.md
     - Template Variables: guides/template-variables.md
+    - Framework Integration: guides/framework-integration.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
