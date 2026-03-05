@@ -12,6 +12,7 @@ import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.execution.ExecutionContext;
@@ -65,11 +66,12 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     private final List<Agent> workerAgents;
     private final int managerMaxIterations;
     private final int maxDelegationDepth;
+    private final List<DelegationPolicy> delegationPolicies;
     private final AgentExecutor agentExecutor;
     private final ManagerPromptStrategy promptStrategy;
 
     /**
-     * Creates an executor using the {@link DefaultManagerPromptStrategy}.
+     * Creates an executor using the {@link DefaultManagerPromptStrategy} and no delegation policies.
      *
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
@@ -82,7 +84,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     /**
-     * Creates an executor with a custom {@link ManagerPromptStrategy}.
+     * Creates an executor with a custom {@link ManagerPromptStrategy} and no delegation policies.
      *
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
@@ -97,10 +99,33 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             int managerMaxIterations,
             int maxDelegationDepth,
             ManagerPromptStrategy promptStrategy) {
+        this(managerLlm, workerAgents, managerMaxIterations, maxDelegationDepth, promptStrategy, List.of());
+    }
+
+    /**
+     * Creates an executor with a custom {@link ManagerPromptStrategy} and delegation policies.
+     *
+     * @param managerLlm           LLM for the manager agent
+     * @param workerAgents         the worker agents available for delegation
+     * @param managerMaxIterations maximum number of tool call iterations for the manager
+     * @param maxDelegationDepth   maximum peer-delegation depth for worker agents
+     * @param promptStrategy       strategy for building the manager's system and user prompts;
+     *                             must not be null
+     * @param delegationPolicies   policies to evaluate before each worker delegation;
+     *                             evaluated in list order; must not be null
+     */
+    public HierarchicalWorkflowExecutor(
+            ChatModel managerLlm,
+            List<Agent> workerAgents,
+            int managerMaxIterations,
+            int maxDelegationDepth,
+            ManagerPromptStrategy promptStrategy,
+            List<DelegationPolicy> delegationPolicies) {
         this.managerLlm = managerLlm;
         this.workerAgents = List.copyOf(workerAgents);
         this.managerMaxIterations = managerMaxIterations;
         this.maxDelegationDepth = maxDelegationDepth;
+        this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.agentExecutor = new AgentExecutor();
         this.promptStrategy = promptStrategy != null ? promptStrategy : DefaultManagerPromptStrategy.DEFAULT;
     }
@@ -118,8 +143,9 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
 
             // 1. Create delegation context for peer delegation among worker agents.
             //    Workers share the full executionContext (memory + listeners).
-            DelegationContext workerDelegationContext =
-                    DelegationContext.create(workerAgents, maxDelegationDepth, executionContext, agentExecutor);
+            //    Policies are threaded in so that DelegateTaskTool can evaluate them per delegation.
+            DelegationContext workerDelegationContext = DelegationContext.create(
+                    workerAgents, maxDelegationDepth, executionContext, agentExecutor, delegationPolicies);
 
             // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
             DelegateTaskTool delegateTool =

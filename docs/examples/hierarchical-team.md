@@ -204,3 +204,57 @@ EnsembleOutput output = Ensemble.builder()
 ```
 
 `ManagerPromptContext` exposes `agents()` (all worker agents), `tasks()` (the tasks to orchestrate), `previousOutputs()`, and `workflowDescription()`. See the [Workflows Guide](../guides/workflows.md#customizing-the-manager-prompt) for the full field reference.
+
+---
+
+## Delegation Policy Hooks
+
+Register `DelegationPolicy` instances to enforce business rules before the manager can
+delegate to a worker. Policies run after the built-in guards and before any worker executes.
+
+```java
+// Reject any delegation when required context is missing
+DelegationPolicy requireCompany = (request, ctx) -> {
+    if (request.getTaskDescription().contains("UNKNOWN_COMPANY")) {
+        return DelegationPolicyResult.reject("company must be specified");
+    }
+    return DelegationPolicyResult.allow();
+};
+
+// Restrict which agents the Manager can delegate financial analysis to
+DelegationPolicy analystOnly = (request, ctx) -> {
+    if (request.getTaskDescription().toLowerCase().contains("financial")
+            && !"Financial Analyst".equals(request.getAgentRole())) {
+        return DelegationPolicyResult.reject("financial tasks must go to the Financial Analyst");
+    }
+    return DelegationPolicyResult.allow();
+};
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(marketResearcher)
+    .agent(financialAnalyst)
+    .agent(reportWriter)
+    .task(marketTask)
+    .task(financialTask)
+    .task(reportTask)
+    .workflow(Workflow.HIERARCHICAL)
+    .managerLlm(powerfulModel)
+    .delegationPolicy(requireCompany)
+    .delegationPolicy(analystOnly)
+    .onDelegationStarted(event ->
+        System.out.printf("[DELEGATION] Manager -> %s [%s]%n",
+            event.workerRole(), event.delegationId()))
+    .onDelegationCompleted(event ->
+        System.out.printf("[DONE] %s in %s%n",
+            event.workerRole(), event.duration()))
+    .onDelegationFailed(event ->
+        System.out.printf("[REJECTED] %s: %s%n",
+            event.workerRole(), event.failureReason()))
+    .build()
+    .run(Map.of("company", company));
+```
+
+Policy rejections produce a `FAILURE` `DelegationResponse` and the worker is never invoked.
+The manager receives the rejection reason as the tool result and can adapt its plan.
+See the [Delegation Guide](../guides/delegation.md#delegation-policy-hooks) for the full
+policy evaluation reference.

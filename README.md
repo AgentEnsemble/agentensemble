@@ -381,6 +381,24 @@ The framework executes the writer, returns the result as the tool output, and th
 
 **Structured delegation contracts:** For each delegation attempt the framework constructs a `DelegationRequest` (with auto-generated `taskId`, priority, scope, and metadata fields) and produces a `DelegationResponse` (with `status`, `rawOutput`, `errors`, and `duration`). Guard failures also produce a `FAILURE` response, so every delegation attempt is auditable. See the [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#structured-delegation-contracts) for the full field reference.
 
+**Delegation policy hooks:** Register pluggable `DelegationPolicy` interceptors that run after built-in guards and before the worker executes. Each policy can allow, reject (with a reason), or modify the `DelegationRequest`. Policies are evaluated in registration order; the first rejection short-circuits worker execution.
+
+```java
+Ensemble.builder()
+    .agent(coordinator)
+    .agent(analyst)
+    .task(task)
+    .delegationPolicy((request, ctx) -> {
+        if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
+            return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
+        }
+        return DelegationPolicyResult.allow();
+    })
+    .build();
+```
+
+**Delegation lifecycle events:** `DelegationStartedEvent`, `DelegationCompletedEvent`, and `DelegationFailedEvent` are fired to all registered `EnsembleListener` instances. Each event carries a `delegationId` that correlates the start/complete/failed pair. Register listeners with `.onDelegationStarted(...)`, `.onDelegationCompleted(...)`, `.onDelegationFailed(...)`. See the [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#delegation-lifecycle-events) for full details.
+
 **Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/)
 
 ---
@@ -495,7 +513,9 @@ Ensemble.builder()
     .run();
 ```
 
-**Events:** `TaskStartEvent`, `TaskCompleteEvent`, `TaskFailedEvent` (fired before exception propagates), `ToolCallEvent`.
+**Task and tool events:** `TaskStartEvent`, `TaskCompleteEvent`, `TaskFailedEvent` (fired before exception propagates), `ToolCallEvent`.
+
+**Delegation events:** `DelegationStartedEvent`, `DelegationCompletedEvent`, `DelegationFailedEvent`. Each carries a `delegationId` correlation key. Register with `.onDelegationStarted(...)`, `.onDelegationCompleted(...)`, `.onDelegationFailed(...)`. Guard and policy failures fire only `DelegationFailedEvent` (no start event).
 
 **Exception safety:** if a listener throws, the exception is caught and logged. Execution continues and subsequent listeners are still called.
 
@@ -581,6 +601,10 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 | `onTaskComplete` | `Consumer<TaskCompleteEvent>` | -- | Lambda: fired after each successful task (repeatable) |
 | `onTaskFailed` | `Consumer<TaskFailedEvent>` | -- | Lambda: fired on task failure, before exception propagates (repeatable) |
 | `onToolCall` | `Consumer<ToolCallEvent>` | -- | Lambda: fired after each tool call in the ReAct loop (repeatable) |
+| `delegationPolicy` | `DelegationPolicy` | -- | Register a delegation policy (repeatable). Policies are evaluated in order before each worker invocation. Use `delegationPolicies(List)` for batch registration. |
+| `onDelegationStarted` | `Consumer<DelegationStartedEvent>` | -- | Lambda: fired before each delegation handoff (passes all guards and policies). Carries a `delegationId` for correlation (repeatable). |
+| `onDelegationCompleted` | `Consumer<DelegationCompletedEvent>` | -- | Lambda: fired after a delegation completes successfully. Carries a `delegationId` matching the start event (repeatable). |
+| `onDelegationFailed` | `Consumer<DelegationFailedEvent>` | -- | Lambda: fired when a delegation fails (guard, policy, or worker exception). Guard/policy failures have no matching start event (repeatable). |
 
 **Full documentation:** [Ensemble Configuration Reference](https://docs.agentensemble.net/reference/ensemble-configuration/)
 

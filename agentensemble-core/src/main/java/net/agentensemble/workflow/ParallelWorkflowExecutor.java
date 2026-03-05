@@ -18,6 +18,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ParallelExecutionException;
 import net.agentensemble.exception.TaskExecutionException;
@@ -76,11 +77,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
     private final List<Agent> agents;
     private final int maxDelegationDepth;
+    private final List<DelegationPolicy> delegationPolicies;
     private final ParallelErrorStrategy errorStrategy;
     private final AgentExecutor agentExecutor;
 
     /**
-     * Create a ParallelWorkflowExecutor.
+     * Create a ParallelWorkflowExecutor with no delegation policies.
      *
      * @param agents             all agents registered with the ensemble; used to build
      *                           the delegation context shared across parallel tasks
@@ -88,8 +90,26 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
      * @param errorStrategy      how to respond when a task fails during parallel execution
      */
     public ParallelWorkflowExecutor(List<Agent> agents, int maxDelegationDepth, ParallelErrorStrategy errorStrategy) {
+        this(agents, maxDelegationDepth, errorStrategy, List.of());
+    }
+
+    /**
+     * Create a ParallelWorkflowExecutor with delegation policies.
+     *
+     * @param agents             all agents registered with the ensemble
+     * @param maxDelegationDepth maximum allowed peer-delegation depth
+     * @param errorStrategy      how to respond when a task fails during parallel execution
+     * @param delegationPolicies policies to evaluate before each delegation attempt;
+     *                           evaluated in list order; must not be null
+     */
+    public ParallelWorkflowExecutor(
+            List<Agent> agents,
+            int maxDelegationDepth,
+            ParallelErrorStrategy errorStrategy,
+            List<DelegationPolicy> delegationPolicies) {
         this.agents = List.copyOf(agents);
         this.maxDelegationDepth = maxDelegationDepth;
+        this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.errorStrategy = errorStrategy != null ? errorStrategy : ParallelErrorStrategy.FAIL_FAST;
         this.agentExecutor = new AgentExecutor();
     }
@@ -145,9 +165,10 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
             callerMdc = Map.of();
         }
 
-        // Delegation context shared across all tasks in this run
-        DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, executionContext, agentExecutor);
+        // Delegation context shared across all tasks in this run.
+        // Policies are threaded in so that AgentDelegationTool can evaluate them per delegation.
+        DelegationContext delegationContext = DelegationContext.create(
+                agents, maxDelegationDepth, executionContext, agentExecutor, delegationPolicies);
 
         // Pre-compute 1-based task indices so events carry a stable, deterministic index
         // that listeners can use to correlate start/complete/fail events per task.

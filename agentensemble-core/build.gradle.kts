@@ -26,6 +26,7 @@ tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
 
 tasks.named("check") {
     dependsOn(tasks.named("jacocoTestCoverageVerification"))
+    dependsOn(tasks.named("javadoc"))
 }
 
 dependencies {

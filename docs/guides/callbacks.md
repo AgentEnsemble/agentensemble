@@ -15,6 +15,9 @@ EnsembleOutput output = Ensemble.builder()
     .onTaskComplete(event -> log.info("[{}] Done in {}", event.taskIndex(), event.duration()))
     .onTaskFailed(event -> alertService.notify(event.cause()))
     .onToolCall(event -> metrics.increment("tool." + event.toolName()))
+    .onDelegationStarted(event -> log.info("Delegating to {} [{}]", event.workerRole(), event.delegationId()))
+    .onDelegationCompleted(event -> metrics.record("delegation.latency", event.duration()))
+    .onDelegationFailed(event -> log.warn("Delegation failed: {}", event.failureReason()))
     .build()
     .run();
 ```
@@ -72,6 +75,48 @@ Fired after each tool execution within an agent's ReAct loop.
 | `agentRole()` | `String` | The role of the agent that invoked the tool |
 | `duration()` | `Duration` | Time taken for the tool execution |
 
+### DelegationStartedEvent
+
+Fired immediately before a delegation is handed off to a worker agent. Only fired for
+delegations that pass all built-in guards and registered policy evaluations.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Unique correlation ID; matches the completed or failed event |
+| `delegatingAgentRole()` | `String` | Role of the agent initiating the delegation |
+| `workerRole()` | `String` | Role of the agent that will execute the subtask |
+| `taskDescription()` | `String` | Description of the subtask |
+| `delegationDepth()` | `int` | Depth in the chain (1 = first delegation, 2 = nested, etc.) |
+| `request()` | `DelegationRequest` | The full typed delegation request |
+
+### DelegationCompletedEvent
+
+Fired immediately after a delegation completes successfully.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Matches the corresponding `DelegationStartedEvent` |
+| `delegatingAgentRole()` | `String` | Role of the agent that initiated the delegation |
+| `workerRole()` | `String` | Role of the worker that executed |
+| `response()` | `DelegationResponse` | Full typed response with output and metadata |
+| `duration()` | `Duration` | Elapsed time from delegation start to completion |
+
+### DelegationFailedEvent
+
+Fired when a delegation fails, whether due to a guard violation, policy rejection, or worker
+exception. Guard/policy failures have `cause() == null`; worker exceptions carry the thrown
+exception. Guard and policy failures do _not_ have a corresponding `DelegationStartedEvent`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Matches `DelegationRequest.getTaskId()` |
+| `delegatingAgentRole()` | `String` | Role of the initiating agent |
+| `workerRole()` | `String` | Role of the intended target |
+| `failureReason()` | `String` | Human-readable description of the failure |
+| `cause()` | `Throwable` | Exception if worker threw; `null` for guard/policy failures |
+| `response()` | `DelegationResponse` | FAILURE response with error messages |
+| `duration()` | `Duration` | Elapsed time from delegation start to failure |
+
 ## Full Interface Implementation
 
 For listeners that handle multiple event types, implement `EnsembleListener` directly:
@@ -116,8 +161,10 @@ Ensemble.builder()
     .run();
 ```
 
-All four methods have default no-op implementations, so you only need to override
-the events you care about.
+All methods have default no-op implementations, so you only need to override
+the events you care about. The three delegation event methods (`onDelegationStarted`,
+`onDelegationCompleted`, `onDelegationFailed`) are also available on `EnsembleListener`
+and can be overridden in the same way.
 
 ## Registering Multiple Listeners
 

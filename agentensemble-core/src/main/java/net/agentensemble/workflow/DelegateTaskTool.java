@@ -10,22 +10,30 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.DelegationCompletedEvent;
+import net.agentensemble.callback.DelegationFailedEvent;
+import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.delegation.DelegationRequest;
 import net.agentensemble.delegation.DelegationResponse;
 import net.agentensemble.delegation.DelegationStatus;
+import net.agentensemble.delegation.policy.DelegationPolicy;
+import net.agentensemble.delegation.policy.DelegationPolicyContext;
+import net.agentensemble.delegation.policy.DelegationPolicyResult;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 /**
  * A tool that allows the Manager agent to delegate tasks to worker agents.
  *
- * When invoked, the tool locates the target agent by role, creates an ephemeral
- * Task, executes it via AgentExecutor, and returns the worker's output. All
- * delegated task outputs are accumulated and accessible after execution for
- * inclusion in the EnsembleOutput.
+ * When invoked, the tool locates the target agent by role, evaluates any registered
+ * {@link net.agentensemble.delegation.policy.DelegationPolicy} instances, creates an
+ * ephemeral Task, executes it via AgentExecutor, and returns the worker's output. All
+ * delegated task outputs are accumulated and accessible after execution for inclusion in
+ * the EnsembleOutput.
  *
  * When the {@link ExecutionContext} contains an active memory context, worker agent
  * execution participates in shared memory: prior run outputs are injected into the
@@ -35,14 +43,26 @@ import org.slf4j.LoggerFactory;
  * produces a {@link DelegationResponse}. Successful delegations accumulate as
  * {@link TaskOutput} objects (accessible via {@link #getDelegatedOutputs()}) and as typed
  * {@link DelegationResponse} objects (accessible via {@link #getDelegationResponses()}).
- * Guard failures produce a {@link DelegationResponse} with {@link DelegationStatus#FAILURE}
- * status so all delegation attempts are auditable.
+ * Guard and policy failures produce a {@link DelegationResponse} with
+ * {@link DelegationStatus#FAILURE} status so all delegation attempts are auditable.
+ *
+ * Lifecycle events ({@link DelegationStartedEvent}, {@link DelegationCompletedEvent},
+ * {@link DelegationFailedEvent}) are fired to all registered
+ * {@link net.agentensemble.callback.EnsembleListener} instances through the
+ * {@link ExecutionContext}. Policy rejections fire a {@link DelegationFailedEvent} directly
+ * (no corresponding start event). Worker execution failures fire both start and failed events.
  *
  * This class is stateful -- a new instance must be created for each ensemble run.
  */
 public class DelegateTaskTool {
 
     private static final Logger log = LoggerFactory.getLogger(DelegateTaskTool.class);
+
+    /** Logical role for the Manager in delegation events. */
+    private static final String MANAGER_ROLE = HierarchicalWorkflowExecutor.MANAGER_ROLE;
+
+    /** MDC key for the active delegation's correlation ID. */
+    private static final String MDC_DELEGATION_ID = "delegation.id";
 
     /** Default expected output text for delegated tasks. */
     private static final String DEFAULT_EXPECTED_OUTPUT = "Complete the assigned task thoroughly";
@@ -74,18 +94,20 @@ public class DelegateTaskTool {
     /**
      * Delegate a task to a specific worker agent.
      *
-     * The tool locates the agent by role name (case-insensitive), creates a task
-     * with the provided description, executes it, and returns the output as a plain
-     * String (preserving the LLM-facing tool contract). Internally a
-     * {@link DelegationRequest} is constructed and a {@link DelegationResponse} is
-     * produced and accumulated.
+     * The tool locates the agent by role name (case-insensitive), evaluates all registered
+     * {@link DelegationPolicy} instances in order, then creates a task with the provided
+     * description, executes it, and returns the output as a plain String (preserving the
+     * LLM-facing tool contract). Internally a {@link DelegationRequest} is constructed and a
+     * {@link DelegationResponse} is produced and accumulated.
      *
-     * If no agent is found for the given role, an error message listing available roles
-     * is returned and a {@link DelegationStatus#FAILURE} response is recorded.
+     * If no agent is found for the given role, or if a policy rejects the delegation, an error
+     * message listing available roles or the rejection reason is returned and a
+     * {@link DelegationStatus#FAILURE} response is recorded.
      *
      * @param agentRole       the exact role of the worker agent to delegate to
      * @param taskDescription a clear description of the task for the agent to complete
-     * @return the worker agent's output, or an error message if the role is not found
+     * @return the worker agent's output, or an error message if the role is not found or
+     *         a policy rejects the delegation
      */
     @Tool("Delegate a task to a worker agent. Provide the agent's role and a clear task description. "
             + "Use this tool for each task that needs to be completed by a team member.")
@@ -116,30 +138,132 @@ public class DelegateTaskTool {
             List<String> availableRoles = agents.stream().map(Agent::getRole).toList();
             String error = "No agent found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation failed: {}", error);
-            delegationResponses.add(failureResponse(request, agentRole, error, requestStart));
+            DelegationResponse response = failureResponse(request, agentRole, error, requestStart);
+            delegationResponses.add(response);
+            executionContext.fireDelegationFailed(new DelegationFailedEvent(
+                    request.getTaskId(),
+                    MANAGER_ROLE,
+                    agentRole,
+                    error,
+                    null,
+                    response,
+                    Duration.between(requestStart, Instant.now())));
             return error;
         }
 
+        // Policy evaluation: evaluate all registered policies in order.
+        // A REJECT short-circuits immediately. A MODIFY replaces the working request.
+        DelegationRequest workingRequest = request;
+        List<String> availableWorkerRoles = agents.stream().map(Agent::getRole).toList();
+        DelegationPolicyContext policyCtx = new DelegationPolicyContext(
+                MANAGER_ROLE,
+                delegationContext.getCurrentDepth(),
+                delegationContext.getMaxDepth(),
+                availableWorkerRoles);
+
+        for (DelegationPolicy policy : delegationContext.getPolicies()) {
+            DelegationPolicyResult result = policy.evaluate(workingRequest, policyCtx);
+            if (result == null) {
+                throw new IllegalStateException("DelegationPolicy.evaluate() returned null for policy "
+                        + policy.getClass().getName()
+                        + ". Policies must return a non-null DelegationPolicyResult.");
+            }
+            if (result instanceof DelegationPolicyResult.Reject reject) {
+                String msg = "Delegation rejected by policy: " + reject.reason();
+                log.warn("Delegation from Manager to '{}' rejected by policy: {}", agentRole, reject.reason());
+                DelegationResponse response = failureResponse(workingRequest, agentRole, msg, requestStart);
+                delegationResponses.add(response);
+                executionContext.fireDelegationFailed(new DelegationFailedEvent(
+                        workingRequest.getTaskId(),
+                        MANAGER_ROLE,
+                        agentRole,
+                        msg,
+                        null,
+                        response,
+                        Duration.between(requestStart, Instant.now())));
+                return msg;
+            } else if (result instanceof DelegationPolicyResult.Modify modify) {
+                DelegationRequest modifiedReq = modify.modifiedRequest();
+                if (modifiedReq == null) {
+                    throw new IllegalStateException(
+                            "DelegationPolicyResult.Modify.modifiedRequest() is null for policy "
+                                    + policy.getClass().getName()
+                                    + ". Modify policies must supply a non-null replacement request.");
+                }
+                log.debug("Delegation from Manager to '{}' modified by policy", agentRole);
+                workingRequest = modifiedReq;
+            }
+            // Allow: continue to next policy
+        }
+
+        // Re-resolve the agent from workingRequest.agentRole() in case a MODIFY policy changed it.
+        // This ensures the DelegationStartedEvent, Task creation, and worker execution all
+        // reference the same (final) agent, not the pre-policy one.
+        Agent finalAgent = workingRequest.getAgentRole().equals(agent.getRole())
+                ? agent
+                : findAgentByRole(workingRequest.getAgentRole());
+        if (finalAgent == null) {
+            List<String> availableRoles = agents.stream().map(Agent::getRole).toList();
+            String error = "A policy modified agentRole to '"
+                    + workingRequest.getAgentRole()
+                    + "' but no agent found with that role. Available roles: "
+                    + availableRoles;
+            log.warn("Delegation failed: {}", error);
+            DelegationResponse response =
+                    failureResponse(workingRequest, workingRequest.getAgentRole(), error, requestStart);
+            delegationResponses.add(response);
+            executionContext.fireDelegationFailed(new DelegationFailedEvent(
+                    workingRequest.getTaskId(),
+                    MANAGER_ROLE,
+                    workingRequest.getAgentRole(),
+                    error,
+                    null,
+                    response,
+                    Duration.between(requestStart, Instant.now())));
+            return error;
+        }
+
+        // All policies passed -- fire DelegationStartedEvent
         log.info(
                 "Delegating task to agent '{}': {}",
-                agent.getRole(),
-                taskDescription.length() > 80 ? taskDescription.substring(0, 80) + "..." : taskDescription);
+                finalAgent.getRole(),
+                workingRequest.getTaskDescription().length() > 80
+                        ? workingRequest.getTaskDescription().substring(0, 80) + "..."
+                        : workingRequest.getTaskDescription());
+
+        executionContext.fireDelegationStarted(new DelegationStartedEvent(
+                workingRequest.getTaskId(),
+                MANAGER_ROLE,
+                finalAgent.getRole(),
+                workingRequest.getTaskDescription(),
+                delegationContext.getCurrentDepth() + 1,
+                workingRequest));
+
+        final DelegationRequest finalRequest = workingRequest;
 
         Task delegatedTask = Task.builder()
-                .description(taskDescription)
+                .description(finalRequest.getTaskDescription())
                 .expectedOutput(DEFAULT_EXPECTED_OUTPUT)
-                .agent(agent)
+                .agent(finalAgent)
                 .build();
 
+        // Descend: worker receives depth+1 so its peer-delegation depth tracking is correct.
+        // Without descend(), a worker at depth=0 could peer-delegate even when maxDelegationDepth=1.
+        DelegationContext workerCtx = delegationContext.descend();
+
+        // Set MDC delegation.id during the worker execution window so worker logs can be
+        // correlated to the DelegationStarted/Completed/Failed events by delegationId.
+        String priorDelegationId = MDC.get(MDC_DELEGATION_ID);
+        MDC.put(MDC_DELEGATION_ID, finalRequest.getTaskId());
         try {
-            TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, delegationContext);
+            TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, workerCtx);
             delegatedOutputs.add(output);
 
             Duration elapsed = Duration.between(requestStart, Instant.now());
             DelegationResponse response = new DelegationResponse(
-                    request.getTaskId(),
+                    finalRequest.getTaskId(),
                     DelegationStatus.SUCCESS,
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     output.getRaw(),
                     output.getParsedOutput(),
                     Collections.emptyMap(),
@@ -150,9 +274,12 @@ public class DelegateTaskTool {
 
             log.info(
                     "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     output.getToolCallCount(),
                     output.getDuration());
+
+            executionContext.fireDelegationCompleted(new DelegationCompletedEvent(
+                    finalRequest.getTaskId(), MANAGER_ROLE, finalAgent.getRole(), response, elapsed));
 
             // Option C hybrid design: the @Tool method returns the worker's plain-text output to
             // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
@@ -162,9 +289,9 @@ public class DelegateTaskTool {
         } catch (Exception e) {
             Duration elapsed = Duration.between(requestStart, Instant.now());
             DelegationResponse response = new DelegationResponse(
-                    request.getTaskId(),
+                    finalRequest.getTaskId(),
                     DelegationStatus.FAILURE,
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     null,
                     null,
                     Collections.emptyMap(),
@@ -175,7 +302,22 @@ public class DelegateTaskTool {
                     Collections.emptyMap(),
                     elapsed);
             delegationResponses.add(response);
+            executionContext.fireDelegationFailed(new DelegationFailedEvent(
+                    finalRequest.getTaskId(),
+                    MANAGER_ROLE,
+                    finalAgent.getRole(),
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                    e,
+                    response,
+                    elapsed));
             throw e;
+        } finally {
+            // Restore prior MDC delegation.id (null when there was no outer delegation)
+            if (priorDelegationId != null) {
+                MDC.put(MDC_DELEGATION_ID, priorDelegationId);
+            } else {
+                MDC.remove(MDC_DELEGATION_ID);
+            }
         }
     }
 
@@ -197,10 +339,10 @@ public class DelegateTaskTool {
      * <p><strong>Note on accessibility in hierarchical workflow:</strong> In hierarchical mode,
      * this tool instance is an internal detail of {@code HierarchicalWorkflowExecutor} and is
      * not directly accessible after {@code Ensemble.run()} returns. To observe delegation
-     * outcomes in hierarchical workflow, implement an {@code EnsembleListener} or use a custom
-     * {@link net.agentensemble.workflow.ManagerPromptStrategy} that wraps the tool.
-     * For peer delegation ({@code AgentDelegationTool}), the same method is available on
-     * the tool instance injected at execution time.
+     * outcomes in hierarchical workflow, implement an {@code EnsembleListener} and handle the
+     * {@code onDelegationCompleted} / {@code onDelegationFailed} callbacks. For peer delegation
+     * ({@code AgentDelegationTool}), the same method is available on the tool instance injected
+     * at execution time.
      *
      * @return immutable list of delegation responses
      */

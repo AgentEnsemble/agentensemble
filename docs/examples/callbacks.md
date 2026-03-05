@@ -136,6 +136,62 @@ virtual threads. Use thread-safe data structures in your listener implementation
 
 ---
 
+## Delegation Events
+
+When agents delegate to each other, three additional event types are available:
+`DelegationStartedEvent`, `DelegationCompletedEvent`, and `DelegationFailedEvent`.
+Each event carries a `delegationId` correlation key.
+
+```java
+Ensemble.builder()
+    .agent(leadResearcher)   // allowDelegation = true
+    .agent(writer)
+    .task(coordinateTask)
+    .onDelegationStarted(event -> System.out.printf(
+        "[DELEGATION] %s -> %s [%s]%n",
+        event.delegatingAgentRole(), event.workerRole(), event.delegationId()))
+    .onDelegationCompleted(event -> System.out.printf(
+        "[DELEGATION DONE] %s completed in %s [%s]%n",
+        event.workerRole(), event.duration(), event.delegationId()))
+    .onDelegationFailed(event -> System.out.printf(
+        "[DELEGATION FAILED] %s: %s%n",
+        event.workerRole(), event.failureReason()))
+    .build()
+    .run();
+```
+
+For a full `EnsembleListener` that includes delegation events:
+
+```java
+class DelegationAuditListener implements EnsembleListener {
+
+    @Override
+    public void onDelegationStarted(DelegationStartedEvent event) {
+        log.info("Delegation started [{}]: {} -> {} (depth {})",
+            event.delegationId(), event.delegatingAgentRole(),
+            event.workerRole(), event.delegationDepth());
+    }
+
+    @Override
+    public void onDelegationCompleted(DelegationCompletedEvent event) {
+        log.info("Delegation completed [{}]: {} in {}",
+            event.delegationId(), event.workerRole(), event.duration());
+    }
+
+    @Override
+    public void onDelegationFailed(DelegationFailedEvent event) {
+        log.warn("Delegation failed [{}]: {} - {}",
+            event.delegationId(), event.workerRole(), event.failureReason());
+    }
+}
+```
+
+Guard violations and policy rejections fire `DelegationFailedEvent` directly, with
+`cause() == null`. Worker exceptions carry the thrown exception in `cause()` and
+also have a matching `DelegationStartedEvent`.
+
+---
+
 ## Running the Example
 
 ```bash
