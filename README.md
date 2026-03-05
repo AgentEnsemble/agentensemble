@@ -165,6 +165,8 @@ System.out.println(output.getRaw());
 
 If `managerLlm` is not set, the Manager uses the first agent's LLM. All worker agents participate in the same memory context when memory is configured (see [Memory System](#memory-system) below).
 
+**Custom manager prompts:** Use `.managerPromptStrategy(ManagerPromptStrategy)` to inject domain-specific context into the Manager's system and user prompts without forking framework internals. The built-in `DefaultManagerPromptStrategy.DEFAULT` is used when no strategy is set. See the [Workflows Guide](https://docs.agentensemble.net/guides/workflows/#customizing-the-manager-prompt) for full details.
+
 **Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Hierarchical Team Example](https://docs.agentensemble.net/examples/hierarchical-team/)
 
 ---
@@ -377,6 +379,8 @@ The framework executes the writer, returns the result as the tool output, and th
 - Delegating to an unknown agent role returns an error to the caller
 - Delegation depth is capped at `maxDelegationDepth` (default 3) to prevent infinite chains
 
+**Structured delegation contracts:** For each delegation attempt the framework constructs a `DelegationRequest` (with auto-generated `taskId`, priority, scope, and metadata fields) and produces a `DelegationResponse` (with `status`, `rawOutput`, `errors`, and `duration`). Guard failures also produce a `FAILURE` response, so every delegation attempt is auditable. See the [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#structured-delegation-contracts) for the full field reference.
+
 **Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/)
 
 ---
@@ -567,6 +571,7 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 | `workflow` | `Workflow` | `SEQUENTIAL` | Execution strategy: `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL` |
 | `managerLlm` | `ChatModel` | first agent's LLM | LLM for the Manager agent (hierarchical workflow only) |
 | `managerMaxIterations` | `int` | `20` | Max tool-call iterations for the Manager agent (hierarchical workflow only) |
+| `managerPromptStrategy` | `ManagerPromptStrategy` | `DefaultManagerPromptStrategy.DEFAULT` | Builds the Manager's system and user prompts (hierarchical only). Implement to inject domain-specific context. |
 | `parallelErrorStrategy` | `ParallelErrorStrategy` | `FAIL_FAST` | Error handling for parallel workflow: `FAIL_FAST` or `CONTINUE_ON_ERROR` |
 | `memory` | `EnsembleMemory` | `null` | Memory configuration; see [Memory System](#memory-system) |
 | `maxDelegationDepth` | `int` | `3` | Maximum peer-delegation depth when agents have `allowDelegation = true` |

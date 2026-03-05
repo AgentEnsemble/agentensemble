@@ -13,6 +13,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.callback.EnsembleListener;
@@ -320,5 +321,183 @@ class HierarchicalWorkflowExecutorTest {
         EnsembleOutput output = executor.execute(List.of(researchTask()), ec);
 
         assertThat(output.getRaw()).isEqualTo("Answer");
+    }
+
+    // ========================
+    // ManagerPromptStrategy tests
+    // ========================
+
+    @Test
+    void testExecute_withDefaultStrategy_usesDefaultManagerPrompts() {
+        // Verify that the default (no strategy arg) constructor produces the same output
+        // as explicitly passing DefaultManagerPromptStrategy.DEFAULT.
+        when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Default answer"));
+        HierarchicalWorkflowExecutor explicitDefault = new HierarchicalWorkflowExecutor(
+                managerModel, List.of(worker), 20, 3, DefaultManagerPromptStrategy.DEFAULT);
+
+        EnsembleOutput output = explicitDefault.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        assertThat(output.getRaw()).isEqualTo("Default answer");
+    }
+
+    @Test
+    void testExecute_withCustomStrategy_systemPromptIsInjectedIntoManagerBackground() {
+        // The custom strategy returns a fixed system prompt. We verify that the manager
+        // agent is initialised with that string by capturing what gets sent to the LLM
+        // (the system message will contain the background text).
+        String customSystem = "CUSTOM_SYSTEM_PROMPT";
+        AtomicReference<ChatRequest> capturedRequest = new AtomicReference<>();
+
+        when(managerModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
+            capturedRequest.set(inv.getArgument(0));
+            return textResponse("Custom answer");
+        });
+
+        ManagerPromptStrategy customStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(ManagerPromptContext ctx) {
+                return customSystem;
+            }
+
+            @Override
+            public String buildUserPrompt(ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+            }
+        };
+
+        HierarchicalWorkflowExecutor customExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, customStrategy);
+        customExecutor.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        // The system message sent to the manager LLM must contain the custom system prompt
+        assertThat(capturedRequest.get()).isNotNull();
+        boolean systemPromptPresent = capturedRequest.get().messages().stream()
+                .anyMatch(msg -> msg.toString().contains(customSystem));
+        assertThat(systemPromptPresent).isTrue();
+    }
+
+    @Test
+    void testExecute_withCustomStrategy_userPromptIsInjectedIntoManagerTask() {
+        String customUser = "CUSTOM_USER_PROMPT";
+        AtomicReference<ChatRequest> capturedRequest = new AtomicReference<>();
+
+        when(managerModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
+            capturedRequest.set(inv.getArgument(0));
+            return textResponse("Custom answer");
+        });
+
+        ManagerPromptStrategy customStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx);
+            }
+
+            @Override
+            public String buildUserPrompt(ManagerPromptContext ctx) {
+                return customUser;
+            }
+        };
+
+        HierarchicalWorkflowExecutor customExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, customStrategy);
+        customExecutor.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        assertThat(capturedRequest.get()).isNotNull();
+        boolean userPromptPresent = capturedRequest.get().messages().stream()
+                .anyMatch(msg -> msg.toString().contains(customUser));
+        assertThat(userPromptPresent).isTrue();
+    }
+
+    @Test
+    void testExecute_withCustomStrategy_returningEmptyStrings_doesNotThrow() {
+        when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer despite empty prompts"));
+
+        ManagerPromptStrategy emptyStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(ManagerPromptContext ctx) {
+                return "";
+            }
+
+            @Override
+            public String buildUserPrompt(ManagerPromptContext ctx) {
+                return "";
+            }
+        };
+
+        HierarchicalWorkflowExecutor emptyExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, emptyStrategy);
+
+        // Validation of strategy output is the caller's responsibility -- no exception thrown
+        EnsembleOutput output = emptyExecutor.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        assertThat(output.getRaw()).isEqualTo("Answer despite empty prompts");
+    }
+
+    @Test
+    void testExecute_withNullStrategy_fallsBackToDefault() {
+        when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Fallback answer"));
+
+        // Passing null strategy should silently fall back to DefaultManagerPromptStrategy
+        HierarchicalWorkflowExecutor nullStrategyExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, null);
+
+        EnsembleOutput output = nullStrategyExecutor.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        assertThat(output.getRaw()).isEqualTo("Fallback answer");
+    }
+
+    @Test
+    void testExecute_customStrategy_receivesCorrectAgentsInContext() {
+        AtomicReference<ManagerPromptContext> capturedContext = new AtomicReference<>();
+        when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
+
+        ManagerPromptStrategy capturingStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(ManagerPromptContext ctx) {
+                capturedContext.set(ctx);
+                return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx);
+            }
+
+            @Override
+            public String buildUserPrompt(ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+            }
+        };
+
+        HierarchicalWorkflowExecutor capturingExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, capturingStrategy);
+        capturingExecutor.execute(List.of(researchTask()), ExecutionContext.disabled());
+
+        assertThat(capturedContext.get()).isNotNull();
+        assertThat(capturedContext.get().agents()).hasSize(1);
+        assertThat(capturedContext.get().agents().get(0).getRole()).isEqualTo("Researcher");
+    }
+
+    @Test
+    void testExecute_customStrategy_receivesCorrectTasksInContext() {
+        AtomicReference<ManagerPromptContext> capturedContext = new AtomicReference<>();
+        when(managerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Answer"));
+
+        ManagerPromptStrategy capturingStrategy = new ManagerPromptStrategy() {
+            @Override
+            public String buildSystemPrompt(ManagerPromptContext ctx) {
+                return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx);
+            }
+
+            @Override
+            public String buildUserPrompt(ManagerPromptContext ctx) {
+                capturedContext.set(ctx);
+                return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+            }
+        };
+
+        Task task = researchTask();
+        HierarchicalWorkflowExecutor capturingExecutor =
+                new HierarchicalWorkflowExecutor(managerModel, List.of(worker), 20, 3, capturingStrategy);
+        capturingExecutor.execute(List.of(task), ExecutionContext.disabled());
+
+        assertThat(capturedContext.get()).isNotNull();
+        assertThat(capturedContext.get().tasks()).hasSize(1);
+        assertThat(capturedContext.get().tasks().get(0).getDescription()).isEqualTo("Research AI trends");
     }
 }

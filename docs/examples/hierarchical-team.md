@@ -173,3 +173,34 @@ System.out.println("Manager: " + managerOutput.getAgentRole()); // "Manager"
 List<TaskOutput> workerOutputs = outputs.subList(0, outputs.size() - 1);
 workerOutputs.forEach(w -> System.out.println("Worker: " + w.getAgentRole()));
 ```
+
+---
+
+## Custom Manager Prompts
+
+The example uses a custom `ManagerPromptStrategy` to inject an investment-focused constraint into the Manager's system prompt. You can extend or replace the default prompt logic without modifying the framework:
+
+```java
+ManagerPromptStrategy investmentStrategy = new ManagerPromptStrategy() {
+    @Override
+    public String buildSystemPrompt(ManagerPromptContext ctx) {
+        return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
+            + "\n\nFocus on investment-relevant insights. "
+            + "Always ask the Financial Analyst to complete their analysis before "
+            + "the Report Writer begins synthesising.";
+    }
+    @Override
+    public String buildUserPrompt(ManagerPromptContext ctx) {
+        return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+    }
+};
+
+EnsembleOutput output = Ensemble.builder()
+    ...
+    .workflow(Workflow.HIERARCHICAL)
+    .managerPromptStrategy(investmentStrategy)
+    .build()
+    .run();
+```
+
+`ManagerPromptContext` exposes `agents()` (all worker agents), `tasks()` (the tasks to orchestrate), `previousOutputs()`, and `workflowDescription()`. See the [Workflows Guide](../guides/workflows.md#customizing-the-manager-prompt) for the full field reference.

@@ -28,7 +28,9 @@ import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
+import net.agentensemble.workflow.DefaultManagerPromptStrategy;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
+import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.ParallelWorkflowExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
@@ -114,6 +116,40 @@ public class Ensemble {
      */
     @Builder.Default
     private final ParallelErrorStrategy parallelErrorStrategy = ParallelErrorStrategy.FAIL_FAST;
+
+    /**
+     * Strategy for building the system and user prompts of the Manager agent in a hierarchical
+     * workflow.
+     *
+     * <p>The default ({@link DefaultManagerPromptStrategy#DEFAULT}) lists worker agents in the
+     * system prompt and tasks in the user prompt, matching the built-in behaviour.
+     * Provide a custom implementation to inject domain-specific context, alter persona, or
+     * completely replace the prompts without forking framework internals.
+     *
+     * <p>Only exercised when {@code workflow = Workflow.HIERARCHICAL}; sequential and parallel
+     * workflows are unaffected.
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .workflow(Workflow.HIERARCHICAL)
+     *     .managerPromptStrategy(new ManagerPromptStrategy() {
+     *         {@literal @}Override
+     *         public String buildSystemPrompt(ManagerPromptContext ctx) {
+     *             return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
+     *                 + "\n\nAlways prefer the Analyst for data tasks.";
+     *         }
+     *         {@literal @}Override
+     *         public String buildUserPrompt(ManagerPromptContext ctx) {
+     *             return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+     *         }
+     *     })
+     *     .build();
+     * </pre>
+     *
+     * <p>Default: {@link DefaultManagerPromptStrategy#DEFAULT}.
+     */
+    @Builder.Default
+    private final ManagerPromptStrategy managerPromptStrategy = DefaultManagerPromptStrategy.DEFAULT;
 
     /**
      * Executor for running tool calls within a single LLM turn.
@@ -332,7 +368,7 @@ public class Ensemble {
         return switch (workflow) {
             case SEQUENTIAL -> new SequentialWorkflowExecutor(agents, maxDelegationDepth);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
-                    resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth);
+                    resolveManagerLlm(), agents, managerMaxIterations, maxDelegationDepth, managerPromptStrategy);
             case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy);
         };
     }

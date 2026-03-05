@@ -72,7 +72,7 @@ net.agentensemble
 
 2. **Builder pattern**: All domain objects use Lombok `@Builder` for construction with validation in custom builder methods.
 
-3. **Strategy pattern**: `WorkflowExecutor` is a strategy interface. `SequentialWorkflowExecutor` is the Phase 1 implementation. Hierarchical and parallel implementations follow in later phases.
+3. **Strategy pattern**: `WorkflowExecutor` is a strategy interface with `SequentialWorkflowExecutor`, `HierarchicalWorkflowExecutor`, and `ParallelWorkflowExecutor` implementations. `ManagerPromptStrategy` is a secondary strategy interface that controls how the Manager agent's system and user prompts are generated in hierarchical workflow -- `DefaultManagerPromptStrategy` provides the built-in behaviour while callers can substitute a custom implementation via `Ensemble.Builder.managerPromptStrategy()`.
 
 4. **Composition over inheritance**: `AgentExecutor` composes LangChain4j services rather than extending them. No deep inheritance hierarchies.
 

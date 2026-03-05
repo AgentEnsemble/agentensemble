@@ -14,11 +14,14 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.delegation.DelegationResponse;
+import net.agentensemble.delegation.DelegationStatus;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 class DelegateTaskToolTest {
 
@@ -201,5 +204,140 @@ class DelegateTaskToolTest {
     void testDelegateTask_hasCorrectNumberOfParameters() throws NoSuchMethodException {
         var method = DelegateTaskTool.class.getMethod("delegateTask", String.class, String.class);
         assertThat(method.getParameterCount()).isEqualTo(2);
+    }
+
+    // ========================
+    // DelegationResponse tests
+    // ========================
+
+    @Test
+    void testGetDelegationResponses_emptyBeforeDelegation() {
+        assertThat(tool.getDelegationResponses()).isEmpty();
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_producesDelegationResponse() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("research result"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_responseHasSuccessStatus() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("research result"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.SUCCESS);
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_responseContainsRawOutput() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("AI insights"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses().get(0).rawOutput()).isEqualTo("AI insights");
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_responseContainsWorkerRole() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("result"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses().get(0).workerRole()).isEqualTo("Researcher");
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_responseHasNonNullTaskId() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("result"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses().get(0).taskId()).isNotNull().isNotBlank();
+    }
+
+    @Test
+    void testDelegateTask_successfulDelegation_responseHasNonNegativeDuration() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("result"));
+
+        tool.delegateTask("Researcher", "Research AI trends");
+
+        assertThat(tool.getDelegationResponses().get(0).duration()).isGreaterThanOrEqualTo(java.time.Duration.ZERO);
+    }
+
+    @Test
+    void testDelegateTask_unknownRole_producesFailureDelegationResponse() {
+        tool.delegateTask("NoSuchAgent", "some task");
+
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        assertThat(tool.getDelegationResponses().get(0).errors()).isNotEmpty();
+    }
+
+    @Test
+    void testDelegateTask_unknownRole_failureResponseRawOutputIsNull() {
+        tool.delegateTask("NoSuchAgent", "some task");
+
+        assertThat(tool.getDelegationResponses().get(0).rawOutput()).isNull();
+    }
+
+    @Test
+    void testDelegateTask_multipleDelegations_allResponsesAccumulated() {
+        when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("research"));
+        when(writerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("writing"));
+
+        tool.delegateTask("Researcher", "Research task");
+        tool.delegateTask("Writer", "Writing task");
+
+        assertThat(tool.getDelegationResponses()).hasSize(2);
+        assertThat(tool.getDelegationResponses().get(0).rawOutput()).isEqualTo("research");
+        assertThat(tool.getDelegationResponses().get(1).rawOutput()).isEqualTo("writing");
+    }
+
+    @Test
+    void testGetDelegationResponses_isImmutable() {
+        List<DelegationResponse> responses = tool.getDelegationResponses();
+        assertThatThrownBy(() -> responses.add(null)).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void testDelegateTask_responseTaskId_isUniquePerDelegation() {
+        when(researcherModel.chat(any(ChatRequest.class)))
+                .thenReturn(textResponse("r1"))
+                .thenReturn(textResponse("r2"));
+
+        tool.delegateTask("Researcher", "Task 1");
+        tool.delegateTask("Researcher", "Task 2");
+
+        String id1 = tool.getDelegationResponses().get(0).taskId();
+        String id2 = tool.getDelegationResponses().get(1).taskId();
+        assertThat(id1).isNotEqualTo(id2);
+    }
+
+    @Test
+    void testDelegateTask_executorThrows_recordsFailureResponseAndRethrows() {
+        // Cover the catch(Exception e) path in delegateTask()
+        AgentExecutor throwingExecutor = mock(AgentExecutor.class);
+        Mockito.when(throwingExecutor.execute(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("executor failure"));
+
+        DelegationContext delegCtx = net.agentensemble.delegation.DelegationContext.create(
+                List.of(researcher), 3, ExecutionContext.disabled(), throwingExecutor);
+        DelegateTaskTool localTool =
+                new DelegateTaskTool(List.of(researcher), throwingExecutor, ExecutionContext.disabled(), delegCtx);
+
+        assertThatThrownBy(() -> localTool.delegateTask("Researcher", "Research something"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("executor failure");
+
+        assertThat(localTool.getDelegationResponses()).hasSize(1);
+        assertThat(localTool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        assertThat(localTool.getDelegationResponses().get(0).errors()).containsExactly("executor failure");
+        assertThat(localTool.getDelegationResponses().get(0).rawOutput()).isNull();
+        assertThat(localTool.getDelegatedOutputs()).isEmpty();
     }
 }
