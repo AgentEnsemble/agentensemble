@@ -258,3 +258,60 @@ Policy rejections produce a `FAILURE` `DelegationResponse` and the worker is nev
 The manager receives the rejection reason as the tool result and can adapt its plan.
 See the [Delegation Guide](../guides/delegation.md#delegation-policy-hooks) for the full
 policy evaluation reference.
+
+---
+
+## With Hierarchical Constraints
+
+`HierarchicalConstraints` adds deterministic guardrails to the delegation graph without
+removing the LLM's control over which worker handles each task.
+
+```java
+HierarchicalConstraints constraints = HierarchicalConstraints.builder()
+    .requiredWorker("Financial Analyst")    // must be called at least once
+    .allowedWorker("Financial Analyst")     // only these two workers may be delegated to
+    .allowedWorker("Risk Analyst")
+    .maxCallsPerWorker("Risk Analyst", 2)   // Risk Analyst may be called at most twice
+    .globalMaxDelegations(5)                // at most 5 total delegations
+    .requiredStage(List.of("Financial Analyst")) // stage 0: Financial Analyst goes first
+    .requiredStage(List.of("Risk Analyst"))      // stage 1: Risk Analyst only after Financial
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(financialAnalyst)
+    .agent(riskAnalyst)
+    .task(analysisTask)
+    .task(riskTask)
+    .workflow(Workflow.HIERARCHICAL)
+    .managerLlm(powerfulModel)
+    .hierarchicalConstraints(constraints)
+    .build()
+    .run(Map.of("company", company));
+```
+
+Pre-delegation violations are returned as error messages to the Manager so it can adapt:
+
+```
+[REJECTED] Risk Analyst: Worker 'Risk Analyst' cannot be delegated to yet:
+           stage 0 worker 'Financial Analyst' has not yet completed.
+```
+
+If a required worker is never called, `ConstraintViolationException` is thrown after the
+Manager finishes:
+
+```java
+try {
+    ensemble.run(Map.of("company", company));
+} catch (ConstraintViolationException e) {
+    for (String v : e.getViolations()) {
+        System.err.println("Constraint violated: " + v);
+    }
+    // Inspect partial work that did complete
+    for (TaskOutput completed : e.getCompletedTaskOutputs()) {
+        System.out.println("Completed: " + completed.getAgentRole());
+    }
+}
+```
+
+See the [Delegation Guide](../guides/delegation.md#hierarchical-constraints) for the full
+`HierarchicalConstraints` reference.

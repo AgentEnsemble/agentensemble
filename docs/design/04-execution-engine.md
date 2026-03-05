@@ -22,7 +22,7 @@ User calls ensemble.run(inputs)
   v
 [3. Select WorkflowExecutor]
   - SEQUENTIAL -> SequentialWorkflowExecutor
-  - HIERARCHICAL -> throws UnsupportedOperationException("Hierarchical workflow not yet implemented")
+  - HIERARCHICAL -> HierarchicalWorkflowExecutor
   |
   v
 [4. Execute via WorkflowExecutor]
@@ -113,6 +113,129 @@ Output: EnsembleOutput
   - All completed task outputs up to the point of failure (for partial recovery)
   - The original cause (AgentExecutionException, etc.)
 - MDC is always cleaned up (even on failure) via try/finally.
+
+---
+
+## HierarchicalWorkflowExecutor
+
+The `HierarchicalWorkflowExecutor` runs a manager agent that orchestrates worker agents via the
+`DelegateTaskTool`. The manager receives a system prompt describing available workers and uses tool
+calls to delegate subtasks. It produces a final synthesised answer once all delegations are
+complete.
+
+### Constraint Enforcement Wiring
+
+When `Ensemble.hierarchicalConstraints` is non-null, the executor creates a
+`HierarchicalConstraintEnforcer` and integrates it into the execution pipeline before the manager
+agent starts running:
+
+```
+constraints != null
+  |
+  v
+enforcer = new HierarchicalConstraintEnforcer(constraints)
+  |
+  +-- prepended as first DelegationPolicy in the policy chain
+  |     (user-supplied policies still apply after the constraint checks)
+  |
+  +-- an internal EnsembleListener is added to ExecutionContext
+        -> on DelegationCompletedEvent: enforcer.recordDelegation(event.workerRole())
+```
+
+This wiring ensures that every delegation the manager makes is (a) checked against the constraints
+before the worker is invoked, and (b) recorded so that post-execution validation has an accurate
+per-worker record of completed delegations (distinct from the *approved attempt* counts used for
+enforcing caps at policy-evaluation time).
+
+### Pre-Delegation Enforcement (inside DelegateTaskTool)
+
+The `HierarchicalConstraintEnforcer` is the first `DelegationPolicy` evaluated on every
+`DelegateTaskTool` invocation. Each check runs in order; the first failure short-circuits and
+returns `DelegationPolicyResult.reject(reason)`, which causes `DelegateTaskTool` to return a
+`DelegationResponse` with `DelegationStatus.FAILURE` back to the manager LLM without invoking the
+worker:
+
+| Order | Check | Rejection reason returned to LLM |
+|-------|-------|-----------------------------------|
+| 1 | **`allowedWorkers` check** — when `allowedWorkers` is non-empty, the target worker role must be present in the set | `"Agent '{role}' is not in the allowedWorkers list"` |
+| 2 | **Global cap check** — when `globalMaxDelegations > 0`, the total number of approved delegation attempts (including attempts whose worker later fails) must be below the cap | `"Global delegation cap of {n} has been reached"` |
+| 3 | **Per-worker cap check** — when `maxCallsPerWorker` contains an entry for the target role, the per-worker approved attempt count (including attempts whose worker later fails) must be below that cap | `"Agent '{role}' has reached its delegation cap of {n}"` |
+| 4 | **`requiredStages` ordering check** — when `requiredStages` is non-empty, the target worker must belong to the current or an earlier stage (all agents in every prior stage must have been called at least once before the next stage is accessible) | `"Cannot delegate to '{role}': stage {n} is not yet complete"` |
+
+All four checks return `DelegationPolicyResult.reject(reason)` on failure. If all checks pass, the
+enforcer returns `DelegationPolicyResult.allow()` and remaining user-defined policies are evaluated
+in order.
+
+### Post-Execution Validation
+
+After the manager agent finishes and produces its final text response,
+`enforcer.validatePostExecution(completedTaskOutputs)` is called with the list of all `TaskOutput`
+objects collected during the run. This method checks that every role in
+`HierarchicalConstraints.requiredWorkers` received at least one successful delegation. If any
+required worker was never called, a `ConstraintViolationException` is thrown carrying:
+
+- The list of worker roles that were required but not called
+- The partial `List<TaskOutput>` collected up to the point of failure (for diagnostics)
+
+```
+manager finishes
+  |
+  v
+enforcer.validatePostExecution(completedTaskOutputs)
+  |
+  +-- for each role in requiredWorkers:
+  |     IF recordDelegation() was never called for that role -> violation
+  |
+  +-- no violations -> execution continues normally; EnsembleOutput returned
+  |
+  +-- violations exist -> throw ConstraintViolationException(violations, completedTaskOutputs)
+```
+
+### Algorithm Summary
+
+```
+Input: List<Task> resolvedTasks, ExecutionContext ctx
+Output: EnsembleOutput
+
+1.  IF ensemble.hierarchicalConstraints() != null:
+      enforcer = new HierarchicalConstraintEnforcer(ensemble.hierarchicalConstraints())
+      policies = [enforcer] + ensemble.delegationPolicies()   // enforcer is FIRST
+      ctx = ctx.withAdditionalListener(
+                  new DelegationRecordingListener(enforcer))   // records on DelegationCompletedEvent
+    ELSE:
+      policies = ensemble.delegationPolicies()
+
+2.  Build DelegationContext:
+      delegationCtx = DelegationContext.builder()
+        .workerAgents(workerAgents)
+        .executionContext(ctx)
+        .policies(policies)
+        .maxDepth(ensemble.maxDelegationDepth())
+        .build()
+
+3.  Execute manager task via AgentExecutor (with DelegateTaskTool in tool list):
+      TRY:
+        managerOutput = agentExecutor.execute(managerTask, resolvedTasks, ctx, delegationCtx)
+      CATCH (AgentExecutionException | MaxIterationsExceededException e):
+        throw new TaskExecutionException(...)
+
+4.  IF enforcer != null:
+      enforcer.validatePostExecution(List.copyOf(completedOutputs.values()))
+      // Throws ConstraintViolationException if any requiredWorkers were not called
+
+5.  RETURN EnsembleOutput built from managerOutput and all delegated TaskOutputs
+```
+
+### Error Behavior
+
+| Scenario | Behavior |
+|---|---|
+| Delegation to disallowed worker | `DelegationPolicyResult.reject` from enforcer; worker not invoked; failure message returned to manager LLM |
+| Global delegation cap exceeded | `DelegationPolicyResult.reject` from enforcer; manager LLM is told the cap was reached |
+| Per-worker cap exceeded | `DelegationPolicyResult.reject` from enforcer; manager LLM is told that specific worker is capped |
+| Stage ordering violated | `DelegationPolicyResult.reject` from enforcer; manager LLM is told the prior stage is incomplete |
+| Required worker never called | `ConstraintViolationException` thrown after manager finishes; carries violation list and partial outputs |
+| Manager LLM error | Wrapped in `AgentExecutionException`; `ConstraintViolationException` is not raised (manager didn't finish) |
 
 ---
 

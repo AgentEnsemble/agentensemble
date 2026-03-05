@@ -2,128 +2,130 @@
 
 ## Current Work Focus
 
-Issues #78 (Delegation Policy Hooks) and #79 (Delegation Lifecycle Events) were implemented
-on `feature/delegation-policy-hooks-and-lifecycle-events` (2 commits):
-- `f5d9b67` feat(#79,#78): add delegation lifecycle events, correlation IDs, and policy hooks
-- `20b3185` docs(#78,#79): update README, guides, examples, and design docs
+Issue #81 (HierarchicalConstraints) has been implemented on
+`feature/81-hierarchical-constraints` (2 commits):
+- `41c8222` feat(#81): add HierarchicalConstraints with enforcer, validation, and tests
+- `927dc89` docs(#81): update README, guides, examples, reference, and design docs for
+  HierarchicalConstraints
 
-The feature branch is ready to be merged. All tests pass; full `./gradlew check` is green.
+The feature branch is ready for PR. All tests pass; full `./gradlew build
+:agentensemble-core:javadoc --continue` is green.
 
 ## Recent Changes
 
-### Issue #79 -- Delegation lifecycle events and correlation IDs
+### Issue #81 -- Constrained hierarchical mode
 
-**New event records in `net.agentensemble.callback`:**
-- `DelegationStartedEvent`: delegationId, delegatingAgentRole, workerRole, taskDescription,
-  delegationDepth, request -- fired before worker invocation (only when all guards and policies pass)
-- `DelegationCompletedEvent`: delegationId, delegatingAgentRole, workerRole, response, duration
-  -- fired after successful worker execution
-- `DelegationFailedEvent`: delegationId, delegatingAgentRole, workerRole, failureReason,
-  cause (Throwable or null), response, duration -- fired for guard failures, policy rejections,
-  and worker exceptions
+**New types:**
 
-**EnsembleListener changes:**
-- Added `onDelegationStarted(DelegationStartedEvent)` default no-op
-- Added `onDelegationCompleted(DelegationCompletedEvent)` default no-op
-- Added `onDelegationFailed(DelegationFailedEvent)` default no-op
+- `HierarchicalConstraints` (`@Value @Builder` in `net.agentensemble.workflow`):
+  - `requiredWorkers` (`@Singular Set<String>`) -- roles that MUST be called at least once
+  - `allowedWorkers` (`@Singular("allowedWorker") Set<String>`) -- allowlist; empty = all
+    allowed
+  - `maxCallsPerWorker` (`@Singular("maxCallsPerWorker") Map<String,Integer>`) -- per-worker
+    cap (counts approved attempts)
+  - `globalMaxDelegations` (`@Builder.Default int = 0`) -- total cap; 0 = unlimited
+  - `requiredStages` (`@Singular("requiredStage") List<List<String>>`) -- ordered stage
+    groups; all workers in stage N must complete before stage N+1 can be delegated to
 
-**ExecutionContext changes:**
-- Added `fireDelegationStarted`, `fireDelegationCompleted`, `fireDelegationFailed` fire methods
-  with same exception-isolation semantics as existing fire methods
+- `ConstraintViolationException` (in `net.agentensemble.exception`):
+  - Extends `AgentEnsembleException`
+  - Fields: `List<String> violations`, `List<TaskOutput> completedTaskOutputs`
+  - Constructors: (violations), (violations, completedOutputs), (violations, cause)
+  - Thrown post-execution when required workers were not called
 
-**AgentDelegationTool and DelegateTaskTool changes:**
-- Fire `DelegationStartedEvent` after all guards and policies pass, before worker invocation
-- Fire `DelegationCompletedEvent` on successful worker execution
-- Fire `DelegationFailedEvent` on guard failure (cause=null), policy rejection (cause=null),
-  or worker exception (cause=exception); guard/policy failures have no corresponding start event
+- `HierarchicalConstraintEnforcer` (package-private, `net.agentensemble.workflow`):
+  - Implements `DelegationPolicy` for pre-delegation enforcement
+  - `evaluate()` synchronized: checks allowedWorkers, global cap, per-worker cap, stage
+    ordering; increments approved-attempt counters atomically on ALLOW
+  - `recordDelegation(workerRole)` synchronized: adds to completedWorkers set
+  - `validatePostExecution(completedTaskOutputs)`: checks requiredWorkers against
+    completedWorkers; throws ConstraintViolationException with partial outputs if any missing
 
-**Ensemble.Builder changes:**
-- Lambda convenience methods: `onDelegationStarted`, `onDelegationCompleted`, `onDelegationFailed`
+**Modified types:**
 
-### Issue #78 -- Delegation policy hooks: DelegationPolicy
+- `HierarchicalWorkflowExecutor`:
+  - New 7-arg constructor adds `HierarchicalConstraints constraints` (nullable)
+  - In `execute()`: when constraints != null, creates enforcer, prepends it to policy chain,
+    adds internal EnsembleListener that calls `enforcer.recordDelegation(event.workerRole())`
+    on DelegationCompletedEvent, calls `enforcer.validatePostExecution()` after manager
+    finishes
+  - All existing constructors delegate to the 7-arg with `null` constraints (backward
+    compatible)
 
-**New types in `net.agentensemble.delegation.policy`:**
-- `DelegationPolicy` (@FunctionalInterface): `evaluate(DelegationRequest, DelegationPolicyContext)`
-  returning `DelegationPolicyResult`
-- `DelegationPolicyResult` (sealed interface): `Allow` (singleton), `Reject` (record w/ reason),
-  `Modify` (record w/ modifiedRequest); factory methods `allow()`, `reject(String)`,
-  `modify(DelegationRequest)`
-- `DelegationPolicyContext` (immutable record): `delegatingAgentRole`, `currentDepth`,
-  `maxDepth`, `availableWorkerRoles`
+- `Ensemble`:
+  - New field: `private final HierarchicalConstraints hierarchicalConstraints` (nullable)
+  - `selectExecutor()` passes constraints to `HierarchicalWorkflowExecutor` 7-arg constructor
 
-**DelegationContext changes:**
-- Added `List<DelegationPolicy> policies` field; immutable, propagated through `descend()`
-- New 5-arg `create()` factory with policies; original 4-arg delegates to it with `List.of()`
+- `EnsembleValidator`:
+  - New `validateHierarchicalConstraints()` method called from `validate()`
+  - Only runs when `workflow == HIERARCHICAL` and constraints != null
+  - Validates: requiredWorkers/allowedWorkers/maxCallsPerWorker/stage roles exist in
+    registered agents; requiredWorkers subset of allowedWorkers (when allowedWorkers
+    non-empty); maxCallsPerWorker values > 0; globalMaxDelegations >= 0
 
-**Policy evaluation in AgentDelegationTool and DelegateTaskTool:**
-- Runs after all built-in guards, before worker invocation
-- Evaluation order: registered order; first REJECT short-circuits (fires DelegationFailedEvent,
-  returns error message, records FAILURE response, worker never invoked)
-- MODIFY replaces working request for subsequent policies and worker invocation
-- ALLOW continues to next policy; all-ALLOW proceeds to worker
-
-**Ensemble.Builder changes:**
-- `@Singular("delegationPolicy") List<DelegationPolicy> delegationPolicies` field
-- `selectExecutor()` passes policies to all three workflow executors
-- All executors (Sequential, Hierarchical, Parallel) updated with policy-aware constructors
-  and `DelegationContext.create()` calls
-
-**Tests added:**
-- `DelegationPolicyContextTest`: record fields, equality, toString
-- `DelegationPolicyResultTest`: allow singleton, reject/modify factories, factory validation,
-  pattern matching exhaustiveness
-- `AgentDelegationToolPolicyTest`: ALLOW/REJECT/MODIFY, multiple policies in order,
-  first-REJECT short-circuits, MODIFY+REJECT chaining, propagation through descend(),
-  policy context fields (callerRole, depth, availableRoles)
-- `DelegationEventsTest`: all three event record fields and equality
-- `AgentDelegationToolEventsTest`: start+completed on success, correlationId matching,
-  guard failures fire failed-only (no start), policy rejection fires failed-only,
-  worker exception fires start+failed, listener exceptions don't abort delegation
-- `DelegateTaskToolPolicyAndEventsTest`: same coverage as above for hierarchical path
+**Test files added:**
+- `ConstraintViolationExceptionTest` -- message formatting, violations list, completedOutputs,
+  cause constructor, type hierarchy
+- `HierarchicalConstraintsTest` -- empty defaults, all builder methods, immutability
+- `HierarchicalConstraintEnforcerTest` -- allowedWorkers, per-worker cap, global cap, stage
+  ordering, recordDelegation, validatePostExecution
+- `HierarchicalWorkflowExecutorConstraintTest` -- backward compat, required worker enforced,
+  exception carries partial outputs, allowed workers filter, per-worker cap, global cap,
+  constraints + user policies coexist
+- `EnsembleConstraintValidationTest` -- valid constraints, invalid roles, invalid values
+- `HierarchicalConstraintsIntegrationTest` -- full Ensemble.run() integration for each
+  constraint type
 
 ## Next Steps
 
-- Open PR for `feature/delegation-policy-hooks-and-lifecycle-events` targeting `main`
-- Issue #81 (HierarchicalConstraints) remains open and depends on #78 being merged
+- Open PR for `feature/81-hierarchical-constraints` targeting `main`
 - Issue #74 (Tool Pipeline/Chaining) remains open for future development
 
-## CI Parity Rule (Lesson Learned -- PR #84)
+## CI Parity Rule (Lesson Learned -- PRs #84, #81)
 
 **Problem**: Local `./gradlew :agentensemble-core:check` does NOT include `javadoc`.
 CI runs `./gradlew build :agentensemble-core:javadoc --continue` which also generates
 Javadoc, causing CI failures for broken `{@link}` references that were invisible locally.
 
-**Root cause of this failure**: `{@link DelegationRequest#getTaskId()}` in the new event
-records referenced a Lombok-generated method (`getTaskId()` from `@Value`). Javadoc runs
-before annotation processing so Lombok-generated methods are invisible to it. The fix is
-to use `{@code}` for Lombok-generated method references instead of `{@link}`.
+**Root causes:**
+1. `{@link SomeClass#someMethod()}` on Lombok-generated methods (getters from `@Value`)
+   -- Lombok runs after Javadoc, so the methods are invisible during Javadoc generation.
+2. `{@link PackagePrivateClass}` from a public class's Javadoc -- Javadoc cannot link to
+   package-private types.
 
-**Prevention rule**: Before pushing any PR, always run the same command CI uses:
-```
-./gradlew build :agentensemble-core:javadoc --continue
-```
-This is equivalent to `check` (tests + spotless + coverage) PLUS javadoc generation.
-
-**Javadoc rule**: Never use `{@link SomeClass#someMethod()}` for Lombok-generated methods
-(`@Value` getters, `@Builder` fluent methods, `@Singular` collection methods, `@Getter`
-getters). Use `{@code}` instead. This is the same rule already established for Lombok
-`@Singular` builder methods.
+**Prevention rules:**
+1. Before pushing any PR, always run:
+   `./gradlew build :agentensemble-core:javadoc --continue`
+2. Never use `{@link SomeClass#someMethod()}` for Lombok-generated methods (`@Value`
+   getters, `@Builder` fluent methods, etc.). Use `{@code}` instead.
+3. Never use `{@link PackagePrivateClass}` in public class Javadoc. Use `{@code}` instead.
 
 ---
 
 ## Active Decisions and Considerations
 
-- **Guard failures vs policy rejections in events**: Guard failures (depth limit, self-delegation,
-  unknown agent) fire `DelegationFailedEvent` with `cause=null`. Policy rejections also fire
-  `DelegationFailedEvent` with `cause=null`. Worker exceptions fire both `DelegationStartedEvent`
-  and `DelegationFailedEvent` with the thrown exception as `cause`.
-- **DelegationStartedEvent only fires when all pass**: The event is only fired when the worker
-  is about to be invoked -- not for guard or policy failures. This means listeners don't see a
-  start event for delegations that were blocked before execution.
-- **MODIFY propagation**: When a policy returns MODIFY, the modified request replaces the
-  working request for all subsequent policy evaluations AND for the final worker invocation.
-  The `DelegationStartedEvent.request()` carries the final working request (possibly modified).
-- **Lombok @Singular conflict**: The varargs `delegationPolicies(DelegationPolicy... policies)`
-  method was not added to EnsembleBuilder because Lombok's @Singular annotation generates
-  `delegationPolicies(Collection)` which would conflict. Users can call
-  `.delegationPolicy(p)` multiple times or `.delegationPolicies(list)` (Lombok-generated).
+- **Constraint semantics for caps**: The per-worker cap (`maxCallsPerWorker`) and global cap
+  (`globalMaxDelegations`) count delegation attempts that passed all other checks (at
+  evaluate() time, before the worker executes). A failed worker execution still consumes a
+  slot. This is by design -- caps limit the Manager's delegation attempts.
+
+- **Stage ordering uses completedWorkers**: Stage prerequisites check `completedWorkers`
+  (populated by `recordDelegation()` on DelegationCompletedEvent), meaning workers must have
+  COMPLETED successfully before the next stage can proceed. A failed worker does not advance
+  the stage.
+
+- **Pre-delegation vs post-execution violations**: Pre-delegation violations (allowedWorkers,
+  caps, stages) are returned as DelegationPolicyResult.reject() messages to the Manager LLM
+  -- they are not exceptions. Only post-execution required-worker violations throw
+  ConstraintViolationException.
+
+- **Thread safety**: HierarchicalConstraintEnforcer uses `synchronized` methods for atomicity
+  of check-and-increment operations when the Manager issues concurrent tool calls.
+
+- **Enforcer is first policy**: The constraint enforcer is prepended to the policy chain so
+  hard constraint checks always run before user-registered DelegationPolicy instances.
+
+- **Lombok @Singular on Map**: Lombok cannot auto-singularize `maxCallsPerWorker` (it
+  doesn't recognize "perWorker" as a plural suffix). The explicit annotation
+  `@Singular("maxCallsPerWorker")` generates `maxCallsPerWorker(String key, Integer value)`
+  as the singular method and `maxCallsPerWorkers(Map)` as the bulk method.

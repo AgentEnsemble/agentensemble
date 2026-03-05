@@ -145,6 +145,8 @@ In hierarchical workflow, `EnsembleOutput.getTaskOutputs()` contains:
 - You want the manager to re-order or combine tasks dynamically
 - You are building a system where task routing should be AI-driven
 
+**Hierarchical constraints:** Add `HierarchicalConstraints` to impose deterministic guardrails (required workers, allowed workers, per-worker caps, stage ordering) while preserving the LLM-directed nature of the workflow. See the [Delegation Guide](../guides/delegation.md#hierarchical-constraints) for full documentation.
+
 ---
 
 ## PARALLEL

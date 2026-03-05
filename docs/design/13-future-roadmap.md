@@ -326,6 +326,17 @@ published as a separate artifact `net.agentensemble:agentensemble-tools`.
 
 See [Built-in Tools guide](../guides/built-in-tools.md) for usage.
 
+### Hierarchical Constraints (COMPLETE -- v1.0.x)
+
+**Implemented** (issue #81):
+
+- `HierarchicalConstraints` configuration on `Ensemble.builder().hierarchicalConstraints(...)` for constraining manager-to-worker delegation in hierarchical workflows
+- Constraint types: `requiredWorkers` (`Set<String>` -- roles that must be called), `allowedWorkers` (`Set<String>` -- allowlist; empty means all allowed), `maxCallsPerWorker` (`Map<String,Integer>` -- per-worker cap), `globalMaxDelegations` (`int` -- total cap; 0=unlimited), `requiredStages` (`List<List<String>>` -- ordered stage groups)
+- Pre-delegation violations (disallowed worker, cap exceeded, stage ordering) are returned as error messages to the Manager LLM via the `DelegationPolicy` mechanism
+- Post-execution validation: if required workers were not called, `ConstraintViolationException` is thrown with violations list and partial task outputs
+- Constraint enforcer is prepended as first `DelegationPolicy`; user policies still apply after constraint checks
+- All constraint roles validated against registered agents at `Ensemble.run()` time (`ValidationException` if invalid)
+
 ### Streaming Output
 
 - Stream agent responses token-by-token using LangChain4j's `StreamingChatLanguageModel`

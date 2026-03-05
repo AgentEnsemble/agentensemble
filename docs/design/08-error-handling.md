@@ -9,6 +9,7 @@ java.lang.RuntimeException
   +-- AgentEnsembleException                  (base for all framework exceptions)
         +-- ValidationException               (invalid configuration)
         +-- TaskExecutionException             (task-level failure)
+        +-- ConstraintViolationException       (post-execution hierarchical constraint failure)
         +-- AgentExecutionException            (agent-level failure)
         +-- ToolExecutionException             (tool infrastructure failure)
         +-- MaxIterationsExceededException     (agent stuck in tool loop)
@@ -89,6 +90,55 @@ public class TaskExecutionException extends AgentEnsembleException {
 - `getCompletedTaskOutputs()` returns all outputs from tasks that succeeded before the failure
 - Users can inspect these for partial results
 - `getCause()` reveals the underlying error (LLM timeout, agent stuck, etc.)
+
+### ConstraintViolationException
+
+Thrown after a hierarchical workflow completes when one or more roles listed in `HierarchicalConstraints.requiredWorkers` were never called by the Manager during the workflow execution.
+
+```java
+public class ConstraintViolationException extends AgentEnsembleException {
+
+    /**
+     * Human-readable descriptions of each constraint that was violated.
+     * Each entry describes a single unfulfilled requirement (e.g.,
+     * "Required worker 'QA Engineer' was never delegated a task").
+     */
+    private final List<String> violations;
+
+    /**
+     * Outputs from workers that did complete successfully before the
+     * constraint check. Allows inspection of partial results.
+     */
+    private final List<TaskOutput> completedTaskOutputs;
+
+    public ConstraintViolationException(List<String> violations) { ... }
+
+    public ConstraintViolationException(List<String> violations,
+            List<TaskOutput> completedTaskOutputs) { ... }
+
+    public ConstraintViolationException(List<String> violations,
+            Throwable cause) { ... }
+
+    // Getters for all fields
+
+    @Override
+    public String getMessage() { ... }
+}
+```
+
+**When thrown:**
+- After the hierarchical workflow manager completes, when `HierarchicalConstraints.requiredWorkers` contains roles that were never called during the workflow execution
+
+**getMessage() format:**
+- Single violation: `"Hierarchical constraint violated: <violation description>"`
+- Multiple violations: `"Hierarchical constraints violated (N): <v1>; <v2>; ..."`
+
+**NOT thrown for pre-delegation constraint failures:**
+Pre-delegation constraints (`allowedWorkers`, `maxCallsPerWorker`, `globalMaxDelegations`, `requiredStages`) are enforced before a delegation is approved and return a `DelegationPolicyResult.reject()` result back to the Manager LLM — they do not produce exceptions.
+
+**Recovery:**
+- `getViolations()` lists all unfulfilled requirements, identifying which required roles were skipped
+- `getCompletedTaskOutputs()` provides partial results from workers that did execute
 
 ### AgentExecutionException
 
@@ -214,6 +264,7 @@ public class PromptTemplateException extends AgentEnsembleException {
 |---|---|---|
 | `ValidationException` | `build()` or `run()` | Fix configuration. No partial results. |
 | `TaskExecutionException` | `WorkflowExecutor` | Inspect `completedTaskOutputs` for partial work. Fix cause. |
+| `ConstraintViolationException` | `HierarchicalWorkflowExecutor` | Inspect `violations` to see which required roles were skipped. Inspect `completedTaskOutputs` for partial results. |
 | `AgentExecutionException` | `AgentExecutor` | Wrapped in `TaskExecutionException`. Check LLM connectivity/credentials. |
 | `ToolExecutionException` | Tool execution | NOT propagated (error fed to LLM). Fix tool implementation if persistent. |
 | `MaxIterationsExceededException` | `AgentExecutor` | Increase `maxIterations`, simplify task, or reduce tools. |
@@ -230,9 +281,12 @@ ensemble.run(inputs)
   +-- WorkflowExecutor.execute()
         |
         +-- TaskExecutionException (wraps below)
-              |
-              +-- AgentExecutionException (LLM failed)
-              +-- MaxIterationsExceededException (agent stuck)
-              |
-              (Tool errors are NOT exceptions -- fed back to LLM)
+        |     |
+        |     +-- AgentExecutionException (LLM failed)
+        |     +-- MaxIterationsExceededException (agent stuck)
+        |     |
+        |     (Tool errors are NOT exceptions -- fed back to LLM)
+        |
+        +-- ConstraintViolationException (hierarchical: required workers never called)
+              (pre-delegation policy violations are NOT exceptions -- DelegationPolicyResult.reject())
 ```

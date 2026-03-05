@@ -17,6 +17,55 @@ Maven Central remains the sole publication target for all modules.
 
 ---
 
+## [Implemented / branch ready] Issue #81 -- 2026-03-04
+
+Feature branch: `feature/81-hierarchical-constraints`
+Commits: `41c8222`, `927dc89`
+
+### Added (Issue #81 -- Constrained hierarchical mode)
+
+**New types:**
+- `HierarchicalConstraints` (`@Value @Builder` in `net.agentensemble.workflow`):
+  `requiredWorkers` (Set), `allowedWorkers` (Set), `maxCallsPerWorker` (Map),
+  `globalMaxDelegations` (int, default 0), `requiredStages` (List<List<String>>)
+- `ConstraintViolationException` (in `net.agentensemble.exception`): extends
+  `AgentEnsembleException`; fields: `violations`, `completedTaskOutputs`; thrown
+  post-execution when required workers were not called
+- `HierarchicalConstraintEnforcer` (package-private in `net.agentensemble.workflow`):
+  implements `DelegationPolicy` for pre-delegation enforcement; synchronized
+  `evaluate()` checks allowedWorkers, global cap, per-worker cap, stage ordering;
+  `recordDelegation()` tracks completed workers; `validatePostExecution()` checks
+  required workers
+
+**Modified types:**
+- `HierarchicalWorkflowExecutor`: new 7-arg constructor with nullable `HierarchicalConstraints`;
+  `execute()` creates enforcer when constraints != null, prepends enforcer to policy chain,
+  registers internal EnsembleListener to call `recordDelegation()` on DelegationCompletedEvent,
+  calls `validatePostExecution()` after manager finishes; all existing constructors backward
+  compatible
+- `Ensemble`: new `hierarchicalConstraints` field; passed to `HierarchicalWorkflowExecutor`
+  in `selectExecutor()`
+- `EnsembleValidator`: new `validateHierarchicalConstraints()` validates constraint roles
+  against registered agents, values > 0, requiredWorkers subset of allowedWorkers
+
+**Tests added (6 new test files, 851 total):**
+- `ConstraintViolationExceptionTest`, `HierarchicalConstraintsTest`,
+  `HierarchicalConstraintEnforcerTest`, `HierarchicalWorkflowExecutorConstraintTest`,
+  `EnsembleConstraintValidationTest`, `HierarchicalConstraintsIntegrationTest`
+
+**Docs updated (14 files):**
+- README.md, docs/guides/delegation.md, docs/guides/workflows.md,
+  docs/guides/error-handling.md, docs/examples/hierarchical-team.md,
+  docs/reference/ensemble-configuration.md, docs/design/02-architecture.md,
+  docs/design/03-domain-model.md, docs/design/04-execution-engine.md,
+  docs/design/08-error-handling.md, docs/design/13-future-roadmap.md,
+  docs/getting-started/concepts.md
+
+**CI parity rule addition:** `{@link PackagePrivateClass}` from public class Javadoc also fails;
+must use `{@code}` (extends rule from issue #84 about Lombok-generated methods).
+
+---
+
 ## [Implemented / branch ready] Issues #78 + #79 -- 2026-03-04
 
 Feature branch: `feature/delegation-policy-hooks-and-lifecycle-events`

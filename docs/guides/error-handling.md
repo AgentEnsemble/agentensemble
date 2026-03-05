@@ -14,6 +14,7 @@ AgentEnsembleException (base)
   MaxIterationsExceededException  -- agent exceeded its tool-call limit
   PromptTemplateException      -- unresolved template variables
   ToolExecutionException       -- a tool call failed
+  ConstraintViolationException -- required workers were not called (hierarchical workflow)
 ```
 
 ---
@@ -102,6 +103,31 @@ Thrown when a task description or expected output contains `{variable}` placehol
 catch (PromptTemplateException e) {
     System.err.println("Missing template variables: " + e.getMissingVariables());
     // e.g., "Missing template variables: [topic, year]"
+}
+```
+
+---
+
+## `ConstraintViolationException`
+
+Thrown after a hierarchical workflow manager completes when one or more workers listed in `HierarchicalConstraints` were never called during the run. This signals that the manager did not satisfy the required delegation constraints before finishing. Contains:
+- A list of violation descriptions via `getViolations()`
+- A list of `TaskOutput` objects for tasks that did complete via `getCompletedTaskOutputs()`
+
+```java
+try {
+    EnsembleOutput output = ensemble.run(inputs);
+} catch (ConstraintViolationException e) {
+    System.err.println("Constraint violations detected:");
+    for (String violation : e.getViolations()) {
+        System.err.println("  - " + violation);
+    }
+
+    // Partial results are still available for tasks that completed
+    for (TaskOutput completed : e.getCompletedTaskOutputs()) {
+        System.out.println("Completed: " + completed.getTaskDescription());
+        System.out.println("Output: " + completed.getRaw());
+    }
 }
 ```
 
