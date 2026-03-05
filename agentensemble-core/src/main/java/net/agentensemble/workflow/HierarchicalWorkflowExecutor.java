@@ -220,7 +220,9 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                         executionContext.isVerbose(),
                         allListeners,
                         executionContext.toolExecutor(),
-                        executionContext.toolMetrics());
+                        executionContext.toolMetrics(),
+                        executionContext.costConfiguration(),
+                        executionContext.captureMode());
             } else {
                 enforcer = null;
                 effectiveContext = executionContext;
@@ -267,8 +269,16 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
 
             // 6. The manager uses disabled memory (it is a meta-orchestrator) but still
             //    participates in listeners -- including the constraint enforcer listener.
+            //    captureMode and costConfiguration are propagated so that the manager's
+            //    own LLM interactions are captured at the same depth as the worker agents.
             ExecutionContext managerContext = ExecutionContext.of(
-                    MemoryContext.disabled(), effectiveContext.isVerbose(), effectiveContext.listeners());
+                    MemoryContext.disabled(),
+                    effectiveContext.isVerbose(),
+                    effectiveContext.listeners(),
+                    effectiveContext.toolExecutor(),
+                    effectiveContext.toolMetrics(),
+                    effectiveContext.costConfiguration(),
+                    effectiveContext.captureMode());
 
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
 

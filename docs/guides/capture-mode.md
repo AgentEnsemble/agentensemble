@@ -191,10 +191,8 @@ You have a deployed application and want to inspect what the LLM was sending and
 a specific run:
 
 ```bash
-# Start the app with STANDARD capture and a trace file
-AGENTENSEMBLE_CAPTURE_MODE=FULL java \
-  -Dagentensemble.captureMode=FULL \
-  -jar my-agent-app.jar
+# Start the app with FULL capture (auto-exports to ./traces/)
+java -Dagentensemble.captureMode=FULL -jar my-agent-app.jar
 ```
 
 After the run completes, open `traces/{run-id}.json` in any JSON viewer. The trace contains:

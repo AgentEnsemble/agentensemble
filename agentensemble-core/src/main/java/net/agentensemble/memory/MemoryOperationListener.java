@@ -10,9 +10,9 @@ import java.time.Duration;
  * {@link MemoryContext#setOperationListener(MemoryOperationListener)} at the start of each
  * task and cleared in a {@code finally} block after the task completes. This keeps the
  * listener lifecycle scoped to a single task, matching the lifetime of a
- * {@link net.agentensemble.trace.internal.TaskTraceAccumulator}.
+ * {@code TaskTraceAccumulator}.
  *
- * <p>The primary consumer is {@link net.agentensemble.trace.internal.TaskTraceAccumulator},
+ * <p>The primary consumer is {@code TaskTraceAccumulator},
  * which forwards each event to the corresponding counter so that
  * {@link net.agentensemble.metrics.MemoryOperationCounts} is fully populated in the task trace.
  *

@@ -156,6 +156,7 @@ class CapturedMessageTest {
     void fromAll_resultIsImmutable() {
         List<CapturedMessage> messages = CapturedMessage.fromAll(List.of(new SystemMessage("sys")));
         // Should be an unmodifiable list (UnsupportedOperationException expected)
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> messages.add(null));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> messages.add(null))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 }
