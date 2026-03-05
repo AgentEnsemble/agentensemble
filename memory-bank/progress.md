@@ -71,12 +71,11 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 
 ## Current Status
 
-**Branch:** `feature/60-built-in-tool-library`
-**PR:** #72 (open, targeting `main`)
-**Issues:** Closes #60 and #73
+**Branch:** `feature/81-hierarchical-constraints`
+**Issue:** Closes #81 (depends on #77, #78, #79 -- all merged to main)
 
 All tests pass:
-- `agentensemble-core` -- check passes (90%+ coverage)
+- `agentensemble-core` -- check + javadoc passes (851 tests, 100% green)
 - All 9 `agentensemble-tools-*` modules -- check passes (90%+ coverage)
 - `agentensemble-metrics-micrometer` -- check passes
 - `agentensemble-examples` -- compiles successfully
