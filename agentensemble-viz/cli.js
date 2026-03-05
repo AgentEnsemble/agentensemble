@@ -13,14 +13,18 @@
 import { createServer } from 'node:http';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
 
-// Resolve version from package.json. Using new URL so Bun embeds package.json
-// into the compiled binary alongside the dist/ assets.
+// Resolve version from package.json. The new URL() reference is intentional:
+// it allows Bun's --compile to detect and embed package.json into the binary.
+// fileURLToPath() is used instead of .pathname so that paths with spaces or
+// other special characters are correctly decoded (URL encoding is not valid
+// for filesystem APIs).
 let cliVersion = 'unknown';
 try {
   const pkg = JSON.parse(
-    readFileSync(new URL('./package.json', import.meta.url).pathname, 'utf8'),
+    readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
   );
   cliVersion = pkg.version ?? 'unknown';
 } catch {
@@ -36,8 +40,10 @@ if (process.argv.includes('--version')) {
 // Resolve the traces directory from the CLI argument or default
 const tracesDir = process.argv[2] ? resolve(process.argv[2]) : resolve('./traces');
 
-// Using new URL so Bun embeds the entire dist/ directory into the compiled binary
-const distDir = new URL('./dist/', import.meta.url).pathname;
+// Using new URL so Bun embeds the entire dist/ directory into the compiled binary.
+// fileURLToPath() decodes URL percent-encoding so paths with spaces or special
+// characters resolve correctly on the filesystem.
+const distDir = fileURLToPath(new URL('./dist/', import.meta.url));
 const PORT = parseInt(process.env.PORT ?? '7329', 10);
 
 const MIME_TYPES = {
