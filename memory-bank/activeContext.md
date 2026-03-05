@@ -87,6 +87,30 @@ The feature branch is ready to be merged. All tests pass; full `./gradlew check`
 - Issue #81 (HierarchicalConstraints) remains open and depends on #78 being merged
 - Issue #74 (Tool Pipeline/Chaining) remains open for future development
 
+## CI Parity Rule (Lesson Learned -- PR #84)
+
+**Problem**: Local `./gradlew :agentensemble-core:check` does NOT include `javadoc`.
+CI runs `./gradlew build :agentensemble-core:javadoc --continue` which also generates
+Javadoc, causing CI failures for broken `{@link}` references that were invisible locally.
+
+**Root cause of this failure**: `{@link DelegationRequest#getTaskId()}` in the new event
+records referenced a Lombok-generated method (`getTaskId()` from `@Value`). Javadoc runs
+before annotation processing so Lombok-generated methods are invisible to it. The fix is
+to use `{@code}` for Lombok-generated method references instead of `{@link}`.
+
+**Prevention rule**: Before pushing any PR, always run the same command CI uses:
+```
+./gradlew build :agentensemble-core:javadoc --continue
+```
+This is equivalent to `check` (tests + spotless + coverage) PLUS javadoc generation.
+
+**Javadoc rule**: Never use `{@link SomeClass#someMethod()}` for Lombok-generated methods
+(`@Value` getters, `@Builder` fluent methods, `@Singular` collection methods, `@Getter`
+getters). Use `{@code}` instead. This is the same rule already established for Lombok
+`@Singular` builder methods.
+
+---
+
 ## Active Decisions and Considerations
 
 - **Guard failures vs policy rejections in events**: Guard failures (depth limit, self-delegation,
