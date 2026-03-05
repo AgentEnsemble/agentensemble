@@ -300,8 +300,6 @@ Ensemble ensemble = Ensemble.builder()
     .build();
 ```
 
-See the [Micrometer integration guide](../guides/metrics.md) for full details.
-
 ### Custom tool metrics implementation
 
 Implement `ToolMetrics` directly for custom backends:

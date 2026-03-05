@@ -491,7 +491,12 @@ public class Ensemble {
                 .workflow(workflow.name())
                 .startedAt(startedAt)
                 .completedAt(completedAt)
-                .totalDuration(output.getTotalDuration())
+                // Use Duration.between(startedAt, completedAt) so that totalDuration is
+                // consistent with the startedAt and completedAt timestamps on this trace.
+                // output.getTotalDuration() covers workflow execution only and would not
+                // match completedAt - startedAt (which also includes validation, template
+                // resolution, and memory setup).
+                .totalDuration(java.time.Duration.between(startedAt, completedAt))
                 .inputs(Map.copyOf(resolvedInputs != null ? resolvedInputs : Map.of()))
                 .metrics(metrics);
 

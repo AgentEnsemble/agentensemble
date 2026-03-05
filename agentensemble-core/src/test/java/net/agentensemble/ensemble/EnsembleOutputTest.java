@@ -100,8 +100,11 @@ class EnsembleOutputTest {
                 .totalToolCalls(0)
                 .build();
 
-        // Returned list should be immutable (unmodifiable)
         assertThat(output.getTaskOutputs()).hasSize(1);
+        // Verify the returned list is truly unmodifiable
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> output.getTaskOutputs().add(null))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     private static TaskOutput taskOutputWithMetrics(String agentRole, TaskMetrics metrics) {

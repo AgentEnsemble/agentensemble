@@ -1,8 +1,6 @@
 package net.agentensemble.trace.export;
 
 import java.nio.file.Path;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import net.agentensemble.trace.ExecutionTrace;
 import org.slf4j.Logger;
@@ -40,9 +38,6 @@ import org.slf4j.LoggerFactory;
 public class JsonTraceExporter implements ExecutionTraceExporter {
 
     private static final Logger log = LoggerFactory.getLogger(JsonTraceExporter.class);
-
-    private static final DateTimeFormatter TIMESTAMP_FMT =
-            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
 
     private final Path outputPath;
     private final boolean directoryMode;

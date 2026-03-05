@@ -428,6 +428,28 @@ public class AgentDelegationTool {
                             e,
                             response,
                             elapsed));
+
+            // Capture failed delegation trace for the parent agent's TaskTrace
+            if (delegationTraceConsumer != null) {
+                Instant failedAt = Instant.now();
+                String errorMsg = "Error: "
+                        + (e.getMessage() != null
+                                ? e.getMessage()
+                                : e.getClass().getSimpleName());
+                DelegationTrace failedTrace = DelegationTrace.builder()
+                        .delegatorRole(callerRole)
+                        .workerRole(finalTarget.getRole())
+                        .taskDescription(finalRequest.getTaskDescription())
+                        .startedAt(requestStart)
+                        .completedAt(failedAt)
+                        .duration(Duration.between(requestStart, failedAt))
+                        .depth(childDepth)
+                        .result(errorMsg)
+                        .succeeded(false)
+                        .workerTrace(null)
+                        .build();
+                delegationTraceConsumer.accept(failedTrace);
+            }
             throw e;
         } finally {
             // Restore prior MDC values rather than unconditionally removing them.

@@ -80,6 +80,11 @@ public class ExecutionMetrics {
      * last task with that role are retained under that key. Access per-task metrics
      * directly via {@link net.agentensemble.ensemble.EnsembleOutput#getTaskOutputs()} when
      * per-task granularity matters.
+     *
+     * <p>The Lombok-generated builder provides both a bulk {@code taskMetrics(Map)} method
+     * (used by {@link #from(java.util.List)}) and a singular {@code taskMetric(String, TaskMetrics)}
+     * method for incremental addition. When using the singular form, later calls with the same
+     * role key replace earlier entries (last-write-wins for duplicate roles).
      */
     @Singular("taskMetric")
     Map<String, TaskMetrics> taskMetrics;

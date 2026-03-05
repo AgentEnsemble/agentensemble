@@ -26,11 +26,10 @@ public interface ExecutionTraceExporter {
      * Export the given execution trace.
      *
      * <p>Called by the framework at the end of each successful {@link net.agentensemble.Ensemble#run()}
-     * invocation. Also called when a run fails, in which case the trace contains the partial
-     * results from tasks that completed before the failure, plus an entry in
-     * {@code ExecutionTrace.getErrors()}.
+     * invocation. Only invoked when the run completes without an unhandled exception; runs that
+     * fail before producing any output (e.g., validation failures) do not trigger the exporter.
      *
-     * @param trace the complete (or partial, on failure) execution trace; never {@code null}
+     * @param trace the complete execution trace; never {@code null}
      */
     void export(ExecutionTrace trace);
 }
