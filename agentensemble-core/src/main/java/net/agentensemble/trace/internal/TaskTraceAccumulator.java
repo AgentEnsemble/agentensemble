@@ -9,6 +9,8 @@ import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.CostEstimate;
 import net.agentensemble.metrics.MemoryOperationCounts;
 import net.agentensemble.metrics.TaskMetrics;
+import net.agentensemble.trace.CaptureMode;
+import net.agentensemble.trace.CapturedMessage;
 import net.agentensemble.trace.DelegationTrace;
 import net.agentensemble.trace.LlmInteraction;
 import net.agentensemble.trace.LlmResponseType;
@@ -24,6 +26,11 @@ import net.agentensemble.trace.ToolCallTrace;
  * and delegations. At the end of execution, {@link #buildTrace} and {@link #buildMetrics}
  * freeze the collected data into immutable value objects.
  *
+ * <p>When the {@link CaptureMode} is {@link CaptureMode#STANDARD} or higher, the caller
+ * may invoke {@link #setCurrentMessages(List)} before each {@link #finalizeIteration} call
+ * to capture the full LLM message history for that iteration. The message list is consumed
+ * and cleared when the iteration is finalized.
+ *
  * <p>This class is <em>not</em> thread-safe and is intended to be used exclusively from the
  * thread that drives the agent's ReAct loop. Tool call results accumulated via
  * {@link #addToolCallToCurrentIteration} are always added from the main thread after
@@ -37,6 +44,7 @@ public final class TaskTraceAccumulator {
     private final String taskDescription;
     private final String expectedOutput;
     private final Instant startedAt;
+    private final CaptureMode captureMode;
 
     // Prompt
     private TaskPrompts prompts;
@@ -49,6 +57,9 @@ public final class TaskTraceAccumulator {
     private long currentInputTokens = -1;
     private long currentOutputTokens = -1;
     private final List<ToolCallTrace> currentIterationTools = new ArrayList<>();
+
+    // Message snapshot for STANDARD+ capture (set once per iteration, cleared after finalize)
+    private List<CapturedMessage> currentIterationMessages = null;
 
     // Completed LLM interactions
     private final List<LlmInteraction> interactions = new ArrayList<>();
@@ -75,7 +86,7 @@ public final class TaskTraceAccumulator {
     private long memoryRetrievalTimeNanos = 0;
 
     /**
-     * Create an accumulator for the given task.
+     * Create an accumulator for the given task using {@link CaptureMode#OFF}.
      *
      * @param agentRole       the role of the agent executing the task
      * @param taskDescription the task description
@@ -83,10 +94,38 @@ public final class TaskTraceAccumulator {
      * @param startedAt       wall-clock time when the agent began executing
      */
     public TaskTraceAccumulator(String agentRole, String taskDescription, String expectedOutput, Instant startedAt) {
+        this(agentRole, taskDescription, expectedOutput, startedAt, CaptureMode.OFF);
+    }
+
+    /**
+     * Create an accumulator for the given task with the specified capture mode.
+     *
+     * @param agentRole       the role of the agent executing the task
+     * @param taskDescription the task description
+     * @param expectedOutput  the expected output as configured on the task
+     * @param startedAt       wall-clock time when the agent began executing
+     * @param captureMode     depth of data collection; must not be {@code null}
+     */
+    public TaskTraceAccumulator(
+            String agentRole,
+            String taskDescription,
+            String expectedOutput,
+            Instant startedAt,
+            CaptureMode captureMode) {
         this.agentRole = agentRole;
         this.taskDescription = taskDescription;
         this.expectedOutput = expectedOutput;
         this.startedAt = startedAt;
+        this.captureMode = captureMode != null ? captureMode : CaptureMode.OFF;
+    }
+
+    /**
+     * Return the capture mode active for this accumulator.
+     *
+     * @return the capture mode; never null
+     */
+    public CaptureMode getCaptureMode() {
+        return captureMode;
     }
 
     // ========================
@@ -120,6 +159,7 @@ public final class TaskTraceAccumulator {
     public void beginLlmCall(Instant start) {
         this.currentLlmStart = start;
         this.currentIterationTools.clear();
+        this.currentIterationMessages = null;
         this.currentInputTokens = -1;
         this.currentOutputTokens = -1;
     }
@@ -153,6 +193,24 @@ public final class TaskTraceAccumulator {
     }
 
     /**
+     * Set the complete message history snapshot for the current iteration.
+     *
+     * <p>Call this after {@link #beginLlmCall} and before {@link #finalizeIteration} when
+     * {@link CaptureMode#STANDARD} or higher is active. The snapshot is included in the
+     * {@link LlmInteraction} produced by {@link #finalizeIteration} and then cleared.
+     *
+     * <p>Has no effect (is silently ignored) when {@link CaptureMode#OFF} is active.
+     *
+     * @param messages the message snapshot to associate with the current iteration;
+     *                 may be {@code null} or empty, in which case no messages are recorded
+     */
+    public void setCurrentMessages(List<CapturedMessage> messages) {
+        if (captureMode.isAtLeast(CaptureMode.STANDARD) && messages != null && !messages.isEmpty()) {
+            this.currentIterationMessages = messages;
+        }
+    }
+
+    /**
      * Add a tool call that was executed during the current ReAct iteration.
      *
      * <p>Must be called after {@link #endLlmCall} and before {@link #finalizeIteration}.
@@ -172,6 +230,9 @@ public final class TaskTraceAccumulator {
      * <p>Must be called once per LLM call, after all tool calls for that iteration
      * have been added via {@link #addToolCallToCurrentIteration}.
      *
+     * <p>When a message snapshot was set via {@link #setCurrentMessages}, it is included
+     * in the sealed {@link LlmInteraction} and then cleared.
+     *
      * @param type         whether this produced tool calls or a final answer
      * @param responseText the final response text (non-null only for FINAL_ANSWER)
      */
@@ -187,6 +248,13 @@ public final class TaskTraceAccumulator {
                 .responseText(responseText);
         for (ToolCallTrace tool : currentIterationTools) {
             builder.toolCall(tool);
+        }
+        // Include message snapshot when STANDARD+ and a snapshot was provided
+        if (currentIterationMessages != null) {
+            for (CapturedMessage msg : currentIterationMessages) {
+                builder.message(msg);
+            }
+            currentIterationMessages = null;
         }
         interactions.add(builder.build());
         currentIterationTools.clear();

@@ -66,6 +66,19 @@ public class ToolCallTrace {
     ToolCallOutcome outcome;
 
     /**
+     * Structured representation of the tool's input arguments, parsed from the JSON
+     * {@link #getArguments()} string.
+     *
+     * <p>Populated when {@link CaptureMode#FULL} is active. {@code null} at
+     * {@link CaptureMode#OFF} and {@link CaptureMode#STANDARD}.
+     *
+     * <p>This field allows a consumer to inspect tool inputs without parsing the raw JSON
+     * arguments string. Keys are argument names; values are typed objects (String, Number,
+     * Boolean, List, or nested Map) as decoded by Jackson.
+     */
+    Map<String, Object> parsedInput;
+
+    /**
      * Optional caller-supplied metadata attached to this tool call trace.
      * Empty by default; populated by framework extensions or custom tool implementations.
      */

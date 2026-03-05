@@ -17,6 +17,11 @@ import lombok.Value;
  * When the LLM produces a final answer, {@code responseText} contains the
  * response and {@code toolCalls} is empty.
  *
+ * <p>When {@link CaptureMode#STANDARD} or higher is active, the {@code messages} list
+ * is populated with the complete message history that was sent to the LLM for this iteration.
+ * This enables a consumer to replay the exact conversation the LLM had, step by step.
+ * At {@link CaptureMode#OFF}, {@code messages} is always empty.
+ *
  * <p>Contained in {@link TaskTrace}.
  */
 @Value
@@ -71,4 +76,20 @@ public class LlmInteraction {
      */
     @Singular
     List<ToolCallTrace> toolCalls;
+
+    /**
+     * Complete message history sent to the LLM for this iteration.
+     *
+     * <p>Populated when {@link CaptureMode#STANDARD} or higher is active. Contains every
+     * message in the conversation buffer at the time of the chat() call: the initial system
+     * and user messages, any prior assistant+tool turns from earlier iterations, and for
+     * multi-iteration runs the assistant/tool messages accumulated so far.
+     *
+     * <p>Empty list when {@link CaptureMode#OFF} (the default).
+     *
+     * <p>This field enables a visualization tool to replay the exact conversation the LLM
+     * had, step by step, and to reconstruct the full ReAct reasoning chain.
+     */
+    @Singular
+    List<CapturedMessage> messages;
 }

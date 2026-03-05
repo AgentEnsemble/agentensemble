@@ -37,9 +37,11 @@ import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.trace.AgentSummary;
+import net.agentensemble.trace.CaptureMode;
 import net.agentensemble.trace.ExecutionTrace;
 import net.agentensemble.trace.TaskTrace;
 import net.agentensemble.trace.export.ExecutionTraceExporter;
+import net.agentensemble.trace.export.JsonTraceExporter;
 import net.agentensemble.workflow.DefaultManagerPromptStrategy;
 import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
@@ -339,6 +341,41 @@ public class Ensemble {
     private final ExecutionTraceExporter traceExporter;
 
     /**
+     * Depth of data collection during each run.
+     *
+     * <p>The default is {@link CaptureMode#OFF} (current behavior: prompts, tool args/results,
+     * timing, token counts). Set to {@link CaptureMode#STANDARD} to also capture full LLM
+     * message history per iteration and wire memory operation counts into the trace. Set to
+     * {@link CaptureMode#FULL} to additionally auto-export traces to {@code ./traces/} and
+     * enrich tool I/O with parsed JSON arguments.
+     *
+     * <p>The effective capture mode is resolved in the following order (first wins):
+     * <ol>
+     *   <li>This field when not {@link CaptureMode#OFF}</li>
+     *   <li>JVM system property {@code agentensemble.captureMode}</li>
+     *   <li>Environment variable {@code AGENTENSEMBLE_CAPTURE_MODE}</li>
+     *   <li>{@link CaptureMode#OFF}</li>
+     * </ol>
+     *
+     * <p>This means the same application can be put into debug mode without any code changes:
+     * <pre>
+     * java -Dagentensemble.captureMode=FULL -jar my-app.jar
+     * </pre>
+     * or:
+     * <pre>
+     * AGENTENSEMBLE_CAPTURE_MODE=STANDARD java -jar my-app.jar
+     * </pre>
+     *
+     * <p>{@link CaptureMode#OFF} has zero performance impact beyond what the base trace
+     * infrastructure already adds. {@link CaptureMode} is orthogonal to {@code verbose}
+     * and {@code traceExporter}; all three can be combined independently.
+     *
+     * <p>Default: {@link CaptureMode#OFF}.
+     */
+    @Builder.Default
+    private final CaptureMode captureMode = CaptureMode.OFF;
+
+    /**
      * Execute the ensemble's tasks using the inputs configured on the builder.
      *
      * @return EnsembleOutput containing all results
@@ -376,6 +413,13 @@ public class Ensemble {
         MDC.put("ensemble.id", ensembleId);
         Instant runStartedAt = Instant.now();
 
+        // Resolve the effective capture mode: builder field wins unless OFF, then
+        // fall back to system property / env var / OFF via CaptureMode.resolve().
+        CaptureMode effectiveCaptureMode = CaptureMode.resolve(captureMode);
+        if (effectiveCaptureMode != CaptureMode.OFF) {
+            log.info("CaptureMode active: {}", effectiveCaptureMode);
+        }
+
         try {
             log.info(
                     "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
@@ -402,14 +446,15 @@ public class Ensemble {
             }
 
             // Step 4: Build execution context -- bundles memory, verbosity, listeners,
-            // tool executor, tool metrics, and optional cost configuration
+            // tool executor, tool metrics, cost configuration, and capture mode
             ExecutionContext executionContext = ExecutionContext.of(
                     memoryContext,
                     verbose,
                     listeners != null ? listeners : List.of(),
                     toolExecutor,
                     toolMetrics,
-                    costConfiguration);
+                    costConfiguration,
+                    effectiveCaptureMode);
 
             // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();
@@ -424,8 +469,8 @@ public class Ensemble {
                     output.getTotalToolCalls());
 
             // Step 6: Build ExecutionTrace from collected task traces
-            ExecutionTrace trace =
-                    buildExecutionTrace(ensembleId, runStartedAt, runCompletedAt, resolvedInputs, output);
+            ExecutionTrace trace = buildExecutionTrace(
+                    ensembleId, runStartedAt, runCompletedAt, resolvedInputs, output, effectiveCaptureMode);
 
             // Step 7: Attach trace to EnsembleOutput
             EnsembleOutput outputWithTrace = EnsembleOutput.builder()
@@ -437,10 +482,17 @@ public class Ensemble {
                     .trace(trace)
                     .build();
 
-            // Step 8: Export trace if an exporter is configured
-            if (traceExporter != null) {
+            // Step 8: Export trace.
+            // When captureMode == FULL and no explicit exporter is configured,
+            // auto-register a JsonTraceExporter writing to ./traces/
+            ExecutionTraceExporter effectiveExporter = traceExporter;
+            if (effectiveExporter == null && effectiveCaptureMode == CaptureMode.FULL) {
+                effectiveExporter = new JsonTraceExporter(java.nio.file.Path.of("./traces/"));
+                log.debug("CaptureMode.FULL: auto-registering JsonTraceExporter at ./traces/");
+            }
+            if (effectiveExporter != null) {
                 try {
-                    traceExporter.export(trace);
+                    effectiveExporter.export(trace);
                 } catch (Exception e) {
                     log.warn("TraceExporter threw exception during export: {}", e.getMessage(), e);
                 }
@@ -464,7 +516,8 @@ public class Ensemble {
             Instant startedAt,
             Instant completedAt,
             Map<String, String> resolvedInputs,
-            EnsembleOutput output) {
+            EnsembleOutput output,
+            CaptureMode effectiveCaptureMode) {
 
         List<AgentSummary> agentSummaries = agents.stream()
                 .map(agent -> AgentSummary.builder()
@@ -489,6 +542,7 @@ public class Ensemble {
         ExecutionTrace.ExecutionTraceBuilder builder = ExecutionTrace.builder()
                 .ensembleId(ensembleId)
                 .workflow(workflow.name())
+                .captureMode(effectiveCaptureMode)
                 .startedAt(startedAt)
                 .completedAt(completedAt)
                 // Use Duration.between(startedAt, completedAt) so that totalDuration is

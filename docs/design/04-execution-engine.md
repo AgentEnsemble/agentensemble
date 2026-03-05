@@ -384,3 +384,72 @@ executeTool(ToolExecutionRequest request, ToolResolution resolvedTools):
   // Otherwise, delegate to LangChain4j annotated tool execution
   return resolvedTools.executeAnnotatedTool(toolName, request)
 ```
+
+---
+
+## Trace Accumulation and Metrics (issue #42)
+
+Every `AgentExecutor.execute()` call creates a `TaskTraceAccumulator` at the start and freezes it
+into an immutable `TaskTrace` at the end. The accumulator collects:
+
+- **Prompts**: system and user prompt text, build time
+- **LLM interactions**: one record per `ChatModel.chat()` call with tokens, latency, and tool results
+- **Tool calls**: name, arguments, result, timing, outcome per tool invocation
+- **Delegations**: full worker trace captured for peer delegations via `AgentDelegationTool`
+- **Memory operations**: STM writes, LTM stores and retrievals, entity lookups (wired at STANDARD+)
+
+`TaskTrace` is attached to `TaskOutput`. `Ensemble.runWithInputs()` collects all task traces and
+assembles an `ExecutionTrace` at the run level which is then attached to `EnsembleOutput`.
+
+`ExecutionMetrics` and `TaskMetrics` are derived from the accumulated data, providing aggregated
+token counts, latencies, and optional monetary cost estimates.
+
+### Trace Export
+
+Traces can be exported after each run via `Ensemble.builder().traceExporter(exporter)`. The built-in
+`JsonTraceExporter` writes pretty-printed JSON to a directory (one file per run) or a fixed file.
+Custom exporters implement `ExecutionTraceExporter` -- a single-method interface that receives the
+complete `ExecutionTrace` after each successful run.
+
+When `CaptureMode.FULL` is active and no explicit `traceExporter` is configured, a
+`JsonTraceExporter` writing to `./traces/` is auto-registered.
+
+---
+
+## CaptureMode (issue #89)
+
+`CaptureMode` is an opt-in, zero-configuration toggle that controls how much data the framework
+records during execution. It is set on `Ensemble.builder().captureMode()` or via the
+`agentensemble.captureMode` system property / `AGENTENSEMBLE_CAPTURE_MODE` environment variable.
+
+### Resolution order (first wins)
+
+1. `.captureMode(CaptureMode.STANDARD)` on the builder
+2. `-Dagentensemble.captureMode=STANDARD` JVM system property
+3. `AGENTENSEMBLE_CAPTURE_MODE=STANDARD` environment variable
+4. `CaptureMode.OFF` (default)
+
+### What each level adds
+
+| Level | Additional data captured |
+|---|---|
+| `OFF` | Base trace: prompts, tool args/results, timing, token counts |
+| `STANDARD` | Full LLM message history per ReAct iteration (`LlmInteraction.messages`); memory operation counts wired into `MemoryOperationCounts` |
+| `FULL` | Everything in STANDARD; auto-export to `./traces/`; enriched tool I/O (`ToolCallTrace.parsedInput`) |
+
+### Implementation inside AgentExecutor
+
+At the start of each task execution:
+- The `TaskTraceAccumulator` is created with the effective `CaptureMode`.
+- When `captureMode >= STANDARD`, a `MemoryOperationListener` is registered on `MemoryContext` to
+  forward STM/LTM/entity events directly to the accumulator's increment methods.
+
+During the ReAct loop (in `executeWithTools`):
+- After each `ChatModel.chat()` call and before `finalizeIteration()`, when `captureMode >= STANDARD`,
+  the current `messages` list is snapshotted via `CapturedMessage.fromAll(messages)` and stored on
+  the accumulator.
+- When `captureMode >= FULL`, the tool JSON arguments are parsed into a `Map<String,Object>` and
+  set as `parsedInput` on each `ToolCallTrace`.
+
+At task completion, the memory listener is always removed in a `finally` block to prevent listener
+leakage across tasks.
