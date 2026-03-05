@@ -128,28 +128,35 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 - All other guides, examples, references up to date
 - `mkdocs.yml` navigation updated with visualization pages
 
+### MapReduceEnsemble Static Strategy (Issue #98 -- v2.0.0)
+
+- `MapReduceEnsemble<T>` in `net.agentensemble.mapreduce`
+- Builder with full validation (items, factories, chunkSize >= 2)
+- Static DAG construction: O(log_K(N)) tree depth, correct context wiring
+- `toEnsemble()` for devtools inspection
+- `run()` / `run(Map)` execute via inner Ensemble.PARALLEL
+- `DagTaskNode.nodeType` + `DagTaskNode.mapReduceLevel` (devtools)
+- `DagModel.mapReduceMode` + `schemaVersion = "1.1"` (devtools)
+- `DagExporter.build(MapReduceEnsemble<?>)` enriched overload
+- TypeScript types updated + TaskNode.tsx MAP/REDUCE/AGGREGATE badges
+- 35 unit tests + 13 integration tests; all passing
+- `MapReduceKitchenExample.java` with structured output
+- Full documentation: guide, example walkthrough, reference, README
+
 ## What's Left to Build
 
-### v2.0.0 -- MapReduceEnsemble (Issues #98, #99, #100)
+### v2.1.0 -- MapReduceEnsemble Adaptive (Issue #99)
 
-Three-issue series targeting v2.0.0:
+- Adaptive reduction with `targetTokenBudget` (level-by-level, token-driven)
+- `contextWindowSize` + `budgetRatio` derive `targetTokenBudget`
+- Bin-packing (first-fit-decreasing) algorithm
+- Token estimation: provider count, heuristic (length/4), custom estimator
+- Trace and metrics aggregation across multiple Ensemble.run() calls
 
-| Issue | Title | Strategy |
-|---|---|---|
-| #98 | Static MapReduceEnsemble with chunkSize | Fixed DAG, pre-built before execution |
-| #99 | Adaptive MapReduceEnsemble with targetTokenBudget | Level-by-level, token-budget-driven |
-| #100 | Short-circuit optimization | Skip map-reduce when input fits in budget |
+### v2.2.0 -- MapReduceEnsemble Short-Circuit (Issue #100)
 
-Design fully specified in `docs/design/14-map-reduce.md`.
-
-Key implementation work in #98:
-- `net.agentensemble.mapreduce.MapReduceEnsemble<T>` class
-- Static DAG construction algorithm (O(log_K(N)) tree depth)
-- `toEnsemble()` for devtools inspection
-- `DagTaskNode.nodeType` + `DagTaskNode.mapReduceLevel` fields (devtools)
-- `DagModel.mapReduceMode` field (devtools)
-- TypeScript types + TaskNode.tsx badge rendering (viz)
-- Full unit + integration tests, `MapReduceKitchenExample.java`
+- `directAgent` / `directTask` for skipping map-reduce when input is small
+- Only for adaptive mode
 
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
@@ -161,18 +168,11 @@ Key implementation work in #98:
 
 ## Current Status
 
-**Issue #44** implementation complete:
-- `agentensemble-devtools` module: 29/29 tests pass, BUILD SUCCESSFUL
-- `agentensemble-viz` npm: 41/41 tests pass, clean TypeScript build
-- Full Gradle build: 159 actionable tasks, BUILD SUCCESSFUL
-
-All tests pass:
-- `agentensemble-core` -- check + javadoc passes
-- `agentensemble-devtools` -- check + javadoc passes (29 tests)
-- All 9 `agentensemble-tools-*` modules -- check passes
-- `agentensemble-metrics-micrometer` -- check passes
-- `agentensemble-examples` -- compiles successfully
-- `agentensemble-viz` -- 41 TypeScript tests pass, production build clean
+**Issue #98** implementation complete on `feat/issue-98-static-map-reduce-ensemble`:
+- `agentensemble-core` -- 35 unit + 13 integration MapReduce tests pass; coverage >= 90%
+- `agentensemble-devtools` -- all 29+11=40 tests pass; javadoc clean
+- `agentensemble-viz` -- 45/45 TypeScript tests pass
+- Full Gradle build: 159 actionable tasks, BUILD SUCCESSFUL, javadoc clean
 
 ## Known Issues
 
