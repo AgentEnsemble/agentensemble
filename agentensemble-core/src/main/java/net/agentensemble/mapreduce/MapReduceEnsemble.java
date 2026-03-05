@@ -88,6 +88,9 @@ public final class MapReduceEnsemble<T> {
     /** Node type identifier for the final reduce task. */
     public static final String NODE_TYPE_FINAL_REDUCE = "final-reduce";
 
+    /** Node type identifier for the direct (short-circuit) task. */
+    public static final String NODE_TYPE_DIRECT = "direct";
+
     /** MapReduce mode identifier for static mode (reported to devtools). */
     public static final String MAP_REDUCE_MODE = "STATIC";
 
@@ -242,6 +245,11 @@ public final class MapReduceEnsemble<T> {
         private BiFunction<T, Agent, Task> mapTaskFactory;
         private Supplier<Agent> reduceAgentFactory;
         private BiFunction<Agent, List<Task>, Task> reduceTaskFactory;
+
+        // Short-circuit fields (adaptive mode only)
+        private Supplier<Agent> directAgentFactory = null;
+        private BiFunction<Agent, List<T>, Task> directTaskFactory = null;
+        private Function<T, String> inputEstimator = null;
 
         // Static mode
         private Integer chunkSize = null; // null = not explicitly set; defaults to 5
@@ -400,6 +408,54 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
+         * <b>Adaptive mode, short-circuit:</b> factory for the agent that handles the
+         * direct task when the total estimated input size fits within
+         * {@code targetTokenBudget}. Must be set together with {@link #directTask}.
+         *
+         * <p>When both {@code directAgent} and {@code directTask} are configured and the
+         * estimated input token count does not exceed {@code targetTokenBudget}, the entire
+         * map-reduce pipeline is bypassed in favour of a single direct LLM call.
+         *
+         * @param factory a supplier that returns the {@link Agent} for the direct task
+         * @return this builder
+         */
+        public Builder<T> directAgent(Supplier<Agent> factory) {
+            this.directAgentFactory = factory;
+            return this;
+        }
+
+        /**
+         * <b>Adaptive mode, short-circuit:</b> factory for the task executed when the
+         * short-circuit fires. Receives the direct agent and the complete {@code List<T>}
+         * of all items. Must be set together with {@link #directAgent}.
+         *
+         * @param factory a function from (agent, allItems) to {@link Task}
+         * @return this builder
+         */
+        public Builder<T> directTask(BiFunction<Agent, List<T>, Task> factory) {
+            this.directTaskFactory = factory;
+            return this;
+        }
+
+        /**
+         * Function that converts each input item to a text representation used for adaptive
+         * short-circuit input size estimation. When not provided, defaults to
+         * {@code Object::toString}.
+         *
+         * <p>Providing a compact representation (e.g., a JSON summary) allows more accurate
+         * short-circuit decisions when the full {@code toString()} is verbose. This setting
+         * is only used when adaptive short-circuiting is enabled; it has no effect in purely
+         * static configurations.
+         *
+         * @param estimator function from item to its text representation
+         * @return this builder
+         */
+        public Builder<T> inputEstimator(Function<T, String> estimator) {
+            this.inputEstimator = estimator;
+            return this;
+        }
+
+        /**
          * When {@code true}, elevates execution logging to INFO level. Default: {@code false}.
          *
          * @param verbose whether to enable verbose logging
@@ -534,6 +590,8 @@ public final class MapReduceEnsemble<T> {
             int resolvedBudget = resolveTargetTokenBudget();
             validateAdaptiveFields(resolvedBudget);
 
+            validateDirectFields(resolvedBudget);
+
             Map<String, String> immutableInputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
 
             if (resolvedBudget > 0) {
@@ -550,6 +608,33 @@ public final class MapReduceEnsemble<T> {
         // ========================
         // Validation helpers
         // ========================
+
+        private void validateDirectFields(int resolvedBudget) {
+            boolean hasDirect = directAgentFactory != null || directTaskFactory != null;
+            if (!hasDirect) {
+                return; // Nothing to validate
+            }
+
+            // directAgent and directTask must both be set or both be null
+            if (directAgentFactory != null && directTaskFactory == null) {
+                throw new ValidationException("directAgent requires directTask to also be set. "
+                        + "Both must be configured together for the short-circuit optimization.");
+            }
+            if (directTaskFactory != null && directAgentFactory == null) {
+                throw new ValidationException("directTask requires directAgent to also be set. "
+                        + "Both must be configured together for the short-circuit optimization.");
+            }
+
+            // Short-circuit only applies to adaptive mode, not static (chunkSize) mode
+            if (resolvedBudget == 0) {
+                throw new ValidationException(
+                        "directAgent and directTask are not supported in static (chunkSize) mode. "
+                                + "Short-circuit optimization requires targetTokenBudget (or "
+                                + "contextWindowSize + budgetRatio) to be set. "
+                                + "Remove directAgent/directTask or switch to adaptive mode to use "
+                                + "this feature.");
+            }
+        }
 
         private void validateCommonFields() {
             if (items == null || items.isEmpty()) {
@@ -661,6 +746,9 @@ public final class MapReduceEnsemble<T> {
                     mapTaskFactory,
                     reduceAgentFactory,
                     reduceTaskFactory,
+                    directAgentFactory,
+                    directTaskFactory,
+                    inputEstimator,
                     resolvedBudget,
                     maxReduceLevels,
                     tokenEstimator,

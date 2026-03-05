@@ -530,6 +530,64 @@ class DagExporterTest {
     }
 
     // ========================
+    // Short-circuit DAG export (single "direct" node)
+    // ========================
+
+    @Test
+    void build_shortCircuitTrace_singleNodeWithNodeTypeDirect() {
+        // When the short-circuit fires, the ExecutionTrace contains exactly one TaskTrace
+        // with nodeType="direct" and mapReduceLevel=0.
+        List<TaskTrace> traces = List.of(stubTaskTrace("Direct: handle all items", "Head Chef", "direct", 0));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        assertThat(dag.getTasks()).hasSize(1);
+        DagTaskNode directNode = dag.getTasks().get(0);
+        assertThat(directNode.getNodeType()).isEqualTo("direct");
+        assertThat(directNode.getMapReduceLevel()).isEqualTo(0);
+    }
+
+    @Test
+    void build_shortCircuitTrace_mapReduceModeIsAdaptive() {
+        List<TaskTrace> traces = List.of(stubTaskTrace("Direct task", "Head Chef", "direct", 0));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        assertThat(dag.getMapReduceMode()).isEqualTo("ADAPTIVE");
+    }
+
+    @Test
+    void build_shortCircuitTrace_singleParallelGroup() {
+        List<TaskTrace> traces = List.of(stubTaskTrace("Direct task", "Head Chef", "direct", 0));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        // Single direct node at level 0 -> one parallel group containing one task
+        assertThat(dag.getParallelGroups()).hasSize(1);
+        assertThat(dag.getParallelGroups().get(0)).hasSize(1);
+    }
+
+    @Test
+    void build_shortCircuitTrace_workflowIsMapReduceAdaptive() {
+        List<TaskTrace> traces = List.of(stubTaskTrace("Direct task", "Head Chef", "direct", 0));
+
+        DagModel dag = DagExporter.build(buildAdaptiveTrace(traces));
+
+        assertThat(dag.getWorkflow()).isEqualTo("MAP_REDUCE_ADAPTIVE");
+    }
+
+    @Test
+    void build_shortCircuitTrace_toJson_includesDirectNodeType() {
+        List<TaskTrace> traces = List.of(stubTaskTrace("Direct task", "Head Chef", "direct", 0));
+
+        String json = DagExporter.build(buildAdaptiveTrace(traces)).toJson();
+
+        assertThat(json).contains("\"nodeType\" : \"direct\"");
+        assertThat(json).contains("\"mapReduceLevel\" : 0");
+        assertThat(json).contains("\"mapReduceMode\" : \"ADAPTIVE\"");
+    }
+
+    // ========================
     // JSON round-trip
     // ========================
 
