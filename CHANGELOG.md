@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/AgentEnsemble/agentensemble/compare/v1.4.0...v1.4.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* use ORG_RELEASE_TOKEN to bypass branch protection on SNAPSHOT bump ([#117](https://github.com/AgentEnsemble/agentensemble/issues/117)) ([21b9941](https://github.com/AgentEnsemble/agentensemble/commit/21b99411dae03f5df70dafa62bc90cb1484882f0))
+
 ## [1.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.3.0...v1.4.0) (2026-03-05)
 
 
