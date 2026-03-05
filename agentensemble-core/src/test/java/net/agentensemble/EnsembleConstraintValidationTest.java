@@ -243,6 +243,20 @@ class EnsembleConstraintValidationTest {
                 .hasMessageContaining("requiredStages");
     }
 
+    @Test
+    void requiredStage_roleAppearsInMultipleStages_throwsValidationException() {
+        // Researcher appears in both stage 0 and stage 1 -- ambiguous ordering
+        var constraints = HierarchicalConstraints.builder()
+                .requiredStage(List.of("Researcher"))
+                .requiredStage(List.of("Analyst", "Researcher")) // Researcher duplicated
+                .build();
+
+        assertThatThrownBy(() -> new EnsembleValidator(baseEnsemble(constraints)).validate())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Researcher")
+                .hasMessageContaining("requiredStages");
+    }
+
     // ========================
     // Non-hierarchical workflow: constraints not validated
     // ========================

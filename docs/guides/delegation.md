@@ -533,7 +533,7 @@ If the Manager attempts to delegate to a stage-1 worker before all stage-0 worke
 
 ### Error Handling
 
-Pre-delegation violations (disallowed worker, cap exceeded, stage ordering) are surface as tool rejection errors returned to the Manager LLM -- they are **not** exceptions from `Ensemble.run()`. The Manager receives the reason and can adjust its strategy.
+Pre-delegation violations (disallowed worker, cap exceeded, stage ordering) are surfaced as tool rejection errors returned to the Manager LLM -- they are **not** exceptions from `Ensemble.run()`. The Manager receives the reason and can adjust its strategy.
 
 Post-execution violation (a required worker was never called) throws `ConstraintViolationException` after the Manager finishes:
 

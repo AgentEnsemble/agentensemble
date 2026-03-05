@@ -204,14 +204,22 @@ class EnsembleValidator {
                     + hierarchicalConstraints.getGlobalMaxDelegations());
         }
 
-        // requiredStages: all roles must be registered agents
+        // requiredStages: all roles must be registered agents and must not appear in multiple stages
         List<List<String>> stages = hierarchicalConstraints.getRequiredStages();
+        Map<String, Integer> roleFirstStageIndex = new HashMap<>();
         for (int i = 0; i < stages.size(); i++) {
             for (String role : stages.get(i)) {
                 if (!registeredRoles.contains(role)) {
                     throw new ValidationException("HierarchicalConstraints.requiredStages[" + i + "] contains role '"
                             + role + "' which is not in the ensemble's registered agents.");
                 }
+                Integer existingIndex = roleFirstStageIndex.get(role);
+                if (existingIndex != null && existingIndex != i) {
+                    throw new ValidationException("HierarchicalConstraints.requiredStages contains role '" + role
+                            + "' in multiple stages (at indices " + existingIndex + " and " + i
+                            + "). Each role may only appear in a single stage.");
+                }
+                roleFirstStageIndex.putIfAbsent(role, i);
             }
         }
     }

@@ -231,8 +231,8 @@ public class Ensemble {
     /**
      * Optional guardrails for the delegation graph in hierarchical workflow.
      *
-     * <p>When set, a {@link net.agentensemble.workflow.HierarchicalConstraintEnforcer} is created
-     * for each run. The enforcer is prepended to the delegation policy chain to enforce
+     * <p>When set, a {@code HierarchicalConstraintEnforcer} is created for each run. The enforcer
+     * is prepended to the delegation policy chain to enforce
      * pre-delegation checks: allowed workers, per-worker caps, global delegation cap, and stage
      * ordering. After the Manager finishes, the enforcer validates that all required workers were
      * called; if not, a {@link net.agentensemble.exception.ConstraintViolationException} is thrown

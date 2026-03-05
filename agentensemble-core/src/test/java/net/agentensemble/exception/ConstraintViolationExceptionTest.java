@@ -11,6 +11,33 @@ import org.junit.jupiter.api.Test;
 class ConstraintViolationExceptionTest {
 
     // ========================
+    // Constructor validation
+    // ========================
+
+    @Test
+    void emptyViolations_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new ConstraintViolationException(List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void nullViolations_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new ConstraintViolationException(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void emptyViolations_withOutputs_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new ConstraintViolationException(List.of(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void emptyViolations_withCause_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new ConstraintViolationException(List.of(), new RuntimeException()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ========================
     // Message formatting
     // ========================
 

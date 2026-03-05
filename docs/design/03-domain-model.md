@@ -306,7 +306,8 @@ public class HierarchicalConstraints {
     /**
      * Agents the manager MUST delegate to at least once during execution.
      * If any required worker has not received a delegation by the time the
-     * manager produces its final answer, a ValidationException is raised.
+     * manager produces its final answer, a ConstraintViolationException is
+     * thrown after the manager run completes (post-execution).
      * Default: empty set.
      */
     @Singular
@@ -399,11 +400,11 @@ Ensemble ensemble = Ensemble.builder()
 Guards are applied inside `DelegateTaskTool` on every delegation attempt:
 
 1. **`allowedWorkers` check** — blocks delegation to any worker not in the set (when set is non-empty).
-2. **`maxCallsPerWorker` check** — blocks delegation when the per-worker call count reaches the cap.
-3. **`globalMaxDelegations` check** — blocks all further delegations once the global count is reached (when > 0).
-4. **`requiredStages` ordering check** — blocks delegation to a stage-N+1 agent before all stage-N agents have been called at least once.
+2. **`globalMaxDelegations` check** — blocks all further delegations once the global count is reached (when > 0).
+3. **`maxCallsPerWorker` check** — blocks delegation when the per-worker approved attempt count reaches the cap.
+4. **`requiredStages` ordering check** — blocks delegation to a stage-N+1 agent before all stage-N agents have completed at least once.
 
-After execution completes, `requiredWorkers` are verified: if any required worker was never delegated to, a `TaskExecutionException` is raised.
+After execution completes, `requiredWorkers` are verified: if any required worker was never delegated to, a `ConstraintViolationException` is thrown carrying the violations list and any partial worker outputs.
 
 ---
 

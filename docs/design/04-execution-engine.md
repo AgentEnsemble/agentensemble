@@ -143,8 +143,9 @@ enforcer = new HierarchicalConstraintEnforcer(constraints)
 ```
 
 This wiring ensures that every delegation the manager makes is (a) checked against the constraints
-before the worker is invoked, and (b) recorded so that post-execution validation has accurate
-per-worker call counts.
+before the worker is invoked, and (b) recorded so that post-execution validation has an accurate
+per-worker record of completed delegations (distinct from the *approved attempt* counts used for
+enforcing caps at policy-evaluation time).
 
 ### Pre-Delegation Enforcement (inside DelegateTaskTool)
 
@@ -157,8 +158,8 @@ worker:
 | Order | Check | Rejection reason returned to LLM |
 |-------|-------|-----------------------------------|
 | 1 | **`allowedWorkers` check** — when `allowedWorkers` is non-empty, the target worker role must be present in the set | `"Agent '{role}' is not in the allowedWorkers list"` |
-| 2 | **Global cap check** — when `globalMaxDelegations > 0`, the total number of completed delegations must be below the cap | `"Global delegation cap of {n} has been reached"` |
-| 3 | **Per-worker cap check** — when `maxCallsPerWorker` contains an entry for the target role, the per-worker call count must be below that cap | `"Agent '{role}' has reached its delegation cap of {n}"` |
+| 2 | **Global cap check** — when `globalMaxDelegations > 0`, the total number of approved delegation attempts (including attempts whose worker later fails) must be below the cap | `"Global delegation cap of {n} has been reached"` |
+| 3 | **Per-worker cap check** — when `maxCallsPerWorker` contains an entry for the target role, the per-worker approved attempt count (including attempts whose worker later fails) must be below that cap | `"Agent '{role}' has reached its delegation cap of {n}"` |
 | 4 | **`requiredStages` ordering check** — when `requiredStages` is non-empty, the target worker must belong to the current or an earlier stage (all agents in every prior stage must have been called at least once before the next stage is accessible) | `"Cannot delegate to '{role}': stage {n} is not yet complete"` |
 
 All four checks return `DelegationPolicyResult.reject(reason)` on failure. If all checks pass, the

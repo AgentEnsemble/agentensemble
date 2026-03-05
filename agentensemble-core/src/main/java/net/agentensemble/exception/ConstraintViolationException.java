@@ -7,8 +7,8 @@ import net.agentensemble.task.TaskOutput;
  * Thrown when a {@link net.agentensemble.workflow.HierarchicalConstraints} configuration is
  * violated after the hierarchical workflow manager completes.
  *
- * <p>This exception is thrown by
- * {@link net.agentensemble.workflow.HierarchicalConstraintEnforcer#validatePostExecution()} when
+ * <p>This exception is thrown during post-execution hierarchical constraint validation (for
+ * example, by a {@code validatePostExecution} step in the hierarchical constraint enforcer) when
  * one or more post-execution constraint checks fail -- for example, when a required worker was
  * never delegated to during the run.
  *
@@ -33,9 +33,10 @@ public class ConstraintViolationException extends AgentEnsembleException {
      *
      * @param violations human-readable descriptions of all unsatisfied constraints; must not be
      *                   null or empty
+     * @throws IllegalArgumentException if violations is null or empty
      */
     public ConstraintViolationException(List<String> violations) {
-        super(buildMessage(violations));
+        super(requireNonEmpty(violations));
         this.violations = List.copyOf(violations);
         this.completedTaskOutputs = List.of();
     }
@@ -48,9 +49,10 @@ public class ConstraintViolationException extends AgentEnsembleException {
      *                              must not be null or empty
      * @param completedTaskOutputs  task outputs produced before the constraint was detected;
      *                              may be empty but must not be null
+     * @throws IllegalArgumentException if violations is null or empty
      */
     public ConstraintViolationException(List<String> violations, List<TaskOutput> completedTaskOutputs) {
-        super(buildMessage(violations));
+        super(requireNonEmpty(violations));
         this.violations = List.copyOf(violations);
         this.completedTaskOutputs = List.copyOf(completedTaskOutputs);
     }
@@ -61,9 +63,10 @@ public class ConstraintViolationException extends AgentEnsembleException {
      * @param violations human-readable descriptions of all unsatisfied constraints; must not be
      *                   null or empty
      * @param cause      the cause of this exception; may be null
+     * @throws IllegalArgumentException if violations is null or empty
      */
     public ConstraintViolationException(List<String> violations, Throwable cause) {
-        super(buildMessage(violations), cause);
+        super(requireNonEmpty(violations), cause);
         this.violations = List.copyOf(violations);
         this.completedTaskOutputs = List.of();
     }
@@ -91,10 +94,19 @@ public class ConstraintViolationException extends AgentEnsembleException {
         return completedTaskOutputs;
     }
 
-    private static String buildMessage(List<String> violations) {
+    /**
+     * Validates that violations is non-null and non-empty, then returns the formatted message.
+     * Called from each constructor's super() invocation so that validation runs before the
+     * super-constructor body executes.
+     */
+    private static String requireNonEmpty(List<String> violations) {
         if (violations == null || violations.isEmpty()) {
-            return "Hierarchical constraints violated";
+            throw new IllegalArgumentException("violations must not be null or empty");
         }
+        return buildMessage(violations);
+    }
+
+    private static String buildMessage(List<String> violations) {
         if (violations.size() == 1) {
             return "Hierarchical constraint violated: " + violations.get(0);
         }
