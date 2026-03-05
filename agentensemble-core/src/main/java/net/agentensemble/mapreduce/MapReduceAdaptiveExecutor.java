@@ -73,6 +73,11 @@ final class MapReduceAdaptiveExecutor<T> {
     private final Supplier<Agent> reduceAgentFactory;
     private final BiFunction<Agent, List<Task>, Task> reduceTaskFactory;
 
+    // Short-circuit fields (null when not configured)
+    private final Supplier<Agent> directAgentFactory;
+    private final BiFunction<Agent, List<T>, Task> directTaskFactory;
+    private final Function<T, String> inputEstimatorFn;
+
     private final int targetTokenBudget;
     private final int maxReduceLevels;
     private final MapReduceTokenEstimator tokenEstimator;
@@ -93,6 +98,9 @@ final class MapReduceAdaptiveExecutor<T> {
             BiFunction<T, Agent, Task> mapTaskFactory,
             Supplier<Agent> reduceAgentFactory,
             BiFunction<Agent, List<Task>, Task> reduceTaskFactory,
+            Supplier<Agent> directAgentFactory,
+            BiFunction<Agent, List<T>, Task> directTaskFactory,
+            Function<T, String> inputEstimatorFn,
             int targetTokenBudget,
             int maxReduceLevels,
             Function<String, Integer> customTokenEstimator,
@@ -109,6 +117,9 @@ final class MapReduceAdaptiveExecutor<T> {
         this.mapTaskFactory = mapTaskFactory;
         this.reduceAgentFactory = reduceAgentFactory;
         this.reduceTaskFactory = reduceTaskFactory;
+        this.directAgentFactory = directAgentFactory;
+        this.directTaskFactory = directTaskFactory;
+        this.inputEstimatorFn = inputEstimatorFn;
         this.targetTokenBudget = targetTokenBudget;
         this.maxReduceLevels = maxReduceLevels;
         this.tokenEstimator = customTokenEstimator != null
@@ -127,11 +138,31 @@ final class MapReduceAdaptiveExecutor<T> {
     /**
      * Execute the adaptive map-reduce run.
      *
+     * <p>Before the map phase, checks whether the total estimated input size fits within
+     * {@code targetTokenBudget}. If both {@code directAgent} and {@code directTask} are
+     * configured and the estimate is within budget, a single direct task is executed
+     * instead of the full map-reduce pipeline (short-circuit optimization).
+     *
      * @param inputs template variable inputs
      * @return aggregated {@link EnsembleOutput} covering all levels
      */
     EnsembleOutput run(Map<String, String> inputs) {
         String ensembleId = UUID.randomUUID().toString();
+
+        // SHORT-CIRCUIT: if direct factories are configured and total input fits in budget,
+        // bypass the entire map-reduce pipeline and run a single direct task.
+        if (directAgentFactory != null && directTaskFactory != null) {
+            long estimatedInputTokens = estimateInputTokens();
+            log.info(
+                    "Adaptive MapReduce: estimated input tokens = {} (budget = {})",
+                    estimatedInputTokens,
+                    targetTokenBudget);
+            if (estimatedInputTokens <= targetTokenBudget) {
+                log.info("Adaptive MapReduce: short-circuit fires, running direct task for {} items", items.size());
+                return runDirectPhase(ensembleId, inputs);
+            }
+            log.info("Adaptive MapReduce: estimated input exceeds budget, running normal map-reduce pipeline");
+        }
 
         List<LevelRun> levelRuns = new ArrayList<>();
 
@@ -198,6 +229,120 @@ final class MapReduceAdaptiveExecutor<T> {
     // ========================
     // Phase runners
     // ========================
+
+    /**
+     * Run the direct (short-circuit) phase.
+     *
+     * <p>Creates a single agent via {@code directAgentFactory}, builds a task via
+     * {@code directTaskFactory} with the complete item list, and runs it as a single-task
+     * ensemble. The resulting {@link EnsembleOutput} has exactly one {@link TaskOutput} and
+     * a trace with {@code nodeType = "direct"} and {@code mapReduceLevel = 0}.
+     *
+     * @param ensembleId the ensemble ID for trace correlation
+     * @param inputs     template variable inputs
+     * @return the {@link EnsembleOutput} from the direct task
+     */
+    private EnsembleOutput runDirectPhase(String ensembleId, Map<String, String> inputs) {
+        Agent directAgent = directAgentFactory.get();
+        Task directTask = directTaskFactory.apply(directAgent, Collections.unmodifiableList(items));
+
+        Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
+        builder.agent(directAgent).task(directTask);
+
+        Instant start = Instant.now();
+        EnsembleOutput raw = build(builder).run(inputs);
+        Instant end = Instant.now();
+        Duration duration = Duration.between(start, end);
+
+        // Annotate task traces with nodeType="direct" and mapReduceLevel=0
+        List<TaskTrace> annotatedTraces = new ArrayList<>();
+        ExecutionTrace rawTrace = raw.getTrace();
+        if (rawTrace != null) {
+            for (TaskTrace t : rawTrace.getTaskTraces()) {
+                annotatedTraces.add(t.toBuilder()
+                        .nodeType(MapReduceEnsemble.NODE_TYPE_DIRECT)
+                        .mapReduceLevel(0)
+                        .build());
+            }
+        }
+
+        // Build a level summary for the direct level
+        MapReduceLevelSummary directLevelSummary = MapReduceLevelSummary.builder()
+                .level(0)
+                .taskCount(1)
+                .duration(duration)
+                .workflow(net.agentensemble.workflow.Workflow.PARALLEL.name())
+                .build();
+
+        // Build aggregated agent summaries (non-carrier)
+        List<AgentSummary> agentSummaries = new ArrayList<>();
+        if (rawTrace != null) {
+            for (AgentSummary summary : rawTrace.getAgents()) {
+                if (!summary.getRole().startsWith("__carry__:")) {
+                    agentSummaries.add(summary);
+                }
+            }
+        }
+
+        ExecutionMetrics metrics = ExecutionMetrics.from(raw.getTaskOutputs());
+        CostEstimate totalCost = metrics.getTotalCostEstimate();
+
+        ExecutionTrace.ExecutionTraceBuilder traceBuilder = ExecutionTrace.builder()
+                .ensembleId(ensembleId)
+                .workflow(WORKFLOW_ADAPTIVE)
+                .captureMode(captureMode)
+                .startedAt(rawTrace != null ? rawTrace.getStartedAt() : start)
+                .completedAt(rawTrace != null ? rawTrace.getCompletedAt() : end)
+                .totalDuration(duration)
+                .inputs(inputs != null ? Map.copyOf(inputs) : Map.of())
+                .metrics(metrics)
+                .mapReduceLevel(directLevelSummary);
+
+        for (AgentSummary summary : agentSummaries) {
+            traceBuilder.agent(summary);
+        }
+        for (TaskTrace t : annotatedTraces) {
+            traceBuilder.taskTrace(t);
+        }
+        if (totalCost != null) {
+            traceBuilder.totalCostEstimate(totalCost);
+        }
+
+        ExecutionTrace aggregatedTrace = traceBuilder.build();
+
+        int toolCalls = raw.getTaskOutputs().stream()
+                .mapToInt(TaskOutput::getToolCallCount)
+                .sum();
+
+        return EnsembleOutput.builder()
+                .raw(raw.getRaw())
+                .taskOutputs(raw.getTaskOutputs())
+                .totalDuration(duration)
+                .totalToolCalls(toolCalls)
+                .metrics(metrics)
+                .trace(aggregatedTrace)
+                .build();
+    }
+
+    /**
+     * Estimate the total token count for all input items.
+     *
+     * <p>For each item, converts it to a text representation via {@code inputEstimatorFn}
+     * (or {@code Object::toString} if not configured), then applies the heuristic
+     * {@code text.length() / 4} to estimate token count. The sum across all items is
+     * the total estimated input size.
+     *
+     * @return the total estimated input token count
+     */
+    private long estimateInputTokens() {
+        long total = 0;
+        for (T item : items) {
+            String text = inputEstimatorFn != null ? inputEstimatorFn.apply(item) : item.toString();
+            // Use the same heuristic as MapReduceTokenEstimator's fallback: length / 4
+            total += text.length() / 4;
+        }
+        return total;
+    }
 
     private EnsembleOutput runMapPhase(Map<String, String> inputs) {
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();

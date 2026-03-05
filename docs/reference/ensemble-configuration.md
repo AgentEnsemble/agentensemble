@@ -132,6 +132,9 @@ the default is static mode with `chunkSize=5`.
 |---|---|---|---|
 | `maxReduceLevels` | `int` | `10` | Maximum adaptive reduce iterations before the final reduce is forced. Must be `>= 1`. |
 | `tokenEstimator` | `Function<String, Integer>` | built-in | Custom token estimator function. Overrides heuristic fallback (`rawText.length() / 4`) when the LLM provider does not return token counts. |
+| `directAgent` | `Supplier<Agent>` | `null` | **Short-circuit (adaptive only).** Factory for the agent that executes the single direct task when the total estimated input size fits within `targetTokenBudget`. Must be set together with `directTask`; setting one without the other is a `ValidationException`. Not allowed in static (`chunkSize`) mode. |
+| `directTask` | `BiFunction<Agent, List<T>, Task>` | `null` | **Short-circuit (adaptive only).** Factory for the direct task. Receives the agent and the complete `List<T>` of all items. Must be set together with `directAgent`; setting one without the other is a `ValidationException`. Not allowed in static (`chunkSize`) mode. |
+| `inputEstimator` | `Function<T, String>` | `Object::toString` | **Short-circuit (adaptive only, optional).** Converts each input item to a text representation used for pre-execution input size estimation. Defaults to `toString()`. Provide a compact representation (e.g., a JSON summary) when `toString()` is verbose or not representative of the context window cost. Can be set without `directAgent`/`directTask` (no constraint). |
 
 ### Common optional fields
 

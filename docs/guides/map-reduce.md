@@ -364,6 +364,123 @@ The aggregated `ExecutionTrace` from an adaptive run has:
 
 ---
 
+## Short-circuit optimization (adaptive mode)
+
+When the total input is small enough to process directly, spawning N separate map tasks
+is unnecessary overhead. The short-circuit optimization detects this case **before any
+LLM call** and routes execution through a single direct task instead of the full
+map-reduce pipeline.
+
+### How it works
+
+Before the map phase runs, the framework estimates total input size:
+
+```
+estimated_input_tokens = sum(inputEstimator(item).length() / 4 for item in items)
+
+IF estimated_input_tokens <= targetTokenBudget
+   AND directAgent is configured
+   AND directTask is configured:
+     --> SHORT-CIRCUIT: run single direct task with all items
+     --> Return EnsembleOutput (single task, single LLM call)
+
+ELSE:
+     --> Run normal map-reduce pipeline
+```
+
+The check is purely pre-execution and costs nothing when `directAgent`/`directTask` are
+not configured (backwards-compatible opt-in).
+
+### Configuring the short-circuit
+
+Add `directAgent` and `directTask` to an adaptive-mode builder:
+
+```java
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(order.getItems())
+
+    // Standard map + reduce config (used when input is too large for direct processing)
+    .mapAgent(item -> Agent.builder()
+        .role(item.getDish() + " Chef")
+        .goal("Prepare " + item.getDish())
+        .llm(model)
+        .build())
+    .mapTask((item, agent) -> Task.builder()
+        .description("Execute recipe for: " + item.getDish())
+        .expectedOutput("Recipe with steps and timing")
+        .agent(agent)
+        .build())
+    .reduceAgent(() -> Agent.builder()
+        .role("Sub-Chef")
+        .goal("Consolidate preparations")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Consolidate these preparations.")
+        .expectedOutput("Consolidated plan")
+        .agent(agent)
+        .context(chunkTasks)
+        .build())
+
+    // Short-circuit: if total input fits in budget, skip map-reduce entirely
+    .directAgent(() -> Agent.builder()
+        .role("Head Chef")
+        .goal("Handle the entire order directly")
+        .llm(model)
+        .build())
+    .directTask((agent, allItems) -> {
+        String allDishes = allItems.stream()
+            .map(OrderItem::getDish)
+            .collect(Collectors.joining(", "));
+        return Task.builder()
+            .description("Plan the complete meal for: " + allDishes)
+            .expectedOutput("Complete meal plan with all dishes")
+            .agent(agent)
+            .build();
+    })
+
+    .contextWindowSize(128_000)
+    .budgetRatio(0.5)  // targetTokenBudget = 64_000
+    .build()
+    .run();
+```
+
+When the input is small, `output.getTaskOutputs()` has exactly one entry and the execution
+trace shows a single node with `nodeType = "direct"`. When the input is large, the normal
+map-reduce pipeline runs and the direct factories are ignored.
+
+### Custom `inputEstimator`
+
+By default, each item is converted to a string via `toString()` and the token count is
+estimated as `text.length() / 4`. When `toString()` is verbose (e.g., a full Java object
+dump) or not representative of the actual context cost, supply a compact representation:
+
+```java
+.inputEstimator(item -> item.getDish() + " " + item.getQuantity())
+```
+
+`inputEstimator` can be set independently of `directAgent`/`directTask` -- it has no
+pairing constraint.
+
+### Constraints
+
+| Constraint | Details |
+|---|---|
+| `directAgent` and `directTask` must both be set or both be null | Setting one without the other throws `ValidationException` at `build()` time. |
+| Not available in static mode (`chunkSize`) | `ValidationException` at `build()` time if either is set. Short-circuit requires a token budget to evaluate. |
+| Boundary is inclusive | Short-circuit fires when `estimated <= targetTokenBudget` (not strictly less than). |
+
+### When to use the short-circuit
+
+| Scenario | Recommendation |
+|---|---|
+| Orders / batches vary from 1 to 100+ items | Configure short-circuit to handle small batches cheaply |
+| Input items are known to be small at design time | Omit short-circuit; just run with a large `targetTokenBudget` |
+| A single-agent prompt for all items would exceed the context window | Short-circuit will not fire -- normal pipeline runs |
+| Items have compact IDs or summaries but verbose `toString()` | Use `inputEstimator` for accurate estimation |
+
+---
+
 ## Comparison with plain `Workflow.PARALLEL`
 
 | Feature | `Workflow.PARALLEL` (manual) | `MapReduceEnsemble` |
