@@ -45,6 +45,7 @@ application {
 //   ./gradlew :agentensemble-examples:runMemoryAcrossRuns
 //   ./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
 //   ./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
+//   ./gradlew :agentensemble-examples:runCaptureMode
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -55,6 +56,7 @@ mapOf(
     "runCallbacks" to "net.agentensemble.examples.CallbackExample",
     "runRemoteTool" to "net.agentensemble.examples.RemoteToolExample",
     "runMetrics" to "net.agentensemble.examples.MetricsExample",
+    "runCaptureMode" to "net.agentensemble.examples.CaptureModeExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

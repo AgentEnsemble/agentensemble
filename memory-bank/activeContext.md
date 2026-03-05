@@ -2,86 +2,78 @@
 
 ## Current Work Focus
 
-Issue #42 (execution metrics, token tracking, cost estimation, and execution trace) has
-been implemented on `feature/42-execution-metrics` (1 commit: `d01ea3e`):
-
-- `d01ea3e` feat(#42): execution metrics, token tracking, cost estimation, and execution trace
-
-The feature branch is ready for PR. All tests pass; full
-`./gradlew build :agentensemble-core:javadoc --continue` is green.
+Issue #89 (CaptureMode: transparent debug/capture mode for complete execution recording) has
+been implemented on `feature/89-capture-mode`.
 
 ## Recent Changes
 
-### Issue #42 -- Execution Metrics and Observability
+### Issue #89 -- CaptureMode
 
-**New packages:**
+**New types:**
 
-**`net.agentensemble.metrics`** -- Flat, immutable value objects:
-- `TaskMetrics` (`@Value @Builder`) -- per-task token counts (input, output, total with -1
-  unknown convention), LLM latency, tool execution time, prompt build time, memory retrieval
-  time, LLM call count, tool call count, delegation count, memory operation counts, optional
-  CostEstimate
-- `ExecutionMetrics` (`@Value @Builder`) -- aggregated run-level metrics; static
-  `from(List<TaskOutput>)` factory with -1-propagation for unknown tokens
-- `MemoryOperationCounts` (`@Value @Builder`) -- STM writes, LTM stores/retrievals, entity lookups;
-  `add()` for aggregation; `ZERO` constant
-- `CostConfiguration` (`@Value @Builder`) -- `inputTokenRate`, `outputTokenRate`, `currency`;
-  `estimate(long, long)` returns `null` when tokens are -1
-- `CostEstimate` (`@Value @Builder`) -- `inputCost`, `outputCost`, `totalCost`; `add()` method;
-  `EMPTY` constant
+**`net.agentensemble.trace.CaptureMode`** (enum) -- Three capture levels:
+- `OFF` (default): base trace behavior, zero overhead
+- `STANDARD`: adds full LLM message history per ReAct iteration (`LlmInteraction.messages`)
+  and wires memory operation counts via `MemoryOperationListener`
+- `FULL`: adds auto-export to `./traces/` and enriched tool I/O (`ToolCallTrace.parsedInput`)
 
-**`net.agentensemble.trace`** -- Hierarchical call trace:
-- `ExecutionTrace` (`@Value @Builder(toBuilder=true)`) -- top-level trace; `schemaVersion="1.0"`;
-  `ensembleId`, `workflow`, `startedAt`/`completedAt`/`totalDuration`, `inputs`, `agents`,
-  `taskTraces`, `metrics`, `totalCostEstimate`, `errors`, `metadata`; `toJson()` / `toJson(Path)`
-  via Jackson+JavaTimeModule; `export(ExecutionTraceExporter)`
-- `TaskTrace` -- complete per-task trace with prompts, `llmInteractions`, `delegations`,
-  `finalOutput`, `parsedOutput`, `metrics`, `metadata`
-- `LlmInteraction` -- one ReAct iteration: `iterationIndex`, `startedAt`/`completedAt`/`latency`,
-  `inputTokens`/`outputTokens` (-1 if unknown), `responseType` (TOOL_CALLS/FINAL_ANSWER),
-  `responseText`, `toolCalls`
-- `ToolCallTrace` -- one tool invocation: `toolName`, `arguments`, `result`, `structuredOutput`,
-  timing, `outcome` (SUCCESS/FAILURE/ERROR/SKIPPED_MAX_ITERATIONS), `metadata`
-- `DelegationTrace` -- delegation record: `delegatorRole`, `workerRole`, `taskDescription`,
-  timing, `depth`, `result`, `succeeded`, `workerTrace` (nested TaskTrace for peer delegation)
-- `AgentSummary`, `TaskPrompts`, `ErrorTrace`, `LlmResponseType`, `ToolCallOutcome`
+Resolution order: builder field > JVM system property `agentensemble.captureMode` > env var
+`AGENTENSEMBLE_CAPTURE_MODE` > OFF. Zero code change required to activate from CLI.
 
-**`net.agentensemble.trace.export`**:
-- `ExecutionTraceExporter` -- `@FunctionalInterface`: `void export(ExecutionTrace trace)`
-- `JsonTraceExporter` -- directory mode (per-run `{ensembleId}.json`) or file mode
+**`net.agentensemble.trace.CapturedMessage`** (`@Value @Builder`) -- Serializable snapshot
+of one LangChain4j `ChatMessage` (system/user/assistant/tool). Static factory `from(ChatMessage)`
+and `fromAll(List<ChatMessage>)`.
 
-**`net.agentensemble.trace.internal`**:
-- `TaskTraceAccumulator` -- mutable per-task collector; `beginLlmCall()`, `endLlmCall()`,
-  `addToolCallToCurrentIteration()`, `finalizeIteration()`, `addDelegation()`, memory counters;
-  `buildTrace()` / `buildMetrics()` freeze to immutable objects
+**`net.agentensemble.memory.MemoryOperationListener`** (interface) -- Callback interface with
+default no-op methods: `onStmWrite()`, `onLtmStore()`, `onLtmRetrieval(Duration)`,
+`onEntityLookup(Duration)`. Wired into `MemoryContext` via `setOperationListener()`.
 
-**Modified classes:**
+**Modified types:**
 
-- `TaskOutput`: added `metrics` (`TaskMetrics`, default `EMPTY`) and `trace` (`TaskTrace`, nullable)
-- `EnsembleOutput`: custom builder with auto-computed `ExecutionMetrics.from(taskOutputs)`;
-  added `trace` (`ExecutionTrace`, nullable). Changed from `@Builder @Value` to `@Value` with
-  manual fluent builder.
-- `AgentExecutor`: creates `TaskTraceAccumulator` per execution; times prompt building,
-  wraps each `LLM.chat()` with `beginLlmCall()`/`endLlmCall()`; builds `ToolCallTrace` per tool
-  invocation; wires `accumulator::addDelegation` into `AgentDelegationTool` via 3-arg constructor
-- `AgentDelegationTool`: new 3-arg constructor accepts `Consumer<DelegationTrace>`;
-  builds `DelegationTrace` (with nested worker `TaskTrace`) after successful delegation
-- `ExecutionContext`: added `costConfiguration()` (nullable `CostConfiguration`)
-- `Ensemble`: added `costConfiguration` and `traceExporter` builder fields; `runWithInputs()`
-  passes costConfig to `ExecutionContext`, assembles `ExecutionTrace`, and calls exporter
+- `LlmInteraction`: added `@Singular List<CapturedMessage> messages` (empty at OFF)
+- `ToolCallTrace`: added `Map<String, Object> parsedInput` (null at OFF/STANDARD, populated at FULL)
+- `ExecutionTrace`: added `@NonNull @Builder.Default CaptureMode captureMode = OFF`;
+  schema version bumped to `1.1`
+- `ExecutionContext`: added `CaptureMode captureMode` field; new 7-param `of()` overload
+- `TaskTraceAccumulator`: new 5-param constructor accepting `CaptureMode`; new
+  `setCurrentMessages(List<CapturedMessage>)` method; `finalizeIteration()` includes
+  message snapshot when STANDARD+
+- `MemoryContext`: added `setOperationListener()` / `clearOperationListener()`; `record()`,
+  `queryLongTerm()`, `getEntityFacts()` fire listener callbacks with timing
+- `AgentExecutor`: passes captureMode to accumulator; snapshots messages at STANDARD+;
+  parses tool arguments at FULL; wires memory listener at STANDARD+; clears listener
+  in `finally` block
+- `Ensemble`: added `@Builder.Default CaptureMode captureMode = OFF`; resolves effective
+  mode via `CaptureMode.resolve()`; auto-registers `JsonTraceExporter(./traces/)` at FULL
+  when no explicit exporter set; passes captureMode to `ExecutionContext` and `ExecutionTrace`
 
-**Dependencies:** `jackson-datatype-jsr310` added to `agentensemble-core`
+**Documentation:**
 
-**Tests added (all pass, coverage >= 90%):**
-- `TaskMetricsTest`, `ExecutionMetricsTest`, `MemoryOperationCountsTest`,
-  `CostConfigurationTest`, `TaskTraceAccumulatorTest`, `AgentExecutorMetricsTest`,
-  `ExecutionTraceTest`, `EnsembleOutputTest`
+- `docs/guides/capture-mode.md` -- new guide
+- `docs/examples/capture-mode.md` -- new example (Markdown)
+- `agentensemble-examples/src/main/java/.../CaptureModeExample.java` -- runnable Java example
+  (`./gradlew :agentensemble-examples:runCaptureMode`)
+- Updated: `docs/design/02-architecture.md` (added trace/metrics/memory packages)
+- Updated: `docs/design/04-execution-engine.md` (added trace accumulation + CaptureMode sections)
+- Updated: `docs/design/09-logging.md` (added JsonTraceExporter + CaptureMode log entries)
+- Updated: `docs/design/11-configuration.md` (added all missing Ensemble builder fields from #42/#89)
+- Updated: `docs/design/13-future-roadmap.md` (added completed #42 and #89 sections)
+- Updated: `docs/reference/ensemble-configuration.md` (added captureMode row)
+- Updated: `README.md` (added CaptureMode section after Metrics)
+- Updated: `mkdocs.yml` (added guide and example pages)
 
-**Docs updated:** `docs/guides/metrics.md` (major rewrite), `docs/examples/metrics.md` (new),
-`docs/reference/ensemble-configuration.md` (new fields + output methods), `README.md`
-(Metrics section), `docs/design/01-overview.md`, `mkdocs.yml`
+**Tests:**
+
+- `CaptureModeTest` -- 15 unit tests covering enum, isAtLeast, resolve() chain
+- `CapturedMessageTest` -- 10 unit tests covering all ChatMessage type conversions
+- `TaskTraceAccumulatorCaptureModeTest` -- 8 unit tests for OFF/STANDARD/FULL behavior
+- `AgentExecutorCaptureModeTest` -- 8 integration tests using mocked LLMs
+- `ExecutionTraceTest` -- updated for schema version 1.1
+
+All tests pass. Full build (`./gradlew build :agentensemble-core:javadoc --continue`) green.
 
 ## Next Steps
 
-- Open PR for `feature/42-execution-metrics` targeting `main`
-- After merge, close GitHub issue #42
+- PR review for `feature/89-capture-mode`
+- Issue #44 (interactive execution graph visualization) can now use `CaptureMode.STANDARD`
+  or `FULL` data for replay and visualization

@@ -27,7 +27,7 @@ class ExecutionTraceTest {
     void testBuilder_setsSchemaVersionDefault() {
         ExecutionTrace trace = minimalTrace();
         assertThat(trace.getSchemaVersion()).isEqualTo(ExecutionTrace.CURRENT_SCHEMA_VERSION);
-        assertThat(trace.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(trace.getSchemaVersion()).isEqualTo("1.1");
     }
 
     @Test
@@ -55,7 +55,7 @@ class ExecutionTraceTest {
         assertThat(json).contains("\"ensembleId\"");
         assertThat(json).contains("\"test-id-123\"");
         assertThat(json).contains("\"schemaVersion\"");
-        assertThat(json).contains("\"1.0\"");
+        assertThat(json).contains("\"1.1\"");
         assertThat(json).contains("\"workflow\"");
         assertThat(json).contains("\"SEQUENTIAL\"");
     }

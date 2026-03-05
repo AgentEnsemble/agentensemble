@@ -1,5 +1,6 @@
 package net.agentensemble.memory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,23 @@ import org.slf4j.LoggerFactory;
  * Use {@link #disabled()} for a no-op instance when no memory is configured.
  * Use {@link #from(EnsembleMemory)} to create an active context.
  *
+ * <h2>Memory operation tracing</h2>
+ *
+ * When {@link net.agentensemble.trace.CaptureMode#STANDARD} or higher is active,
+ * an {@link MemoryOperationListener} can be registered via
+ * {@link #setOperationListener(MemoryOperationListener)} at the start of each task.
+ * The listener receives callbacks for every STM write, LTM store, LTM retrieval, and
+ * entity lookup, enabling the {@code TaskTraceAccumulator}
+ * to populate {@link net.agentensemble.metrics.MemoryOperationCounts} in the task trace.
+ * Clear the listener with {@link #clearOperationListener()} in a {@code finally} block
+ * to prevent cross-task leakage.
+ *
+ * <p>The listener is stored in a {@link ThreadLocal} so that concurrent tasks in
+ * {@code Workflow.PARALLEL} each maintain their own listener without interfering with
+ * each other. Each virtual thread that runs {@code AgentExecutor.execute()} sees only
+ * its own listener; the {@code finally} block in that executor removes the entry from
+ * the thread-local map via {@link #clearOperationListener()}.
+ *
  * Thread safety: {@link #record(TaskOutput)} and all query methods are safe to call
  * from multiple threads concurrently. Short-term memory uses a
  * {@link java.util.concurrent.CopyOnWriteArrayList} internally, so concurrent
@@ -37,6 +55,13 @@ public class MemoryContext {
 
     private final EnsembleMemory config;
     private final ShortTermMemory shortTermMemory;
+
+    /**
+     * Per-task listener for memory operation callbacks. Stored in a ThreadLocal so that
+     * concurrent tasks in Workflow.PARALLEL each maintain their own listener independently.
+     * Set at the start of each task execution and removed in a finally block.
+     */
+    private final ThreadLocal<MemoryOperationListener> operationListener = new ThreadLocal<>();
 
     private MemoryContext(EnsembleMemory config, ShortTermMemory shortTermMemory) {
         this.config = config;
@@ -65,6 +90,42 @@ public class MemoryContext {
         }
         ShortTermMemory stm = config.isShortTerm() ? new ShortTermMemory() : null;
         return new MemoryContext(config, stm);
+    }
+
+    /**
+     * Register a listener to receive callbacks for memory operations on the current thread.
+     *
+     * <p>Intended to be called at the start of each task execution by
+     * {@link net.agentensemble.agent.AgentExecutor} when
+     * {@link net.agentensemble.trace.CaptureMode#STANDARD} or higher is active.
+     * Must be paired with a {@link #clearOperationListener()} call in a {@code finally} block.
+     *
+     * <p>In {@code Workflow.PARALLEL}, each virtual thread maintains its own listener
+     * independently via a {@link ThreadLocal}. Setting the listener on one thread does not
+     * affect listeners on other threads.
+     *
+     * <p>Silently ignored when called on the {@link #disabled()} instance.
+     *
+     * @param listener the listener to register; if {@code null}, the existing listener
+     *                 for the calling thread is cleared
+     */
+    public void setOperationListener(MemoryOperationListener listener) {
+        if (listener != null) {
+            this.operationListener.set(listener);
+        } else {
+            this.operationListener.remove();
+        }
+    }
+
+    /**
+     * Remove the current thread's operation listener.
+     *
+     * <p>Call this in a {@code finally} block to ensure the listener does not leak
+     * into subsequent tasks or reused threads. Removes the ThreadLocal entry to
+     * prevent memory leaks on pooled or reused threads.
+     */
+    public void clearOperationListener() {
+        this.operationListener.remove();
     }
 
     /**
@@ -117,6 +178,10 @@ public class MemoryContext {
      *   <li>Stores the output in long-term memory (if configured)</li>
      * </ul>
      *
+     * <p>When an {@link MemoryOperationListener} is registered on the calling thread,
+     * fires {@link MemoryOperationListener#onStmWrite()} and/or
+     * {@link MemoryOperationListener#onLtmStore()} after the respective operations.
+     *
      * @param output the completed task output; must not be null
      */
     public void record(TaskOutput output) {
@@ -131,17 +196,25 @@ public class MemoryContext {
                 .timestamp(output.getCompletedAt() != null ? output.getCompletedAt() : Instant.now())
                 .build();
 
+        MemoryOperationListener listener = operationListener.get();
+
         if (hasShortTerm()) {
             shortTermMemory.add(entry);
             log.debug(
                     "Recorded short-term memory | Agent: '{}' | STM size: {}",
                     output.getAgentRole(),
                     shortTermMemory.size());
+            if (listener != null) {
+                listener.onStmWrite();
+            }
         }
 
         if (hasLongTerm()) {
             config.getLongTerm().store(entry);
             log.debug("Stored long-term memory | Agent: '{}'", output.getAgentRole());
+            if (listener != null) {
+                listener.onLtmStore();
+            }
         }
     }
 
@@ -160,6 +233,10 @@ public class MemoryContext {
     /**
      * Query long-term memory for entries relevant to the given task description.
      *
+     * <p>When an {@link MemoryOperationListener} is registered on the calling thread,
+     * fires {@link MemoryOperationListener#onLtmRetrieval(Duration)} with the wall-clock
+     * time spent on the retrieval query.
+     *
      * @param taskDescription the query text (typically the upcoming task description)
      * @return relevant entries ordered by relevance; empty if LTM is disabled
      */
@@ -167,11 +244,21 @@ public class MemoryContext {
         if (!hasLongTerm()) {
             return List.of();
         }
-        return config.getLongTerm().retrieve(taskDescription, config.getLongTermMaxResults());
+        Instant start = Instant.now();
+        List<MemoryEntry> results = config.getLongTerm().retrieve(taskDescription, config.getLongTermMaxResults());
+        MemoryOperationListener listener = operationListener.get();
+        if (listener != null) {
+            listener.onLtmRetrieval(Duration.between(start, Instant.now()));
+        }
+        return results;
     }
 
     /**
      * Return all entity facts from entity memory.
+     *
+     * <p>When an {@link MemoryOperationListener} is registered on the calling thread,
+     * fires {@link MemoryOperationListener#onEntityLookup(Duration)} with the wall-clock
+     * time spent on the lookup.
      *
      * @return map of entity name to fact; empty if entity memory is disabled or empty
      */
@@ -179,6 +266,12 @@ public class MemoryContext {
         if (!hasEntityMemory()) {
             return Map.of();
         }
-        return config.getEntityMemory().getAll();
+        Instant start = Instant.now();
+        Map<String, String> facts = config.getEntityMemory().getAll();
+        MemoryOperationListener listener = operationListener.get();
+        if (listener != null) {
+            listener.onEntityLookup(Duration.between(start, Instant.now()));
+        }
+        return facts;
     }
 }

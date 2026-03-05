@@ -621,6 +621,58 @@ See the [Metrics and Observability guide](docs/guides/metrics.md) and
 
 ---
 
+## CaptureMode
+
+`CaptureMode` transparently enables deep data collection -- full LLM conversation history,
+enriched tool I/O, and wired memory operation counts -- across the entire execution pipeline
+without any changes to agents, tasks, or tools.
+
+**Three ways to activate -- no code change required:**
+
+```bash
+# Via JVM system property
+java -Dagentensemble.captureMode=FULL -jar my-app.jar
+
+# Via environment variable
+AGENTENSEMBLE_CAPTURE_MODE=STANDARD java -jar my-app.jar
+```
+
+```java
+// Programmatic (highest priority)
+Ensemble.builder()
+    .captureMode(CaptureMode.FULL)
+    .build();
+```
+
+**Three levels:**
+
+| Level | What is added |
+|---|---|
+| `OFF` | Base trace only (default -- zero overhead) |
+| `STANDARD` | Full LLM message history per iteration + wired memory operation counts |
+| `FULL` | STANDARD + auto-export to `./traces/` + enriched tool I/O (`parsedInput` maps) |
+
+```java
+// STANDARD: inspect the exact messages the LLM saw
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher)
+    .task(researchTask)
+    .captureMode(CaptureMode.STANDARD)
+    .build()
+    .run();
+
+for (LlmInteraction iteration : output.getTrace().getTaskTraces().get(0).getLlmInteractions()) {
+    for (CapturedMessage msg : iteration.getMessages()) {
+        System.out.println("[" + msg.getRole() + "] " + msg.getContent());
+    }
+}
+```
+
+See the [CaptureMode guide](docs/guides/capture-mode.md) and
+[CaptureMode examples](docs/examples/capture-mode.md) for full details.
+
+---
+
 ## Guardrails
 
 Add pluggable validation hooks to tasks to control what enters and exits agent execution:

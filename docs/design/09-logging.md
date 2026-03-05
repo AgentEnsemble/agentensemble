@@ -1,5 +1,6 @@
 # 09 - Logging Strategy
 
+
 This document specifies the logging approach used throughout AgentEnsemble.
 
 ## Framework
@@ -175,6 +176,27 @@ To keep logs readable, certain values are truncated:
 Truncation appends `"..."` when text is cut.
 
 Full untruncated values are always available at DEBUG or TRACE level.
+
+### JsonTraceExporter
+
+Logger: `net.agentensemble.trace.export.JsonTraceExporter`
+
+```
+DEBUG : "Execution trace written to {path}"
+WARN  : "Failed to export execution trace to {path}: {message}"
+```
+
+### CaptureMode
+
+Logger: `net.agentensemble.trace.CaptureMode`
+
+```
+INFO  : "CaptureMode active: {STANDARD|FULL}"     (logged in Ensemble.runWithInputs)
+DEBUG : "CaptureMode activated via system property agentensemble.captureMode={value}"
+DEBUG : "CaptureMode activated via environment variable AGENTENSEMBLE_CAPTURE_MODE={value}"
+DEBUG : "CaptureMode.FULL: auto-registering JsonTraceExporter at ./traces/"
+WARN  : "Unrecognised CaptureMode value '{value}' in {source} -- ignoring. Valid values: OFF, STANDARD, FULL"
+```
 
 ## No Logging Dependencies
 

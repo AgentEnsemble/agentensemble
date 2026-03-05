@@ -307,6 +307,81 @@ var task = Task.builder()
 
 ---
 
+## Execution Metrics and Observability (COMPLETE -- issue #42)
+
+**Implemented**: `TaskMetrics`, `ExecutionMetrics`, `CostConfiguration`, `CostEstimate`,
+`MemoryOperationCounts`, `ExecutionTrace`, `TaskTrace`, `LlmInteraction`, `ToolCallTrace`,
+`DelegationTrace`, `TaskPrompts`, `AgentSummary`, `ErrorTrace`, `ExecutionTraceExporter`,
+`JsonTraceExporter`, `TaskTraceAccumulator` (internal).
+
+### How It Works
+
+Every task execution automatically captures metrics and a complete call trace. No configuration
+is required to get the base data.
+
+**Metrics** (`TaskMetrics` / `ExecutionMetrics`):
+- Token counts (input, output, total) with -1 propagation for unknown values
+- LLM latency, tool execution time, memory retrieval time, prompt build time
+- LLM call count, tool call count, delegation count, memory operation counts
+- Optional cost estimation via `CostConfiguration` (per-token input/output rates)
+
+**Trace** (`ExecutionTrace` / `TaskTrace`):
+- Hierarchical: `ExecutionTrace` contains `TaskTrace` list; each `TaskTrace` contains
+  `LlmInteraction` list; each `LlmInteraction` contains `ToolCallTrace` list
+- Prompts: exact system and user prompts sent to the LLM
+- Each `LlmInteraction` records the iteration index, timing, token counts, response type,
+  and all tool calls requested in that turn
+- Agent configuration snapshots captured in `AgentSummary`
+- Peer delegations captured as `DelegationTrace` with nested worker task trace
+
+**Export**:
+- `ExecutionTrace.toJson()` / `.toJson(Path)` for direct serialization
+- `ExecutionTraceExporter` strategy interface for custom destinations
+- `JsonTraceExporter` for file-based JSON export (directory or fixed-file mode)
+- `Ensemble.builder().traceExporter(exporter)` to register
+
+### Schema Versioning
+
+`ExecutionTrace.schemaVersion` identifies the trace format. Current version: `1.1` (added
+`captureMode` field in issue #89).
+
+---
+
+## CaptureMode -- Transparent Debug Capture (COMPLETE -- issue #89)
+
+**Implemented**: `CaptureMode` (enum), `CapturedMessage` (value object),
+`MemoryOperationListener` (interface). Extended: `LlmInteraction`, `ToolCallTrace`,
+`ExecutionTrace`, `ExecutionContext`, `TaskTraceAccumulator`, `MemoryContext`,
+`AgentExecutor`, `Ensemble`.
+
+### How It Works
+
+`CaptureMode` is an opt-in toggle that layers deeper data collection on top of the base trace
+without requiring any changes to agents, tasks, or tools.
+
+The effective mode is resolved at `run()` time:
+
+1. Explicit `.captureMode(CaptureMode.STANDARD)` on the builder
+2. `-Dagentensemble.captureMode=STANDARD` JVM system property
+3. `AGENTENSEMBLE_CAPTURE_MODE=STANDARD` environment variable
+4. Default: `OFF`
+
+**What each level adds**:
+
+- `STANDARD`: full LLM message history per ReAct iteration (`LlmInteraction.messages`); memory
+  operation counts (`MemoryOperationCounts`) wired from `MemoryContext` via
+  `MemoryOperationListener`
+- `FULL`: everything in STANDARD; auto-export to `./traces/` when no `traceExporter` is
+  configured; enriched tool I/O (`ToolCallTrace.parsedInput` as structured `Map<String,Object>`)
+
+### Zero Performance Impact at OFF
+
+At `CaptureMode.OFF`, no listeners are registered, no message lists are built, and no JSON
+parsing is done. The only overhead is the same object allocation that the base trace (#42) already
+imposes.
+
+---
+
 ## Phase 9: Advanced Features
 
 ### Built-In Tool Library (COMPLETE -- v1.0.0)

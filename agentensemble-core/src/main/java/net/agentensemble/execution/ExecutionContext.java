@@ -15,13 +15,14 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
+import net.agentensemble.trace.CaptureMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Immutable execution context bundling all cross-cutting concerns for a single
  * ensemble run: memory state, verbosity, event listeners, tool executor, tool metrics,
- * and optional cost configuration.
+ * cost configuration, and capture mode.
  *
  * <p>An {@code ExecutionContext} is created once per {@link net.agentensemble.Ensemble#run()}
  * invocation and threaded through the entire execution stack -- workflow executors,
@@ -44,6 +45,11 @@ import org.slf4j.LoggerFactory;
  * is used by {@link net.agentensemble.trace.internal.TaskTraceAccumulator} to estimate
  * monetary cost from token counts. Set via {@code Ensemble.builder().costConfiguration(cfg)}.
  *
+ * <p><strong>Capture mode:</strong> Controls the depth of data collection during execution.
+ * The default is {@link CaptureMode#OFF}. Set via {@code Ensemble.builder().captureMode(mode)},
+ * or activate without code changes via the {@code agentensemble.captureMode} system property
+ * or {@code AGENTENSEMBLE_CAPTURE_MODE} environment variable.
+ *
  * <p>Fire methods ({@link #fireTaskStart}, {@link #fireTaskComplete}, {@link #fireTaskFailed},
  * {@link #fireToolCall}) dispatch events to all registered listeners. Each listener is
  * called independently; an exception from one listener is caught, logged, and does not
@@ -63,6 +69,7 @@ public final class ExecutionContext {
     private final Executor toolExecutor;
     private final ToolMetrics toolMetrics;
     private final CostConfiguration costConfiguration;
+    private final CaptureMode captureMode;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -70,17 +77,66 @@ public final class ExecutionContext {
             List<EnsembleListener> listeners,
             Executor toolExecutor,
             ToolMetrics toolMetrics,
-            CostConfiguration costConfiguration) {
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
         this.toolExecutor = toolExecutor;
         this.toolMetrics = toolMetrics;
         this.costConfiguration = costConfiguration;
+        this.captureMode = captureMode != null ? captureMode : CaptureMode.OFF;
+    }
+
+    // ========================
+    // Factory methods
+    // ========================
+
+    /**
+     * Create an ExecutionContext with all fields specified, including capture mode.
+     *
+     * @param memoryContext     runtime memory state for this run; must not be null
+     * @param verbose           when true, elevates execution logging to INFO level
+     * @param listeners         event listeners to notify; must not be null
+     * @param toolExecutor      executor for parallel tool calls; must not be null
+     * @param toolMetrics       metrics backend for tool execution; must not be null
+     * @param costConfiguration optional per-token cost rates; may be {@code null}
+     * @param captureMode       depth of data collection; defaults to {@link CaptureMode#OFF}
+     *                          when {@code null}
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode) {
+        if (memoryContext == null) {
+            throw new IllegalArgumentException("memoryContext must not be null");
+        }
+        if (listeners == null) {
+            throw new IllegalArgumentException("listeners must not be null");
+        }
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(
+                memoryContext,
+                verbose,
+                List.copyOf(listeners),
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode);
     }
 
     /**
-     * Create an ExecutionContext with all fields specified.
+     * Create an ExecutionContext with all fields specified, using {@link CaptureMode#OFF}.
      *
      * @param memoryContext     runtime memory state for this run; must not be null
      * @param verbose           when true, elevates execution logging to INFO level
@@ -97,20 +153,7 @@ public final class ExecutionContext {
             Executor toolExecutor,
             ToolMetrics toolMetrics,
             CostConfiguration costConfiguration) {
-        if (memoryContext == null) {
-            throw new IllegalArgumentException("memoryContext must not be null");
-        }
-        if (listeners == null) {
-            throw new IllegalArgumentException("listeners must not be null");
-        }
-        if (toolExecutor == null) {
-            throw new IllegalArgumentException("toolExecutor must not be null");
-        }
-        if (toolMetrics == null) {
-            throw new IllegalArgumentException("toolMetrics must not be null");
-        }
-        return new ExecutionContext(
-                memoryContext, verbose, List.copyOf(listeners), toolExecutor, toolMetrics, costConfiguration);
+        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, costConfiguration, CaptureMode.OFF);
     }
 
     /**
@@ -131,7 +174,7 @@ public final class ExecutionContext {
             List<EnsembleListener> listeners,
             Executor toolExecutor,
             ToolMetrics toolMetrics) {
-        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, null);
+        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, null, CaptureMode.OFF);
     }
 
     /**
@@ -150,7 +193,8 @@ public final class ExecutionContext {
                 listeners,
                 Executors.newVirtualThreadPerTaskExecutor(),
                 NoOpToolMetrics.INSTANCE,
-                null);
+                null,
+                CaptureMode.OFF);
     }
 
     /**
@@ -167,7 +211,7 @@ public final class ExecutionContext {
 
     /**
      * Create an ExecutionContext with disabled memory, verbose=false, no listeners,
-     * default virtual-thread executor, and no-op metrics.
+     * default virtual-thread executor, no-op metrics, and {@link CaptureMode#OFF}.
      *
      * <p>Suitable for backward-compatible use in tests and delegation tools where the
      * full context is not available or not needed.
@@ -181,7 +225,8 @@ public final class ExecutionContext {
                 List.of(),
                 Executors.newVirtualThreadPerTaskExecutor(),
                 NoOpToolMetrics.INSTANCE,
-                null);
+                null,
+                CaptureMode.OFF);
     }
 
     // ========================
@@ -238,6 +283,20 @@ public final class ExecutionContext {
      */
     public CostConfiguration costConfiguration() {
         return costConfiguration;
+    }
+
+    /**
+     * The active capture mode for this run.
+     *
+     * <p>Controls the depth of data collection by {@link net.agentensemble.agent.AgentExecutor}:
+     * {@link CaptureMode#OFF} captures only the base trace; {@link CaptureMode#STANDARD} also
+     * captures full LLM message history per iteration and memory operation counts;
+     * {@link CaptureMode#FULL} additionally enriches tool I/O with parsed JSON arguments.
+     *
+     * @return the capture mode; never null, defaults to {@link CaptureMode#OFF}
+     */
+    public CaptureMode captureMode() {
+        return captureMode;
     }
 
     // ========================
