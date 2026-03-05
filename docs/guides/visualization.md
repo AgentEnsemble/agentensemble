@@ -39,13 +39,30 @@ Add `agentensemble-devtools` as a dependency. Use `test` or `runtime` scope sinc
 
 ### Viewer: agentensemble-viz
 
-No installation required. Use `npx`:
+**Option 1 — Homebrew (macOS and Linux, recommended for regular use):**
+
+```bash
+brew install agentensemble/tap/agentensemble-viz
+agentensemble-viz ./traces/
+```
+
+The Homebrew formula distributes a self-contained native binary compiled with Bun. No
+Node.js or npm required on the user's machine. The formula is updated automatically
+on every AgentEnsemble release.
+
+To upgrade to the latest version:
+
+```bash
+brew upgrade agentensemble-viz
+```
+
+**Option 2 — npx (no installation, runs via Node.js):**
 
 ```bash
 npx @agentensemble/viz ./traces/
 ```
 
-Or install globally:
+**Option 3 — Global npm install:**
 
 ```bash
 npm install -g @agentensemble/viz

@@ -621,6 +621,41 @@ See the [Metrics and Observability guide](docs/guides/metrics.md) and
 
 ---
 
+## Execution Graph Visualization
+
+Export the task dependency graph and execution timeline to JSON files with `agentensemble-devtools`,
+then open them in the interactive `agentensemble-viz` viewer:
+
+```java
+// Export the planned DAG (no execution needed)
+EnsembleDevTools.exportDag(ensemble, Path.of("./traces/"));
+
+// Export the post-execution trace
+EnsembleDevTools.exportTrace(output, Path.of("./traces/"));
+
+// Or both in one call
+EnsembleDevTools.export(ensemble, output, Path.of("./traces/"));
+```
+
+Open the viewer:
+
+```bash
+# Homebrew (macOS and Linux -- self-contained binary, no Node.js required)
+brew install agentensemble/tap/agentensemble-viz
+agentensemble-viz ./traces/
+
+# Or via npx (no install)
+npx @agentensemble/viz ./traces/
+```
+
+The viewer starts at `http://localhost:7329` and auto-discovers all `.dag.json` and `.trace.json`
+files in the directory. The **Flow View** shows the dependency graph with critical-path highlighting;
+the **Timeline View** shows a Gantt-chart breakdown of task, LLM call, and tool execution timing.
+
+**Full documentation:** [Visualization Guide](https://docs.agentensemble.net/guides/visualization/) | [Visualization Example](https://docs.agentensemble.net/examples/visualization/)
+
+---
+
 ## CaptureMode
 
 `CaptureMode` transparently enables deep data collection -- full LLM conversation history,
@@ -956,9 +991,9 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | Section | Description |
 |---|---|
 | [Getting Started](https://docs.agentensemble.net/getting-started/installation/) | Installation, quickstart, core concepts |
-| [Guides](https://docs.agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging |
+| [Guides](https://docs.agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging, visualization |
 | [Reference](https://docs.agentensemble.net/reference/ensemble-configuration/) | Complete configuration field tables |
-| [Examples](https://docs.agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs |
+| [Examples](https://docs.agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs including [visualization](https://docs.agentensemble.net/examples/visualization/) |
 | [Design Specs](docs/design/) | Internal architecture and design documentation |
 
 ---
