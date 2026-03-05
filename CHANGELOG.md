@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.2.0...v1.3.0) (2026-03-05)
+
+
+### Features
+
+* **#81:** constrained hierarchical mode - HierarchicalConstraints, ConstraintViolationException, enforcer ([#86](https://github.com/AgentEnsemble/agentensemble/issues/86)) ([132d6e5](https://github.com/AgentEnsemble/agentensemble/commit/132d6e5e9fa9563cfb9b98391e5e65e3268b91ba))
+
 ## [1.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.1.0...v1.2.0) (2026-03-05)
 
 
