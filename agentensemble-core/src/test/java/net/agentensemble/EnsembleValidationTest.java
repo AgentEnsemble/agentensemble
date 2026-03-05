@@ -1,6 +1,8 @@
 package net.agentensemble;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
@@ -74,8 +76,11 @@ class EnsembleValidationTest {
 
         var ensemble = Ensemble.builder().task(researchTask).task(writeTask).build();
 
-        // Both tasks have explicit agents -- no ValidationException should be thrown
-        assertThatThrownBy(ensemble::run).isNotInstanceOf(ValidationException.class);
+        // Both tasks have explicit agents: validation passes.
+        // If the mock LLM throws (null response), the thrown exception must not be a ValidationException.
+        // If execution somehow succeeds (null is caught internally), thrown is null and the assertion also passes.
+        Throwable thrown = catchThrowable(ensemble::run);
+        assertThat(thrown).isNotInstanceOf(ValidationException.class);
     }
 
     // ========================

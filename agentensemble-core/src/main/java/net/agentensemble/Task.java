@@ -72,7 +72,7 @@ import net.agentensemble.tool.AgentTool;
 public class Task {
 
     /** Default expectedOutput used by {@link #of(String)}. */
-    static final String DEFAULT_EXPECTED_OUTPUT = "Produce a complete and accurate response to the task.";
+    public static final String DEFAULT_EXPECTED_OUTPUT = "Produce a complete and accurate response to the task.";
 
     /**
      * What the agent should do. Supports {variable} template placeholders
@@ -348,17 +348,16 @@ public class Task {
                 if (contextTask == null) {
                     throw new ValidationException("Task context element at index " + i + " must not be null");
                 }
-                // Self-reference detection: compare description, expectedOutput, and agent.
-                // When both agents are null, rely on description+expectedOutput equality as proxy.
-                // When both agents are non-null, use reference equality for the agent.
+                // Self-reference detection: only reliable when both tasks have an explicit agent.
+                // For agentless tasks, description+expectedOutput alone is an unreliable proxy
+                // (two distinct Task.of("X") calls would produce identical values but are not the
+                // same task). Skip the check when agent is null to avoid false positives.
+                if (agent == null) {
+                    continue;
+                }
                 boolean descriptionMatch = contextTask.getDescription().equals(description);
                 boolean expectedOutputMatch = contextTask.getExpectedOutput().equals(expectedOutput);
-                boolean agentMatch;
-                if (agent == null) {
-                    agentMatch = contextTask.getAgent() == null;
-                } else {
-                    agentMatch = contextTask.getAgent() == agent;
-                }
+                boolean agentMatch = contextTask.getAgent() == agent;
                 if (descriptionMatch && expectedOutputMatch && agentMatch) {
                     throw new ValidationException("Task cannot reference itself in context");
                 }

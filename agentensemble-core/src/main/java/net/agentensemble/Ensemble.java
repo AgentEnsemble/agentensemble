@@ -290,6 +290,12 @@ public class Ensemble {
      * @return the execution output
      */
     public static EnsembleOutput run(ChatModel model, Task... tasks) {
+        if (model == null) {
+            throw new IllegalArgumentException("model must not be null");
+        }
+        if (tasks == null || tasks.length == 0) {
+            throw new IllegalArgumentException("tasks must not be null or empty");
+        }
         EnsembleBuilder builder = Ensemble.builder().chatLanguageModel(model);
         for (Task task : tasks) {
             builder.task(task);
@@ -363,7 +369,7 @@ public class Ensemble {
         }
 
         try {
-            log.info("Ensemble run started | Workflow: {} | Tasks: {}", workflow, tasks.size());
+            log.info("Ensemble run initializing | Workflow: {} | Tasks: {}", workflow, tasks.size());
             log.debug("Input variables: {}", resolvedInputs);
 
             // Step 1: Validate configuration

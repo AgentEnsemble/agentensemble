@@ -74,7 +74,7 @@ class LlmBasedAgentSynthesizer implements AgentSynthesizer {
             log.warn(
                     "LLM-based agent synthesis failed for task '{}', falling back to template synthesizer: {}",
                     truncate(task.getDescription(), 80),
-                    e.getMessage());
+                    e.toString());
             return FALLBACK.synthesize(task, context);
         }
     }
