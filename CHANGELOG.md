@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.4.1...v1.5.0) (2026-03-05)
+
+
+### Features
+
+* adaptive MapReduceEnsemble with targetTokenBudget (issue [#99](https://github.com/AgentEnsemble/agentensemble/issues/99)) ([#119](https://github.com/AgentEnsemble/agentensemble/issues/119)) ([ad9e668](https://github.com/AgentEnsemble/agentensemble/commit/ad9e668ad11eed218f40356eb13b6065166d6043))
+* MapReduceEnsemble short-circuit optimization for small inputs (v2.0.0) ([#121](https://github.com/AgentEnsemble/agentensemble/issues/121)) ([a18d087](https://github.com/AgentEnsemble/agentensemble/commit/a18d087fa228618949b43b86f530e78b2b57fc3c))
+
 ## [1.4.1](https://github.com/AgentEnsemble/agentensemble/compare/v1.4.0...v1.4.1) (2026-03-05)
 
 
