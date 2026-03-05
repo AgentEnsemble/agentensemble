@@ -68,6 +68,9 @@ public class AgentDelegationTool {
     /** MDC key for the parent agent's role. */
     static final String MDC_DELEGATION_PARENT = "delegation.parent";
 
+    /** MDC key for the active delegation's correlation ID. */
+    static final String MDC_DELEGATION_ID = "delegation.id";
+
     /** Default expected output for delegated tasks. */
     private static final String DEFAULT_EXPECTED_OUTPUT = "Complete the assigned subtask thoroughly";
 
@@ -200,6 +203,11 @@ public class AgentDelegationTool {
 
         for (DelegationPolicy policy : delegationContext.getPolicies()) {
             DelegationPolicyResult result = policy.evaluate(workingRequest, policyCtx);
+            if (result == null) {
+                throw new IllegalStateException("DelegationPolicy.evaluate() returned null for policy "
+                        + policy.getClass().getName()
+                        + ". Policies must return a non-null DelegationPolicyResult.");
+            }
             if (result instanceof DelegationPolicyResult.Reject reject) {
                 String msg = "Delegation rejected by policy: " + reject.reason();
                 log.warn("Delegation from '{}' to '{}' rejected by policy: {}", callerRole, agentRole, reject.reason());
@@ -217,8 +225,15 @@ public class AgentDelegationTool {
                                 Duration.between(requestStart, Instant.now())));
                 return msg;
             } else if (result instanceof DelegationPolicyResult.Modify modify) {
+                DelegationRequest modifiedReq = modify.modifiedRequest();
+                if (modifiedReq == null) {
+                    throw new IllegalStateException(
+                            "DelegationPolicyResult.Modify.modifiedRequest() is null for policy "
+                                    + policy.getClass().getName()
+                                    + ". Modify policies must supply a non-null replacement request.");
+                }
                 log.debug("Delegation from '{}' to '{}' modified by policy", callerRole, agentRole);
-                workingRequest = modify.modifiedRequest();
+                workingRequest = modifiedReq;
             }
             // Allow: continue to next policy
         }
@@ -249,8 +264,10 @@ public class AgentDelegationTool {
         // context correctly when the inner finally block runs
         String priorDepth = MDC.get(MDC_DELEGATION_DEPTH);
         String priorParent = MDC.get(MDC_DELEGATION_PARENT);
+        String priorDelegationId = MDC.get(MDC_DELEGATION_ID);
         MDC.put(MDC_DELEGATION_DEPTH, String.valueOf(childDepth));
         MDC.put(MDC_DELEGATION_PARENT, callerRole);
+        MDC.put(MDC_DELEGATION_ID, workingRequest.getTaskId());
 
         final DelegationRequest finalRequest = workingRequest;
         try {
@@ -339,6 +356,11 @@ public class AgentDelegationTool {
                 MDC.put(MDC_DELEGATION_PARENT, priorParent);
             } else {
                 MDC.remove(MDC_DELEGATION_PARENT);
+            }
+            if (priorDelegationId != null) {
+                MDC.put(MDC_DELEGATION_ID, priorDelegationId);
+            } else {
+                MDC.remove(MDC_DELEGATION_ID);
             }
         }
     }

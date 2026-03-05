@@ -24,6 +24,7 @@ import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 /**
  * A tool that allows the Manager agent to delegate tasks to worker agents.
@@ -59,6 +60,9 @@ public class DelegateTaskTool {
 
     /** Logical role for the Manager in delegation events. */
     private static final String MANAGER_ROLE = HierarchicalWorkflowExecutor.MANAGER_ROLE;
+
+    /** MDC key for the active delegation's correlation ID. */
+    private static final String MDC_DELEGATION_ID = "delegation.id";
 
     /** Default expected output text for delegated tasks. */
     private static final String DEFAULT_EXPECTED_OUTPUT = "Complete the assigned task thoroughly";
@@ -159,6 +163,11 @@ public class DelegateTaskTool {
 
         for (DelegationPolicy policy : delegationContext.getPolicies()) {
             DelegationPolicyResult result = policy.evaluate(workingRequest, policyCtx);
+            if (result == null) {
+                throw new IllegalStateException("DelegationPolicy.evaluate() returned null for policy "
+                        + policy.getClass().getName()
+                        + ". Policies must return a non-null DelegationPolicyResult.");
+            }
             if (result instanceof DelegationPolicyResult.Reject reject) {
                 String msg = "Delegation rejected by policy: " + reject.reason();
                 log.warn("Delegation from Manager to '{}' rejected by policy: {}", agentRole, reject.reason());
@@ -174,8 +183,15 @@ public class DelegateTaskTool {
                         Duration.between(requestStart, Instant.now())));
                 return msg;
             } else if (result instanceof DelegationPolicyResult.Modify modify) {
+                DelegationRequest modifiedReq = modify.modifiedRequest();
+                if (modifiedReq == null) {
+                    throw new IllegalStateException(
+                            "DelegationPolicyResult.Modify.modifiedRequest() is null for policy "
+                                    + policy.getClass().getName()
+                                    + ". Modify policies must supply a non-null replacement request.");
+                }
                 log.debug("Delegation from Manager to '{}' modified by policy", agentRole);
-                workingRequest = modify.modifiedRequest();
+                workingRequest = modifiedReq;
             }
             // Allow: continue to next policy
         }
@@ -204,8 +220,16 @@ public class DelegateTaskTool {
                 .agent(agent)
                 .build();
 
+        // Descend: worker receives depth+1 so its peer-delegation depth tracking is correct.
+        // Without descend(), a worker at depth=0 could peer-delegate even when maxDelegationDepth=1.
+        DelegationContext workerCtx = delegationContext.descend();
+
+        // Set MDC delegation.id during the worker execution window so worker logs can be
+        // correlated to the DelegationStarted/Completed/Failed events by delegationId.
+        String priorDelegationId = MDC.get(MDC_DELEGATION_ID);
+        MDC.put(MDC_DELEGATION_ID, finalRequest.getTaskId());
         try {
-            TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, delegationContext);
+            TaskOutput output = agentExecutor.execute(delegatedTask, List.of(), executionContext, workerCtx);
             delegatedOutputs.add(output);
 
             Duration elapsed = Duration.between(requestStart, Instant.now());
@@ -260,6 +284,13 @@ public class DelegateTaskTool {
                     response,
                     elapsed));
             throw e;
+        } finally {
+            // Restore prior MDC delegation.id (null when there was no outer delegation)
+            if (priorDelegationId != null) {
+                MDC.put(MDC_DELEGATION_ID, priorDelegationId);
+            } else {
+                MDC.remove(MDC_DELEGATION_ID);
+            }
         }
     }
 

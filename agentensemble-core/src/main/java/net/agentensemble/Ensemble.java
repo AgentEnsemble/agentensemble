@@ -237,8 +237,9 @@ public class Ensemble {
      * {@link net.agentensemble.delegation.policy.DelegationPolicyResult#modify(net.agentensemble.delegation.DelegationRequest) modify}
      * each delegation request.
      *
-     * <p>Use the builder's {@link EnsembleBuilder#delegationPolicy(DelegationPolicy...)} method
-     * to register individual policies (varargs), or {@code delegationPolicies(Collection)} for
+     * <p>Use the builder's {@link Ensemble.EnsembleBuilder#delegationPolicy(DelegationPolicy)} method
+     * to register individual policies (callable multiple times), or
+     * {@link Ensemble.EnsembleBuilder#delegationPolicies(java.util.Collection) delegationPolicies(Collection)} for
      * batch registration. Multiple calls accumulate; none overwrite each other.
      *
      * <p>Policies apply to both peer delegation ({@code AgentDelegationTool}) and hierarchical
