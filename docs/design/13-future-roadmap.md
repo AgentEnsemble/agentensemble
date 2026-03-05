@@ -177,6 +177,40 @@ ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
 
 ---
 
+## Phase 7+: Delegation Policy Hooks and Lifecycle Events (COMPLETE -- v1.0.x)
+
+**Implemented** (issues #78 and #79):
+
+- `DelegationPolicy` (`@FunctionalInterface`): pluggable pre-delegation interceptor
+- `DelegationPolicyResult` (sealed interface): `allow()`, `reject(reason)`, `modify(request)`
+- `DelegationPolicyContext` (record): caller role, depth, max depth, available worker roles
+- `DelegationStartedEvent`, `DelegationCompletedEvent`, `DelegationFailedEvent` (records)
+- Three new `EnsembleListener` default methods: `onDelegationStarted`, `onDelegationCompleted`,
+  `onDelegationFailed`
+- Three new `ExecutionContext` fire methods: `fireDelegationStarted`, `fireDelegationCompleted`,
+  `fireDelegationFailed`
+- `DelegationContext` extended with `List<DelegationPolicy> policies()` (propagated through
+  `descend()`)
+- `Ensemble.builder()` gains: `.delegationPolicy(DelegationPolicy)`, `.onDelegationStarted(Consumer)`,
+  `.onDelegationCompleted(Consumer)`, `.onDelegationFailed(Consumer)`
+- Policy evaluation wired into both `AgentDelegationTool` (peer delegation) and
+  `DelegateTaskTool` (hierarchical delegation)
+
+### Policy Evaluation Semantics
+
+Policies run after built-in guards and before worker invocation:
+1. `REJECT` -- short-circuit; worker not invoked; `DelegationFailedEvent` fired; `FAILURE` response returned
+2. `MODIFY` -- replace working request; continue evaluating remaining policies
+3. `ALLOW` -- continue to next policy; if all allow, worker executes normally
+
+### Event Correlation
+
+`DelegationStartedEvent.delegationId()` matches `DelegationCompletedEvent.delegationId()` or
+`DelegationFailedEvent.delegationId()` for the same delegation attempt. Guard and policy
+rejections fire only `DelegationFailedEvent` (no start event).
+
+---
+
 ## Phase 7: Callbacks and Observability (COMPLETE -- v0.7.0)
 
 **Implemented**: `ExecutionContext`, `EnsembleListener`, `TaskStartEvent`, `TaskCompleteEvent`,

@@ -1,5 +1,69 @@
 # Changelog
 
+## [Implemented / branch ready] Issues #78 + #79 -- 2026-03-04
+
+Feature branch: `feature/delegation-policy-hooks-and-lifecycle-events`
+Commits: `f5d9b67`, `20b3185`
+
+### Added (Issue #79 -- Delegation lifecycle events and correlation IDs)
+- `DelegationStartedEvent` record: delegationId, delegatingAgentRole, workerRole,
+  taskDescription, delegationDepth, request -- in `net.agentensemble.callback`
+- `DelegationCompletedEvent` record: delegationId, delegatingAgentRole, workerRole,
+  response, duration -- in `net.agentensemble.callback`
+- `DelegationFailedEvent` record: delegationId, delegatingAgentRole, workerRole,
+  failureReason, cause, response, duration -- in `net.agentensemble.callback`
+- `EnsembleListener.onDelegationStarted(DelegationStartedEvent)` default no-op
+- `EnsembleListener.onDelegationCompleted(DelegationCompletedEvent)` default no-op
+- `EnsembleListener.onDelegationFailed(DelegationFailedEvent)` default no-op
+- `ExecutionContext.fireDelegationStarted/Completed/Failed()` fire methods with same
+  exception-isolation semantics as existing task fire methods
+- `Ensemble.Builder` lambda convenience methods: `onDelegationStarted`, `onDelegationCompleted`,
+  `onDelegationFailed`
+- Event firing in `AgentDelegationTool` (peer delegation) and `DelegateTaskTool`
+  (hierarchical delegation): started before worker, completed on success, failed on all
+  failure paths; guard/policy failures fire failed only (no start event)
+
+### Added (Issue #78 -- Delegation policy hooks)
+- `DelegationPolicy` (@FunctionalInterface): `evaluate(DelegationRequest, DelegationPolicyContext)`
+  in `net.agentensemble.delegation.policy`
+- `DelegationPolicyResult` (sealed interface): `Allow` (singleton), `Reject` (record w/ reason),
+  `Modify` (record w/ modifiedRequest); factory methods `allow()`, `reject(String)`,
+  `modify(DelegationRequest)` in `net.agentensemble.delegation.policy`
+- `DelegationPolicyContext` (immutable record): delegatingAgentRole, currentDepth, maxDepth,
+  availableWorkerRoles in `net.agentensemble.delegation.policy`
+- `DelegationContext.policies` field (immutable `List<DelegationPolicy>`); propagated through
+  `descend()`; 5-arg `create()` factory; original 4-arg delegates with `List.of()`
+- `Ensemble.delegationPolicies` field (`@Singular("delegationPolicy") List<DelegationPolicy>`);
+  wired through `selectExecutor()` to all three workflow executors
+- Policy evaluation in `AgentDelegationTool` and `DelegateTaskTool`: runs after guards,
+  before worker invocation; REJECT short-circuits; MODIFY replaces working request
+- `SequentialWorkflowExecutor`, `HierarchicalWorkflowExecutor`, `ParallelWorkflowExecutor`:
+  updated with policy-aware constructors and `DelegationContext.create()` calls
+
+### Tests (Issues #78 + #79)
+- `DelegationPolicyContextTest`: record fields, equality
+- `DelegationPolicyResultTest`: allow singleton, reject/modify factories, validation,
+  pattern matching exhaustiveness
+- `AgentDelegationToolPolicyTest`: ALLOW/REJECT/MODIFY, chaining, first-REJECT short-circuits,
+  MODIFY+REJECT uses modified request, propagation through descend(), context field verification
+- `DelegationEventsTest`: all three event record fields and equality
+- `AgentDelegationToolEventsTest`: start+completed on success, correlationId matching, guard
+  failures/policy rejections fire failed-only, worker exception fires start+failed,
+  listener exception isolation
+- `DelegateTaskToolPolicyAndEventsTest`: full policy and event coverage for hierarchical path
+
+### Documentation (Issues #78 + #79)
+- `docs/guides/delegation.md`: Delegation Policy Hooks + Delegation Lifecycle Events sections
+- `docs/guides/callbacks.md`: delegation event type tables + updated quick start
+- `docs/reference/ensemble-configuration.md`: delegationPolicies row added
+- `docs/design/13-future-roadmap.md`: Phase 7+ section for #78/#79 marked complete
+- `docs/examples/callbacks.md`: Delegation Events section added
+- `docs/examples/hierarchical-team.md`: Delegation Policy Hooks section added
+- `README.md`: delegation policy hooks + lifecycle events in delegation section;
+  delegation events in callbacks section; configuration table updated
+
+---
+
 ## [Implemented / branch ready] Issues #77 + #80 -- 2026-03-04
 
 Feature branch: `feature/delegation-contracts-and-manager-prompt-strategy`

@@ -3,6 +3,9 @@ package net.agentensemble.execution;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import net.agentensemble.callback.DelegationCompletedEvent;
+import net.agentensemble.callback.DelegationFailedEvent;
+import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
@@ -264,6 +267,57 @@ public final class ExecutionContext {
                 listener.onToolCall(event);
             } catch (Exception e) {
                 log.warn("EnsembleListener threw exception in onToolCall: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link DelegationStartedEvent} to all registered listeners.
+     *
+     * <p>Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireDelegationStarted(DelegationStartedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onDelegationStarted(event);
+            } catch (Exception e) {
+                log.warn("EnsembleListener threw exception in onDelegationStarted: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link DelegationCompletedEvent} to all registered listeners.
+     *
+     * <p>Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireDelegationCompleted(DelegationCompletedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onDelegationCompleted(event);
+            } catch (Exception e) {
+                log.warn("EnsembleListener threw exception in onDelegationCompleted: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link DelegationFailedEvent} to all registered listeners.
+     *
+     * <p>Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireDelegationFailed(DelegationFailedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onDelegationFailed(event);
+            } catch (Exception e) {
+                log.warn("EnsembleListener threw exception in onDelegationFailed: {}", e.getMessage(), e);
             }
         }
     }

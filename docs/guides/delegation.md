@@ -210,6 +210,217 @@ Guard failures (depth limit, self-delegation, unknown role) also produce a `FAIL
 
 ---
 
+## Delegation Policy Hooks
+
+Delegation policies let you intercept and validate each delegation attempt _before_ the
+worker agent executes. They run after all built-in guards (depth limit, self-delegation,
+unknown agent) and before the worker is invoked.
+
+### Why Use Policies?
+
+The built-in guards cover structural constraints. Policies cover _business rules_:
+
+- Block any delegation when a required field is missing: `"project_key must not be UNKNOWN"`
+- Deny delegation to a specific role based on context: `"Analyst requires scope.region"`
+- Inject missing defaults before the worker sees the request
+
+### DelegationPolicy Interface
+
+`DelegationPolicy` is a `@FunctionalInterface`. Register one or more policies on the
+`Ensemble` builder:
+
+```java
+Ensemble.builder()
+    .agent(coordinator)
+    .agent(analyst)
+    .task(task)
+    .delegationPolicy((request, ctx) -> {
+        if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
+            return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
+        }
+        return DelegationPolicyResult.allow();
+    })
+    .build();
+```
+
+### DelegationPolicyResult
+
+Each policy returns one of three outcomes:
+
+| Result | Factory Method | Effect |
+|--------|---------------|--------|
+| Allow | `DelegationPolicyResult.allow()` | Proceed with delegation unchanged |
+| Reject | `DelegationPolicyResult.reject("reason")` | Block delegation; worker is never invoked; FAILURE response returned |
+| Modify | `DelegationPolicyResult.modify(modifiedRequest)` | Replace the working request and continue evaluating remaining policies |
+
+### DelegationPolicyContext
+
+Each policy receives a `DelegationPolicyContext` alongside the request:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegatingAgentRole()` | `String` | Role of the agent initiating the delegation |
+| `currentDepth()` | `int` | Current delegation depth (0 = root) |
+| `maxDepth()` | `int` | Maximum allowed depth for this run |
+| `availableWorkerRoles()` | `List<String>` | Roles of agents available in this context |
+
+### Evaluation Semantics
+
+Policies are evaluated in registration order:
+
+1. If any policy returns `REJECT`, evaluation stops immediately. The worker is never invoked
+   and a `DelegationResponse` with `status = FAILURE` is returned to the calling agent.
+2. If a policy returns `MODIFY`, the modified request replaces the working request for all
+   subsequent policy evaluations and for the final worker invocation.
+3. If all policies return `ALLOW`, the worker executes normally.
+
+```java
+Ensemble.builder()
+    .agent(coordinator)
+    .agent(analyst)
+    .agent(writer)
+    .task(task)
+    // Policy 1: require project context
+    .delegationPolicy((request, ctx) -> {
+        if (request.getScope().get("project_key") == null) {
+            return DelegationPolicyResult.reject("project_key is required");
+        }
+        return DelegationPolicyResult.allow();
+    })
+    // Policy 2: inject region default when missing
+    .delegationPolicy((request, ctx) -> {
+        if ("Analyst".equals(request.getAgentRole()) && !request.getScope().containsKey("region")) {
+            var enriched = request.toBuilder()
+                .scope(Map.<String, Object>of("region", "us-east-1"))
+                .build();
+            return DelegationPolicyResult.modify(enriched);
+        }
+        return DelegationPolicyResult.allow();
+    })
+    .build();
+```
+
+### Scope and Coverage
+
+Policies apply to both peer delegation (`AgentDelegationTool`) and hierarchical delegation
+(`DelegateTaskTool`). They are propagated through `DelegationContext.descend()`, so nested
+delegation chains also evaluate all registered policies.
+
+---
+
+## Delegation Lifecycle Events
+
+The framework fires delegation lifecycle events to all registered `EnsembleListener`
+instances. This enables tracing, latency measurement, and correlation across delegation chains.
+
+### Event Types
+
+#### DelegationStartedEvent
+
+Fired immediately before the worker agent executes. Only fired when all guards and policies
+pass -- guard/policy failures produce a `DelegationFailedEvent` directly (no start event).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Unique correlation ID matching the completed/failed event |
+| `delegatingAgentRole()` | `String` | Role of the agent initiating the delegation |
+| `workerRole()` | `String` | Role of the agent that will execute the subtask |
+| `taskDescription()` | `String` | Description of the subtask |
+| `delegationDepth()` | `int` | Depth of this delegation (1 = first, 2 = nested, etc.) |
+| `request()` | `DelegationRequest` | The full typed delegation request |
+
+#### DelegationCompletedEvent
+
+Fired immediately after the worker agent completes successfully.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Matches the corresponding `DelegationStartedEvent` |
+| `delegatingAgentRole()` | `String` | Role of the agent that initiated the delegation |
+| `workerRole()` | `String` | Role of the worker that executed |
+| `response()` | `DelegationResponse` | Full typed response with output, metadata, and duration |
+| `duration()` | `Duration` | Elapsed time from delegation start to completion |
+
+#### DelegationFailedEvent
+
+Fired when a delegation fails for any reason: guard violation, policy rejection, or worker
+exception. Guard and policy failures have `cause() == null`; worker exceptions carry the
+thrown exception.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delegationId()` | `String` | Correlation ID matching the `DelegationRequest.taskId` |
+| `delegatingAgentRole()` | `String` | Role of the initiating agent |
+| `workerRole()` | `String` | Role of the intended target |
+| `failureReason()` | `String` | Human-readable failure description |
+| `cause()` | `Throwable` | Exception if worker threw; `null` for guard/policy failures |
+| `response()` | `DelegationResponse` | FAILURE response with error messages |
+| `duration()` | `Duration` | Elapsed time from delegation start to failure |
+
+### Registering Delegation Event Listeners
+
+Use lambda convenience methods on the builder:
+
+```java
+Ensemble.builder()
+    .agent(coordinator)
+    .agent(analyst)
+    .task(task)
+    .onDelegationStarted(event ->
+        log.info("Delegation started [{}]: {} -> {} (depth {})",
+            event.delegationId(), event.delegatingAgentRole(),
+            event.workerRole(), event.delegationDepth()))
+    .onDelegationCompleted(event ->
+        metrics.recordDelegationLatency(event.workerRole(), event.duration()))
+    .onDelegationFailed(event ->
+        log.warn("Delegation failed [{}]: {}", event.delegationId(), event.failureReason()))
+    .build();
+```
+
+Or implement `EnsembleListener` to handle all delegation events in one class:
+
+```java
+public class DelegationAuditListener implements EnsembleListener {
+
+    @Override
+    public void onDelegationStarted(DelegationStartedEvent event) {
+        auditLog.record("DELEGATION_STARTED", event.delegationId(),
+            event.delegatingAgentRole(), event.workerRole());
+    }
+
+    @Override
+    public void onDelegationCompleted(DelegationCompletedEvent event) {
+        auditLog.record("DELEGATION_COMPLETED", event.delegationId(),
+            event.workerRole(), event.duration());
+    }
+
+    @Override
+    public void onDelegationFailed(DelegationFailedEvent event) {
+        auditLog.record("DELEGATION_FAILED", event.delegationId(),
+            event.workerRole(), event.failureReason());
+    }
+}
+```
+
+### Correlation IDs
+
+The `delegationId` field ties the lifecycle together. For a successful delegation:
+
+1. `DelegationStartedEvent.delegationId()` is emitted
+2. `DelegationCompletedEvent.delegationId()` matches (1)
+
+For a failed delegation after worker execution begins:
+
+1. `DelegationStartedEvent.delegationId()` is emitted
+2. `DelegationFailedEvent.delegationId()` matches (1)
+
+For guard/policy failures (worker never starts):
+
+- Only `DelegationFailedEvent` is fired; there is no corresponding `DelegationStartedEvent`
+- The `delegationId` matches `DelegationRequest.getTaskId()` for correlation with the internal response log
+
+---
+
 ## Delegation vs. Hierarchical Workflow
 
 | | Peer Delegation | Hierarchical Workflow |

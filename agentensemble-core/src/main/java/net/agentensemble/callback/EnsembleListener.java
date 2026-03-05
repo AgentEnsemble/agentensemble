@@ -4,9 +4,9 @@ package net.agentensemble.callback;
  * Listener interface for observing ensemble execution lifecycle events.
  *
  * Implement this interface to receive notifications when tasks start, complete,
- * fail, or when tools are called during agent execution. All methods have default
- * no-op implementations so implementors only need to override the events they
- * care about.
+ * fail, when tools are called during agent execution, or when delegation handoffs
+ * occur between agents. All methods have default no-op implementations so
+ * implementors only need to override the events they care about.
  *
  * Listeners are registered via the Ensemble builder:
  * <pre>
@@ -21,6 +21,9 @@ package net.agentensemble.callback;
  *     .onTaskComplete(event -> metrics.record(event.duration()))
  *     .onTaskFailed(event -> alerts.notify(event.cause()))
  *     .onToolCall(event -> metrics.increment("tool." + event.toolName()))
+ *     .onDelegationStarted(event -> log.info("Delegating to {}", event.workerRole()))
+ *     .onDelegationCompleted(event -> metrics.record(event.duration()))
+ *     .onDelegationFailed(event -> alerts.notify(event.failureReason()))
  *     .build();
  * </pre>
  *
@@ -61,4 +64,40 @@ public interface EnsembleListener {
      * @param event the tool call event
      */
     default void onToolCall(ToolCallEvent event) {}
+
+    /**
+     * Called immediately before a delegation is handed off to a worker agent.
+     *
+     * <p>This method is called for both peer delegation ({@code AgentDelegationTool}) and
+     * hierarchical delegation ({@code DelegateTaskTool}). It is only fired for delegations
+     * that pass all guards and registered policy evaluations.
+     *
+     * <p>Use {@link DelegationStartedEvent#delegationId()} to correlate with the matching
+     * {@link #onDelegationCompleted} or {@link #onDelegationFailed} callback.
+     *
+     * @param event the delegation started event
+     */
+    default void onDelegationStarted(DelegationStartedEvent event) {}
+
+    /**
+     * Called immediately after a delegation completes successfully.
+     *
+     * <p>The {@link DelegationCompletedEvent#delegationId()} matches the value from the
+     * corresponding {@link DelegationStartedEvent}.
+     *
+     * @param event the delegation completed event
+     */
+    default void onDelegationCompleted(DelegationCompletedEvent event) {}
+
+    /**
+     * Called when a delegation fails, whether due to a guard violation, policy rejection,
+     * or worker agent exception.
+     *
+     * <p>Guard violations and policy rejections do not have a matching
+     * {@link DelegationStartedEvent} because the worker is never invoked in those cases.
+     * Worker exceptions do have a matching start event.
+     *
+     * @param event the delegation failed event
+     */
+    default void onDelegationFailed(DelegationFailedEvent event) {}
 }

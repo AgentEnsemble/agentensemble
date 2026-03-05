@@ -13,6 +13,7 @@ import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.MaxIterationsExceededException;
@@ -55,17 +56,32 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
     private final List<Agent> agents;
     private final int maxDelegationDepth;
+    private final List<DelegationPolicy> delegationPolicies;
     private final AgentExecutor agentExecutor;
 
     /**
-     * Create a SequentialWorkflowExecutor with delegation support.
+     * Create a SequentialWorkflowExecutor with delegation support but no delegation policies.
      *
      * @param agents             all agents registered with the ensemble (used to build DelegationContext)
      * @param maxDelegationDepth maximum allowed delegation depth for agents with allowDelegation=true
      */
     public SequentialWorkflowExecutor(List<Agent> agents, int maxDelegationDepth) {
+        this(agents, maxDelegationDepth, List.of());
+    }
+
+    /**
+     * Create a SequentialWorkflowExecutor with delegation support and delegation policies.
+     *
+     * @param agents              all agents registered with the ensemble
+     * @param maxDelegationDepth  maximum allowed delegation depth for agents with allowDelegation=true
+     * @param delegationPolicies  policies to evaluate before each delegation attempt;
+     *                            evaluated in list order; must not be null
+     */
+    public SequentialWorkflowExecutor(
+            List<Agent> agents, int maxDelegationDepth, List<DelegationPolicy> delegationPolicies) {
         this.agents = List.copyOf(agents);
         this.maxDelegationDepth = maxDelegationDepth;
+        this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.agentExecutor = new AgentExecutor();
     }
 
@@ -75,9 +91,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
         int totalTasks = resolvedTasks.size();
         Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
 
-        // Create the delegation context once for the entire run; all agents share it
-        DelegationContext delegationContext =
-                DelegationContext.create(agents, maxDelegationDepth, executionContext, agentExecutor);
+        // Create the delegation context once for the entire run; all agents share it.
+        // Policies are threaded in so that AgentDelegationTool can evaluate them per delegation.
+        DelegationContext delegationContext = DelegationContext.create(
+                agents, maxDelegationDepth, executionContext, agentExecutor, delegationPolicies);
 
         for (int i = 0; i < totalTasks; i++) {
             Task task = resolvedTasks.get(i);

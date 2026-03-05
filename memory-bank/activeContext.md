@@ -2,135 +2,128 @@
 
 ## Current Work Focus
 
-Issues #77 (Structured Delegation Contract) and #80 (Manager Prompt Extension Hook) were
-implemented on `feature/delegation-contracts-and-manager-prompt-strategy` (3 commits):
-- `eee052c` feat(#80): add public ManagerPromptStrategy API for hierarchical workflow
-- `5771d47` feat(#77): add structured DelegationRequest and DelegationResponse contracts
-- `acf513b` docs(#77,#80): update README, guides, examples, and design docs
+Issues #78 (Delegation Policy Hooks) and #79 (Delegation Lifecycle Events) were implemented
+on `feature/delegation-policy-hooks-and-lifecycle-events` (2 commits):
+- `f5d9b67` feat(#79,#78): add delegation lifecycle events, correlation IDs, and policy hooks
+- `20b3185` docs(#78,#79): update README, guides, examples, and design docs
 
 The feature branch is ready to be merged. All tests pass; full `./gradlew check` is green.
 
 ## Recent Changes
 
-### Issue #80 -- Manager prompt extension hook: ManagerPromptStrategy
+### Issue #79 -- Delegation lifecycle events and correlation IDs
 
-**New types in `net.agentensemble.workflow`:**
-- `ManagerPromptStrategy` (public interface): `buildSystemPrompt(ManagerPromptContext)`,
-  `buildUserPrompt(ManagerPromptContext)` -- called once per hierarchical workflow execution
-- `ManagerPromptContext` (public immutable record): `agents` (worker agents), `tasks` (resolved
-  tasks to orchestrate), `previousOutputs`, `workflowDescription`
-- `DefaultManagerPromptStrategy` (public class): implements `ManagerPromptStrategy` with the
-  same logic that was in `ManagerPromptBuilder`; exposes `DEFAULT` singleton; constructor is
-  package-private to allow subclassing within the framework
+**New event records in `net.agentensemble.callback`:**
+- `DelegationStartedEvent`: delegationId, delegatingAgentRole, workerRole, taskDescription,
+  delegationDepth, request -- fired before worker invocation (only when all guards and policies pass)
+- `DelegationCompletedEvent`: delegationId, delegatingAgentRole, workerRole, response, duration
+  -- fired after successful worker execution
+- `DelegationFailedEvent`: delegationId, delegatingAgentRole, workerRole, failureReason,
+  cause (Throwable or null), response, duration -- fired for guard failures, policy rejections,
+  and worker exceptions
 
-**Deprecations:**
-- `ManagerPromptBuilder` deprecated (`@Deprecated(forRemoval = true)`); both static methods
-  now delegate to `DefaultManagerPromptStrategy.DEFAULT`
+**EnsembleListener changes:**
+- Added `onDelegationStarted(DelegationStartedEvent)` default no-op
+- Added `onDelegationCompleted(DelegationCompletedEvent)` default no-op
+- Added `onDelegationFailed(DelegationFailedEvent)` default no-op
 
-**Ensemble.Builder changes:**
-- Added `managerPromptStrategy(ManagerPromptStrategy)` field with
-  `@Builder.Default = DefaultManagerPromptStrategy.DEFAULT`
-
-**HierarchicalWorkflowExecutor changes:**
-- Added overloaded constructor accepting `ManagerPromptStrategy` (5-arg); existing 4-arg
-  constructor delegates to it with `DefaultManagerPromptStrategy.DEFAULT`
-- Builds `ManagerPromptContext` from worker agents + resolved tasks, calls strategy, uses
-  the resulting strings as manager background (system prompt) and task description (user prompt)
-- If strategy returns blank user prompt, falls back to a built-in coordinator string to avoid
-  `Task.builder()` validation error (validation of strategy output is caller's responsibility)
-
-**Tests added:**
-- `ManagerPromptContextTest`: record field accessors, equality, empty context
-- `DefaultManagerPromptStrategyTest`: all prompt-content assertions + parity tests verifying
-  output matches deprecated `ManagerPromptBuilder`
-- `HierarchicalWorkflowExecutorTest`: 8 new tests -- custom strategy injection (system/user
-  prompt), empty-string strategy, null-strategy fallback, context field verification
-
-### Issue #77 -- Structured delegation contract: DelegationRequest and DelegationResponse
-
-**Option C hybrid design**: LLM-facing `@Tool` method signature unchanged (2-param, returns
-String); internally the framework constructs/threads `DelegationRequest`/`DelegationResponse`
-through the delegation pipeline.
-
-**New types in `net.agentensemble.delegation`:**
-- `DelegationPriority` (enum): `LOW`, `NORMAL` (default), `HIGH`, `CRITICAL`
-- `DelegationStatus` (enum): `SUCCESS`, `FAILURE`, `PARTIAL`
-- `DelegationRequest` (immutable `@Value @Builder`): `taskId` (auto-UUID), `agentRole`,
-  `taskDescription`, `scope` (Map), `priority`, `expectedOutputSchema`, `maxOutputRetries`,
-  `metadata` (Map)
-- `DelegationResponse` (immutable Java record): `taskId`, `status`, `workerRole`, `rawOutput`,
-  `parsedOutput`, `artifacts`, `errors`, `metadata`, `duration`
+**ExecutionContext changes:**
+- Added `fireDelegationStarted`, `fireDelegationCompleted`, `fireDelegationFailed` fire methods
+  with same exception-isolation semantics as existing fire methods
 
 **AgentDelegationTool and DelegateTaskTool changes:**
-- Construct a `DelegationRequest` before each invocation (taskId auto-generated)
-- Produce a `DelegationResponse` (SUCCESS or FAILURE) after each attempt
-- Guard failures (depth limit, self-delegation, unknown agent) also produce FAILURE responses
-- New `getDelegationResponses()` method on both tools returning immutable list of all responses
-- `getDelegatedOutputs()` and the `@Tool` method signature are unchanged
+- Fire `DelegationStartedEvent` after all guards and policies pass, before worker invocation
+- Fire `DelegationCompletedEvent` on successful worker execution
+- Fire `DelegationFailedEvent` on guard failure (cause=null), policy rejection (cause=null),
+  or worker exception (cause=exception); guard/policy failures have no corresponding start event
+
+**Ensemble.Builder changes:**
+- Lambda convenience methods: `onDelegationStarted`, `onDelegationCompleted`, `onDelegationFailed`
+
+### Issue #78 -- Delegation policy hooks: DelegationPolicy
+
+**New types in `net.agentensemble.delegation.policy`:**
+- `DelegationPolicy` (@FunctionalInterface): `evaluate(DelegationRequest, DelegationPolicyContext)`
+  returning `DelegationPolicyResult`
+- `DelegationPolicyResult` (sealed interface): `Allow` (singleton), `Reject` (record w/ reason),
+  `Modify` (record w/ modifiedRequest); factory methods `allow()`, `reject(String)`,
+  `modify(DelegationRequest)`
+- `DelegationPolicyContext` (immutable record): `delegatingAgentRole`, `currentDepth`,
+  `maxDepth`, `availableWorkerRoles`
+
+**DelegationContext changes:**
+- Added `List<DelegationPolicy> policies` field; immutable, propagated through `descend()`
+- New 5-arg `create()` factory with policies; original 4-arg delegates to it with `List.of()`
+
+**Policy evaluation in AgentDelegationTool and DelegateTaskTool:**
+- Runs after all built-in guards, before worker invocation
+- Evaluation order: registered order; first REJECT short-circuits (fires DelegationFailedEvent,
+  returns error message, records FAILURE response, worker never invoked)
+- MODIFY replaces working request for subsequent policies and worker invocation
+- ALLOW continues to next policy; all-ALLOW proceeds to worker
+
+**Ensemble.Builder changes:**
+- `@Singular("delegationPolicy") List<DelegationPolicy> delegationPolicies` field
+- `selectExecutor()` passes policies to all three workflow executors
+- All executors (Sequential, Hierarchical, Parallel) updated with policy-aware constructors
+  and `DelegationContext.create()` calls
 
 **Tests added:**
-- `DelegationPriorityTest`, `DelegationStatusTest`: enum completeness (4+3 values)
-- `DelegationRequestTest`: builder, auto-UUID, uniqueness, defaults, all overridable fields, toBuilder
-- `DelegationResponseTest`: record accessors, equality, artifact/metadata population, taskId correlation
-- `AgentDelegationToolTest`: 12 new tests for getDelegationResponses() -- success/failure/guard statuses,
-  multiple accumulation, immutability
-- `DelegateTaskToolTest`: 11 new tests for getDelegationResponses() -- same coverage as above,
-  plus unique taskId per delegation
-
-### Documentation updates (both issues)
-
-- `README.md`: Custom Manager Prompts note under Hierarchical Workflow; structured delegation
-  contracts blurb under Agent Delegation; `managerPromptStrategy` in Ensemble Configuration table
-- `docs/guides/workflows.md`: new "Customizing the Manager Prompt" subsection with context
-  field table and code example
-- `docs/reference/ensemble-configuration.md`: `managerPromptStrategy` row added
-- `docs/guides/delegation.md`: new "Structured Delegation Contracts" section with
-  DelegationRequest/Response field tables and guard-failure auditing notes
-- `docs/examples/hierarchical-team.md`: Custom Manager Prompts section appended
-- `HierarchicalTeamExample.java`: demonstrates `investmentStrategy` using
-  `ManagerPromptStrategy` + `DefaultManagerPromptStrategy.DEFAULT` delegation
-- `docs/design/02-architecture.md`: updated strategy pattern note to include
-  `ManagerPromptStrategy` as a secondary extension point
-- `docs/design/03-domain-model.md`: added DelegationRequest, DelegationResponse,
-  DelegationStatus, DelegationPriority specifications
+- `DelegationPolicyContextTest`: record fields, equality, toString
+- `DelegationPolicyResultTest`: allow singleton, reject/modify factories, factory validation,
+  pattern matching exhaustiveness
+- `AgentDelegationToolPolicyTest`: ALLOW/REJECT/MODIFY, multiple policies in order,
+  first-REJECT short-circuits, MODIFY+REJECT chaining, propagation through descend(),
+  policy context fields (callerRole, depth, availableRoles)
+- `DelegationEventsTest`: all three event record fields and equality
+- `AgentDelegationToolEventsTest`: start+completed on success, correlationId matching,
+  guard failures fire failed-only (no start), policy rejection fires failed-only,
+  worker exception fires start+failed, listener exceptions don't abort delegation
+- `DelegateTaskToolPolicyAndEventsTest`: same coverage as above for hierarchical path
 
 ## Next Steps
 
-- Open PR for `feature/delegation-contracts-and-manager-prompt-strategy` targeting `main`
-- Issues #78 (DelegationPolicy hooks), #79 (delegation lifecycle events), and
-  #81 (HierarchicalConstraints) remain open and depend on #77 being merged
-- Issue #80 is fully implemented; no follow-up needed on that track
+- Open PR for `feature/delegation-policy-hooks-and-lifecycle-events` targeting `main`
+- Issue #81 (HierarchicalConstraints) remains open and depends on #78 being merged
 - Issue #74 (Tool Pipeline/Chaining) remains open for future development
 
-## Remaining Planned Issues (Structured Delegation API)
+## CI Parity Rule (Lesson Learned -- PR #84)
 
-### #78 -- Delegation policy hooks: DelegationPolicy
-- `DelegationPolicy` (@FunctionalInterface): `evaluate(DelegationRequest, DelegationPolicyContext)`
-- `DelegationPolicyResult` (sealed): `allow()`, `reject(String reason)`, `modify(DelegationRequest)`
-- `DelegationPolicyContext` (record): delegatingAgentRole, currentDepth, maxDepth, availableWorkerRoles
-- Policies registered via `Ensemble.Builder.delegationPolicy(...)`, threaded via DelegationContext
-- REJECT produces FAILURE DelegationResponse without invoking the worker executor
+**Problem**: Local `./gradlew :agentensemble-core:check` does NOT include `javadoc`.
+CI runs `./gradlew build :agentensemble-core:javadoc --continue` which also generates
+Javadoc, causing CI failures for broken `{@link}` references that were invisible locally.
 
-### #79 -- Delegation lifecycle events and correlation IDs
-- New event records: DelegationStartedEvent, DelegationCompletedEvent, DelegationFailedEvent
-- EnsembleListener gains 3 new default no-op methods
-- Ensemble.Builder gains 3 lambda convenience methods
-- delegationId set as MDC key during worker execution
+**Root cause of this failure**: `{@link DelegationRequest#getTaskId()}` in the new event
+records referenced a Lombok-generated method (`getTaskId()` from `@Value`). Javadoc runs
+before annotation processing so Lombok-generated methods are invisible to it. The fix is
+to use `{@code}` for Lombok-generated method references instead of `{@link}`.
 
-### #81 -- Constrained hierarchical mode: HierarchicalConstraints
-- HierarchicalConstraints builder: requiredWorkers, allowedWorkers, maxCallsPerWorker, etc.
-- Enforcement via built-in DelegationPolicy; post-execution validation
-- ConstraintViolationException
+**Prevention rule**: Before pushing any PR, always run the same command CI uses:
+```
+./gradlew build :agentensemble-core:javadoc --continue
+```
+This is equivalent to `check` (tests + spotless + coverage) PLUS javadoc generation.
+
+**Javadoc rule**: Never use `{@link SomeClass#someMethod()}` for Lombok-generated methods
+(`@Value` getters, `@Builder` fluent methods, `@Singular` collection methods, `@Getter`
+getters). Use `{@code}` instead. This is the same rule already established for Lombok
+`@Singular` builder methods.
+
+---
 
 ## Active Decisions and Considerations
 
-- **ManagerPromptStrategy blank user prompt**: When strategy returns blank, the executor falls
-  back to a generic coordinator string rather than propagating a ValidationException (Task model
-  requires non-blank description). This is documented in HierarchicalWorkflowExecutor.
-- **DelegationRequest design**: taskId uses `@Builder.Default` with `UUID.randomUUID()` so each
-  build() call generates a unique ID. This was critical for the uniqueness test.
-- **DelegationResponse for guard failures**: All guard failures (depth limit, self-delegation,
-  unknown agent) produce FAILURE DelegationResponse objects so every delegation attempt is
-  fully auditable regardless of outcome.
-- **ManagerPromptBuilder deprecation**: One release cycle only; will be removed in a future
-  version. Both static methods delegate to DefaultManagerPromptStrategy.DEFAULT.
+- **Guard failures vs policy rejections in events**: Guard failures (depth limit, self-delegation,
+  unknown agent) fire `DelegationFailedEvent` with `cause=null`. Policy rejections also fire
+  `DelegationFailedEvent` with `cause=null`. Worker exceptions fire both `DelegationStartedEvent`
+  and `DelegationFailedEvent` with the thrown exception as `cause`.
+- **DelegationStartedEvent only fires when all pass**: The event is only fired when the worker
+  is about to be invoked -- not for guard or policy failures. This means listeners don't see a
+  start event for delegations that were blocked before execution.
+- **MODIFY propagation**: When a policy returns MODIFY, the modified request replaces the
+  working request for all subsequent policy evaluations AND for the final worker invocation.
+  The `DelegationStartedEvent.request()` carries the final working request (possibly modified).
+- **Lombok @Singular conflict**: The varargs `delegationPolicies(DelegationPolicy... policies)`
+  method was not added to EnsembleBuilder because Lombok's @Singular annotation generates
+  `delegationPolicies(Collection)` which would conflict. Users can call
+  `.delegationPolicy(p)` multiple times or `.delegationPolicies(list)` (Lombok-generated).
