@@ -12,6 +12,7 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import org.slf4j.Logger;
@@ -19,7 +20,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Immutable execution context bundling all cross-cutting concerns for a single
- * ensemble run: memory state, verbosity, event listeners, tool executor, and tool metrics.
+ * ensemble run: memory state, verbosity, event listeners, tool executor, tool metrics,
+ * and optional cost configuration.
  *
  * <p>An {@code ExecutionContext} is created once per {@link net.agentensemble.Ensemble#run()}
  * invocation and threaded through the entire execution stack -- workflow executors,
@@ -37,6 +39,10 @@ import org.slf4j.LoggerFactory;
  * {@link net.agentensemble.tool.ToolContext}. The default is {@link NoOpToolMetrics},
  * which discards all measurements.
  * Configure via {@code Ensemble.builder().toolMetrics(metrics)}.
+ *
+ * <p><strong>Cost configuration:</strong> When non-null, the {@link #costConfiguration()}
+ * is used by {@link net.agentensemble.trace.internal.TaskTraceAccumulator} to estimate
+ * monetary cost from token counts. Set via {@code Ensemble.builder().costConfiguration(cfg)}.
  *
  * <p>Fire methods ({@link #fireTaskStart}, {@link #fireTaskComplete}, {@link #fireTaskFailed},
  * {@link #fireToolCall}) dispatch events to all registered listeners. Each listener is
@@ -56,40 +62,41 @@ public final class ExecutionContext {
     private final List<EnsembleListener> listeners;
     private final Executor toolExecutor;
     private final ToolMetrics toolMetrics;
+    private final CostConfiguration costConfiguration;
 
     private ExecutionContext(
             MemoryContext memoryContext,
             boolean verbose,
             List<EnsembleListener> listeners,
             Executor toolExecutor,
-            ToolMetrics toolMetrics) {
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
         this.toolExecutor = toolExecutor;
         this.toolMetrics = toolMetrics;
+        this.costConfiguration = costConfiguration;
     }
 
     /**
      * Create an ExecutionContext with all fields specified.
      *
-     * @param memoryContext runtime memory state for this run; must not be null;
-     *                      use {@link MemoryContext#disabled()} when memory is not configured
-     * @param verbose       when true, elevates execution logging to INFO level
-     * @param listeners     event listeners to notify during execution; must not be null;
-     *                      an immutable defensive copy is stored
-     * @param toolExecutor  executor for parallel tool calls within a single LLM turn;
-     *                      must not be null; use a virtual-thread executor by default
-     * @param toolMetrics   metrics backend for tool execution measurements; must not be null
+     * @param memoryContext     runtime memory state for this run; must not be null
+     * @param verbose           when true, elevates execution logging to INFO level
+     * @param listeners         event listeners to notify; must not be null
+     * @param toolExecutor      executor for parallel tool calls; must not be null
+     * @param toolMetrics       metrics backend for tool execution; must not be null
+     * @param costConfiguration optional per-token cost rates; may be {@code null}
      * @return a new ExecutionContext
-     * @throws IllegalArgumentException if any required parameter is null
      */
     public static ExecutionContext of(
             MemoryContext memoryContext,
             boolean verbose,
             List<EnsembleListener> listeners,
             Executor toolExecutor,
-            ToolMetrics toolMetrics) {
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration) {
         if (memoryContext == null) {
             throw new IllegalArgumentException("memoryContext must not be null");
         }
@@ -102,7 +109,29 @@ public final class ExecutionContext {
         if (toolMetrics == null) {
             throw new IllegalArgumentException("toolMetrics must not be null");
         }
-        return new ExecutionContext(memoryContext, verbose, List.copyOf(listeners), toolExecutor, toolMetrics);
+        return new ExecutionContext(
+                memoryContext, verbose, List.copyOf(listeners), toolExecutor, toolMetrics, costConfiguration);
+    }
+
+    /**
+     * Create an ExecutionContext with all fields except cost configuration.
+     *
+     * <p>Cost estimation will be disabled ({@link #costConfiguration()} returns {@code null}).
+     *
+     * @param memoryContext runtime memory state for this run; must not be null
+     * @param verbose       when true, elevates execution logging to INFO level
+     * @param listeners     event listeners to notify; must not be null
+     * @param toolExecutor  executor for parallel tool calls; must not be null
+     * @param toolMetrics   metrics backend for tool execution; must not be null
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics) {
+        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, null);
     }
 
     /**
@@ -111,7 +140,7 @@ public final class ExecutionContext {
      *
      * @param memoryContext runtime memory state for this run; must not be null
      * @param verbose       when true, elevates execution logging to INFO level
-     * @param listeners     event listeners to notify during execution; must not be null
+     * @param listeners     event listeners to notify; must not be null
      * @return a new ExecutionContext
      */
     public static ExecutionContext of(MemoryContext memoryContext, boolean verbose, List<EnsembleListener> listeners) {
@@ -120,7 +149,8 @@ public final class ExecutionContext {
                 verbose,
                 listeners,
                 Executors.newVirtualThreadPerTaskExecutor(),
-                NoOpToolMetrics.INSTANCE);
+                NoOpToolMetrics.INSTANCE,
+                null);
     }
 
     /**
@@ -150,7 +180,8 @@ public final class ExecutionContext {
                 false,
                 List.of(),
                 Executors.newVirtualThreadPerTaskExecutor(),
-                NoOpToolMetrics.INSTANCE);
+                NoOpToolMetrics.INSTANCE,
+                null);
     }
 
     // ========================
@@ -196,6 +227,17 @@ public final class ExecutionContext {
      */
     public ToolMetrics toolMetrics() {
         return toolMetrics;
+    }
+
+    /**
+     * Optional per-token cost rates for cost estimation.
+     * When non-null, {@link net.agentensemble.trace.internal.TaskTraceAccumulator}
+     * computes a {@link net.agentensemble.metrics.CostEstimate} for each task.
+     *
+     * @return the cost configuration, or {@code null} when cost estimation is disabled
+     */
+    public CostConfiguration costConfiguration() {
+        return costConfiguration;
     }
 
     // ========================

@@ -1,5 +1,87 @@
 # Changelog
 
+## [Implemented / branch ready] Issue #42 -- 2026-03-05
+
+Feature branch: `feature/42-execution-metrics`
+Commit: `d01ea3e`
+
+### Added (Issue #42 -- Execution metrics, token tracking, cost estimation, and execution trace)
+
+**New types (net.agentensemble.metrics):**
+- `TaskMetrics` (`@Value @Builder`): per-task token counts (input/output/total; -1 = unknown),
+  LLM latency, tool execution time, prompt build time, memory retrieval time, LLM call count,
+  tool call count, delegation count, `MemoryOperationCounts`, optional `CostEstimate`;
+  `EMPTY` constant
+- `ExecutionMetrics` (`@Value @Builder`): aggregated run-level totals; `from(List<TaskOutput>)`
+  factory with -1-propagation rule; `EMPTY` constant
+- `MemoryOperationCounts` (`@Value @Builder`): STM writes, LTM stores, LTM retrievals,
+  entity lookups; `add()` for aggregation; `ZERO` constant
+- `CostConfiguration` (`@Value @Builder`): `inputTokenRate`, `outputTokenRate`, `currency`;
+  `estimate(long inputTokens, long outputTokens)` returns `null` when either is -1
+- `CostEstimate` (`@Value @Builder`): `inputCost`, `outputCost`, `totalCost`; `add()` method
+
+**New types (net.agentensemble.trace):**
+- `ExecutionTrace` (`@Value @Builder(toBuilder=true)`): top-level trace for one run;
+  `schemaVersion="1.0"`, `ensembleId`, `workflow`, timestamps/duration, `inputs`, `agents`,
+  `taskTraces`, `metrics`, `totalCostEstimate`, `errors`, `metadata`;
+  `toJson()` / `toJson(Path)` via Jackson+JavaTimeModule (`WRITE_DURATIONS_AS_TIMESTAMPS=false`);
+  `export(ExecutionTraceExporter)`
+- `TaskTrace`: per-task trace with `prompts`, `llmInteractions`, `delegations`, `finalOutput`,
+  `parsedOutput`, `metrics`, `metadata`
+- `LlmInteraction`: one ReAct iteration; `iterationIndex`, `startedAt`/`completedAt`/`latency`,
+  `inputTokens`/`outputTokens` (-1 if unknown), `responseType`, `responseText`, `toolCalls`
+- `ToolCallTrace`: one tool invocation; `toolName`, `arguments`, `result`, `structuredOutput`,
+  timing, `outcome` (SUCCESS/FAILURE/ERROR/SKIPPED_MAX_ITERATIONS), `metadata`
+- `DelegationTrace`: delegation record; timing, `depth`, `result`, `succeeded`,
+  `workerTrace` (nested TaskTrace for peer delegation)
+- `AgentSummary`, `TaskPrompts`, `ErrorTrace`, `LlmResponseType` (enum), `ToolCallOutcome` (enum)
+
+**New types (net.agentensemble.trace.export):**
+- `ExecutionTraceExporter` (`@FunctionalInterface`): `void export(ExecutionTrace trace)`
+- `JsonTraceExporter`: directory mode (auto-names `{ensembleId}.json`) or file mode
+
+**New internal type (net.agentensemble.trace.internal):**
+- `TaskTraceAccumulator`: mutable per-task collector; `beginLlmCall()`/`endLlmCall()` for LLM
+  timing + token capture; `addToolCallToCurrentIteration()`; `finalizeIteration()` seals
+  `LlmInteraction`; `addDelegation()`; memory operation counters; `buildTrace()`/`buildMetrics()`
+
+**Modified types:**
+- `TaskOutput`: `metrics` (`TaskMetrics`, default `EMPTY`) + `trace` (`TaskTrace`, nullable) added;
+  `@Builder(toBuilder=true)` added for immutable copy support
+- `EnsembleOutput`: replaced `@Builder @Value` with `@Value` + manual fluent builder; added
+  `metrics` (auto-computed `ExecutionMetrics.from(taskOutputs)`) + `trace` (`ExecutionTrace`,
+  nullable); `of(raw, outputs, duration, toolCalls)` convenience factory
+- `AgentExecutor`: creates `TaskTraceAccumulator` per `execute()`; times prompt building;
+  wraps each `LLM.chat()` with `beginLlmCall()`/`endLlmCall()`; builds `ToolCallTrace` per
+  tool call; wires `accumulator::addDelegation` into `AgentDelegationTool`
+- `AgentDelegationTool`: new 3-arg constructor accepts `Consumer<DelegationTrace>`; builds
+  `DelegationTrace` with nested worker `TaskTrace` after successful peer delegation
+- `ExecutionContext`: `costConfiguration` field added (nullable, passed to `TaskTraceAccumulator`);
+  new 6-arg `of()` overload; backward-compat 5-arg overload delegates with `null`
+- `Ensemble`: `costConfiguration` + `traceExporter` builder fields; `runWithInputs()` passes
+  costConfig to `ExecutionContext`, assembles `ExecutionTrace`, calls exporter
+
+**Dependencies:**
+- `jackson-datatype-jsr310` added to `agentensemble-core/build.gradle.kts`
+- Version catalog entry `jackson-datatype-jsr310` added to `gradle/libs.versions.toml`
+
+**Tests added (all pass, line coverage >= 90%):**
+- `TaskMetricsTest`, `ExecutionMetricsTest`, `MemoryOperationCountsTest`,
+  `CostConfigurationTest`, `TaskTraceAccumulatorTest`, `AgentExecutorMetricsTest`,
+  `ExecutionTraceTest`, `EnsembleOutputTest`
+
+**Docs updated:**
+- `docs/guides/metrics.md`: major rewrite covering execution metrics, token counts,
+  cost estimation, execution trace, JSON export, trace structure, tool call inspection
+- `docs/examples/metrics.md`: new end-to-end example
+- `docs/reference/ensemble-configuration.md`: `costConfiguration`/`traceExporter` fields;
+  `getMetrics()`/`getTrace()` on both `EnsembleOutput` and `TaskOutput`
+- `docs/design/01-overview.md`: Metrics and Execution Trace in core concepts table
+- `README.md`: Metrics and Observability section
+- `mkdocs.yml`: Metrics and Traces example page added
+
+---
+
 ## [Unreleased] -- Remove GitHub Packages publishing -- 2026-03-04
 
 ### Removed

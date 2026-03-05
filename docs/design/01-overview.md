@@ -15,6 +15,8 @@ Built on [LangChain4j](https://github.com/langchain4j/langchain4j) for LLM integ
 | **Ensemble** | A group of agents working together on a sequence of tasks |
 | **Tool** | A capability an agent can invoke during task execution (e.g., search, calculate) |
 | **Workflow** | How tasks are executed (sequential, hierarchical, parallel) |
+| **Metrics** | Per-task and per-run token counts, latency, and cost estimates |
+| **Execution Trace** | Complete hierarchical record of every LLM call, tool invocation, and prompt |
 
 ## Goals
 

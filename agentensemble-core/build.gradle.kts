@@ -33,8 +33,9 @@ dependencies {
     // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
 
-    // JSON serialization for tool I/O
+    // JSON serialization for tool I/O and execution trace export
     implementation(libs.jackson.databind)
+    implementation(libs.jackson.datatype.jsr310)
 
     // Logging facade - no implementation, users bring their own
     implementation(libs.slf4j.api)

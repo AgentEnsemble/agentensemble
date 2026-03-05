@@ -2,6 +2,21 @@
 
 ## What Works
 
+### Execution Metrics and Observability (Issue #42)
+- `TaskMetrics` on `TaskOutput`: token counts (input/output/total with -1 unknown), LLM latency,
+  tool execution time, prompt build time, delegation count, memory operation counts, cost estimate
+- `ExecutionMetrics` on `EnsembleOutput`: aggregated totals; `from(List<TaskOutput>)` factory
+- `CostConfiguration` + `CostEstimate`: optional cost estimation from token counts
+- `MemoryOperationCounts`: STM/LTM/entity counters with `add()`
+- `ExecutionTrace` + `TaskTrace` + `LlmInteraction` + `ToolCallTrace` + `DelegationTrace`:
+  full hierarchical call trace per run
+- `ExecutionTrace.toJson()` / `toJson(Path)`: pretty JSON with ISO-8601 timestamps/durations
+- `ExecutionTraceExporter` + `JsonTraceExporter`: pluggable export, auto-export via `traceExporter`
+- `TaskTraceAccumulator`: internal mutable collector frozen into immutable trace at run end
+- `Ensemble.costConfiguration()` + `Ensemble.traceExporter()`: new builder fields
+- `AgentDelegationTool` captures `DelegationTrace` with nested worker `TaskTrace`
+- All existing APIs backward-compatible; `TaskMetrics.EMPTY` as safe default
+
 ### Core Framework (agentensemble-core)
 - Sequential, parallel (dependency-based DAG), and hierarchical workflows
 - Agent execution with ReAct-style tool-calling loop

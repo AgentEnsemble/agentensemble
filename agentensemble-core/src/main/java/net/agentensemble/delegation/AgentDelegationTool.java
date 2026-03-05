@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.callback.DelegationCompletedEvent;
@@ -16,6 +17,7 @@ import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.delegation.policy.DelegationPolicyContext;
 import net.agentensemble.delegation.policy.DelegationPolicyResult;
 import net.agentensemble.task.TaskOutput;
+import net.agentensemble.trace.DelegationTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -76,6 +78,7 @@ public class AgentDelegationTool {
 
     private final String callerRole;
     private final DelegationContext delegationContext;
+    private final Consumer<DelegationTrace> delegationTraceConsumer;
     private final List<TaskOutput> delegatedOutputs = new ArrayList<>();
     private final List<DelegationResponse> delegationResponses = new ArrayList<>();
 
@@ -84,8 +87,21 @@ public class AgentDelegationTool {
      * @param delegationContext the delegation state for the current run
      */
     public AgentDelegationTool(String callerRole, DelegationContext delegationContext) {
+        this(callerRole, delegationContext, null);
+    }
+
+    /**
+     * @param callerRole               the role of the agent that owns this tool instance
+     * @param delegationContext        the delegation state for the current run
+     * @param delegationTraceConsumer  optional consumer called after each successful delegation;
+     *                                 receives a {@link DelegationTrace} with the worker's full
+     *                                 execution trace; {@code null} to disable trace capture
+     */
+    public AgentDelegationTool(
+            String callerRole, DelegationContext delegationContext, Consumer<DelegationTrace> delegationTraceConsumer) {
         this.callerRole = callerRole;
         this.delegationContext = delegationContext;
+        this.delegationTraceConsumer = delegationTraceConsumer;
     }
 
     /**
@@ -361,6 +377,24 @@ public class AgentDelegationTool {
                     .fireDelegationCompleted(new DelegationCompletedEvent(
                             finalRequest.getTaskId(), callerRole, finalTarget.getRole(), response, elapsed));
 
+            // Capture delegation trace for the parent agent's TaskTrace
+            if (delegationTraceConsumer != null) {
+                Instant completedAt = Instant.now();
+                DelegationTrace trace = DelegationTrace.builder()
+                        .delegatorRole(callerRole)
+                        .workerRole(finalTarget.getRole())
+                        .taskDescription(finalRequest.getTaskDescription())
+                        .startedAt(requestStart)
+                        .completedAt(completedAt)
+                        .duration(Duration.between(requestStart, completedAt))
+                        .depth(childDepth)
+                        .result(output.getRaw())
+                        .succeeded(true)
+                        .workerTrace(output.getTrace())
+                        .build();
+                delegationTraceConsumer.accept(trace);
+            }
+
             // Option C hybrid design: the @Tool method returns the worker's plain-text output to
             // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
             // are framework-internal observability contracts, not serialized to the LLM.
@@ -394,6 +428,28 @@ public class AgentDelegationTool {
                             e,
                             response,
                             elapsed));
+
+            // Capture failed delegation trace for the parent agent's TaskTrace
+            if (delegationTraceConsumer != null) {
+                Instant failedAt = Instant.now();
+                String errorMsg = "Error: "
+                        + (e.getMessage() != null
+                                ? e.getMessage()
+                                : e.getClass().getSimpleName());
+                DelegationTrace failedTrace = DelegationTrace.builder()
+                        .delegatorRole(callerRole)
+                        .workerRole(finalTarget.getRole())
+                        .taskDescription(finalRequest.getTaskDescription())
+                        .startedAt(requestStart)
+                        .completedAt(failedAt)
+                        .duration(Duration.between(requestStart, failedAt))
+                        .depth(childDepth)
+                        .result(errorMsg)
+                        .succeeded(false)
+                        .workerTrace(null)
+                        .build();
+                delegationTraceConsumer.accept(failedTrace);
+            }
             throw e;
         } finally {
             // Restore prior MDC values rather than unconditionally removing them.
