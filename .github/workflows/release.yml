@@ -76,6 +76,62 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build agentensemble-viz
+        working-directory: agentensemble-viz
+        run: |
+          npm ci
+          npm run build
+
+      - name: Compile agentensemble-viz binaries
+        # Bun cross-compilation downloads the target runtime from the Bun CDN.
+        # Each compile call overwrites the agentensemble-viz output file, so the
+        # tarball is created before the next compile run.
+        working-directory: agentensemble-viz
+        run: |
+          npm run compile:darwin-arm64
+          tar czf agentensemble-viz-darwin-arm64.tar.gz agentensemble-viz
+          rm agentensemble-viz
+
+          npm run compile:darwin-x64
+          tar czf agentensemble-viz-darwin-x64.tar.gz agentensemble-viz
+          rm agentensemble-viz
+
+          npm run compile:linux-x64
+          tar czf agentensemble-viz-linux-x64.tar.gz agentensemble-viz
+          rm agentensemble-viz
+
+      - name: Upload viz binaries to GitHub Release
+        working-directory: agentensemble-viz
+        run: |
+          gh release upload ${{ steps.version.outputs.tag }} \
+            agentensemble-viz-darwin-arm64.tar.gz \
+            agentensemble-viz-darwin-x64.tar.gz \
+            agentensemble-viz-linux-x64.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dispatch Homebrew formula update
+        # Triggers update-formula.yml in AgentEnsemble/homebrew-tap to recompute
+        # SHA256 hashes and commit the updated formula. Requires a PAT with
+        # repo scope on homebrew-tap stored as ORG_HOMEBREW_TAP_TOKEN.
+        run: |
+          curl --silent --fail -X POST \
+            -H "Authorization: Bearer ${{ secrets.ORG_HOMEBREW_TAP_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/AgentEnsemble/homebrew-tap/dispatches \
+            --data "{\"event_type\":\"new-release\",\"client_payload\":{\"version\":\"${{ steps.version.outputs.version }}\"}}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Bump version to next SNAPSHOT
         run: |
           IFS='.' read -ra PARTS <<< "${{ steps.version.outputs.version }}"

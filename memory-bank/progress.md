@@ -2,6 +2,31 @@
 
 ## What Works
 
+### Homebrew Distribution (Issue #94)
+
+**`agentensemble-viz` Homebrew tap (`agentensemble/tap`):**
+- Self-contained native binary distributed via `brew install agentensemble/tap/agentensemble-viz`
+- Bun `--compile` cross-compilation for darwin-arm64, darwin-x64, linux-x64 in CI
+- Formula: `AgentEnsemble/homebrew-tap/Formula/agentensemble-viz.rb` with platform-aware
+  `on_macos`/`on_linux` blocks, comment-anchored SHA256 values
+- Auto-update workflow: `AgentEnsemble/homebrew-tap/.github/workflows/update-formula.yml`
+  triggered by `repository_dispatch` from main repo; zero manual steps
+
+**`cli.js` adaptations for Bun compile:**
+- `distDir` uses `new URL('./dist/', import.meta.url).pathname` (Bun embeds dist)
+- Package version read via `readFileSync(new URL('./package.json', import.meta.url))` (Bun embeds pkg)
+- `--version` flag: prints `agentensemble-viz/<version>`, exits 0
+
+**Release pipeline (`release.yml`):**
+- Node 20 + Bun setup after Java artifact upload
+- `npm ci && npm run build` in agentensemble-viz/
+- Three sequential Bun cross-compiles -> tarballs -> upload to GitHub Release
+- `curl` `repository_dispatch` to `AgentEnsemble/homebrew-tap` with version payload
+
+**Tests:**
+- 4 new CLI integration tests (45 total passing): `--version` exit code, output format,
+  no-server-start, clean stderr; `// @vitest-environment node` + stripped `NODE_OPTIONS`
+
 ### Visualization Tooling (Issue #44)
 
 **`agentensemble-devtools` Java module:**
@@ -106,7 +131,6 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 ## What's Left to Build
 
 ### Near-term (follow-up issues)
-- Issue #94: Distribute `agentensemble-viz` via Homebrew tap
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
 - GraalVM polyglot tool support
 - Tool output validation / schema enforcement
