@@ -34,6 +34,7 @@ import net.agentensemble.guardrail.GuardrailViolationException.GuardrailType;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryOperationListener;
+import net.agentensemble.memory.MemoryRecord;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.ToolResult;
 import net.agentensemble.trace.CaptureMode;
@@ -268,7 +269,13 @@ public class AgentExecutor {
                     .trace(taskTrace)
                     .build();
 
-            executionContext.memoryContext().record(output);
+            executionContext
+                    .memoryContext()
+                    .record(new MemoryRecord(
+                            output.getRaw(),
+                            output.getAgentRole(),
+                            output.getTaskDescription(),
+                            output.getCompletedAt()));
 
             return output;
 

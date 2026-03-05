@@ -1,5 +1,28 @@
 # Memory Configuration Reference
 
+Memory types in AgentEnsemble are provided by the `agentensemble-memory` module, which is a separate
+optional dependency from `agentensemble-core`.
+
+## Module Coordinates
+
+```kotlin
+// Gradle (Kotlin DSL)
+implementation("net.agentensemble:agentensemble-memory:2.0.0")
+```
+
+```xml
+<!-- Maven -->
+<dependency>
+    <groupId>net.agentensemble</groupId>
+    <artifactId>agentensemble-memory</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+`agentensemble-core` declares a `compileOnly` dependency on `agentensemble-memory`, meaning
+`agentensemble-memory` is **not** included transitively. Add it explicitly when you use any memory
+feature.
+
 ---
 
 ## `EnsembleMemory`
