@@ -3,7 +3,7 @@ vanniktech-publish = "0.36.0"
 langchain4j      = "1.11.0"
 lombok           = "1.18.42"
 jackson          = "2.21.1"
-jsoup            = "1.18.3"
+jsoup            = "1.22.1"
 slf4j            = "2.0.17"
 junit            = "6.0.3"
 junit-platform   = "6.0.3"
@@ -13,7 +13,7 @@ logback          = "1.5.32"
 spotless         = "8.3.0"
 errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
-micrometer       = "1.14.4"
+micrometer       = "1.16.3"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
