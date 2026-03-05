@@ -8,6 +8,8 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.callback.DelegationCompletedEvent;
+import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
@@ -42,6 +44,13 @@ import org.slf4j.MDC;
  * Manager itself runs with disabled memory (it is a meta-orchestrator) but still
  * participates in event callbacks.
  *
+ * When {@link HierarchicalConstraints} are configured, a {@code HierarchicalConstraintEnforcer}
+ * is created for the run. The enforcer is prepended to the delegation policy chain to enforce
+ * pre-delegation checks (allowedWorkers, maxCallsPerWorker, globalMaxDelegations,
+ * requiredStages). After the Manager finishes, the enforcer validates that all requiredWorkers
+ * were called; if not, a {@link net.agentensemble.exception.ConstraintViolationException} is
+ * thrown carrying the violations and any partial worker outputs.
+ *
  * Stateless -- all mutable state is held in per-execution local variables.
  */
 public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
@@ -69,9 +78,11 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     private final List<DelegationPolicy> delegationPolicies;
     private final AgentExecutor agentExecutor;
     private final ManagerPromptStrategy promptStrategy;
+    private final HierarchicalConstraints constraints;
 
     /**
-     * Creates an executor using the {@link DefaultManagerPromptStrategy} and no delegation policies.
+     * Creates an executor using the {@link DefaultManagerPromptStrategy} and no delegation
+     * policies or constraints.
      *
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
@@ -84,7 +95,8 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
     }
 
     /**
-     * Creates an executor with a custom {@link ManagerPromptStrategy} and no delegation policies.
+     * Creates an executor with a custom {@link ManagerPromptStrategy} and no delegation policies
+     * or constraints.
      *
      * @param managerLlm           LLM for the manager agent
      * @param workerAgents         the worker agents available for delegation
@@ -121,6 +133,40 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             int maxDelegationDepth,
             ManagerPromptStrategy promptStrategy,
             List<DelegationPolicy> delegationPolicies) {
+        this(
+                managerLlm,
+                workerAgents,
+                managerMaxIterations,
+                maxDelegationDepth,
+                promptStrategy,
+                delegationPolicies,
+                null);
+    }
+
+    /**
+     * Creates an executor with a custom {@link ManagerPromptStrategy}, delegation policies, and
+     * optional {@link HierarchicalConstraints}.
+     *
+     * @param managerLlm           LLM for the manager agent
+     * @param workerAgents         the worker agents available for delegation
+     * @param managerMaxIterations maximum number of tool call iterations for the manager
+     * @param maxDelegationDepth   maximum peer-delegation depth for worker agents
+     * @param promptStrategy       strategy for building the manager's system and user prompts;
+     *                             must not be null
+     * @param delegationPolicies   policies to evaluate before each worker delegation;
+     *                             evaluated after the constraint enforcer (when constraints are
+     *                             set); must not be null
+     * @param constraints          optional guardrails for the delegation graph; may be null
+     *                             (no constraints)
+     */
+    public HierarchicalWorkflowExecutor(
+            ChatModel managerLlm,
+            List<Agent> workerAgents,
+            int managerMaxIterations,
+            int maxDelegationDepth,
+            ManagerPromptStrategy promptStrategy,
+            List<DelegationPolicy> delegationPolicies,
+            HierarchicalConstraints constraints) {
         this.managerLlm = managerLlm;
         this.workerAgents = List.copyOf(workerAgents);
         this.managerMaxIterations = managerMaxIterations;
@@ -128,6 +174,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
         this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.agentExecutor = new AgentExecutor();
         this.promptStrategy = promptStrategy != null ? promptStrategy : DefaultManagerPromptStrategy.DEFAULT;
+        this.constraints = constraints;
     }
 
     @Override
@@ -141,34 +188,67 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     resolvedTasks.size(),
                     workerAgents.size());
 
+            // Setup constraint enforcement if constraints are configured.
+            // When active, the enforcer is prepended to the delegation policy chain and an
+            // internal EnsembleListener records successful completions for stage ordering
+            // and required-worker validation.
+            final HierarchicalConstraintEnforcer enforcer;
+            final ExecutionContext effectiveContext;
+            final List<DelegationPolicy> effectivePolicies;
+
+            if (constraints != null) {
+                enforcer = new HierarchicalConstraintEnforcer(constraints);
+
+                // Enforcer is first in the policy chain so its checks run before user policies
+                List<DelegationPolicy> allPolicies = new ArrayList<>();
+                allPolicies.add(enforcer);
+                allPolicies.addAll(delegationPolicies);
+                effectivePolicies = List.copyOf(allPolicies);
+
+                // Augment the execution context with an internal listener that records
+                // successful delegations for the enforcer's stage-ordering and
+                // required-worker tracking.
+                List<EnsembleListener> allListeners = new ArrayList<>(executionContext.listeners());
+                allListeners.add(new EnsembleListener() {
+                    @Override
+                    public void onDelegationCompleted(DelegationCompletedEvent event) {
+                        enforcer.recordDelegation(event.workerRole());
+                    }
+                });
+                effectiveContext = ExecutionContext.of(
+                        executionContext.memoryContext(),
+                        executionContext.isVerbose(),
+                        allListeners,
+                        executionContext.toolExecutor(),
+                        executionContext.toolMetrics());
+            } else {
+                enforcer = null;
+                effectiveContext = executionContext;
+                effectivePolicies = delegationPolicies;
+            }
+
             // 1. Create delegation context for peer delegation among worker agents.
-            //    Workers share the full executionContext (memory + listeners).
-            //    Policies are threaded in so that DelegateTaskTool can evaluate them per delegation.
+            //    Workers share the full effectiveContext (memory + listeners including enforcer).
+            //    Policies are threaded in so that DelegateTaskTool can evaluate them per
+            //    delegation.
             DelegationContext workerDelegationContext = DelegationContext.create(
-                    workerAgents, maxDelegationDepth, executionContext, agentExecutor, delegationPolicies);
+                    workerAgents, maxDelegationDepth, effectiveContext, agentExecutor, effectivePolicies);
 
             // 2. Create the stateful DelegateTaskTool (accumulates worker outputs, shares memory)
             DelegateTaskTool delegateTool =
-                    new DelegateTaskTool(workerAgents, agentExecutor, executionContext, workerDelegationContext);
+                    new DelegateTaskTool(workerAgents, agentExecutor, effectiveContext, workerDelegationContext);
 
-            // 3. Build the ManagerPromptContext and invoke the configured strategy to produce prompts.
-            //    previousOutputs and workflowDescription are reserved for future use; they are
-            //    intentionally empty/null in this release. Custom strategies should treat them as
-            //    optional supplemental context that may be populated in a later version.
+            // 3. Build the ManagerPromptContext and invoke the configured strategy to produce
+            //    prompts.
             ManagerPromptContext promptContext = new ManagerPromptContext(workerAgents, resolvedTasks, List.of(), null);
             String systemPrompt = promptStrategy.buildSystemPrompt(promptContext);
             String userPrompt = promptStrategy.buildUserPrompt(promptContext);
 
-            // Validation of strategy output is the caller's responsibility (per ManagerPromptStrategy
-            // contract). The Task model requires a non-blank description, so fall back to a sensible
-            // default when the strategy returns null or blank, rather than propagating a ValidationException
-            // that would be confusing for callers who intentionally use minimal prompts.
             String effectiveUserPrompt = (userPrompt != null && !userPrompt.isBlank())
                     ? userPrompt
                     : "Coordinate your team to complete all assigned tasks and synthesize a comprehensive final response.";
 
             // 4. Build the virtual Manager agent using the strategy-provided system prompt.
-            //    The background field is optional; null/blank from the strategy is passed through as-is.
             Agent manager = Agent.builder()
                     .role(MANAGER_ROLE)
                     .goal(MANAGER_GOAL)
@@ -186,14 +266,14 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     .build();
 
             // 6. The manager uses disabled memory (it is a meta-orchestrator) but still
-            //    participates in listeners (taskIndex=1, totalTasks=1 for the meta-task).
+            //    participates in listeners -- including the constraint enforcer listener.
             ExecutionContext managerContext = ExecutionContext.of(
-                    MemoryContext.disabled(), executionContext.isVerbose(), executionContext.listeners());
+                    MemoryContext.disabled(), effectiveContext.isVerbose(), effectiveContext.listeners());
 
             log.info("Manager agent starting | Max iterations: {}", managerMaxIterations);
 
             // Fire TaskStartEvent for the manager meta-task
-            executionContext.fireTaskStart(new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
+            effectiveContext.fireTaskStart(new TaskStartEvent(managerTask.getDescription(), MANAGER_ROLE, 1, 1));
 
             Instant managerStart = Instant.now();
             TaskOutput managerOutput;
@@ -206,7 +286,7 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                 log.error("Manager agent failed after {} delegations: {}", partial.size(), e.getMessage(), e);
 
                 // Fire TaskFailedEvent before propagating
-                executionContext.fireTaskFailed(
+                effectiveContext.fireTaskFailed(
                         new TaskFailedEvent(managerTask.getDescription(), MANAGER_ROLE, e, managerDuration, 1, 1));
 
                 throw new TaskExecutionException(
@@ -223,10 +303,18 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                     managerOutput.getDuration());
 
             // Fire TaskCompleteEvent for the manager meta-task
-            executionContext.fireTaskComplete(new TaskCompleteEvent(
+            effectiveContext.fireTaskComplete(new TaskCompleteEvent(
                     managerTask.getDescription(), MANAGER_ROLE, managerOutput, managerOutput.getDuration(), 1, 1));
 
-            // 7. Assemble output: worker outputs first, manager final output last
+            // 7. Post-execution constraint validation.
+            //    Validates that all requiredWorkers were called. If any are missing, throws
+            //    ConstraintViolationException with the completed worker outputs attached so
+            //    callers can inspect partial results.
+            if (enforcer != null) {
+                enforcer.validatePostExecution(delegateTool.getDelegatedOutputs());
+            }
+
+            // 8. Assemble output: worker outputs first, manager final output last
             List<TaskOutput> allOutputs = new ArrayList<>(delegateTool.getDelegatedOutputs());
             allOutputs.add(managerOutput);
 

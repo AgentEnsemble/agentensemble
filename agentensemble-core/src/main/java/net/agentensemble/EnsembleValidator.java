@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
@@ -30,6 +32,7 @@ class EnsembleValidator {
     private final int maxDelegationDepth;
     private final int managerMaxIterations;
     private final ParallelErrorStrategy parallelErrorStrategy;
+    private final HierarchicalConstraints hierarchicalConstraints;
 
     EnsembleValidator(Ensemble ensemble) {
         this.agents = ensemble.getAgents();
@@ -38,6 +41,7 @@ class EnsembleValidator {
         this.maxDelegationDepth = ensemble.getMaxDelegationDepth();
         this.managerMaxIterations = ensemble.getManagerMaxIterations();
         this.parallelErrorStrategy = ensemble.getParallelErrorStrategy();
+        this.hierarchicalConstraints = ensemble.getHierarchicalConstraints();
     }
 
     void validate() {
@@ -48,6 +52,7 @@ class EnsembleValidator {
         validateParallelErrorStrategy();
         validateAgentMembership();
         validateHierarchicalRoles();
+        validateHierarchicalConstraints();
         validateNoCircularContextDependencies();
         validateContextOrdering();
         warnUnusedAgents();
@@ -119,6 +124,94 @@ class EnsembleValidator {
             if (!seenRoles.add(role.toLowerCase(Locale.ROOT))) {
                 throw new ValidationException("Duplicate agent role '" + role + "' detected in HIERARCHICAL workflow. "
                         + "All agent roles must be unique (case-insensitive) to avoid ambiguous delegation.");
+            }
+        }
+    }
+
+    /**
+     * Validates the optional {@link HierarchicalConstraints} configuration against the
+     * registered agents.
+     *
+     * <p>Only runs when {@code workflow == HIERARCHICAL} and constraints are non-null.
+     * Checks:
+     * <ul>
+     *   <li>All {@code requiredWorkers} roles exist in registered agents</li>
+     *   <li>All {@code allowedWorkers} roles exist in registered agents</li>
+     *   <li>When both sets are non-empty, {@code requiredWorkers} must be a subset of
+     *       {@code allowedWorkers}</li>
+     *   <li>All {@code maxCallsPerWorker} keys exist in registered agents</li>
+     *   <li>All {@code maxCallsPerWorker} values are positive ({@code > 0})</li>
+     *   <li>{@code globalMaxDelegations >= 0}</li>
+     *   <li>All roles in every {@code requiredStages} stage exist in registered agents</li>
+     * </ul>
+     */
+    private void validateHierarchicalConstraints() {
+        if (workflow != Workflow.HIERARCHICAL || hierarchicalConstraints == null) {
+            return;
+        }
+
+        Set<String> registeredRoles = agents.stream().map(Agent::getRole).collect(Collectors.toSet());
+
+        Set<String> requiredWorkers = hierarchicalConstraints.getRequiredWorkers();
+        Set<String> allowedWorkers = hierarchicalConstraints.getAllowedWorkers();
+
+        // requiredWorkers must reference registered agents
+        for (String role : requiredWorkers) {
+            if (!registeredRoles.contains(role)) {
+                throw new ValidationException("HierarchicalConstraints.requiredWorkers contains role '" + role
+                        + "' which is not in the ensemble's registered agents.");
+            }
+        }
+
+        // allowedWorkers must reference registered agents
+        for (String role : allowedWorkers) {
+            if (!registeredRoles.contains(role)) {
+                throw new ValidationException("HierarchicalConstraints.allowedWorkers contains role '" + role
+                        + "' which is not in the ensemble's registered agents.");
+            }
+        }
+
+        // When allowedWorkers is non-empty, requiredWorkers must be a subset of it
+        if (!allowedWorkers.isEmpty()) {
+            for (String requiredRole : requiredWorkers) {
+                if (!allowedWorkers.contains(requiredRole)) {
+                    throw new ValidationException(
+                            "HierarchicalConstraints.requiredWorkers contains role '" + requiredRole
+                                    + "' which is not present in allowedWorkers. Required workers must be "
+                                    + "a subset of allowedWorkers when allowedWorkers is non-empty.");
+                }
+            }
+        }
+
+        // maxCallsPerWorker: keys must be registered agents, values must be positive
+        for (Map.Entry<String, Integer> entry :
+                hierarchicalConstraints.getMaxCallsPerWorker().entrySet()) {
+            String role = entry.getKey();
+            Integer cap = entry.getValue();
+            if (!registeredRoles.contains(role)) {
+                throw new ValidationException("HierarchicalConstraints.maxCallsPerWorker contains role '" + role
+                        + "' which is not in the ensemble's registered agents.");
+            }
+            if (cap == null || cap <= 0) {
+                throw new ValidationException("HierarchicalConstraints.maxCallsPerWorker value for role '" + role
+                        + "' must be > 0, got: " + cap);
+            }
+        }
+
+        // globalMaxDelegations must be >= 0
+        if (hierarchicalConstraints.getGlobalMaxDelegations() < 0) {
+            throw new ValidationException("HierarchicalConstraints.globalMaxDelegations must be >= 0, got: "
+                    + hierarchicalConstraints.getGlobalMaxDelegations());
+        }
+
+        // requiredStages: all roles must be registered agents
+        List<List<String>> stages = hierarchicalConstraints.getRequiredStages();
+        for (int i = 0; i < stages.size(); i++) {
+            for (String role : stages.get(i)) {
+                if (!registeredRoles.contains(role)) {
+                    throw new ValidationException("HierarchicalConstraints.requiredStages[" + i + "] contains role '"
+                            + role + "' which is not in the ensemble's registered agents.");
+                }
             }
         }
     }
