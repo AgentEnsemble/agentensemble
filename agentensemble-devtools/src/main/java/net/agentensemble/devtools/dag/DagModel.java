@@ -48,8 +48,17 @@ import lombok.Value;
 @Builder
 public class DagModel {
 
-    /** Current schema version for the DAG model format. */
-    public static final String CURRENT_SCHEMA_VERSION = "1.0";
+    /**
+     * Current schema version for the DAG model format.
+     *
+     * <p>History:
+     * <ul>
+     *   <li>1.0 -- initial release</li>
+     *   <li>1.1 -- added {@code mapReduceMode} on {@link DagModel} and
+     *       {@code nodeType}/{@code mapReduceLevel} on {@link DagTaskNode}</li>
+     * </ul>
+     */
+    public static final String CURRENT_SCHEMA_VERSION = "1.1";
 
     private static final ObjectMapper MAPPER = buildObjectMapper();
 
@@ -112,6 +121,15 @@ public class DagModel {
      * minimizes total ensemble execution time.
      */
     List<String> criticalPath;
+
+    /**
+     * Map-reduce reduction strategy, when this DAG was generated from a
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble}.
+     *
+     * <p>One of {@code "STATIC"} or {@code "ADAPTIVE"}.
+     * {@code null} for standard (non-MapReduce) ensembles.
+     */
+    String mapReduceMode;
 
     // ========================
     // JSON export methods

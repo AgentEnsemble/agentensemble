@@ -637,6 +637,42 @@ Key design decisions:
 
 ---
 
+## [2.0.0] - 2026-03-05 (branch: feat/issue-98-static-map-reduce-ensemble)
+
+### Added
+- `MapReduceEnsemble<T>` in `net.agentensemble.mapreduce`: static tree-reduction DAG builder
+  that automates fan-out/tree-reduce for parallel agent orchestration. Builder API with
+  `mapAgent`, `mapTask`, `reduceAgent`, `reduceTask` (required) and `chunkSize` (default 5,
+  min 2) plus all Ensemble passthrough fields.
+- Static DAG construction algorithm: O(log_K(N)) tree depth; N <= K produces 2 levels (map
+  + final reduce); N > K produces intermediate reduce levels until level size <= K.
+- `toEnsemble()` method returns the pre-built inner `Ensemble` for devtools inspection.
+- `getNodeTypes()` and `getMapReduceLevels()` identity maps for devtools enrichment.
+- `DagTaskNode.nodeType` and `DagTaskNode.mapReduceLevel` optional fields for map-reduce
+  visualization metadata.
+- `DagModel.mapReduceMode` optional field (`"STATIC"` or `"ADAPTIVE"`).
+- `DagExporter.build(MapReduceEnsemble<?>)` overload that enriches task nodes with
+  map-reduce metadata and sets `mapReduceMode = "STATIC"`.
+- `MapReduceKitchenExample.java` and `runMapReduceKitchen` Gradle task.
+- `docs/guides/map-reduce.md` and `docs/examples/map-reduce.md`.
+- `MapReduceEnsemble` section in `docs/reference/ensemble-configuration.md`.
+
+### Changed
+- `DagModel.schemaVersion` bumped from `"1.0"` to `"1.1"` to reflect new optional fields.
+- `agentensemble-viz types/dag.ts`: added `nodeType?`, `mapReduceLevel?` to `DagTaskNode`;
+  added `mapReduceMode?` to `DagModel`.
+- `agentensemble-viz TaskNode.tsx`: renders MAP, REDUCE Ln, AGGREGATE, DIRECT badges.
+- `mkdocs.yml`: added MapReduceEnsemble guide and example to nav.
+- `README.md`: added MapReduceEnsemble subsection, `runMapReduceKitchen` example, v2.0.0
+  in roadmap, design/14 in design docs list.
+
+### Tests Added
+- `MapReduceEnsembleTest` (35 unit tests): builder validation, DAG construction N=1/3/4/9/25/26,
+  context wiring, agent counts, factory guarantees, optional builder setter coverage.
+- `MapReduceEnsembleIntegrationTest` (13 integration tests): end-to-end with mock LLMs,
+  FAIL_FAST, CONTINUE_ON_ERROR, runtime input overrides, metadata accessor tests.
+- `DagExporterTest`: 11 new tests for `build(MapReduceEnsemble<?>)` overload.
+
 ## [Unreleased]
 
 ### Fixed (PR #66 -- fix/javadoc-link-error-add-to-ci)

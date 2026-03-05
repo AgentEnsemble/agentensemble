@@ -10,6 +10,10 @@ import lombok.Value;
  *
  * <p>Contains the task metadata, dependency relationships, and computed layout
  * hints (parallel group and critical path membership) needed for visualization.
+ *
+ * <p>When this node is part of a {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG,
+ * the {@link #nodeType} and {@link #mapReduceLevel} fields are populated to enable
+ * map-reduce-aware rendering in the visualization layer.
  */
 @Value
 @Builder
@@ -59,4 +63,27 @@ public class DagTaskNode {
      * complete the ensemble, and thus the bottleneck for parallel execution.
      */
     boolean onCriticalPath;
+
+    /**
+     * Map-reduce node type for visualization.
+     *
+     * <p>Populated only when this task belongs to a
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG. One of:
+     * <ul>
+     *   <li>{@code "map"} -- a map-phase task</li>
+     *   <li>{@code "reduce"} -- an intermediate reduce task</li>
+     *   <li>{@code "final-reduce"} -- the terminal reduce task</li>
+     * </ul>
+     * {@code null} for standard (non-MapReduce) tasks.
+     */
+    String nodeType;
+
+    /**
+     * Map-reduce tree level for visualization.
+     *
+     * <p>0 = map phase, 1+ = reduce levels. {@code null} for standard tasks.
+     * Populated only when this task belongs to a
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG.
+     */
+    Integer mapReduceLevel;
 }

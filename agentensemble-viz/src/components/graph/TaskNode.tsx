@@ -51,6 +51,29 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<TaskNodeType>) {
                 CP
               </span>
             )}
+            {task.nodeType === 'map' && (
+              <span title="Map phase task" className="rounded bg-white/30 px-1 text-xs font-semibold text-white">
+                MAP
+              </span>
+            )}
+            {task.nodeType === 'reduce' && task.mapReduceLevel !== undefined && (
+              <span
+                title={`Reduce level ${task.mapReduceLevel}`}
+                className="rounded bg-white/30 px-1 text-xs font-semibold text-white"
+              >
+                REDUCE L{task.mapReduceLevel}
+              </span>
+            )}
+            {task.nodeType === 'final-reduce' && (
+              <span title="Final aggregation task" className="rounded bg-white/30 px-1 text-xs font-semibold text-white">
+                AGGREGATE
+              </span>
+            )}
+            {task.nodeType === 'direct' && (
+              <span title="Direct (short-circuit) task" className="rounded bg-white/30 px-1 text-xs font-semibold text-white">
+                DIRECT
+              </span>
+            )}
             <span className="rounded bg-white/20 px-1 text-xs text-white">
               L{task.parallelGroup}
             </span>

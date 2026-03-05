@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
+import net.agentensemble.mapreduce.MapReduceEnsemble;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.workflow.TaskDependencyGraph;
 
@@ -89,6 +90,71 @@ public final class DagExporter {
                 .parallelGroups(parallelGroups)
                 .criticalPath(criticalPath)
                 .build();
+    }
+
+    /**
+     * Build a {@link DagModel} from a {@link MapReduceEnsemble} configuration, enriching
+     * each task node with {@code nodeType} and {@code mapReduceLevel} metadata for
+     * map-reduce-aware visualization.
+     *
+     * <p>Equivalent to {@link #build(Ensemble)} on {@code mapReduceEnsemble.toEnsemble()},
+     * but additionally populates:
+     * <ul>
+     *   <li>{@code DagTaskNode.nodeType} -- {@code "map"}, {@code "reduce"}, or
+     *       {@code "final-reduce"}</li>
+     *   <li>{@code DagTaskNode.mapReduceLevel} -- 0 for map tasks, 1+ for reduce levels</li>
+     *   <li>{@code DagModel.mapReduceMode} -- {@code "STATIC"}</li>
+     * </ul>
+     *
+     * @param mapReduceEnsemble the map-reduce ensemble to analyze; must not be {@code null}
+     * @return an immutable {@link DagModel} with map-reduce metadata
+     * @throws IllegalArgumentException if {@code mapReduceEnsemble} is null
+     */
+    public static DagModel build(MapReduceEnsemble<?> mapReduceEnsemble) {
+        if (mapReduceEnsemble == null) {
+            throw new IllegalArgumentException("mapReduceEnsemble must not be null");
+        }
+
+        Ensemble inner = mapReduceEnsemble.toEnsemble();
+        DagModel base = build(inner);
+
+        List<Task> tasks = inner.getTasks();
+        IdentityHashMap<Task, String> nodeTypes = mapReduceEnsemble.getNodeTypes();
+        IdentityHashMap<Task, Integer> mapReduceLevels = mapReduceEnsemble.getMapReduceLevels();
+
+        // Enrich task nodes: task list index aligns with base.getTasks() order.
+        List<DagTaskNode> enrichedTasks = new ArrayList<>(tasks.size());
+        for (int i = 0; i < tasks.size(); i++) {
+            Task task = tasks.get(i);
+            DagTaskNode baseNode = base.getTasks().get(i);
+            enrichedTasks.add(DagTaskNode.builder()
+                    .id(baseNode.getId())
+                    .description(baseNode.getDescription())
+                    .expectedOutput(baseNode.getExpectedOutput())
+                    .agentRole(baseNode.getAgentRole())
+                    .dependsOn(baseNode.getDependsOn())
+                    .parallelGroup(baseNode.getParallelGroup())
+                    .onCriticalPath(baseNode.isOnCriticalPath())
+                    .nodeType(nodeTypes.get(task))
+                    .mapReduceLevel(mapReduceLevels.get(task))
+                    .build());
+        }
+
+        DagModel.DagModelBuilder builder = DagModel.builder()
+                .workflow(base.getWorkflow())
+                .generatedAt(base.getGeneratedAt())
+                .parallelGroups(base.getParallelGroups())
+                .criticalPath(base.getCriticalPath())
+                .mapReduceMode(MapReduceEnsemble.MAP_REDUCE_MODE);
+
+        for (DagAgentNode agentNode : base.getAgents()) {
+            builder.agent(agentNode);
+        }
+        for (DagTaskNode enrichedNode : enrichedTasks) {
+            builder.task(enrichedNode);
+        }
+
+        return builder.build();
     }
 
     // ========================
