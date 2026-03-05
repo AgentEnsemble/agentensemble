@@ -24,66 +24,56 @@ import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.Workflow;
 
 /**
- * A builder that constructs a static tree-reduction DAG and executes it via a single
- * {@link Ensemble#run()} with {@link Workflow#PARALLEL}.
+ * A builder that constructs and executes a tree-reduction DAG using either a
+ * <b>static</b> ({@code chunkSize}) or <b>adaptive</b> ({@code targetTokenBudget}) strategy.
  *
- * <p>When using {@link Workflow#PARALLEL} to fan out to N agents and aggregate their outputs
- * with a single reduce task, the aggregator's context grows as {@code N * avg_output_size}.
- * For large N or verbose agent output, this approaches or exceeds the model's context window.
- * {@code MapReduceEnsemble} solves this by building a multi-level tree-reduction DAG
- * automatically, keeping each reducer's context bounded by {@code chunkSize}.
+ * <h2>Static mode ({@code chunkSize})</h2>
  *
- * <h2>Usage</h2>
+ * <p>The entire DAG is pre-built at {@code build()} time. Each reduce level groups at most
+ * {@code chunkSize} upstream tasks. Call {@link #toEnsemble()} to inspect the pre-built
+ * structure before execution.
+ *
+ * <h2>Adaptive mode ({@code targetTokenBudget})</h2>
+ *
+ * <p>The DAG is built level-by-level at runtime. After each level executes, output token
+ * counts are measured and outputs are bin-packed into groups that fit within
+ * {@code targetTokenBudget}. {@link #toEnsemble()} is not available in adaptive mode (throws
+ * {@link UnsupportedOperationException}) because the DAG shape is unknown until runtime.
+ *
+ * <h2>Usage (static)</h2>
  *
  * <pre>
  * EnsembleOutput output = MapReduceEnsemble.&lt;OrderItem&gt;builder()
  *     .items(order.getItems())
- *
- *     // Map phase: one agent + task per item
- *     .mapAgent(item -&gt; Agent.builder()
- *         .role(item.getDish() + " Chef")
- *         .goal("Prepare " + item.getDish())
- *         .llm(model)
- *         .build())
+ *     .mapAgent(item -&gt; Agent.builder().role(item.getDish() + " Chef").llm(model).build())
  *     .mapTask((item, agent) -&gt; Task.builder()
- *         .description("Execute the recipe for: " + item.getDish())
- *         .expectedOutput("Recipe with ingredients, steps, and timing")
+ *         .description("Prepare " + item.getDish())
+ *         .expectedOutput("Recipe")
  *         .agent(agent)
- *         .outputType(DishResult.class)
  *         .build())
- *
- *     // Reduce phase: consolidate groups of chunkSize outputs
- *     .reduceAgent(() -&gt; Agent.builder()
- *         .role("Sub-Chef")
- *         .goal("Consolidate dish preparations")
- *         .llm(model)
- *         .build())
+ *     .reduceAgent(() -&gt; Agent.builder().role("Sub-Chef").llm(model).build())
  *     .reduceTask((agent, chunkTasks) -&gt; Task.builder()
- *         .description("Consolidate these dish preparations.")
- *         .expectedOutput("Consolidated plan")
+ *         .description("Consolidate")
+ *         .expectedOutput("Plan")
  *         .agent(agent)
- *         .context(chunkTasks)   // must wire context explicitly
+ *         .context(chunkTasks)
  *         .build())
- *
  *     .chunkSize(3)
- *     .verbose(true)
  *     .build()
  *     .run();
  * </pre>
  *
- * <h2>Static DAG construction</h2>
+ * <h2>Usage (adaptive)</h2>
  *
- * <p>Given N items and chunkSize K, the DAG has O(log_K(N)) levels:
- * <ul>
- *   <li>If N &lt;= K: N map tasks + 1 final reduce (context = all map tasks).</li>
- *   <li>If N &gt; K: N map tasks + intermediate reduce levels (one task per group of at
- *       most K) until the current level size &lt;= K, then 1 final reduce.</li>
- * </ul>
- *
- * <h2>Inspection</h2>
- *
- * <p>Call {@link #toEnsemble()} to access the pre-built inner {@link Ensemble} for devtools
- * inspection or DAG export before execution.
+ * <pre>
+ * EnsembleOutput output = MapReduceEnsemble.&lt;OrderItem&gt;builder()
+ *     .items(order.getItems())
+ *     // ...same factories as above...
+ *     .targetTokenBudget(8_000)   // or .contextWindowSize(128_000).budgetRatio(0.5)
+ *     .maxReduceLevels(10)
+ *     .build()
+ *     .run();
+ * </pre>
  *
  * @param <T> the type of each input item
  */
@@ -98,13 +88,23 @@ public final class MapReduceEnsemble<T> {
     /** Node type identifier for the final reduce task. */
     public static final String NODE_TYPE_FINAL_REDUCE = "final-reduce";
 
-    /** MapReduce mode identifier reported to devtools. */
+    /** MapReduce mode identifier for static mode (reported to devtools). */
     public static final String MAP_REDUCE_MODE = "STATIC";
 
+    /** MapReduce mode identifier for adaptive mode (reported to devtools). */
+    public static final String MAP_REDUCE_MODE_ADAPTIVE = "ADAPTIVE";
+
+    // Static mode fields (null in adaptive mode)
     private final Ensemble ensemble;
-    private final Map<String, String> inputs;
     private final IdentityHashMap<Task, String> nodeTypes;
     private final IdentityHashMap<Task, Integer> mapReduceLevels;
+
+    // Adaptive mode field (null in static mode)
+    private final MapReduceAdaptiveExecutor<T> adaptiveExecutor;
+
+    // Common
+    private final Map<String, String> inputs;
+    private final boolean adaptiveMode;
 
     private MapReduceEnsemble(
             Ensemble ensemble,
@@ -115,6 +115,17 @@ public final class MapReduceEnsemble<T> {
         this.inputs = inputs;
         this.nodeTypes = nodeTypes;
         this.mapReduceLevels = mapReduceLevels;
+        this.adaptiveExecutor = null;
+        this.adaptiveMode = false;
+    }
+
+    private MapReduceEnsemble(MapReduceAdaptiveExecutor<T> adaptiveExecutor, Map<String, String> inputs) {
+        this.adaptiveExecutor = adaptiveExecutor;
+        this.inputs = inputs;
+        this.ensemble = null;
+        this.nodeTypes = null;
+        this.mapReduceLevels = null;
+        this.adaptiveMode = true;
     }
 
     /**
@@ -130,47 +141,57 @@ public final class MapReduceEnsemble<T> {
     /**
      * Execute the ensemble using the inputs configured on the builder.
      *
-     * @return the aggregated {@link EnsembleOutput} from the final reduce task
-     * @throws net.agentensemble.exception.ValidationException if the ensemble configuration
-     *     is invalid
+     * @return the aggregated {@link EnsembleOutput}
      */
     public EnsembleOutput run() {
+        if (adaptiveMode) {
+            return adaptiveExecutor.run(inputs);
+        }
         return ensemble.run();
     }
 
     /**
      * Execute the ensemble, merging the supplied run-time inputs with the builder inputs.
-     * When the same key appears in both, the run-time value takes precedence.
      *
      * @param runtimeInputs additional or overriding template variable values
-     * @return the aggregated {@link EnsembleOutput} from the final reduce task
-     * @throws net.agentensemble.exception.ValidationException if the ensemble configuration
-     *     is invalid
+     * @return the aggregated {@link EnsembleOutput}
      */
     public EnsembleOutput run(Map<String, String> runtimeInputs) {
+        if (adaptiveMode) {
+            Map<String, String> merged = new LinkedHashMap<>(inputs);
+            if (runtimeInputs != null) {
+                merged.putAll(runtimeInputs);
+            }
+            return adaptiveExecutor.run(Collections.unmodifiableMap(merged));
+        }
         return ensemble.run(runtimeInputs);
     }
 
     /**
      * Returns the pre-built inner {@link Ensemble} for inspection or devtools export.
      *
-     * <p>The returned ensemble represents the full tree-reduction DAG and can be passed to
-     * {@code DagExporter.build(MapReduceEnsemble)} (or {@code DagExporter.build(Ensemble)})
-     * to export the planned execution graph before running.
+     * <p><b>Static mode only.</b> In adaptive mode, the DAG shape is not known until
+     * runtime, so this method throws {@link UnsupportedOperationException}.
      *
-     * @return the pre-built inner {@link Ensemble}; never {@code null}
+     * @return the pre-built inner {@link Ensemble}
+     * @throws UnsupportedOperationException if called in adaptive mode
      */
     public Ensemble toEnsemble() {
+        if (adaptiveMode) {
+            throw new UnsupportedOperationException("toEnsemble() is not supported in adaptive mode. "
+                    + "The DAG shape is determined at runtime based on actual output token counts. "
+                    + "Inspect the ExecutionTrace returned by run() to understand the "
+                    + "actual reduction structure.");
+        }
         return ensemble;
     }
 
     /**
      * Returns a map from task identity to node type string for devtools enrichment.
      *
-     * <p>Values are one of {@link #NODE_TYPE_MAP}, {@link #NODE_TYPE_REDUCE}, or
-     * {@link #NODE_TYPE_FINAL_REDUCE}.
+     * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
-     * @return an identity-keyed map of task to node type; never {@code null}
+     * @return an identity-keyed map of task to node type, or {@code null} in adaptive mode
      */
     public IdentityHashMap<Task, String> getNodeTypes() {
         return nodeTypes;
@@ -179,13 +200,22 @@ public final class MapReduceEnsemble<T> {
     /**
      * Returns a map from task identity to map-reduce level for devtools enrichment.
      *
-     * <p>Level 0 = map tasks, 1+ = intermediate reduce levels, final reduce = the highest
-     * level. The exact highest level depends on the tree depth (O(log_K(N))).
+     * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
-     * @return an identity-keyed map of task to level; never {@code null}
+     * @return an identity-keyed map of task to level, or {@code null} in adaptive mode
      */
     public IdentityHashMap<Task, Integer> getMapReduceLevels() {
         return mapReduceLevels;
+    }
+
+    /**
+     * Returns {@code true} if this instance was built in adaptive mode
+     * ({@code targetTokenBudget} or {@code contextWindowSize}/{@code budgetRatio} was set).
+     *
+     * @return {@code true} for adaptive mode, {@code false} for static mode
+     */
+    public boolean isAdaptiveMode() {
+        return adaptiveMode;
     }
 
     // ========================
@@ -198,6 +228,11 @@ public final class MapReduceEnsemble<T> {
      * <p>Required fields: {@code items}, {@code mapAgent}, {@code mapTask},
      * {@code reduceAgent}, {@code reduceTask}.
      *
+     * <p>Strategy selection: set {@code chunkSize} for static mode, or
+     * {@code targetTokenBudget} / {@code contextWindowSize} + {@code budgetRatio} for
+     * adaptive mode. These are mutually exclusive. Default (neither set): static with
+     * {@code chunkSize=5}.
+     *
      * @param <T> the type of each input item
      */
     public static final class Builder<T> {
@@ -208,7 +243,17 @@ public final class MapReduceEnsemble<T> {
         private Supplier<Agent> reduceAgentFactory;
         private BiFunction<Agent, List<Task>, Task> reduceTaskFactory;
 
-        private int chunkSize = 5;
+        // Static mode
+        private Integer chunkSize = null; // null = not explicitly set; defaults to 5
+
+        // Adaptive mode
+        private Integer targetTokenBudget = null; // null = not explicitly set
+        private int contextWindowSize = 0; // 0 = not set
+        private double budgetRatio = 0.0; // 0.0 = not set (valid range (0.0, 1.0])
+        private int maxReduceLevels = 10;
+        private Function<String, Integer> tokenEstimator;
+
+        // Common passthrough
         private boolean verbose = false;
         private final List<EnsembleListener> listeners = new ArrayList<>();
         private CaptureMode captureMode = CaptureMode.OFF;
@@ -222,8 +267,7 @@ public final class MapReduceEnsemble<T> {
         private Builder() {}
 
         /**
-         * Input items to fan out over. Each item produces one map agent and one map task.
-         * Must not be null or empty.
+         * Input items to fan out over. Must not be null or empty.
          *
          * @param items the items to process
          * @return this builder
@@ -235,7 +279,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Factory that creates one {@link Agent} per input item for the map phase.
-         * Called exactly once per item during {@link #build()}. Must not be null.
          *
          * @param factory a function from item to {@link Agent}
          * @return this builder
@@ -247,8 +290,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Factory that creates one {@link Task} per input item for the map phase.
-         * Receives the item and the agent produced by {@link #mapAgent(Function)}.
-         * Must not be null.
          *
          * @param factory a function from (item, agent) to {@link Task}
          * @return this builder
@@ -259,8 +300,7 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Factory that creates one {@link Agent} per reduce group. Called once per group at
-         * every reduce level, including the final reduce. Must not be null.
+         * Factory that creates one {@link Agent} per reduce group.
          *
          * @param factory a supplier of {@link Agent}
          * @return this builder
@@ -271,11 +311,8 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Factory that creates one {@link Task} per reduce group. Receives the agent produced
-         * by {@link #reduceAgent(Supplier)} and the list of upstream tasks for that group.
-         * The factory <strong>must</strong> wire {@code .context(chunkTasks)} on the returned
-         * task; the framework does not mutate the returned task.
-         * Must not be null.
+         * Factory that creates one {@link Task} per reduce group. The factory
+         * <strong>must</strong> wire {@code .context(chunkTasks)} on the returned task.
          *
          * @param factory a function from (agent, chunkTasks) to {@link Task}
          * @return this builder
@@ -286,9 +323,8 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Maximum number of tasks per reduce group. Groups of at most {@code chunkSize}
-         * upstream tasks are fed to each reduce agent. Must be &gt;= 2.
-         * Default: {@code 5}.
+         * <b>Static mode:</b> maximum number of tasks per reduce group. Must be &gt;= 2.
+         * Default: {@code 5}. Mutually exclusive with {@code targetTokenBudget}.
          *
          * @param chunkSize the maximum group size
          * @return this builder
@@ -299,8 +335,72 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * When {@code true}, elevates execution logging to INFO level.
-         * Passed through to the inner {@link Ensemble}. Default: {@code false}.
+         * <b>Adaptive mode:</b> token budget per reduce group. After each level, outputs
+         * are bin-packed so that each bin's total token count does not exceed this value.
+         * Must be &gt; 0. Mutually exclusive with {@code chunkSize}.
+         *
+         * @param targetTokenBudget the per-group token limit
+         * @return this builder
+         */
+        public Builder<T> targetTokenBudget(int targetTokenBudget) {
+            this.targetTokenBudget = targetTokenBudget;
+            return this;
+        }
+
+        /**
+         * <b>Adaptive mode (convenience):</b> derive {@code targetTokenBudget} from
+         * {@code contextWindowSize * budgetRatio}. Must be set together with
+         * {@link #budgetRatio(double)}.
+         *
+         * @param contextWindowSize the model's context window size in tokens
+         * @return this builder
+         */
+        public Builder<T> contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
+        /**
+         * <b>Adaptive mode (convenience):</b> fraction of context window to use as
+         * {@code targetTokenBudget}. Must be in range {@code (0.0, 1.0]}. Default: {@code 0.5}.
+         * Must be set together with {@link #contextWindowSize(int)}.
+         *
+         * @param budgetRatio the fraction of context window for reduce input
+         * @return this builder
+         */
+        public Builder<T> budgetRatio(double budgetRatio) {
+            this.budgetRatio = budgetRatio;
+            return this;
+        }
+
+        /**
+         * <b>Adaptive mode:</b> maximum number of reduce iterations before the final
+         * reduce is forced regardless of remaining token count. Must be &gt;= 1.
+         * Default: {@code 10}.
+         *
+         * @param maxReduceLevels the maximum adaptive reduce levels
+         * @return this builder
+         */
+        public Builder<T> maxReduceLevels(int maxReduceLevels) {
+            this.maxReduceLevels = maxReduceLevels;
+            return this;
+        }
+
+        /**
+         * <b>Adaptive mode:</b> custom token estimator function. When provided, this
+         * function is used when the LLM provider does not return token counts, overriding
+         * the default heuristic ({@code rawText.length() / 4}).
+         *
+         * @param tokenEstimator function mapping raw text to estimated token count
+         * @return this builder
+         */
+        public Builder<T> tokenEstimator(Function<String, Integer> tokenEstimator) {
+            this.tokenEstimator = tokenEstimator;
+            return this;
+        }
+
+        /**
+         * When {@code true}, elevates execution logging to INFO level. Default: {@code false}.
          *
          * @param verbose whether to enable verbose logging
          * @return this builder
@@ -312,7 +412,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Register an {@link EnsembleListener} for task lifecycle events.
-         * May be called multiple times; all listeners are accumulated.
          *
          * @param listener the listener to register
          * @return this builder
@@ -334,8 +433,7 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Depth of data collection during each run.
-         * Passed through to the inner {@link Ensemble}. Default: {@link CaptureMode#OFF}.
+         * Depth of data collection during each run. Default: {@link CaptureMode#OFF}.
          *
          * @param captureMode the capture mode to use
          * @return this builder
@@ -346,8 +444,7 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Error handling strategy when map or reduce tasks fail in parallel execution.
-         * Passed through to the inner {@link Ensemble}.
+         * Error handling strategy for parallel execution.
          * Default: {@link ParallelErrorStrategy#FAIL_FAST}.
          *
          * @param strategy the error strategy to use
@@ -359,8 +456,7 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Optional per-token cost rates for cost estimation.
-         * Passed through to the inner {@link Ensemble}. Default: {@code null}.
+         * Optional per-token cost rates for cost estimation. Default: {@code null}.
          *
          * @param costConfiguration the cost configuration to use
          * @return this builder
@@ -371,8 +467,8 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Optional exporter called after the run with the complete execution trace.
-         * Passed through to the inner {@link Ensemble}. Default: {@code null}.
+         * Optional exporter called after each run with the complete execution trace.
+         * Default: {@code null}.
          *
          * @param traceExporter the exporter to use
          * @return this builder
@@ -384,7 +480,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Executor for running parallel tool calls within a single LLM turn.
-         * When not set, the inner {@link Ensemble} uses its default virtual-thread executor.
          *
          * @param toolExecutor the executor to use
          * @return this builder
@@ -396,7 +491,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Metrics backend for recording tool execution measurements.
-         * When not set, the inner {@link Ensemble} uses its default no-op metrics.
          *
          * @param toolMetrics the metrics backend to use
          * @return this builder
@@ -408,7 +502,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Add a single template variable input.
-         * Applied on every {@link MapReduceEnsemble#run()} call.
          *
          * @param key   the variable name
          * @param value the variable value
@@ -421,7 +514,6 @@ public final class MapReduceEnsemble<T> {
 
         /**
          * Add multiple template variable inputs.
-         * Applied on every {@link MapReduceEnsemble#run()} call.
          *
          * @param inputs the variables to add
          * @return this builder
@@ -432,18 +524,34 @@ public final class MapReduceEnsemble<T> {
         }
 
         /**
-         * Validate the configuration, build the static tree-reduction DAG, and return a
-         * configured {@link MapReduceEnsemble} ready to run.
+         * Validate the configuration and build a configured {@link MapReduceEnsemble}.
          *
          * @return a {@link MapReduceEnsemble} instance
          * @throws ValidationException if any required field is missing or invalid
          */
         public MapReduceEnsemble<T> build() {
-            validate();
-            return buildEnsemble();
+            validateCommonFields();
+            int resolvedBudget = resolveTargetTokenBudget();
+            validateAdaptiveFields(resolvedBudget);
+
+            Map<String, String> immutableInputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
+
+            if (resolvedBudget > 0) {
+                // Adaptive mode
+                return buildAdaptive(resolvedBudget, immutableInputs);
+            } else {
+                // Static mode
+                int effectiveChunkSize = chunkSize != null ? chunkSize : 5;
+                validateStaticFields(effectiveChunkSize);
+                return buildStatic(effectiveChunkSize, immutableInputs);
+            }
         }
 
-        private void validate() {
+        // ========================
+        // Validation helpers
+        // ========================
+
+        private void validateCommonFields() {
             if (items == null || items.isEmpty()) {
                 throw new ValidationException("items must not be null or empty");
             }
@@ -459,19 +567,122 @@ public final class MapReduceEnsemble<T> {
             if (reduceTaskFactory == null) {
                 throw new ValidationException("reduceTask factory must not be null");
             }
-            if (chunkSize < 2) {
-                throw new ValidationException("chunkSize must be >= 2, got: " + chunkSize);
+        }
+
+        private void validateStaticFields(int effectiveChunkSize) {
+            if (effectiveChunkSize < 2) {
+                throw new ValidationException("chunkSize must be >= 2, got: " + effectiveChunkSize);
             }
         }
 
-        private MapReduceEnsemble<T> buildEnsemble() {
+        /**
+         * Resolve {@code targetTokenBudget}:
+         * <ul>
+         *   <li>If {@code contextWindowSize > 0} and {@code budgetRatio > 0}: derive budget.</li>
+         *   <li>Else if {@code targetTokenBudget > 0}: use directly.</li>
+         *   <li>Else: return 0 (static mode).</li>
+         * </ul>
+         */
+        private int resolveTargetTokenBudget() {
+            boolean hasContextWindow = contextWindowSize > 0;
+            boolean hasBudgetRatio = budgetRatio > 0.0;
+            boolean hasDirectBudget = targetTokenBudget != null; // null = not explicitly set
+
+            // contextWindowSize and budgetRatio must both be set or neither
+            if (hasContextWindow && !hasBudgetRatio) {
+                throw new ValidationException("budgetRatio must be set when contextWindowSize is specified. "
+                        + "Example: .contextWindowSize(128_000).budgetRatio(0.5)");
+            }
+            if (hasBudgetRatio && !hasContextWindow) {
+                throw new ValidationException("contextWindowSize must be set when budgetRatio is specified. "
+                        + "Example: .contextWindowSize(128_000).budgetRatio(0.5)");
+            }
+
+            if (hasContextWindow) {
+                // Validate budgetRatio range: (0.0, 1.0]
+                if (budgetRatio <= 0.0 || budgetRatio > 1.0) {
+                    throw new ValidationException("budgetRatio must be in range (0.0, 1.0], got: " + budgetRatio);
+                }
+                int derived = (int) (contextWindowSize * budgetRatio);
+                if (derived <= 0) {
+                    throw new ValidationException(
+                            "targetTokenBudget derived from contextWindowSize * budgetRatio must be > 0, " + "got: "
+                                    + contextWindowSize + " * " + budgetRatio + " = " + derived);
+                }
+                // Mutual exclusivity: cannot set chunkSize AND contextWindowSize/budgetRatio
+                if (chunkSize != null) {
+                    throw new ValidationException(
+                            "chunkSize and targetTokenBudget (derived from contextWindowSize * budgetRatio) "
+                                    + "are mutually exclusive. Use chunkSize for static mode or "
+                                    + "contextWindowSize/budgetRatio for adaptive mode, not both.");
+                }
+                return derived;
+            }
+
+            if (hasDirectBudget) {
+                // Validate the explicitly-set value: must be > 0
+                if (targetTokenBudget <= 0) {
+                    throw new ValidationException("targetTokenBudget must be > 0, got: " + targetTokenBudget);
+                }
+                // Mutual exclusivity: cannot set chunkSize AND targetTokenBudget
+                if (chunkSize != null) {
+                    throw new ValidationException("chunkSize and targetTokenBudget are mutually exclusive. "
+                            + "Use chunkSize for static mode or targetTokenBudget for adaptive mode, "
+                            + "not both.");
+                }
+                return targetTokenBudget;
+            }
+
+            // Neither adaptive field set: static mode
+            return 0;
+        }
+
+        private void validateAdaptiveFields(int resolvedBudget) {
+            if (resolvedBudget == 0) {
+                return; // Static mode: no adaptive field validation needed
+            }
+
+            // Value range is validated in resolveTargetTokenBudget() for direct budget
+            // and contextWindowSize/budgetRatio derivation path.
+
+            if (maxReduceLevels < 1) {
+                throw new ValidationException("maxReduceLevels must be >= 1, got: " + maxReduceLevels);
+            }
+        }
+
+        // ========================
+        // Build helpers
+        // ========================
+
+        private MapReduceEnsemble<T> buildAdaptive(int resolvedBudget, Map<String, String> immutableInputs) {
+            MapReduceAdaptiveExecutor<T> executor = new MapReduceAdaptiveExecutor<>(
+                    Collections.unmodifiableList(new ArrayList<>(items)),
+                    mapAgentFactory,
+                    mapTaskFactory,
+                    reduceAgentFactory,
+                    reduceTaskFactory,
+                    resolvedBudget,
+                    maxReduceLevels,
+                    tokenEstimator,
+                    verbose,
+                    Collections.unmodifiableList(new ArrayList<>(listeners)),
+                    captureMode,
+                    parallelErrorStrategy,
+                    costConfiguration,
+                    traceExporter,
+                    toolExecutor,
+                    toolMetrics);
+            return new MapReduceEnsemble<>(executor, immutableInputs);
+        }
+
+        private MapReduceEnsemble<T> buildStatic(int effectiveChunkSize, Map<String, String> immutableInputs) {
             IdentityHashMap<Task, String> nodeTypes = new IdentityHashMap<>();
             IdentityHashMap<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
 
             List<Agent> allAgents = new ArrayList<>();
             List<Task> allTasks = new ArrayList<>();
 
-            // Step 1: Create N map agents and tasks (all independent, no context).
+            // Step 1: Create N map agents and tasks
             List<Task> mapTasks = new ArrayList<>(items.size());
             for (T item : items) {
                 Agent agent = mapAgentFactory.apply(item);
@@ -483,12 +694,8 @@ public final class MapReduceEnsemble<T> {
                 mapReduceLevels.put(task, 0);
             }
 
-            // Steps 2-5: Build reduce levels.
-            // When N <= K: final reduce gets context of all map tasks directly (no intermediate).
-            // When N > K: build intermediate reduce levels until currentLevel.size() <= K,
-            //             then create the final reduce.
-            if (items.size() <= chunkSize) {
-                // Direct path: no intermediate reduce levels.
+            // Steps 2+: Build reduce levels
+            if (items.size() <= effectiveChunkSize) {
                 Agent finalAgent = reduceAgentFactory.get();
                 Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(mapTasks));
                 allAgents.add(finalAgent);
@@ -496,13 +703,12 @@ public final class MapReduceEnsemble<T> {
                 nodeTypes.put(finalTask, NODE_TYPE_FINAL_REDUCE);
                 mapReduceLevels.put(finalTask, 1);
             } else {
-                // Build one or more intermediate reduce levels.
                 List<Task> currentLevel = mapTasks;
                 int reduceLevel = 1;
 
-                while (currentLevel.size() > chunkSize) {
+                while (currentLevel.size() > effectiveChunkSize) {
                     List<Task> nextLevel = new ArrayList<>();
-                    List<List<Task>> groups = partition(currentLevel, chunkSize);
+                    List<List<Task>> groups = partition(currentLevel, effectiveChunkSize);
                     for (List<Task> group : groups) {
                         Agent agent = reduceAgentFactory.get();
                         Task task = reduceTaskFactory.apply(agent, Collections.unmodifiableList(group));
@@ -516,7 +722,6 @@ public final class MapReduceEnsemble<T> {
                     reduceLevel++;
                 }
 
-                // Final reduce: context = all tasks in the last intermediate level.
                 Agent finalAgent = reduceAgentFactory.get();
                 Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(currentLevel));
                 allAgents.add(finalAgent);
@@ -525,7 +730,6 @@ public final class MapReduceEnsemble<T> {
                 mapReduceLevels.put(finalTask, reduceLevel);
             }
 
-            // Build the inner Ensemble with Workflow.PARALLEL.
             Ensemble.EnsembleBuilder ensembleBuilder = Ensemble.builder()
                     .workflow(Workflow.PARALLEL)
                     .verbose(verbose)
@@ -558,15 +762,11 @@ public final class MapReduceEnsemble<T> {
             }
 
             Ensemble ensemble = ensembleBuilder.build();
-            Map<String, String> immutableInputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
             return new MapReduceEnsemble<>(ensemble, immutableInputs, nodeTypes, mapReduceLevels);
         }
 
         /**
          * Partition a list into sublists of at most {@code size} elements.
-         *
-         * <p>The last sublist may be smaller than {@code size} when the list length is not
-         * evenly divisible. The returned sublists are views of the original list.
          */
         private static <E> List<List<E>> partition(List<E> list, int size) {
             List<List<E>> result = new ArrayList<>();

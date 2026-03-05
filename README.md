@@ -317,9 +317,13 @@ across multiple levels.
 
 ### MapReduceEnsemble (v2.0.0)
 
-When N is large or each agent's output is verbose, `MapReduceEnsemble` automatically builds a
-**tree-reduction DAG** that keeps each reducer's context bounded by `chunkSize`. The full DAG is
-pre-built at `build()` time and executed as a single `Workflow.PARALLEL` run:
+`MapReduceEnsemble` solves the context window overflow problem for large parallel workloads.
+It supports two strategies -- **static** (`chunkSize`) and **adaptive** (`targetTokenBudget`):
+
+#### Static mode (`chunkSize`)
+
+The entire DAG is pre-built at `build()` time. Each reduce level groups at most `chunkSize`
+outputs. Tree depth is O(log_K(N)):
 
 ```java
 record DishResult(String dish, List<String> ingredients, int prepMinutes, String plating) {}
@@ -354,20 +358,44 @@ EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
     .chunkSize(3)
     .build()
     .run();
-```
 
-For N=7, chunkSize=3 this produces a three-level DAG: 7 map tasks run concurrently, then
-3 L1 reduce tasks run concurrently, then 1 final reduce. Each reducer's context stays
-bounded at `chunkSize` inputs. Tree depth is O(log_K(N)).
-
-Call `toEnsemble()` to inspect or export the pre-built DAG before execution:
-
-```java
-DagModel dag = DagExporter.build(mapReduceEnsemble);  // enriched with MAP/REDUCE/AGGREGATE badges
+// Inspect or export the pre-built DAG before execution
+DagModel dag = DagExporter.build(mapReduceEnsemble);  // MAP/REDUCE/AGGREGATE badges
 dag.toJson(Path.of("./traces/my-run.dag.json"));
 ```
 
-**Full documentation:** [MapReduceEnsemble Guide](https://docs.agentensemble.net/guides/map-reduce/) | [Kitchen Example](https://docs.agentensemble.net/examples/map-reduce/)
+#### Adaptive mode (`targetTokenBudget`)
+
+Instead of a fixed `chunkSize`, the adaptive strategy measures actual output token counts
+after each level and bin-packs groups that fit within the budget. The DAG shape is determined
+at runtime:
+
+```java
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(order.getItems())
+    // ...same mapAgent, mapTask, reduceAgent, reduceTask factories as static mode...
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Consolidate these preparations.")
+        .expectedOutput("Consolidated plan")
+        .agent(agent)
+        .context(chunkTasks)   // identical to static mode
+        .build())
+
+    // Adaptive: keep reducing until total context < 8000 tokens
+    .targetTokenBudget(8_000)
+    // Or derive from model context window:
+    // .contextWindowSize(128_000).budgetRatio(0.5)  // budget = 64_000
+    .maxReduceLevels(10)
+    .build()
+    .run();
+
+// Post-execution DAG export (shape only known after run)
+DagModel dag = DagExporter.build(output.getTrace());
+output.getTrace().getMapReduceLevels().forEach(level ->
+    System.out.printf("Level %d: %d tasks%n", level.getLevel(), level.getTaskCount()));
+```
+
+**Full documentation:** [MapReduceEnsemble Guide](https://docs.agentensemble.net/guides/map-reduce/) | [Kitchen Examples](https://docs.agentensemble.net/examples/map-reduce/)
 
 ---
 
@@ -1051,8 +1079,11 @@ export OPENAI_API_KEY=your-api-key
 ./gradlew :agentensemble-examples:runDynamicAgents
 ./gradlew :agentensemble-examples:runDynamicAgents --args="Risotto Steak Tiramisu"
 
-# MapReduceEnsemble -- tree-reduction DAG with bounded context per reducer
+# MapReduceEnsemble (static) -- tree-reduction DAG with bounded context per reducer
 ./gradlew :agentensemble-examples:runMapReduceKitchen
+
+# MapReduceEnsemble (adaptive) -- token-budget-driven reduction
+./gradlew :agentensemble-examples:runMapReduceAdaptiveKitchen
 
 # Memory across runs -- long-term memory over 3 weekly cycles
 ./gradlew :agentensemble-examples:runMemoryAcrossRuns
@@ -1127,8 +1158,8 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v0.8.0~~ | ~~Guardrails: pre/post execution validation~~ |
 | ~~v1.0.0~~ | ~~Built-in tool library (agentensemble-tools module)~~ |
 | ~~v2.0.0~~ | ~~MapReduceEnsemble: static tree-reduction DAG with chunkSize~~ |
-| v2.1.0 | MapReduceEnsemble: adaptive reduction with targetTokenBudget |
-| v2.2.0 | MapReduceEnsemble: short-circuit optimization for small inputs |
+| ~~v2.0.0~~ | ~~MapReduceEnsemble: adaptive reduction with targetTokenBudget~~ |
+| v2.1.0 | MapReduceEnsemble: short-circuit optimization for small inputs |
 | Future | MCP (Model Context Protocol) integration, GraalVM polyglot tools |
 
 ---

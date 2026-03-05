@@ -92,6 +92,24 @@ public class TaskTrace {
     TaskMetrics metrics;
 
     /**
+     * Map-reduce node type for this task, when executed via adaptive
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble}.
+     *
+     * <p>One of {@code "map"}, {@code "reduce"}, or {@code "final-reduce"}.
+     * {@code null} for tasks executed outside of an adaptive map-reduce run.
+     */
+    String nodeType;
+
+    /**
+     * Map-reduce tree level for this task, when executed via adaptive
+     * {@link net.agentensemble.mapreduce.MapReduceEnsemble}.
+     *
+     * <p>Level 0 = map phase, 1+ = intermediate reduce levels, highest level = final reduce.
+     * {@code null} for tasks executed outside of an adaptive map-reduce run.
+     */
+    Integer mapReduceLevel;
+
+    /**
      * Optional caller-supplied metadata attached to this task trace.
      * Empty by default; usable by framework extensions or application code.
      */

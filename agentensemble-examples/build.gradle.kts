@@ -55,6 +55,7 @@ mapOf(
     "runParallelWorkflow" to "net.agentensemble.examples.ParallelCompetitiveIntelligenceExample",
     "runDynamicAgents" to "net.agentensemble.examples.DynamicAgentsExample",
     "runMapReduceKitchen" to "net.agentensemble.examples.MapReduceKitchenExample",
+    "runMapReduceAdaptiveKitchen" to "net.agentensemble.examples.MapReduceAdaptiveKitchenExample",
     "runMemoryAcrossRuns" to "net.agentensemble.examples.MemoryAcrossRunsExample",
     "runStructuredOutput" to "net.agentensemble.examples.StructuredOutputExample",
     "runCallbacks" to "net.agentensemble.examples.CallbackExample",

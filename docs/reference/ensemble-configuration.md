@@ -94,8 +94,12 @@ Use `.input("key", "value")` on the builder to supply `{variable}` placeholder v
 
 ## MapReduceEnsemble
 
-`MapReduceEnsemble<T>` constructs a static tree-reduction DAG that bounds each reducer's
-context to `chunkSize` outputs. All fields listed below are in `MapReduceEnsemble.Builder<T>`.
+`MapReduceEnsemble<T>` automates the fan-out / tree-reduce pattern, keeping each reducer's
+context bounded. It supports two strategies, selected by the fields you configure:
+- **Static** (`chunkSize`): DAG pre-built at `build()` time.
+- **Adaptive** (`targetTokenBudget`): DAG built at runtime from actual token counts.
+
+All fields listed below are in `MapReduceEnsemble.Builder<T>`.
 
 See the [MapReduceEnsemble guide](../guides/map-reduce.md) and
 [Kitchen example](../examples/map-reduce.md) for full documentation.
@@ -110,11 +114,29 @@ See the [MapReduceEnsemble guide](../guides/map-reduce.md) and
 | `reduceAgent` | `Supplier<Agent>` | Factory called once per reduce group (including the final reduce). |
 | `reduceTask` | `BiFunction<Agent, List<Task>, Task>` | Factory for reduce tasks. Must wire `.context(chunkTasks)`. |
 
-### Optional fields
+### Strategy selection (one or neither)
+
+`chunkSize` and `targetTokenBudget` are **mutually exclusive**. When neither is set,
+the default is static mode with `chunkSize=5`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `chunkSize` | `int` | `5` | Maximum upstream tasks per reduce group. Must be `>= 2`. |
+| `chunkSize` | `int` | `5` | **Static mode.** Maximum upstream tasks per reduce group. Must be `>= 2`. Mutually exclusive with `targetTokenBudget`. |
+| `targetTokenBudget` | `int` | -- | **Adaptive mode.** Token limit per reduce group. Must be `> 0`. Mutually exclusive with `chunkSize`. |
+| `contextWindowSize` | `int` | -- | **Adaptive mode (convenience).** Derives `targetTokenBudget = contextWindowSize * budgetRatio`. Must be set together with `budgetRatio`. |
+| `budgetRatio` | `double` | `0.5` | **Adaptive mode (convenience).** Fraction of context window to use. Range: `(0.0, 1.0]`. Must be set together with `contextWindowSize`. |
+
+### Adaptive-only optional fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `maxReduceLevels` | `int` | `10` | Maximum adaptive reduce iterations before the final reduce is forced. Must be `>= 1`. |
+| `tokenEstimator` | `Function<String, Integer>` | built-in | Custom token estimator function. Overrides heuristic fallback (`rawText.length() / 4`) when the LLM provider does not return token counts. |
+
+### Common optional fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
 | `verbose` | `boolean` | `false` | Passed through to the inner `Ensemble`. |
 | `listener` | `EnsembleListener` | -- | Repeatable listener registration. |
 | `captureMode` | `CaptureMode` | `OFF` | Passed through to the inner `Ensemble`. |
@@ -129,7 +151,8 @@ See the [MapReduceEnsemble guide](../guides/map-reduce.md) and
 
 | Method | Returns | Notes |
 |---|---|---|
-| `build()` | `MapReduceEnsemble<T>` | Validates and builds the DAG. |
+| `build()` | `MapReduceEnsemble<T>` | Validates and builds. Static: constructs full DAG. Adaptive: stores configuration for runtime execution. |
 | `run()` | `EnsembleOutput` | Executes; returns result from the final reduce task. |
 | `run(Map<String,String>)` | `EnsembleOutput` | Runtime variable overrides merged on top of builder inputs. |
-| `toEnsemble()` | `Ensemble` | Pre-built inner ensemble for devtools inspection and DAG export. |
+| `toEnsemble()` | `Ensemble` | **Static mode only.** Pre-built inner ensemble for devtools inspection. Throws `UnsupportedOperationException` in adaptive mode. |
+| `isAdaptiveMode()` | `boolean` | Returns `true` when `targetTokenBudget` was set (directly or derived). |

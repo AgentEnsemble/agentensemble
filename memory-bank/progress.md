@@ -1,5 +1,11 @@
 # Progress
 
+## What Works (as of Issue #99)
+
+- **Adaptive MapReduceEnsemble** (`targetTokenBudget`): level-by-level execution with
+  first-fit-decreasing bin-packing, 3-tier token estimation, carrier task propagation,
+  trace aggregation, CONTINUE_ON_ERROR partial failure recovery, post-execution DAG export
+
 ## What Works
 
 ### Homebrew Distribution (Issue #94)
