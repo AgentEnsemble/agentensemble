@@ -2,7 +2,10 @@ package net.agentensemble.delegation;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
@@ -27,8 +30,12 @@ import org.slf4j.MDC;
  *   <li>Unknown agent: the target role must match an agent registered with the ensemble</li>
  * </ul>
  *
- * All delegated outputs are accumulated and accessible via {@link #getDelegatedOutputs()}
- * for metrics and audit purposes.
+ * For each invocation the framework internally constructs a {@link DelegationRequest} and
+ * produces a {@link DelegationResponse}. Successful delegations accumulate as
+ * {@link TaskOutput} objects (accessible via {@link #getDelegatedOutputs()}) and as typed
+ * {@link DelegationResponse} objects (accessible via {@link #getDelegationResponses()}).
+ * Guard failures produce a {@link DelegationResponse} with {@link DelegationStatus#FAILURE}
+ * status so all delegation attempts are auditable.
  *
  * This class is stateful (accumulates outputs). A new instance must be created per
  * agent execution.
@@ -49,6 +56,7 @@ public class AgentDelegationTool {
     private final String callerRole;
     private final DelegationContext delegationContext;
     private final List<TaskOutput> delegatedOutputs = new ArrayList<>();
+    private final List<DelegationResponse> delegationResponses = new ArrayList<>();
 
     /**
      * @param callerRole        the role of the agent that owns this tool instance
@@ -63,8 +71,13 @@ public class AgentDelegationTool {
      * Delegate a subtask to another agent.
      *
      * The target agent is located by role name (case-insensitive). If found, the subtask
-     * is executed and the result returned. If any guard fails (depth limit, self-delegation,
-     * unknown role), a descriptive error message is returned to the calling agent instead.
+     * is executed and the result returned as a plain String (preserving the LLM-facing
+     * tool contract). Internally a {@link DelegationRequest} is constructed and a
+     * {@link DelegationResponse} is produced and accumulated.
+     *
+     * If any guard fails (depth limit, self-delegation, unknown role), a descriptive error
+     * message is returned to the calling agent and a {@link DelegationStatus#FAILURE} response
+     * is recorded.
      *
      * @param agentRole       the role of the target agent
      * @param taskDescription a description of the subtask for the target agent to complete
@@ -87,12 +100,21 @@ public class AgentDelegationTool {
             return "Error: taskDescription must not be null or blank. Provide a clear subtask description.";
         }
 
+        // Build the typed request; taskId is auto-generated
+        DelegationRequest request = DelegationRequest.builder()
+                .agentRole(agentRole)
+                .taskDescription(taskDescription)
+                .build();
+
+        Instant requestStart = Instant.now();
+
         // Guard: depth limit
         if (delegationContext.isAtLimit()) {
             String msg = "Delegation depth limit reached (max: " + delegationContext.getMaxDepth()
                     + ", current: " + delegationContext.getCurrentDepth()
                     + "). Complete this task yourself without further delegation.";
             log.warn("Delegation blocked for agent '{}': {}", callerRole, msg);
+            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
             return msg;
         }
 
@@ -101,6 +123,7 @@ public class AgentDelegationTool {
         if (target != null && target.getRole().equalsIgnoreCase(callerRole)) {
             String msg = "Cannot delegate to yourself (role: '" + callerRole + "'). Choose a different agent.";
             log.warn("{}", msg);
+            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
             return msg;
         }
 
@@ -111,6 +134,7 @@ public class AgentDelegationTool {
                     .toList();
             String msg = "Agent not found with role '" + agentRole + "'. Available roles: " + availableRoles;
             log.warn("Delegation from '{}' failed: {}", callerRole, msg);
+            delegationResponses.add(failureResponse(request, agentRole, msg, requestStart));
             return msg;
         }
 
@@ -145,14 +169,47 @@ public class AgentDelegationTool {
 
             delegatedOutputs.add(output);
 
+            Duration elapsed = Duration.between(requestStart, Instant.now());
+            DelegationResponse response = new DelegationResponse(
+                    request.getTaskId(),
+                    DelegationStatus.SUCCESS,
+                    target.getRole(),
+                    output.getRaw(),
+                    output.getParsedOutput(),
+                    Collections.emptyMap(),
+                    Collections.emptyList(),
+                    Collections.emptyMap(),
+                    elapsed);
+            delegationResponses.add(response);
+
             log.info(
                     "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
                     target.getRole(),
                     output.getToolCallCount(),
                     output.getDuration());
 
+            // Option C hybrid design: the @Tool method returns the worker's plain-text output to
+            // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
+            // are framework-internal observability contracts, not serialized to the LLM.
             return output.getRaw();
 
+        } catch (Exception e) {
+            Duration elapsed = Duration.between(requestStart, Instant.now());
+            DelegationResponse response = new DelegationResponse(
+                    request.getTaskId(),
+                    DelegationStatus.FAILURE,
+                    target.getRole(),
+                    null,
+                    null,
+                    Collections.emptyMap(),
+                    List.of(
+                            e.getMessage() != null
+                                    ? e.getMessage()
+                                    : e.getClass().getSimpleName()),
+                    Collections.emptyMap(),
+                    elapsed);
+            delegationResponses.add(response);
+            throw e;
         } finally {
             // Restore prior MDC values rather than unconditionally removing them.
             // This preserves outer delegation context when delegation is nested (A->B->C).
@@ -177,6 +234,35 @@ public class AgentDelegationTool {
      */
     public List<TaskOutput> getDelegatedOutputs() {
         return List.copyOf(delegatedOutputs);
+    }
+
+    /**
+     * Returns an immutable snapshot of all {@link DelegationResponse} objects produced
+     * by this tool instance, in invocation order. Includes both successful delegations and
+     * guard-blocked attempts ({@link DelegationStatus#FAILURE}).
+     *
+     * @return immutable list of delegation responses
+     */
+    public List<DelegationResponse> getDelegationResponses() {
+        return List.copyOf(delegationResponses);
+    }
+
+    // ========================
+    // Internal helpers
+    // ========================
+
+    private DelegationResponse failureResponse(
+            DelegationRequest request, String targetRole, String errorMessage, Instant startedAt) {
+        return new DelegationResponse(
+                request.getTaskId(),
+                DelegationStatus.FAILURE,
+                targetRole,
+                null,
+                null,
+                Collections.emptyMap(),
+                List.of(errorMessage),
+                Collections.emptyMap(),
+                Duration.between(startedAt, Instant.now()));
     }
 
     private Agent findAgentByRole(String role) {

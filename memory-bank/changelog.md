@@ -1,5 +1,58 @@
 # Changelog
 
+## [Implemented / branch ready] Issues #77 + #80 -- 2026-03-04
+
+Feature branch: `feature/delegation-contracts-and-manager-prompt-strategy`
+Commits: `eee052c`, `5771d47`, `acf513b`
+
+### Added (Issue #80 -- Manager prompt extension hook)
+- `ManagerPromptStrategy` (public interface in `net.agentensemble.workflow`): two methods
+  `buildSystemPrompt(ManagerPromptContext)` and `buildUserPrompt(ManagerPromptContext)`
+- `ManagerPromptContext` (public immutable record): `agents`, `tasks`, `previousOutputs`, `workflowDescription`
+- `DefaultManagerPromptStrategy` (public class): contains the existing `ManagerPromptBuilder` logic;
+  exposes `DEFAULT` singleton; used as the default when no strategy is registered
+- `Ensemble.Builder.managerPromptStrategy(ManagerPromptStrategy)` -- defaults to `DefaultManagerPromptStrategy.DEFAULT`
+- `HierarchicalWorkflowExecutor` 5-arg constructor accepting `ManagerPromptStrategy`; builds
+  `ManagerPromptContext` and delegates prompt production to strategy; blank user prompt falls
+  back to built-in coordinator string
+- Tests: `ManagerPromptContextTest`, `DefaultManagerPromptStrategyTest`, 8 new tests in
+  `HierarchicalWorkflowExecutorTest`
+
+### Deprecated (Issue #80)
+- `ManagerPromptBuilder.buildBackground()` and `buildTaskDescription()` marked
+  `@Deprecated(forRemoval = true)`; both delegate to `DefaultManagerPromptStrategy.DEFAULT`
+
+### Added (Issue #77 -- Structured delegation contracts)
+- `DelegationPriority` enum: `LOW`, `NORMAL`, `HIGH`, `CRITICAL`
+- `DelegationStatus` enum: `SUCCESS`, `FAILURE`, `PARTIAL`
+- `DelegationRequest` (immutable `@Value @Builder`): `taskId` (auto-UUID), `agentRole`,
+  `taskDescription`, `scope`, `priority`, `expectedOutputSchema`, `maxOutputRetries`, `metadata`
+- `DelegationResponse` (immutable Java record): `taskId`, `status`, `workerRole`, `rawOutput`,
+  `parsedOutput`, `artifacts`, `errors`, `metadata`, `duration`
+- `AgentDelegationTool.getDelegationResponses()`: returns all responses in invocation order
+- `DelegateTaskTool.getDelegationResponses()`: same contract; guard failures produce FAILURE responses
+- Tests: `DelegationPriorityTest`, `DelegationStatusTest`, `DelegationRequestTest`,
+  `DelegationResponseTest`; 12 new tests in `AgentDelegationToolTest`; 11 new tests in `DelegateTaskToolTest`
+
+### Documentation (both issues)
+- `README.md`: custom manager prompts note, structured delegation contracts note, updated
+  Ensemble Configuration table with `managerPromptStrategy`
+- `docs/guides/workflows.md`: "Customizing the Manager Prompt" subsection
+- `docs/reference/ensemble-configuration.md`: `managerPromptStrategy` row
+- `docs/guides/delegation.md`: "Structured Delegation Contracts" section
+- `docs/examples/hierarchical-team.md`: custom strategy example appended
+- `HierarchicalTeamExample.java`: demonstrates `investmentStrategy`
+- `docs/design/02-architecture.md`: strategy pattern note updated
+- `docs/design/03-domain-model.md`: all four new delegation types added
+
+---
+
+## [Planned] Issues #78, #79, #81 -- Structured Delegation API (remaining) -- 2026-03-04
+
+Still open; depend on issue #77 being merged:
+
+---
+
 ## [Planned] Issues #77-#81 -- Structured Delegation API -- Created 2026-03-04
 
 ### Architecture Decisions Recorded

@@ -157,6 +157,59 @@ This allows log aggregation tools to show the full parent-child delegation chain
 
 ---
 
+## Structured Delegation Contracts
+
+For each delegation attempt the framework internally constructs a `DelegationRequest` and produces a `DelegationResponse`. These typed objects are available for observability, audit, and custom tooling after the ensemble run completes.
+
+### DelegationRequest
+
+`DelegationRequest` is an immutable, builder-pattern object built by the framework before each delegation:
+
+```java
+// The framework constructs this automatically -- no user action required
+DelegationRequest request = DelegationRequest.builder()
+    .agentRole("Content Writer")
+    .taskDescription("Write a blog post about AI trends: ...")
+    .priority(DelegationPriority.NORMAL)  // default
+    .build();
+// request.getTaskId() is auto-populated with a UUID v4
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `taskId` | `String` | Auto-UUID | Unique identifier; correlates with the matching `DelegationResponse` |
+| `agentRole` | `String` | (required) | Target agent's role |
+| `taskDescription` | `String` | (required) | Subtask description |
+| `priority` | `DelegationPriority` | `NORMAL` | Priority hint (`LOW`, `NORMAL`, `HIGH`, `CRITICAL`) |
+| `scope` | `Map<String, Object>` | `{}` | Optional bounded context for this delegation |
+| `expectedOutputSchema` | `String` | `null` | Optional description of the expected output format |
+| `maxOutputRetries` | `int` | `0` | Output parsing retry count |
+| `metadata` | `Map<String, Object>` | `{}` | Arbitrary observability metadata |
+
+### DelegationResponse
+
+`DelegationResponse` is an immutable record produced after each delegation attempt, whether successful or blocked by a guard:
+
+| Field | Type | Description |
+|---|---|---|
+| `taskId()` | `String` | Correlates with the originating `DelegationRequest` |
+| `status()` | `DelegationStatus` | `SUCCESS`, `FAILURE`, or `PARTIAL` |
+| `workerRole()` | `String` | Role of the agent that executed (or was targeted) |
+| `rawOutput()` | `String` | Worker's text output; `null` on failure |
+| `parsedOutput()` | `Object` | Parsed Java object for structured output tasks; `null` otherwise |
+| `artifacts()` | `Map<String, Object>` | Named artefacts produced during execution |
+| `errors()` | `List<String>` | Error messages accumulated; empty on success |
+| `metadata()` | `Map<String, Object>` | Observability metadata |
+| `duration()` | `Duration` | Wall-clock time from delegation start to completion |
+
+### Accessing Responses After Execution
+
+`AgentDelegationTool` exposes `getDelegationResponses()` for peer delegation. In practice, this is accessible by inspecting the tool instances attached to agents after execution. For programmatic access, use event listeners or custom tool wrappers.
+
+Guard failures (depth limit, self-delegation, unknown role) also produce a `FAILURE` response, so every delegation attempt is auditable regardless of outcome.
+
+---
+
 ## Delegation vs. Hierarchical Workflow
 
 | | Peer Delegation | Hierarchical Workflow |
