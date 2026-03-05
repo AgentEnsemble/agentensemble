@@ -2,17 +2,22 @@ package net.agentensemble.ensemble;
 
 import java.time.Duration;
 import java.util.List;
-import lombok.Builder;
 import lombok.Value;
+import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.task.TaskOutput;
+import net.agentensemble.trace.ExecutionTrace;
 
 /**
  * The result of a complete ensemble execution.
  *
- * Contains the final output (from the last task), all individual task outputs
+ * <p>Contains the final output (from the last task), all individual task outputs
  * in execution order, timing information, and a count of total tool calls.
+ *
+ * <p>Execution metrics (aggregated token counts, latency, cost, etc.) are available
+ * via {@code getMetrics()}. The full execution trace (every LLM call, every tool
+ * invocation, all prompts, delegation records) is available via {@code getTrace()}.
+ * The trace can be serialized to JSON with {@code output.getTrace().toJson(path)}.
  */
-@Builder
 @Value
 public class EnsembleOutput {
 
@@ -29,13 +34,91 @@ public class EnsembleOutput {
     int totalToolCalls;
 
     /**
-     * Custom builder that stores taskOutputs as an immutable list.
+     * Aggregated execution metrics for the entire run: token consumption,
+     * LLM latency, tool execution time, cost estimate, and more.
+     *
+     * <p>Returns {@link ExecutionMetrics#EMPTY} when metrics were not collected.
      */
-    public static class EnsembleOutputBuilder {
+    ExecutionMetrics metrics;
+
+    /**
+     * Full execution trace for the entire run, including task traces, agent summaries,
+     * and all collected metrics and timing data. Serializes to JSON via
+     * {@link ExecutionTrace#toJson()}.
+     *
+     * <p>{@code null} when trace collection was not available (e.g., in legacy test
+     * stubs that build EnsembleOutput directly without going through a workflow executor).
+     */
+    ExecutionTrace trace;
+
+    /**
+     * Convenience factory method used by workflow executors to build an {@code EnsembleOutput}
+     * with an immutable task output list and automatically computed metrics.
+     *
+     * @param raw            the final raw text output
+     * @param taskOutputs    all task outputs (copied to an immutable list)
+     * @param totalDuration  total run duration
+     * @param totalToolCalls total tool calls across all tasks
+     * @return the built EnsembleOutput
+     */
+    public static EnsembleOutput of(
+            String raw, List<TaskOutput> taskOutputs, Duration totalDuration, int totalToolCalls) {
+        List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
+        ExecutionMetrics metrics = ExecutionMetrics.from(immutable);
+        return new EnsembleOutput(raw, immutable, totalDuration, totalToolCalls, metrics, null);
+    }
+
+    /**
+     * Builder-style access. Use {@link #of(String, List, Duration, int)} for the common
+     * workflow-executor use case, or construct directly for test scenarios.
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /** Fluent builder for {@code EnsembleOutput}. */
+    public static class Builder {
+        private String raw;
+        private List<TaskOutput> taskOutputs;
+        private Duration totalDuration;
+        private int totalToolCalls;
+        private ExecutionMetrics metrics;
+        private ExecutionTrace trace;
+
+        public Builder raw(String raw) {
+            this.raw = raw;
+            return this;
+        }
+
+        public Builder taskOutputs(List<TaskOutput> taskOutputs) {
+            this.taskOutputs = taskOutputs;
+            return this;
+        }
+
+        public Builder totalDuration(Duration totalDuration) {
+            this.totalDuration = totalDuration;
+            return this;
+        }
+
+        public Builder totalToolCalls(int totalToolCalls) {
+            this.totalToolCalls = totalToolCalls;
+            return this;
+        }
+
+        public Builder metrics(ExecutionMetrics metrics) {
+            this.metrics = metrics;
+            return this;
+        }
+
+        public Builder trace(ExecutionTrace trace) {
+            this.trace = trace;
+            return this;
+        }
 
         public EnsembleOutput build() {
-            List<TaskOutput> immutableOutputs = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
-            return new EnsembleOutput(raw, immutableOutputs, totalDuration, totalToolCalls);
+            List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
+            ExecutionMetrics resolvedMetrics = metrics != null ? metrics : ExecutionMetrics.from(immutable);
+            return new EnsembleOutput(raw, immutable, totalDuration, totalToolCalls, resolvedMetrics, trace);
         }
     }
 }

@@ -554,6 +554,73 @@ Ensemble.builder()
 
 ---
 
+## Metrics and Observability
+
+Every ensemble run automatically produces execution metrics and a complete execution
+trace -- no configuration required.
+
+```java
+EnsembleOutput output = ensemble.run();
+
+// Per-run aggregates
+ExecutionMetrics metrics = output.getMetrics();
+System.out.println("Total tokens:  " + metrics.getTotalTokens());
+System.out.println("LLM latency:   " + metrics.getTotalLlmLatency());
+System.out.println("Tool time:     " + metrics.getTotalToolExecutionTime());
+
+// Per-task breakdown
+for (TaskOutput task : output.getTaskOutputs()) {
+    TaskMetrics tm = task.getMetrics();
+    System.out.printf("[%s] tokens=%d llm=%s%n",
+        task.getAgentRole(), tm.getTotalTokens(), tm.getLlmLatency());
+}
+```
+
+Token counts are `-1` when the LLM provider does not return usage metadata.
+
+### Cost estimation
+
+```java
+Ensemble.builder()
+    .costConfiguration(CostConfiguration.builder()
+        .inputTokenRate(new BigDecimal("0.0000025"))
+        .outputTokenRate(new BigDecimal("0.0000100"))
+        .build())
+    .build();
+
+CostEstimate cost = output.getMetrics().getTotalCostEstimate();
+// cost is null when token counts are unavailable
+```
+
+### Execution trace and JSON export
+
+Every run produces a complete `ExecutionTrace` containing every LLM call, every tool
+invocation with its arguments and result, all prompts sent, and delegation chains.
+
+```java
+// Export to JSON file
+output.getTrace().toJson(Path.of("run-trace.json"));
+
+// Get as string
+String json = output.getTrace().toJson();
+```
+
+To export automatically after every run, register a `traceExporter`:
+
+```java
+Ensemble.builder()
+    .traceExporter(new JsonTraceExporter(Path.of("traces/")))
+    .build();
+```
+
+Each run writes a file named `{ensembleId}.json` inside the directory. Implement
+`ExecutionTraceExporter` for custom destinations (databases, APIs, etc.).
+
+See the [Metrics and Observability guide](docs/guides/metrics.md) and
+[Metrics example](docs/examples/metrics.md) for full details.
+
+---
+
 ## Guardrails
 
 Add pluggable validation hooks to tasks to control what enters and exits agent execution:

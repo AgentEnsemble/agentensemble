@@ -2,130 +2,86 @@
 
 ## Current Work Focus
 
-Issue #81 (HierarchicalConstraints) has been implemented on
-`feature/81-hierarchical-constraints` (2 commits):
-- `41c8222` feat(#81): add HierarchicalConstraints with enforcer, validation, and tests
-- `927dc89` docs(#81): update README, guides, examples, reference, and design docs for
-  HierarchicalConstraints
+Issue #42 (execution metrics, token tracking, cost estimation, and execution trace) has
+been implemented on `feature/42-execution-metrics` (1 commit: `d01ea3e`):
 
-The feature branch is ready for PR. All tests pass; full `./gradlew build
-:agentensemble-core:javadoc --continue` is green.
+- `d01ea3e` feat(#42): execution metrics, token tracking, cost estimation, and execution trace
+
+The feature branch is ready for PR. All tests pass; full
+`./gradlew build :agentensemble-core:javadoc --continue` is green.
 
 ## Recent Changes
 
-### Issue #81 -- Constrained hierarchical mode
+### Issue #42 -- Execution Metrics and Observability
 
-**New types:**
+**New packages:**
 
-- `HierarchicalConstraints` (`@Value @Builder` in `net.agentensemble.workflow`):
-  - `requiredWorkers` (`@Singular Set<String>`) -- roles that MUST be called at least once
-  - `allowedWorkers` (`@Singular("allowedWorker") Set<String>`) -- allowlist; empty = all
-    allowed
-  - `maxCallsPerWorker` (`@Singular("maxCallsPerWorker") Map<String,Integer>`) -- per-worker
-    cap (counts approved attempts)
-  - `globalMaxDelegations` (`@Builder.Default int = 0`) -- total cap; 0 = unlimited
-  - `requiredStages` (`@Singular("requiredStage") List<List<String>>`) -- ordered stage
-    groups; all workers in stage N must complete before stage N+1 can be delegated to
+**`net.agentensemble.metrics`** -- Flat, immutable value objects:
+- `TaskMetrics` (`@Value @Builder`) -- per-task token counts (input, output, total with -1
+  unknown convention), LLM latency, tool execution time, prompt build time, memory retrieval
+  time, LLM call count, tool call count, delegation count, memory operation counts, optional
+  CostEstimate
+- `ExecutionMetrics` (`@Value @Builder`) -- aggregated run-level metrics; static
+  `from(List<TaskOutput>)` factory with -1-propagation for unknown tokens
+- `MemoryOperationCounts` (`@Value @Builder`) -- STM writes, LTM stores/retrievals, entity lookups;
+  `add()` for aggregation; `ZERO` constant
+- `CostConfiguration` (`@Value @Builder`) -- `inputTokenRate`, `outputTokenRate`, `currency`;
+  `estimate(long, long)` returns `null` when tokens are -1
+- `CostEstimate` (`@Value @Builder`) -- `inputCost`, `outputCost`, `totalCost`; `add()` method;
+  `EMPTY` constant
 
-- `ConstraintViolationException` (in `net.agentensemble.exception`):
-  - Extends `AgentEnsembleException`
-  - Fields: `List<String> violations`, `List<TaskOutput> completedTaskOutputs`
-  - Constructors: (violations), (violations, completedOutputs), (violations, cause)
-  - Thrown post-execution when required workers were not called
+**`net.agentensemble.trace`** -- Hierarchical call trace:
+- `ExecutionTrace` (`@Value @Builder(toBuilder=true)`) -- top-level trace; `schemaVersion="1.0"`;
+  `ensembleId`, `workflow`, `startedAt`/`completedAt`/`totalDuration`, `inputs`, `agents`,
+  `taskTraces`, `metrics`, `totalCostEstimate`, `errors`, `metadata`; `toJson()` / `toJson(Path)`
+  via Jackson+JavaTimeModule; `export(ExecutionTraceExporter)`
+- `TaskTrace` -- complete per-task trace with prompts, `llmInteractions`, `delegations`,
+  `finalOutput`, `parsedOutput`, `metrics`, `metadata`
+- `LlmInteraction` -- one ReAct iteration: `iterationIndex`, `startedAt`/`completedAt`/`latency`,
+  `inputTokens`/`outputTokens` (-1 if unknown), `responseType` (TOOL_CALLS/FINAL_ANSWER),
+  `responseText`, `toolCalls`
+- `ToolCallTrace` -- one tool invocation: `toolName`, `arguments`, `result`, `structuredOutput`,
+  timing, `outcome` (SUCCESS/FAILURE/ERROR/SKIPPED_MAX_ITERATIONS), `metadata`
+- `DelegationTrace` -- delegation record: `delegatorRole`, `workerRole`, `taskDescription`,
+  timing, `depth`, `result`, `succeeded`, `workerTrace` (nested TaskTrace for peer delegation)
+- `AgentSummary`, `TaskPrompts`, `ErrorTrace`, `LlmResponseType`, `ToolCallOutcome`
 
-- `HierarchicalConstraintEnforcer` (package-private, `net.agentensemble.workflow`):
-  - Implements `DelegationPolicy` for pre-delegation enforcement
-  - `evaluate()` synchronized: checks allowedWorkers, global cap, per-worker cap, stage
-    ordering; increments approved-attempt counters atomically on ALLOW
-  - `recordDelegation(workerRole)` synchronized: adds to completedWorkers set
-  - `validatePostExecution(completedTaskOutputs)`: checks requiredWorkers against
-    completedWorkers; throws ConstraintViolationException with partial outputs if any missing
+**`net.agentensemble.trace.export`**:
+- `ExecutionTraceExporter` -- `@FunctionalInterface`: `void export(ExecutionTrace trace)`
+- `JsonTraceExporter` -- directory mode (per-run `{ensembleId}.json`) or file mode
 
-**Modified types:**
+**`net.agentensemble.trace.internal`**:
+- `TaskTraceAccumulator` -- mutable per-task collector; `beginLlmCall()`, `endLlmCall()`,
+  `addToolCallToCurrentIteration()`, `finalizeIteration()`, `addDelegation()`, memory counters;
+  `buildTrace()` / `buildMetrics()` freeze to immutable objects
 
-- `HierarchicalWorkflowExecutor`:
-  - New 7-arg constructor adds `HierarchicalConstraints constraints` (nullable)
-  - In `execute()`: when constraints != null, creates enforcer, prepends it to policy chain,
-    adds internal EnsembleListener that calls `enforcer.recordDelegation(event.workerRole())`
-    on DelegationCompletedEvent, calls `enforcer.validatePostExecution()` after manager
-    finishes
-  - All existing constructors delegate to the 7-arg with `null` constraints (backward
-    compatible)
+**Modified classes:**
 
-- `Ensemble`:
-  - New field: `private final HierarchicalConstraints hierarchicalConstraints` (nullable)
-  - `selectExecutor()` passes constraints to `HierarchicalWorkflowExecutor` 7-arg constructor
+- `TaskOutput`: added `metrics` (`TaskMetrics`, default `EMPTY`) and `trace` (`TaskTrace`, nullable)
+- `EnsembleOutput`: custom builder with auto-computed `ExecutionMetrics.from(taskOutputs)`;
+  added `trace` (`ExecutionTrace`, nullable). Changed from `@Builder @Value` to `@Value` with
+  manual fluent builder.
+- `AgentExecutor`: creates `TaskTraceAccumulator` per execution; times prompt building,
+  wraps each `LLM.chat()` with `beginLlmCall()`/`endLlmCall()`; builds `ToolCallTrace` per tool
+  invocation; wires `accumulator::addDelegation` into `AgentDelegationTool` via 3-arg constructor
+- `AgentDelegationTool`: new 3-arg constructor accepts `Consumer<DelegationTrace>`;
+  builds `DelegationTrace` (with nested worker `TaskTrace`) after successful delegation
+- `ExecutionContext`: added `costConfiguration()` (nullable `CostConfiguration`)
+- `Ensemble`: added `costConfiguration` and `traceExporter` builder fields; `runWithInputs()`
+  passes costConfig to `ExecutionContext`, assembles `ExecutionTrace`, and calls exporter
 
-- `EnsembleValidator`:
-  - New `validateHierarchicalConstraints()` method called from `validate()`
-  - Only runs when `workflow == HIERARCHICAL` and constraints != null
-  - Validates: requiredWorkers/allowedWorkers/maxCallsPerWorker/stage roles exist in
-    registered agents; requiredWorkers subset of allowedWorkers (when allowedWorkers
-    non-empty); maxCallsPerWorker values > 0; globalMaxDelegations >= 0
+**Dependencies:** `jackson-datatype-jsr310` added to `agentensemble-core`
 
-**Test files added:**
-- `ConstraintViolationExceptionTest` -- message formatting, violations list, completedOutputs,
-  cause constructor, type hierarchy
-- `HierarchicalConstraintsTest` -- empty defaults, all builder methods, immutability
-- `HierarchicalConstraintEnforcerTest` -- allowedWorkers, per-worker cap, global cap, stage
-  ordering, recordDelegation, validatePostExecution
-- `HierarchicalWorkflowExecutorConstraintTest` -- backward compat, required worker enforced,
-  exception carries partial outputs, allowed workers filter, per-worker cap, global cap,
-  constraints + user policies coexist
-- `EnsembleConstraintValidationTest` -- valid constraints, invalid roles, invalid values
-- `HierarchicalConstraintsIntegrationTest` -- full Ensemble.run() integration for each
-  constraint type
+**Tests added (all pass, coverage >= 90%):**
+- `TaskMetricsTest`, `ExecutionMetricsTest`, `MemoryOperationCountsTest`,
+  `CostConfigurationTest`, `TaskTraceAccumulatorTest`, `AgentExecutorMetricsTest`,
+  `ExecutionTraceTest`, `EnsembleOutputTest`
+
+**Docs updated:** `docs/guides/metrics.md` (major rewrite), `docs/examples/metrics.md` (new),
+`docs/reference/ensemble-configuration.md` (new fields + output methods), `README.md`
+(Metrics section), `docs/design/01-overview.md`, `mkdocs.yml`
 
 ## Next Steps
 
-- Open PR for `feature/81-hierarchical-constraints` targeting `main`
-- Issue #74 (Tool Pipeline/Chaining) remains open for future development
-
-## CI Parity Rule (Lesson Learned -- PRs #84, #81)
-
-**Problem**: Local `./gradlew :agentensemble-core:check` does NOT include `javadoc`.
-CI runs `./gradlew build :agentensemble-core:javadoc --continue` which also generates
-Javadoc, causing CI failures for broken `{@link}` references that were invisible locally.
-
-**Root causes:**
-1. `{@link SomeClass#someMethod()}` on Lombok-generated methods (getters from `@Value`)
-   -- Lombok runs after Javadoc, so the methods are invisible during Javadoc generation.
-2. `{@link PackagePrivateClass}` from a public class's Javadoc -- Javadoc cannot link to
-   package-private types.
-
-**Prevention rules:**
-1. Before pushing any PR, always run:
-   `./gradlew build :agentensemble-core:javadoc --continue`
-2. Never use `{@link SomeClass#someMethod()}` for Lombok-generated methods (`@Value`
-   getters, `@Builder` fluent methods, etc.). Use `{@code}` instead.
-3. Never use `{@link PackagePrivateClass}` in public class Javadoc. Use `{@code}` instead.
-
----
-
-## Active Decisions and Considerations
-
-- **Constraint semantics for caps**: The per-worker cap (`maxCallsPerWorker`) and global cap
-  (`globalMaxDelegations`) count delegation attempts that passed all other checks (at
-  evaluate() time, before the worker executes). A failed worker execution still consumes a
-  slot. This is by design -- caps limit the Manager's delegation attempts.
-
-- **Stage ordering uses completedWorkers**: Stage prerequisites check `completedWorkers`
-  (populated by `recordDelegation()` on DelegationCompletedEvent), meaning workers must have
-  COMPLETED successfully before the next stage can proceed. A failed worker does not advance
-  the stage.
-
-- **Pre-delegation vs post-execution violations**: Pre-delegation violations (allowedWorkers,
-  caps, stages) are returned as DelegationPolicyResult.reject() messages to the Manager LLM
-  -- they are not exceptions. Only post-execution required-worker violations throw
-  ConstraintViolationException.
-
-- **Thread safety**: HierarchicalConstraintEnforcer uses `synchronized` methods for atomicity
-  of check-and-increment operations when the Manager issues concurrent tool calls.
-
-- **Enforcer is first policy**: The constraint enforcer is prepended to the policy chain so
-  hard constraint checks always run before user-registered DelegationPolicy instances.
-
-- **Lombok @Singular on Map**: Lombok cannot auto-singularize `maxCallsPerWorker` (it
-  doesn't recognize "perWorker" as a plural suffix). The explicit annotation
-  `@Singular("maxCallsPerWorker")` generates `maxCallsPerWorker(String key, Integer value)`
-  as the singular method and `maxCallsPerWorkers(Map)` as the bulk method.
+- Open PR for `feature/42-execution-metrics` targeting `main`
+- After merge, close GitHub issue #42

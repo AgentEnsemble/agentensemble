@@ -21,6 +21,7 @@ langchain4j-core          = { group = "dev.langchain4j", name = "langchain4j-cor
 langchain4j-open-ai       = { group = "dev.langchain4j", name = "langchain4j-open-ai",  version.ref = "langchain4j" }
 lombok                    = { group = "org.projectlombok",              name = "lombok",                   version.ref = "lombok"   }
 jackson-databind          = { group = "com.fasterxml.jackson.core",     name = "jackson-databind",         version.ref = "jackson"  }
+jackson-datatype-jsr310   = { group = "com.fasterxml.jackson.datatype", name = "jackson-datatype-jsr310",  version.ref = "jackson"  }
 jsoup                     = { group = "org.jsoup",                       name = "jsoup",                    version.ref = "jsoup"    }
 slf4j-api                 = { group = "org.slf4j",                      name = "slf4j-api",                version.ref = "slf4j"    }
 slf4j-simple              = { group = "org.slf4j",                      name = "slf4j-simple",             version.ref = "slf4j"    }

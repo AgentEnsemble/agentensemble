@@ -17,6 +17,8 @@ All fields available on `Ensemble.builder()`.
 | `maxDelegationDepth` | `int` | No | `3` | Maximum peer-delegation depth. Applies when agents have `allowDelegation = true`. Must be greater than zero. |
 | `delegationPolicies` | `List<DelegationPolicy>` | No | `[]` | Pluggable hooks evaluated before each delegation attempt (after built-in guards). Add individual policies with `.delegationPolicy(policy)` (Lombok singular) or a collection with `.delegationPolicies(list)`. Policies run in registration order. A `REJECT` result blocks the delegation; a `MODIFY` result replaces the request; an `ALLOW` result continues evaluation. Applies to both peer and hierarchical delegation. See [Delegation guide](../guides/delegation.md#delegation-policy-hooks). |
 | `hierarchicalConstraints` | `HierarchicalConstraints` | No | `null` | Optional guardrails for the delegation graph (hierarchical workflow only). Enforces required workers, allowed workers, per-worker caps, global delegation cap, and stage ordering. When requiredWorkers are not called by run end, ConstraintViolationException is thrown. See the Delegation guide for full documentation. |
+| `costConfiguration` | `CostConfiguration` | No | `null` | Optional per-token cost rates. When set, each task's LLM token usage is multiplied by `inputTokenRate` / `outputTokenRate` to produce a `CostEstimate` on both `TaskMetrics` and `ExecutionMetrics`. Requires the LLM provider to return token usage metadata. See [Metrics guide](../guides/metrics.md#cost-estimation). |
+| `traceExporter` | `ExecutionTraceExporter` | No | `null` | Optional exporter called at the end of each `run()` with the complete `ExecutionTrace`. Use `JsonTraceExporter` to write traces to JSON files, or implement the functional interface for custom destinations. See [Metrics guide](../guides/metrics.md#automatic-export). |
 
 ---
 
@@ -43,6 +45,8 @@ At `Ensemble.run()` time:
 | `getTaskOutputs()` | `List<TaskOutput>` | All task outputs in execution order |
 | `getTotalDuration()` | `Duration` | Wall-clock time for the entire run |
 | `getTotalToolCalls()` | `int` | Total number of tool calls across all agents |
+| `getMetrics()` | `ExecutionMetrics` | Aggregated metrics: total token counts, LLM latency, tool execution time, cost estimate, etc. |
+| `getTrace()` | `ExecutionTrace` | Complete execution trace with every LLM interaction, tool call, prompt text, and delegation record. Serializes to JSON via `getTrace().toJson()`. |
 
 Each `TaskOutput` contains:
 
@@ -54,6 +58,8 @@ Each `TaskOutput` contains:
 | `getDuration()` | `Duration` | Time taken for this task |
 | `getToolCallCount()` | `int` | Number of tool calls made for this task |
 | `getCompletedAt()` | `Instant` | Timestamp when this task completed |
+| `getMetrics()` | `TaskMetrics` | Per-task metrics: input/output token counts, LLM latency, tool execution time, prompt build time, cost estimate. Token counts are `-1` when the provider did not return usage metadata. |
+| `getTrace()` | `TaskTrace` | Complete task trace: all LLM interactions with their tool calls, system/user prompts, delegation records, and final output. |
 
 ---
 
