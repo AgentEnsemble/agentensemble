@@ -74,6 +74,7 @@ nav:
     - Agents: guides/agents.md
     - Tasks: guides/tasks.md
     - Workflows: guides/workflows.md
+    - MapReduceEnsemble: guides/map-reduce.md
     - Tools: guides/tools.md
     - Built-in Tools: guides/built-in-tools.md
     - Remote Tools: guides/remote-tools.md
@@ -99,6 +100,7 @@ nav:
     - Hierarchical Team: examples/hierarchical-team.md
     - Parallel Workflow: examples/parallel-workflow.md
     - Dynamic Agent Creation: examples/dynamic-agents.md
+    - MapReduce Kitchen: examples/map-reduce.md
     - Memory Across Runs: examples/memory-across-runs.md
     - Structured Output: examples/structured-output.md
     - Callbacks: examples/callbacks.md

@@ -89,3 +89,47 @@ EnsembleOutput output = Ensemble.builder()
 ## Template Variables
 
 Use `.input("key", "value")` on the builder to supply `{variable}` placeholder values for all task descriptions and expected outputs. For dynamic multi-run scenarios, pass values to `run(Map<String, String>)` instead; those values are merged on top of any builder inputs. See [Template Variables guide](../guides/template-variables.md).
+
+---
+
+## MapReduceEnsemble
+
+`MapReduceEnsemble<T>` constructs a static tree-reduction DAG that bounds each reducer's
+context to `chunkSize` outputs. All fields listed below are in `MapReduceEnsemble.Builder<T>`.
+
+See the [MapReduceEnsemble guide](../guides/map-reduce.md) and
+[Kitchen example](../examples/map-reduce.md) for full documentation.
+
+### Required fields
+
+| Field | Type | Description |
+|---|---|---|
+| `items` | `List<T>` | Input items to fan out over. Must not be null or empty. |
+| `mapAgent` | `Function<T, Agent>` | Factory called once per item to create the map-phase agent. |
+| `mapTask` | `BiFunction<T, Agent, Task>` | Factory called once per item to create the map-phase task. |
+| `reduceAgent` | `Supplier<Agent>` | Factory called once per reduce group (including the final reduce). |
+| `reduceTask` | `BiFunction<Agent, List<Task>, Task>` | Factory for reduce tasks. Must wire `.context(chunkTasks)`. |
+
+### Optional fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `chunkSize` | `int` | `5` | Maximum upstream tasks per reduce group. Must be `>= 2`. |
+| `verbose` | `boolean` | `false` | Passed through to the inner `Ensemble`. |
+| `listener` | `EnsembleListener` | -- | Repeatable listener registration. |
+| `captureMode` | `CaptureMode` | `OFF` | Passed through to the inner `Ensemble`. |
+| `parallelErrorStrategy` | `ParallelErrorStrategy` | `FAIL_FAST` | Passed through to the inner `Ensemble`. |
+| `costConfiguration` | `CostConfiguration` | `null` | Passed through to the inner `Ensemble`. |
+| `traceExporter` | `ExecutionTraceExporter` | `null` | Passed through to the inner `Ensemble`. |
+| `toolExecutor` | `Executor` | virtual-thread | Passed through to the inner `Ensemble`. |
+| `toolMetrics` | `ToolMetrics` | `NoOpToolMetrics` | Passed through to the inner `Ensemble`. |
+| `input` / `inputs` | `Map<String,String>` | `{}` | Template variable inputs. |
+
+### Methods
+
+| Method | Returns | Notes |
+|---|---|---|
+| `build()` | `MapReduceEnsemble<T>` | Validates and builds the DAG. |
+| `run()` | `EnsembleOutput` | Executes; returns result from the final reduce task. |
+| `run(Map<String,String>)` | `EnsembleOutput` | Runtime variable overrides merged on top of builder inputs. |
+| `toEnsemble()` | `Ensemble` | Pre-built inner ensemble for devtools inspection and DAG export. |

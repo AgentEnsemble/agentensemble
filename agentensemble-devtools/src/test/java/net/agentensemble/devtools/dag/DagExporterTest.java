@@ -7,9 +7,11 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
+import net.agentensemble.mapreduce.MapReduceEnsemble;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +45,7 @@ class DagExporterTest {
 
     @Test
     void build_nullEnsemble_throwsIllegalArgument() {
-        assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build(null));
+        assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build((Ensemble) null));
     }
 
     @Test
@@ -285,6 +287,118 @@ class DagExporterTest {
     }
 
     // ========================
+    // MapReduceEnsemble overload
+    // ========================
+
+    @Test
+    void build_nullMapReduceEnsemble_throwsIllegalArgument() {
+        assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build((MapReduceEnsemble<?>) null));
+    }
+
+    @Test
+    void build_mapReduceEnsemble_setsMapReduceModeToStatic() {
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C"), 5);
+        DagModel dag = DagExporter.build(mre);
+        assertThat(dag.getMapReduceMode()).isEqualTo("STATIC");
+    }
+
+    @Test
+    void build_standardEnsemble_mapReduceModeIsNull() {
+        Task task = task("Task A", "Output A", agentA);
+        Ensemble ensemble = ensemble(List.of(agentA), List.of(task), Workflow.SEQUENTIAL);
+        DagModel dag = DagExporter.build(ensemble);
+        assertThat(dag.getMapReduceMode()).isNull();
+    }
+
+    @Test
+    void build_mapReduceEnsemble_mapTaskNodesHaveCorrectNodeType() {
+        // N=3, K=5: 3 map + 1 final = 4 tasks
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C"), 5);
+        DagModel dag = DagExporter.build(mre);
+
+        assertThat(dag.getTasks()).hasSize(4);
+        // First 3 tasks are map tasks
+        for (int i = 0; i < 3; i++) {
+            assertThat(dag.getTasks().get(i).getNodeType()).isEqualTo("map");
+        }
+    }
+
+    @Test
+    void build_mapReduceEnsemble_finalReduceNodeHasCorrectNodeType() {
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C"), 5);
+        DagModel dag = DagExporter.build(mre);
+
+        DagTaskNode finalNode = dag.getTasks().get(3);
+        assertThat(finalNode.getNodeType()).isEqualTo("final-reduce");
+    }
+
+    @Test
+    void build_mapReduceEnsemble_intermediateReduceNodesHaveCorrectNodeType() {
+        // N=4, K=3: 4 map + 2 L1 + 1 final = 7 tasks
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C", "D"), 3);
+        DagModel dag = DagExporter.build(mre);
+
+        assertThat(dag.getTasks()).hasSize(7);
+        // tasks[4] and tasks[5] are intermediate reduce nodes
+        assertThat(dag.getTasks().get(4).getNodeType()).isEqualTo("reduce");
+        assertThat(dag.getTasks().get(5).getNodeType()).isEqualTo("reduce");
+        // tasks[6] is the final reduce
+        assertThat(dag.getTasks().get(6).getNodeType()).isEqualTo("final-reduce");
+    }
+
+    @Test
+    void build_mapReduceEnsemble_mapReduceLevelsAreCorrect() {
+        // N=4, K=3: map=0, L1-reduce=1, final=2
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C", "D"), 3);
+        DagModel dag = DagExporter.build(mre);
+
+        // Map tasks at level 0
+        for (int i = 0; i < 4; i++) {
+            assertThat(dag.getTasks().get(i).getMapReduceLevel()).isEqualTo(0);
+        }
+        // L1 reduce at level 1
+        assertThat(dag.getTasks().get(4).getMapReduceLevel()).isEqualTo(1);
+        assertThat(dag.getTasks().get(5).getMapReduceLevel()).isEqualTo(1);
+        // Final at level 2
+        assertThat(dag.getTasks().get(6).getMapReduceLevel()).isEqualTo(2);
+    }
+
+    @Test
+    void build_mapReduceEnsemble_standardFieldsAreUnaffected() {
+        // Verify that the basic DagModel fields (workflow, agents, criticalPath, etc.)
+        // are still populated correctly when using the MapReduceEnsemble overload.
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B"), 5);
+        DagModel dag = DagExporter.build(mre);
+
+        assertThat(dag.getWorkflow()).isEqualTo("PARALLEL");
+        assertThat(dag.getType()).isEqualTo("dag");
+        assertThat(dag.getSchemaVersion()).isEqualTo(DagModel.CURRENT_SCHEMA_VERSION);
+        assertThat(dag.getAgents()).hasSize(3); // 2 map + 1 final reduce
+        assertThat(dag.getTasks()).hasSize(3);
+        assertThat(dag.getCriticalPath()).isNotEmpty();
+        assertThat(dag.getParallelGroups()).isNotEmpty();
+    }
+
+    @Test
+    void build_mapReduceEnsemble_toJson_includesMapReduceFields() {
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A", "B", "C"), 5);
+        String json = DagExporter.build(mre).toJson();
+
+        assertThat(json).contains("\"mapReduceMode\" : \"STATIC\"");
+        assertThat(json).contains("\"nodeType\" : \"map\"");
+        assertThat(json).contains("\"nodeType\" : \"final-reduce\"");
+        assertThat(json).contains("\"mapReduceLevel\" : 0");
+        assertThat(json).contains("\"mapReduceLevel\" : 1");
+    }
+
+    @Test
+    void build_mapReduceEnsemble_schemaVersionIs_1_1() {
+        MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A"), 3);
+        DagModel dag = DagExporter.build(mre);
+        assertThat(dag.getSchemaVersion()).isEqualTo("1.1");
+    }
+
+    // ========================
     // JSON round-trip
     // ========================
 
@@ -336,6 +450,36 @@ class DagExporterTest {
                 .filter(n -> id.equals(n.getId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("No task node with id=" + id));
+    }
+
+    private MapReduceEnsemble<String> buildTestMapReduceEnsemble(List<String> items, int chunkSize) {
+        NoOpChatModel stub = new NoOpChatModel();
+        AtomicInteger counter = new AtomicInteger(0);
+        return MapReduceEnsemble.<String>builder()
+                .items(items)
+                .mapAgent(item -> Agent.builder()
+                        .role("Map-" + item)
+                        .goal("Map " + item)
+                        .llm(stub)
+                        .build())
+                .mapTask((item, agent) -> Task.builder()
+                        .description("map " + item)
+                        .expectedOutput("mapped " + item)
+                        .agent(agent)
+                        .build())
+                .reduceAgent(() -> Agent.builder()
+                        .role("Reducer-" + counter.incrementAndGet())
+                        .goal("Reduce")
+                        .llm(stub)
+                        .build())
+                .reduceTask((agent, chunk) -> Task.builder()
+                        .description("reduce-" + counter.get())
+                        .expectedOutput("reduced")
+                        .agent(agent)
+                        .context(chunk)
+                        .build())
+                .chunkSize(chunkSize)
+                .build();
     }
 
     /**
