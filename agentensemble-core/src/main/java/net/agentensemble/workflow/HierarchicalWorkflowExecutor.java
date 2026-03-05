@@ -125,7 +125,10 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
             DelegateTaskTool delegateTool =
                     new DelegateTaskTool(workerAgents, agentExecutor, executionContext, workerDelegationContext);
 
-            // 3. Build the ManagerPromptContext and invoke the configured strategy to produce prompts
+            // 3. Build the ManagerPromptContext and invoke the configured strategy to produce prompts.
+            //    previousOutputs and workflowDescription are reserved for future use; they are
+            //    intentionally empty/null in this release. Custom strategies should treat them as
+            //    optional supplemental context that may be populated in a later version.
             ManagerPromptContext promptContext = new ManagerPromptContext(workerAgents, resolvedTasks, List.of(), null);
             String systemPrompt = promptStrategy.buildSystemPrompt(promptContext);
             String userPrompt = promptStrategy.buildUserPrompt(promptContext);

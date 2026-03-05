@@ -188,6 +188,9 @@ public class AgentDelegationTool {
                     output.getToolCallCount(),
                     output.getDuration());
 
+            // Option C hybrid design: the @Tool method returns the worker's plain-text output to
+            // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
+            // are framework-internal observability contracts, not serialized to the LLM.
             return output.getRaw();
 
         } catch (Exception e) {

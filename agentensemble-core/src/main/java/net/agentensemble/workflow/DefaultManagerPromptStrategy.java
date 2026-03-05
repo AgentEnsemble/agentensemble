@@ -20,8 +20,18 @@ import net.agentensemble.Task;
  * before appending additional instructions:
  *
  * <pre>
- * (ctx) -> DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
- *     + "\n\nAdditional constraint: always prefer the Analyst agent for data tasks."
+ * ManagerPromptStrategy custom = new ManagerPromptStrategy() {
+ *     {@literal @}Override
+ *     public String buildSystemPrompt(ManagerPromptContext ctx) {
+ *         return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
+ *                 + "\n\nAdditional constraint: always prefer the Analyst agent for data tasks.";
+ *     }
+ *
+ *     {@literal @}Override
+ *     public String buildUserPrompt(ManagerPromptContext ctx) {
+ *         return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+ *     }
+ * };
  * </pre>
  */
 public final class DefaultManagerPromptStrategy implements ManagerPromptStrategy {
@@ -29,7 +39,7 @@ public final class DefaultManagerPromptStrategy implements ManagerPromptStrategy
     /** Shared singleton; prefer this over constructing new instances. */
     public static final DefaultManagerPromptStrategy DEFAULT = new DefaultManagerPromptStrategy();
 
-    /** Constructor is package-private to allow subclassing within the framework if needed. */
+    /** Constructor is package-private to discourage direct instantiation; prefer {@link #DEFAULT}. */
     DefaultManagerPromptStrategy() {}
 
     /**

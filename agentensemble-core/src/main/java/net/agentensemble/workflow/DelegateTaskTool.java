@@ -154,6 +154,9 @@ public class DelegateTaskTool {
                     output.getToolCallCount(),
                     output.getDuration());
 
+            // Option C hybrid design: the @Tool method returns the worker's plain-text output to
+            // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
+            // are framework-internal observability contracts, not serialized to the LLM.
             return output.getRaw();
 
         } catch (Exception e) {
@@ -190,6 +193,14 @@ public class DelegateTaskTool {
      * Returns an immutable snapshot of all {@link DelegationResponse} objects produced
      * by this tool instance, in invocation order. Includes both successful delegations and
      * guard-blocked attempts ({@link DelegationStatus#FAILURE}).
+     *
+     * <p><strong>Note on accessibility in hierarchical workflow:</strong> In hierarchical mode,
+     * this tool instance is an internal detail of {@code HierarchicalWorkflowExecutor} and is
+     * not directly accessible after {@code Ensemble.run()} returns. To observe delegation
+     * outcomes in hierarchical workflow, implement an {@code EnsembleListener} or use a custom
+     * {@link net.agentensemble.workflow.ManagerPromptStrategy} that wraps the tool.
+     * For peer delegation ({@code AgentDelegationTool}), the same method is available on
+     * the tool instance injected at execution time.
      *
      * @return immutable list of delegation responses
      */

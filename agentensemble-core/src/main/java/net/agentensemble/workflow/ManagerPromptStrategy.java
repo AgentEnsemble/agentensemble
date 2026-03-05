@@ -46,7 +46,8 @@ public interface ManagerPromptStrategy {
      * <p>Called once per task execution in a hierarchical workflow.
      *
      * @param context the context object carrying agents, tasks, prior outputs, and description
-     * @return the system prompt string; must not be null
+     * @return the system prompt string; {@code null} or blank is accepted and treated as an empty
+     *         prompt (validation of strategy output is the caller's responsibility)
      */
     String buildSystemPrompt(ManagerPromptContext context);
 
@@ -60,7 +61,9 @@ public interface ManagerPromptStrategy {
      * <p>Called once per task execution in a hierarchical workflow.
      *
      * @param context the context object carrying agents, tasks, prior outputs, and description
-     * @return the user prompt string; must not be null
+     * @return the user prompt string; {@code null} or blank is accepted and the executor falls
+     *         back to a built-in coordinator instruction (validation of strategy output is the
+     *         caller's responsibility)
      */
     String buildUserPrompt(ManagerPromptContext context);
 }

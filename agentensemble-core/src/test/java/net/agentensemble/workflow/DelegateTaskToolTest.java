@@ -21,6 +21,7 @@ import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 class DelegateTaskToolTest {
 
@@ -315,5 +316,28 @@ class DelegateTaskToolTest {
         String id1 = tool.getDelegationResponses().get(0).taskId();
         String id2 = tool.getDelegationResponses().get(1).taskId();
         assertThat(id1).isNotEqualTo(id2);
+    }
+
+    @Test
+    void testDelegateTask_executorThrows_recordsFailureResponseAndRethrows() {
+        // Cover the catch(Exception e) path in delegateTask()
+        AgentExecutor throwingExecutor = mock(AgentExecutor.class);
+        Mockito.when(throwingExecutor.execute(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("executor failure"));
+
+        DelegationContext delegCtx = net.agentensemble.delegation.DelegationContext.create(
+                List.of(researcher), 3, ExecutionContext.disabled(), throwingExecutor);
+        DelegateTaskTool localTool =
+                new DelegateTaskTool(List.of(researcher), throwingExecutor, ExecutionContext.disabled(), delegCtx);
+
+        assertThatThrownBy(() -> localTool.delegateTask("Researcher", "Research something"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("executor failure");
+
+        assertThat(localTool.getDelegationResponses()).hasSize(1);
+        assertThat(localTool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        assertThat(localTool.getDelegationResponses().get(0).errors()).containsExactly("executor failure");
+        assertThat(localTool.getDelegationResponses().get(0).rawOutput()).isNull();
+        assertThat(localTool.getDelegatedOutputs()).isEmpty();
     }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import net.agentensemble.exception.ValidationException;
 import org.junit.jupiter.api.Test;
 
 class DelegationRequestTest {
@@ -24,18 +25,40 @@ class DelegationRequestTest {
     }
 
     @Test
-    void testBuild_missingAgentRole_throwsNullPointerException() {
+    void testBuild_missingAgentRole_throwsValidationException() {
         assertThatThrownBy(() -> DelegationRequest.builder()
                         .taskDescription("Some description")
                         .build())
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("agentRole");
     }
 
     @Test
-    void testBuild_missingTaskDescription_throwsNullPointerException() {
+    void testBuild_blankAgentRole_throwsValidationException() {
+        assertThatThrownBy(() -> DelegationRequest.builder()
+                        .agentRole("   ")
+                        .taskDescription("Some description")
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("agentRole");
+    }
+
+    @Test
+    void testBuild_missingTaskDescription_throwsValidationException() {
         assertThatThrownBy(
                         () -> DelegationRequest.builder().agentRole("Analyst").build())
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("taskDescription");
+    }
+
+    @Test
+    void testBuild_blankTaskDescription_throwsValidationException() {
+        assertThatThrownBy(() -> DelegationRequest.builder()
+                        .agentRole("Analyst")
+                        .taskDescription("")
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("taskDescription");
     }
 
     // ========================

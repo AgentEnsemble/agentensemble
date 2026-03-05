@@ -1,6 +1,7 @@
 package net.agentensemble.delegation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -386,6 +387,6 @@ class AgentDelegationToolTest {
         AgentDelegationTool tool = new AgentDelegationTool("Researcher", delegationContext);
 
         List<DelegationResponse> responses = tool.getDelegationResponses();
-        org.junit.jupiter.api.Assertions.assertThrows(Exception.class, () -> responses.add(null));
+        assertThatThrownBy(() -> responses.add(null)).isInstanceOf(UnsupportedOperationException.class);
     }
 }

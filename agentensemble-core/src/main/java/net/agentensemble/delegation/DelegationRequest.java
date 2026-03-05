@@ -4,8 +4,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 import lombok.Builder;
-import lombok.NonNull;
 import lombok.Value;
+import net.agentensemble.exception.ValidationException;
 
 /**
  * Immutable, typed contract describing a single delegation request.
@@ -36,21 +36,18 @@ public class DelegationRequest {
      * Unique identifier for this delegation, auto-populated as a UUID v4 when not set.
      * Used to correlate with the matching {@link DelegationResponse#taskId()}.
      */
-    @Builder.Default
-    @NonNull
-    String taskId = UUID.randomUUID().toString();
+    String taskId;
 
     /**
      * Role of the target agent that should execute the delegated task.
-     * Must match a registered agent role (case-insensitive).
+     * Must match a registered agent role (case-insensitive) and must not be blank.
      */
-    @NonNull
     String agentRole;
 
     /**
      * Human-readable description of the subtask for the target agent to complete.
+     * Must not be blank.
      */
-    @NonNull
     String taskDescription;
 
     /**
@@ -58,15 +55,13 @@ public class DelegationRequest {
      * May carry variables like project identifiers, time bounds, or domain constraints.
      * Defaults to an empty map when not set.
      */
-    @Builder.Default
-    Map<String, Object> scope = Collections.emptyMap();
+    Map<String, Object> scope;
 
     /**
      * Priority hint for this delegation.
      * Defaults to {@link DelegationPriority#NORMAL}.
      */
-    @Builder.Default
-    DelegationPriority priority = DelegationPriority.NORMAL;
+    DelegationPriority priority;
 
     /**
      * Optional description of the expected output schema or format.
@@ -78,13 +73,51 @@ public class DelegationRequest {
      * Maximum number of times the framework should retry output parsing if structured
      * output is requested. Zero or negative means no retries.
      */
-    @Builder.Default
-    int maxOutputRetries = 0;
+    int maxOutputRetries;
 
     /**
      * Arbitrary key-value metadata attached to this delegation for observability or
      * downstream processing. Defaults to an empty map when not set.
      */
-    @Builder.Default
-    Map<String, Object> metadata = Collections.emptyMap();
+    Map<String, Object> metadata;
+
+    /**
+     * Custom builder that enforces non-blank validation on required fields and
+     * auto-generates a UUID {@code taskId} when one is not explicitly provided.
+     */
+    public static class DelegationRequestBuilder {
+
+        // Defaults for optional fields (mirrors @Builder.Default semantics)
+        private String taskId = null;
+        private Map<String, Object> scope = Collections.emptyMap();
+        private DelegationPriority priority = DelegationPriority.NORMAL;
+        private int maxOutputRetries = 0;
+        private Map<String, Object> metadata = Collections.emptyMap();
+
+        /**
+         * Builds and returns an immutable {@code DelegationRequest}.
+         *
+         * @throws ValidationException if {@code agentRole} or {@code taskDescription} is blank
+         */
+        public DelegationRequest build() {
+            if (agentRole == null || agentRole.isBlank()) {
+                throw new ValidationException("DelegationRequest agentRole must not be blank");
+            }
+            if (taskDescription == null || taskDescription.isBlank()) {
+                throw new ValidationException("DelegationRequest taskDescription must not be blank");
+            }
+            String effectiveTaskId = (taskId != null && !taskId.isBlank())
+                    ? taskId
+                    : UUID.randomUUID().toString();
+            return new DelegationRequest(
+                    effectiveTaskId,
+                    agentRole,
+                    taskDescription,
+                    scope,
+                    priority,
+                    expectedOutputSchema,
+                    maxOutputRetries,
+                    metadata);
+        }
+    }
 }

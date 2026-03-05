@@ -132,8 +132,17 @@ public class Ensemble {
      * <pre>
      * Ensemble.builder()
      *     .workflow(Workflow.HIERARCHICAL)
-     *     .managerPromptStrategy(ctx -&gt; DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
-     *         + "\n\nAlways prefer the Analyst for data tasks.")
+     *     .managerPromptStrategy(new ManagerPromptStrategy() {
+     *         {@literal @}Override
+     *         public String buildSystemPrompt(ManagerPromptContext ctx) {
+     *             return DefaultManagerPromptStrategy.DEFAULT.buildSystemPrompt(ctx)
+     *                 + "\n\nAlways prefer the Analyst for data tasks.";
+     *         }
+     *         {@literal @}Override
+     *         public String buildUserPrompt(ManagerPromptContext ctx) {
+     *             return DefaultManagerPromptStrategy.DEFAULT.buildUserPrompt(ctx);
+     *         }
+     *     })
      *     .build();
      * </pre>
      *
