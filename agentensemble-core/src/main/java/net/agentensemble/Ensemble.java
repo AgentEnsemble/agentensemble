@@ -1,6 +1,7 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -12,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
@@ -30,8 +32,14 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.metrics.CostConfiguration;
+import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
+import net.agentensemble.trace.AgentSummary;
+import net.agentensemble.trace.ExecutionTrace;
+import net.agentensemble.trace.TaskTrace;
+import net.agentensemble.trace.export.ExecutionTraceExporter;
 import net.agentensemble.workflow.DefaultManagerPromptStrategy;
 import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
@@ -291,6 +299,46 @@ public class Ensemble {
     private final List<DelegationPolicy> delegationPolicies;
 
     /**
+     * Optional per-token cost rates for cost estimation.
+     *
+     * <p>When set, each task's LLM token usage is converted to a monetary cost estimate
+     * and made available on {@link net.agentensemble.metrics.TaskMetrics#getCostEstimate()}
+     * and {@link net.agentensemble.metrics.ExecutionMetrics#getTotalCostEstimate()}.
+     *
+     * <p>Token counts are derived from {@code ChatResponse} usage metadata. When the LLM
+     * provider does not populate token counts, cost estimates are omitted.
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .costConfiguration(CostConfiguration.builder()
+     *         .inputTokenRate(new BigDecimal("0.0000025"))
+     *         .outputTokenRate(new BigDecimal("0.0000100"))
+     *         .build())
+     *     .build();
+     * </pre>
+     *
+     * <p>Default: null (cost estimation disabled).
+     */
+    private final CostConfiguration costConfiguration;
+
+    /**
+     * Optional exporter called at the end of each {@link #run()} invocation with the
+     * complete {@link ExecutionTrace}.
+     *
+     * <p>Use {@link net.agentensemble.trace.export.JsonTraceExporter} to write traces to
+     * JSON files, or implement {@link ExecutionTraceExporter} for custom destinations.
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .traceExporter(new JsonTraceExporter(Path.of("traces/")))
+     *     .build();
+     * </pre>
+     *
+     * <p>Default: null (no automatic export).
+     */
+    private final ExecutionTraceExporter traceExporter;
+
+    /**
      * Execute the ensemble's tasks using the inputs configured on the builder.
      *
      * @return EnsembleOutput containing all results
@@ -326,6 +374,7 @@ public class Ensemble {
     private EnsembleOutput runWithInputs(Map<String, String> resolvedInputs) {
         String ensembleId = UUID.randomUUID().toString();
         MDC.put("ensemble.id", ensembleId);
+        Instant runStartedAt = Instant.now();
 
         try {
             log.info(
@@ -353,13 +402,20 @@ public class Ensemble {
             }
 
             // Step 4: Build execution context -- bundles memory, verbosity, listeners,
-            // tool executor, and tool metrics
+            // tool executor, tool metrics, and optional cost configuration
             ExecutionContext executionContext = ExecutionContext.of(
-                    memoryContext, verbose, listeners != null ? listeners : List.of(), toolExecutor, toolMetrics);
+                    memoryContext,
+                    verbose,
+                    listeners != null ? listeners : List.of(),
+                    toolExecutor,
+                    toolMetrics,
+                    costConfiguration);
 
             // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();
             EnsembleOutput output = executor.execute(resolvedTasks, executionContext);
+
+            Instant runCompletedAt = Instant.now();
 
             log.info(
                     "Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
@@ -367,7 +423,30 @@ public class Ensemble {
                     output.getTaskOutputs().size(),
                     output.getTotalToolCalls());
 
-            return output;
+            // Step 6: Build ExecutionTrace from collected task traces
+            ExecutionTrace trace =
+                    buildExecutionTrace(ensembleId, runStartedAt, runCompletedAt, resolvedInputs, output);
+
+            // Step 7: Attach trace to EnsembleOutput
+            EnsembleOutput outputWithTrace = EnsembleOutput.builder()
+                    .raw(output.getRaw())
+                    .taskOutputs(output.getTaskOutputs())
+                    .totalDuration(output.getTotalDuration())
+                    .totalToolCalls(output.getTotalToolCalls())
+                    .metrics(output.getMetrics())
+                    .trace(trace)
+                    .build();
+
+            // Step 8: Export trace if an exporter is configured
+            if (traceExporter != null) {
+                try {
+                    traceExporter.export(trace);
+                } catch (Exception e) {
+                    log.warn("TraceExporter threw exception during export: {}", e.getMessage(), e);
+                }
+            }
+
+            return outputWithTrace;
 
         } catch (ValidationException e) {
             log.warn("Ensemble validation failed: {}", e.getMessage());
@@ -378,6 +457,55 @@ public class Ensemble {
         } finally {
             MDC.remove("ensemble.id");
         }
+    }
+
+    private ExecutionTrace buildExecutionTrace(
+            String ensembleId,
+            Instant startedAt,
+            Instant completedAt,
+            Map<String, String> resolvedInputs,
+            EnsembleOutput output) {
+
+        List<AgentSummary> agentSummaries = agents.stream()
+                .map(agent -> AgentSummary.builder()
+                        .role(agent.getRole())
+                        .goal(agent.getGoal())
+                        .background(agent.getBackground())
+                        .toolNames(agent.getTools().stream()
+                                .filter(t -> t instanceof net.agentensemble.tool.AgentTool)
+                                .map(t -> ((net.agentensemble.tool.AgentTool) t).name())
+                                .collect(Collectors.toList()))
+                        .allowDelegation(agent.isAllowDelegation())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<TaskTrace> taskTraces = output.getTaskOutputs().stream()
+                .map(net.agentensemble.task.TaskOutput::getTrace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        ExecutionMetrics metrics = output.getMetrics();
+
+        ExecutionTrace.ExecutionTraceBuilder builder = ExecutionTrace.builder()
+                .ensembleId(ensembleId)
+                .workflow(workflow.name())
+                .startedAt(startedAt)
+                .completedAt(completedAt)
+                .totalDuration(output.getTotalDuration())
+                .inputs(Map.copyOf(resolvedInputs != null ? resolvedInputs : Map.of()))
+                .metrics(metrics);
+
+        for (AgentSummary summary : agentSummaries) {
+            builder.agent(summary);
+        }
+        for (TaskTrace trace : taskTraces) {
+            builder.taskTrace(trace);
+        }
+        if (metrics.getTotalCostEstimate() != null) {
+            builder.totalCostEstimate(metrics.getTotalCostEstimate());
+        }
+
+        return builder.build();
     }
 
     /**

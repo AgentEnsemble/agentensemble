@@ -32,6 +32,10 @@ import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.ToolResult;
+import net.agentensemble.trace.LlmResponseType;
+import net.agentensemble.trace.ToolCallOutcome;
+import net.agentensemble.trace.ToolCallTrace;
+import net.agentensemble.trace.internal.TaskTraceAccumulator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +56,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>When the {@link ExecutionContext} carries {@link net.agentensemble.callback.EnsembleListener}
  * instances, a {@link ToolCallEvent} is fired after each tool execution in the ReAct loop.
+ *
+ * <p>Execution metrics and a full call trace are captured on every execution. Both are
+ * available via {@code TaskOutput.getMetrics()} and {@code TaskOutput.getTrace()}.
  *
  * <p>Stateless -- all state is held in local variables during execution.
  */
@@ -103,16 +110,23 @@ public class AgentExecutor {
             executionContext = ExecutionContext.disabled();
         }
 
-        boolean verbose = executionContext.isVerbose();
-
         Instant startTime = Instant.now();
         Agent agent = task.getAgent();
+        boolean verbose = executionContext.isVerbose();
         boolean effectiveVerbose = verbose || agent.isVerbose();
+
+        // Create the trace accumulator for this task execution
+        TaskTraceAccumulator accumulator =
+                new TaskTraceAccumulator(agent.getRole(), task.getDescription(), task.getExpectedOutput(), startTime);
 
         runInputGuardrails(task, contextOutputs);
 
+        // Time prompt building
+        Instant promptStart = Instant.now();
         String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
         String userPrompt = AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
+        Duration promptBuildTime = Duration.between(promptStart, Instant.now());
+        accumulator.recordPrompts(systemPrompt, userPrompt, promptBuildTime);
 
         if (effectiveVerbose) {
             log.info("System prompt:\n{}", systemPrompt);
@@ -122,7 +136,7 @@ public class AgentExecutor {
             log.debug("User prompt ({} chars):\n{}", userPrompt.length(), userPrompt);
         }
 
-        List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext);
+        List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext, accumulator);
 
         log.info(
                 "Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
@@ -140,9 +154,16 @@ public class AgentExecutor {
         try {
             if (resolvedTools.hasTools()) {
                 finalResponse = executeWithTools(
-                        agent, task, systemPrompt, userPrompt, resolvedTools, toolCallCounter, executionContext);
+                        agent,
+                        task,
+                        systemPrompt,
+                        userPrompt,
+                        resolvedTools,
+                        toolCallCounter,
+                        executionContext,
+                        accumulator);
             } else {
-                finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt);
+                finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt, accumulator);
                 log.debug("Agent '{}' completed (no tools)", agent.getRole());
             }
         } catch (AgentExecutionException | MaxIterationsExceededException e) {
@@ -176,19 +197,27 @@ public class AgentExecutor {
 
         runOutputGuardrails(task, finalResponse, parsedOutput);
 
-        Duration duration = Duration.between(startTime, Instant.now());
+        Instant completedAt = Instant.now();
+        Duration duration = Duration.between(startTime, completedAt);
         int toolCalls = toolCallCounter.get();
         log.debug("Agent '{}' completed | Tool calls: {} | Duration: {}", agent.getRole(), toolCalls, duration);
+
+        // Freeze accumulated trace and metrics
+        net.agentensemble.trace.TaskTrace taskTrace =
+                accumulator.buildTrace(finalResponse, parsedOutput, completedAt, executionContext.costConfiguration());
+        net.agentensemble.metrics.TaskMetrics taskMetrics = taskTrace.getMetrics();
 
         TaskOutput output = TaskOutput.builder()
                 .raw(finalResponse)
                 .taskDescription(task.getDescription())
                 .agentRole(agent.getRole())
-                .completedAt(Instant.now())
+                .completedAt(completedAt)
                 .duration(duration)
                 .toolCallCount(toolCalls)
                 .parsedOutput(parsedOutput)
                 .outputType(task.getOutputType())
+                .metrics(taskMetrics)
+                .trace(taskTrace)
                 .build();
 
         executionContext.memoryContext().record(output);
@@ -200,10 +229,14 @@ public class AgentExecutor {
      * Build the effective tool list for this execution.
      * When the agent has {@code allowDelegation = true} and a non-null
      * {@code delegationContext} is provided, an {@link AgentDelegationTool} is prepended.
+     * The accumulator's delegation consumer is wired into the delegation tool so that
+     * completed delegations are captured in the task trace.
      */
-    private List<Object> buildEffectiveTools(Agent agent, DelegationContext delegationContext) {
+    private List<Object> buildEffectiveTools(
+            Agent agent, DelegationContext delegationContext, TaskTraceAccumulator accumulator) {
         if (agent.isAllowDelegation() && delegationContext != null) {
-            AgentDelegationTool delegationTool = new AgentDelegationTool(agent.getRole(), delegationContext);
+            AgentDelegationTool delegationTool =
+                    new AgentDelegationTool(agent.getRole(), delegationContext, accumulator::addDelegation);
             List<Object> tools = new ArrayList<>();
             tools.add(delegationTool);
             tools.addAll(agent.getTools());
@@ -221,12 +254,18 @@ public class AgentExecutor {
     // Execution paths
     // ========================
 
-    private String executeWithoutTools(Agent agent, String systemPrompt, String userPrompt) {
+    private String executeWithoutTools(
+            Agent agent, String systemPrompt, String userPrompt, TaskTraceAccumulator accumulator) {
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt)))
                 .build();
+        Instant llmStart = Instant.now();
+        accumulator.beginLlmCall(llmStart);
         ChatResponse response = agent.getLlm().chat(request);
-        return response.aiMessage().text();
+        accumulator.endLlmCall(Instant.now(), response.tokenUsage());
+        String text = response.aiMessage().text();
+        accumulator.finalizeIteration(LlmResponseType.FINAL_ANSWER, text);
+        return text;
     }
 
     private String executeWithTools(
@@ -236,7 +275,8 @@ public class AgentExecutor {
             String userPrompt,
             ToolResolver.ResolvedTools resolvedTools,
             AtomicInteger toolCallCounter,
-            ExecutionContext executionContext) {
+            ExecutionContext executionContext,
+            TaskTraceAccumulator accumulator) {
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
@@ -253,13 +293,20 @@ public class AgentExecutor {
                     .toolSpecifications(resolvedTools.allSpecifications())
                     .build();
 
+            // Time the LLM call
+            Instant llmStart = Instant.now();
+            accumulator.beginLlmCall(llmStart);
             ChatResponse response = agent.getLlm().chat(request);
+            accumulator.endLlmCall(Instant.now(), response.tokenUsage());
+
             AiMessage aiMessage = response.aiMessage();
             messages.add(aiMessage);
 
             if (!aiMessage.hasToolExecutionRequests()) {
                 // LLM produced a text response -- done
-                return aiMessage.text();
+                String text = aiMessage.text();
+                accumulator.finalizeIteration(LlmResponseType.FINAL_ANSWER, text);
+                return text;
             }
 
             List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
@@ -274,11 +321,13 @@ public class AgentExecutor {
                         maxIterations,
                         agentRole,
                         executionContext,
-                        messages);
+                        messages,
+                        accumulator);
                 if (resultMsg == null) {
                     // Over limit: stop message was added by executeSingleTool
                     stopMessageCount++;
                     if (stopMessageCount >= MAX_STOP_MESSAGES) {
+                        accumulator.finalizeIteration(LlmResponseType.TOOL_CALLS, null);
                         throw new MaxIterationsExceededException(
                                 agentRole, task.getDescription(), maxIterations, toolCallCounter.get());
                     }
@@ -295,8 +344,11 @@ public class AgentExecutor {
                         toolExecutor,
                         task,
                         messages,
-                        stopMessageCount);
+                        stopMessageCount,
+                        accumulator);
             }
+
+            accumulator.finalizeIteration(LlmResponseType.TOOL_CALLS, null);
         }
     }
 
@@ -311,7 +363,8 @@ public class AgentExecutor {
             int maxIterations,
             String agentRole,
             ExecutionContext executionContext,
-            List<ChatMessage> messages) {
+            List<ChatMessage> messages,
+            TaskTraceAccumulator accumulator) {
 
         if (toolCallCounter.get() >= maxIterations) {
             String stopText = buildStopText(maxIterations);
@@ -321,21 +374,44 @@ public class AgentExecutor {
                     agentRole,
                     maxIterations,
                     toolRequest.name());
+            ToolCallTrace skippedTrace = ToolCallTrace.builder()
+                    .toolName(toolRequest.name())
+                    .arguments(toolRequest.arguments() != null ? toolRequest.arguments() : "{}")
+                    .result(stopText)
+                    .startedAt(Instant.now())
+                    .completedAt(Instant.now())
+                    .duration(Duration.ZERO)
+                    .outcome(ToolCallOutcome.SKIPPED_MAX_ITERATIONS)
+                    .build();
+            accumulator.addToolCallToCurrentIteration(skippedTrace);
             return null;
         }
 
         toolCallCounter.incrementAndGet();
         Instant toolStart = Instant.now();
         ToolResult toolResult = resolvedTools.execute(toolRequest, agentRole);
-        Duration toolDuration = Duration.between(toolStart, Instant.now());
+        Instant toolEnd = Instant.now();
+        Duration toolDuration = Duration.between(toolStart, toolEnd);
         String toolResultText = toText(toolResult);
+
+        ToolCallTrace toolTrace = ToolCallTrace.builder()
+                .toolName(toolRequest.name())
+                .arguments(toolRequest.arguments() != null ? toolRequest.arguments() : "{}")
+                .result(toolResultText)
+                .structuredOutput(toolResult != null ? toolResult.getStructuredOutput() : null)
+                .startedAt(toolStart)
+                .completedAt(toolEnd)
+                .duration(toolDuration)
+                .outcome(classifyOutcome(toolResult))
+                .build();
+        accumulator.addToolCallToCurrentIteration(toolTrace);
 
         logToolCall(agentRole, toolRequest, toolResultText, toolDuration);
         executionContext.fireToolCall(new ToolCallEvent(
                 toolRequest.name(),
                 toolRequest.arguments(),
                 toolResultText,
-                toolResult.getStructuredOutput(),
+                toolResult != null ? toolResult.getStructuredOutput() : null,
                 agentRole,
                 toolDuration));
 
@@ -360,7 +436,8 @@ public class AgentExecutor {
             Executor toolExecutor,
             Task task,
             List<ChatMessage> messages,
-            int stopMessageCount) {
+            int stopMessageCount,
+            TaskTraceAccumulator accumulator) {
 
         log.debug("Agent '{}' executing {} tools in parallel", agentRole, toolRequests.size());
 
@@ -380,7 +457,13 @@ public class AgentExecutor {
         }
 
         // Launch all executable tools in parallel
-        record ToolExecution(ToolExecutionRequest request, ToolResult result, Duration duration, boolean withinLimit) {}
+        record ToolExecution(
+                ToolExecutionRequest request,
+                ToolResult result,
+                Duration duration,
+                Instant toolStart,
+                Instant toolEnd,
+                boolean withinLimit) {}
 
         List<CompletableFuture<ToolExecution>> futures = new ArrayList<>();
         for (PendingTool pt : pending) {
@@ -389,15 +472,17 @@ public class AgentExecutor {
                         () -> {
                             Instant start = Instant.now();
                             ToolResult result = resolvedTools.execute(pt.request(), agentRole);
-                            Duration dur = Duration.between(start, Instant.now());
-                            return new ToolExecution(pt.request(), result, dur, true);
+                            Instant end = Instant.now();
+                            Duration dur = Duration.between(start, end);
+                            return new ToolExecution(pt.request(), result, dur, start, end, true);
                         },
                         toolExecutor);
                 futures.add(future);
             } else {
                 // Over limit: resolve immediately as a stop message
-                CompletableFuture<ToolExecution> immediate =
-                        CompletableFuture.completedFuture(new ToolExecution(pt.request(), null, Duration.ZERO, false));
+                Instant now = Instant.now();
+                CompletableFuture<ToolExecution> immediate = CompletableFuture.completedFuture(
+                        new ToolExecution(pt.request(), null, Duration.ZERO, now, now, false));
                 futures.add(immediate);
             }
         }
@@ -417,19 +502,47 @@ public class AgentExecutor {
                         agentRole,
                         maxIterations,
                         te.request().name());
+
+                ToolCallTrace skippedTrace = ToolCallTrace.builder()
+                        .toolName(te.request().name())
+                        .arguments(
+                                te.request().arguments() != null ? te.request().arguments() : "{}")
+                        .result(stopText)
+                        .startedAt(te.toolStart())
+                        .completedAt(te.toolEnd())
+                        .duration(Duration.ZERO)
+                        .outcome(ToolCallOutcome.SKIPPED_MAX_ITERATIONS)
+                        .build();
+                accumulator.addToolCallToCurrentIteration(skippedTrace);
+
                 updatedStopCount++;
                 if (updatedStopCount >= MAX_STOP_MESSAGES) {
+                    accumulator.finalizeIteration(LlmResponseType.TOOL_CALLS, null);
                     throw new MaxIterationsExceededException(
                             agentRole, task.getDescription(), maxIterations, toolCallCounter.get());
                 }
             } else {
                 String toolResultText = toText(te.result());
                 logToolCall(agentRole, te.request(), toolResultText, te.duration());
+
+                ToolCallTrace toolTrace = ToolCallTrace.builder()
+                        .toolName(te.request().name())
+                        .arguments(
+                                te.request().arguments() != null ? te.request().arguments() : "{}")
+                        .result(toolResultText)
+                        .structuredOutput(te.result() != null ? te.result().getStructuredOutput() : null)
+                        .startedAt(te.toolStart())
+                        .completedAt(te.toolEnd())
+                        .duration(te.duration())
+                        .outcome(classifyOutcome(te.result()))
+                        .build();
+                accumulator.addToolCallToCurrentIteration(toolTrace);
+
                 executionContext.fireToolCall(new ToolCallEvent(
                         te.request().name(),
                         te.request().arguments(),
                         toolResultText,
-                        te.result().getStructuredOutput(),
+                        te.result() != null ? te.result().getStructuredOutput() : null,
                         agentRole,
                         te.duration()));
                 messages.add(new ToolExecutionResultMessage(
@@ -492,6 +605,13 @@ public class AgentExecutor {
     // ========================
     // Private utilities
     // ========================
+
+    private static ToolCallOutcome classifyOutcome(ToolResult result) {
+        if (result == null) {
+            return ToolCallOutcome.ERROR;
+        }
+        return result.isSuccess() ? ToolCallOutcome.SUCCESS : ToolCallOutcome.FAILURE;
+    }
 
     private static String toText(ToolResult result) {
         if (result == null) return "";
