@@ -97,8 +97,7 @@ public class MemoryScope {
      * Builder for {@link MemoryScope} with optional eviction configuration.
      *
      * <p>Either {@link #keepLastEntries(int)} or {@link #keepEntriesWithin(java.time.Duration)}
-     * may be set, but not both. The first one set takes precedence; attempting to set both
-     * will use only the last one configured.
+     * may be set, but not both. If both are called, the last one configured takes precedence.
      */
     public static class MemoryScopeBuilder {
 

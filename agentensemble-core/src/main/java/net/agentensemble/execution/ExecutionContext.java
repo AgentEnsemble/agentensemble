@@ -97,19 +97,6 @@ public final class ExecutionContext {
     // ========================
 
     /**
-     * Create an ExecutionContext with all fields specified, including capture mode.
-     *
-     * @param memoryContext     runtime memory state for this run; must not be null
-     * @param verbose           when true, elevates execution logging to INFO level
-     * @param listeners         event listeners to notify; must not be null
-     * @param toolExecutor      executor for parallel tool calls; must not be null
-     * @param toolMetrics       metrics backend for tool execution; must not be null
-     * @param costConfiguration optional per-token cost rates; may be {@code null}
-     * @param captureMode       depth of data collection; defaults to {@link CaptureMode#OFF}
-     *                          when {@code null}
-     * @return a new ExecutionContext
-     */
-    /**
      * Create an ExecutionContext with all fields specified, including capture mode and
      * memory store. This is the primary factory used by {@code Ensemble}.
      *

@@ -44,7 +44,7 @@ public class MemoryEntry {
 
     /**
      * Arbitrary metadata associated with this entry.
-     * Never null; may be empty.
+     * May be null or empty.
      */
     Map<String, String> metadata;
 

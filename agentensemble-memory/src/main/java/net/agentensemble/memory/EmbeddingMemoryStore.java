@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -114,13 +115,19 @@ class EmbeddingMemoryStore implements MemoryStore {
             String storedAtStr = meta.getString(META_STORED_AT);
             Instant storedAt = storedAtStr != null ? Instant.parse(storedAtStr) : Instant.EPOCH;
 
-            // Reconstruct metadata map from segment metadata (excluding internal keys)
-            java.util.HashMap<String, String> metadataMap = new java.util.HashMap<>();
-            // LangChain4j Metadata.toMap() is available; iterate known keys from standard set
-            String agentRole = meta.getString(MemoryEntry.META_AGENT_ROLE);
-            if (agentRole != null) metadataMap.put(MemoryEntry.META_AGENT_ROLE, agentRole);
-            String taskDesc = meta.getString(MemoryEntry.META_TASK_DESCRIPTION);
-            if (taskDesc != null) metadataMap.put(MemoryEntry.META_TASK_DESCRIPTION, taskDesc);
+            // Reconstruct all user metadata from segment metadata, excluding internal keys
+            HashMap<String, String> metadataMap = new HashMap<>();
+            Map<String, Object> rawMetaMap = meta.toMap();
+            for (Map.Entry<String, Object> mEntry : rawMetaMap.entrySet()) {
+                String key = mEntry.getKey();
+                if (META_SCOPE.equals(key) || META_STORED_AT.equals(key)) {
+                    continue;
+                }
+                Object value = mEntry.getValue();
+                if (value != null) {
+                    metadataMap.put(key, value.toString());
+                }
+            }
 
             entries.add(MemoryEntry.builder()
                     .content(segment.text())

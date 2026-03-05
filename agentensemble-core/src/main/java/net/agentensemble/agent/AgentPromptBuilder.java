@@ -36,6 +36,9 @@ public final class AgentPromptBuilder {
     /** Log a WARN when a single context output exceeds this character count. */
     private static final int CONTEXT_LENGTH_WARN_THRESHOLD = 10_000;
 
+    /** Maximum number of entries retrieved from each task-declared memory scope per prompt. */
+    private static final int DEFAULT_SCOPE_MAX_RESULTS = 5;
+
     private AgentPromptBuilder() {
         // Utility class -- not instantiable
     }
@@ -105,49 +108,6 @@ public final class AgentPromptBuilder {
     }
 
     /**
-     * Build the user prompt for a task, including context and memory sections.
-     *
-     * <p>When short-term memory is active, all prior run outputs replace the
-     * explicit context section (since STM is a superset of explicit context).
-     * Long-term and entity memory sections are appended when active.
-     *
-     * <p>Format (with all memory types enabled):
-     * <pre>
-     * ## Short-Term Memory (Current Run)
-     * The following outputs from earlier tasks in this run may be relevant:
-     *
-     * ---
-     * ### {agentRole}: {taskDescription}
-     * {content}
-     * ---
-     *
-     * ## Long-Term Memory
-     * The following information recalled from past experience may be relevant:
-     *
-     * ---
-     * - {content}
-     * ---
-     *
-     * ## Entity Knowledge
-     * The following known facts may be relevant:
-     *
-     * - **{entityName}**: {fact}
-     *
-     * ## Task
-     * {description}
-     *
-     * ## Expected Output
-     * {expectedOutput}
-     * </pre>
-     *
-     * @param task           the task to build the prompt for
-     * @param contextOutputs outputs from prior tasks to include as context
-     *                       (used only when short-term memory is not active)
-     * @param memoryContext  runtime memory state; use {@link MemoryContext#disabled()}
-     *                       when memory is not configured
-     * @return the user prompt string
-     */
-    /**
      * Build the user prompt for a task, including context and legacy memory sections.
      *
      * <p>Delegates to {@link #buildUserPrompt(Task, List, MemoryContext, MemoryStore)} with a
@@ -162,6 +122,23 @@ public final class AgentPromptBuilder {
         return buildUserPrompt(task, contextOutputs, memoryContext, null);
     }
 
+    /**
+     * Build the user prompt for a task, injecting task-scoped memory entries and legacy
+     * memory sections as applicable.
+     *
+     * <p>For each scope declared on the task (via {@code Task.builder().memory(...)}), up to
+     * {@value #DEFAULT_SCOPE_MAX_RESULTS} entries are retrieved from the {@code memoryStore}
+     * and injected as a {@code ## Memory: {scope}} section before the task description.
+     * Legacy short-term, long-term, and entity memory sections follow when active.
+     *
+     * @param task           the task to build the prompt for
+     * @param contextOutputs outputs from prior tasks to include as context
+     *                       (used only when short-term memory is not active)
+     * @param memoryContext  runtime legacy memory state; use {@link MemoryContext#disabled()}
+     *                       when memory is not configured
+     * @param memoryStore    optional v2.0.0 scoped memory store; may be {@code null}
+     * @return the user prompt string
+     */
     public static String buildUserPrompt(
             Task task, List<TaskOutput> contextOutputs, MemoryContext memoryContext, MemoryStore memoryStore) {
         StringBuilder sb = new StringBuilder();
@@ -171,7 +148,8 @@ public final class AgentPromptBuilder {
                 && task.getMemoryScopes() != null
                 && !task.getMemoryScopes().isEmpty()) {
             for (MemoryScope scope : task.getMemoryScopes()) {
-                List<MemoryEntry> scopeEntries = memoryStore.retrieve(scope.getName(), task.getDescription(), 5);
+                List<MemoryEntry> scopeEntries =
+                        memoryStore.retrieve(scope.getName(), task.getDescription(), DEFAULT_SCOPE_MAX_RESULTS);
                 if (!scopeEntries.isEmpty()) {
                     sb.append("## Memory: ").append(scope.getName()).append("\n");
                     sb.append("The following information from scope \"")

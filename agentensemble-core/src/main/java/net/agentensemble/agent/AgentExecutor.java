@@ -13,6 +13,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -306,9 +307,8 @@ public class AgentExecutor {
      * @param output    the completed task output
      * @param memStore  the memory store to write into
      */
-    private static void storeInDeclaredScopes(
-            Task task, net.agentensemble.task.TaskOutput output, MemoryStore memStore) {
-        java.util.HashMap<String, String> metadata = new java.util.HashMap<>();
+    private static void storeInDeclaredScopes(Task task, TaskOutput output, MemoryStore memStore) {
+        HashMap<String, String> metadata = new HashMap<>();
         if (output.getAgentRole() != null) {
             metadata.put(MemoryEntry.META_AGENT_ROLE, output.getAgentRole());
         }
@@ -319,7 +319,7 @@ public class AgentExecutor {
                 .content(output.getRaw())
                 .structuredContent(output.getParsedOutput())
                 .storedAt(output.getCompletedAt())
-                .metadata(java.util.Map.copyOf(metadata))
+                .metadata(Map.copyOf(metadata))
                 .build();
 
         for (MemoryScope scope : task.getMemoryScopes()) {
