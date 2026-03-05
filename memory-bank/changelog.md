@@ -1,5 +1,79 @@
 # Changelog
 
+## [Unreleased] - Issues #106 + #107: agentensemble-memory module + scoped memory -- 2026-03-05
+
+### Added (Issue #106 -- Extract agentensemble-memory module)
+
+**New Gradle module `agentensemble-memory`:**
+- `settings.gradle.kts`: `include("agentensemble-memory")`
+- `agentensemble-memory/build.gradle.kts`: `java-library`, JaCoCo gates, Spotless, ErrorProne
+
+**Moved from `agentensemble-core`:**
+- 9 main classes: `EmbeddingStoreLongTermMemory`, `EnsembleMemory`, `EntityMemory`,
+  `InMemoryEntityMemory`, `LongTermMemory`, `MemoryContext`, `MemoryEntry`,
+  `MemoryOperationListener`, `ShortTermMemory`
+- 6 test classes (adapted for new APIs)
+
+**New class:**
+- `MemoryRecord` (carrier record): decouples `MemoryContext.record()` from core's `TaskOutput`;
+  fields `content`, `agentRole`, `taskDescription`, `completedAt`
+
+**Core changes:**
+- `agentensemble-core/build.gradle.kts`: `compileOnly(project(":agentensemble-memory"))` +
+  `testImplementation(project(":agentensemble-memory"))`
+- `AgentExecutor`: wraps `TaskOutput` fields into `MemoryRecord` before calling `record()`
+
+**`EnsembleMemory` change:** builder throws `IllegalArgumentException` (was `ValidationException`)
+
+**Documentation updated:**
+- `docs/reference/memory-configuration.md`: module coordinates section added
+- `docs/getting-started/installation.md`: `agentensemble-memory` as optional dependency
+
+---
+
+### Added (Issue #107 -- Task-scoped cross-execution memory with named scopes)
+
+**New types in `agentensemble-memory`:**
+- `MemoryStore` interface: `store(scope, entry)`, `retrieve(scope, query, maxResults)`,
+  `evict(scope, policy)`; factories `inMemory()` and `embeddings(model, store)`
+- `InMemoryStore` (package-private): `ConcurrentHashMap`-backed, insertion-order retrieval,
+  eviction supported
+- `EmbeddingMemoryStore` (package-private): LangChain4j semantic similarity; eviction is no-op
+- `MemoryScope`: `of(name)` + `builder()` with `keepLastEntries` and `keepEntriesWithin`
+- `EvictionPolicy`: `keepLastEntries(int n)` and `keepEntriesWithin(Duration d)` factories
+- `MemoryTool.of(scope, store)`: `@Tool storeMemory(key, value)` and `@Tool retrieveMemory(query)`
+- `MemoryEntry` updated (breaking): `{content, structuredContent, storedAt, metadata}` -- old
+  `agentRole`/`taskDescription`/`timestamp` fields replaced by `metadata` Map<String,String>
+
+**`agentensemble-core` changes:**
+- `Task`: `memoryScopes` field; builder `.memory(String)`, `.memory(String...)`, `.memory(MemoryScope)`
+- `Ensemble`: `memoryStore(MemoryStore)` replaces `memory(EnsembleMemory)` (breaking)
+- `ExecutionContext`: `memoryStore` field + `memoryStore()` accessor; 8-arg `of()` factory
+- `AgentPromptBuilder.buildUserPrompt()`: new 4-arg overload accepting `MemoryStore`;
+  injects `## Memory: {scope}` sections per declared scope
+- `AgentExecutor`: calls `storeInDeclaredScopes()` after task completes
+
+**Tests added:**
+- `EvictionPolicyTest`, `MemoryScopeTest`, `MemoryStoreTest`, `MemoryToolTest`,
+  `EmbeddingMemoryStoreTest`
+- `MemoryEnsembleIntegrationTest` rewritten to cover cross-run persistence, shared scope,
+  scope isolation, empty scope on first run
+- `DelegationEnsembleConfigIntegrationTest` updated to use new `memoryStore()` API
+
+**Documentation updated:**
+- `docs/guides/memory.md`: complete rewrite for v2.0.0 MemoryStore API
+- `docs/examples/memory-across-runs.md`: rewritten for new API
+- `docs/reference/memory-configuration.md`: MemoryStore, MemoryScope, EvictionPolicy, MemoryTool
+- `docs/reference/task-configuration.md`: `memoryScopes` field
+- `docs/reference/ensemble-configuration.md`: `memoryStore` field replaces `memory`
+
+**Breaking changes (v2.0.0):**
+- `Ensemble.builder().memory(EnsembleMemory)` removed; replaced by `.memoryStore(MemoryStore)`
+- `MemoryEntry` fields restructured: `timestamp` -> `storedAt`, `agentRole`/`taskDescription`
+  -> `metadata` map with standard keys `"agentRole"` / `"taskDescription"`
+
+---
+
 ## [Unreleased] - Issue #100: MapReduceEnsemble Short-Circuit Optimization -- 2026-03-05
 
 ### Added

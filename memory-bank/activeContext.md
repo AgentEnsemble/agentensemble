@@ -2,8 +2,64 @@
 
 ## Current Work Focus
 
-Issue #100 (MapReduceEnsemble short-circuit optimization) is complete.
-Issue #99 (Adaptive MapReduceEnsemble) was previously completed.
+Issues #106 (Extract agentensemble-memory module) and #107 (Task-scoped
+cross-execution memory with named scopes) are complete on branch
+`feat/106-107-memory-module-and-scoped-memory`.
+
+## Recent Changes
+
+### Issue #106: Extract agentensemble-memory module
+
+Moved all memory classes from `agentensemble-core` into a new dedicated
+`agentensemble-memory` Gradle module with a clean SPI boundary.
+
+**Key decisions:**
+- Introduced `MemoryRecord` (carrier record) so `MemoryContext.record()` accepts task
+  output metadata without importing `TaskOutput` from core -- breaks circular dependency
+- `EnsembleMemory` builder throws `IllegalArgumentException` (no dependency on core
+  `ValidationException`)
+- `agentensemble-core` declares `compileOnly(agentensemble-memory)` -- memory is optional
+- All 9 main classes + 6 original test classes moved; 1 new test class
+  (`MemoryOperationListenerTest`) and expanded `MemoryContextTest` for listener callbacks
+
+### Issue #107: Task-scoped cross-execution memory with named scopes
+
+Added `MemoryStore` SPI, `MemoryScope`, `EvictionPolicy`, and `MemoryTool` to
+`agentensemble-memory`. Replaced `Ensemble.builder().memory(EnsembleMemory)` with
+`Ensemble.builder().memoryStore(MemoryStore)` as the primary v2.0.0 memory API.
+
+**New types in `agentensemble-memory`:**
+- `MemoryStore` interface + `InMemoryStore` + `EmbeddingMemoryStore`
+- `MemoryScope` with `MemoryScopeBuilder`
+- `EvictionPolicy` with `keepLastEntries()` and `keepEntriesWithin()` factories
+- `MemoryTool` with `@Tool storeMemory` and `@Tool retrieveMemory`
+- `MemoryEntry` updated: `{content, structuredContent, storedAt, metadata}` (breaking)
+
+**Core changes:**
+- `Task.builder().memory(String)`, `memory(String...)`, `memory(MemoryScope)` -- declare scopes
+- `Ensemble.builder().memoryStore(MemoryStore)` -- replaces `memory(EnsembleMemory)`
+- `ExecutionContext.memoryStore()` -- new accessor
+- `AgentPromptBuilder.buildUserPrompt()` -- injects `## Memory: {scope}` sections
+- `AgentExecutor` -- stores task output in declared scopes after completion
+
+## Next Steps
+
+- Issues #104 and #105 (Task-First Architecture, AgentSynthesizer SPI)
+- Issues #108+ (human-in-the-loop review gates, partial results redesign)
+
+## Important Patterns and Preferences
+
+- MemoryStore + task scopes is the v2.0.0 primary memory API (replaces EnsembleMemory)
+- Tasks declare scopes with `.memory("name")` -- framework auto-reads before and auto-writes after
+- InMemoryStore: insertion order, most-recent retrieval, eviction supported
+- EmbeddingMemoryStore: semantic similarity via LangChain4j, eviction is no-op
+- MemoryEntry.metadata uses string map -- standard keys "agentRole" and "taskDescription"
+- Scope isolation is absolute: tasks only read from scopes they explicitly declare
+
+## Previous Issues (complete)
+
+### Issue #100: MapReduceEnsemble Short-Circuit Optimization (complete)
+### Issue #99: Adaptive MapReduceEnsemble (complete)
 
 ## Recent Changes
 
