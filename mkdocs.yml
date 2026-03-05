@@ -79,6 +79,7 @@ nav:
     - Remote Tools: guides/remote-tools.md
     - Metrics: guides/metrics.md
     - CaptureMode: guides/capture-mode.md
+    - Visualization: guides/visualization.md
     - Memory: guides/memory.md
     - Delegation: guides/delegation.md
     - Error Handling: guides/error-handling.md
@@ -102,6 +103,7 @@ nav:
     - Callbacks: examples/callbacks.md
     - Metrics and Traces: examples/metrics.md
     - CaptureMode: examples/capture-mode.md
+    - Visualization: examples/visualization.md
   - Design:
     - Overview: design/01-overview.md
     - Architecture: design/02-architecture.md

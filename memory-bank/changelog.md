@@ -1,5 +1,73 @@
 # Changelog
 
+## [Unreleased] - Issue #44 -- Execution Graph Visualization -- 2026-03-05
+
+### Added (Issue #44 -- Interactive execution graph visualization)
+
+**New Gradle module: `agentensemble-devtools`**
+
+Separate optional Java module (`testImplementation` or `runtimeOnly` scope) providing
+developer tooling for visualization and trace export.
+
+New types (`net.agentensemble.devtools`):
+- `DagAgentNode` (`@Value @Builder`): agent snapshot (role, goal, background, toolNames, allowDelegation)
+- `DagTaskNode` (`@Value @Builder`): task node (id, description, expectedOutput, agentRole,
+  dependsOn, parallelGroup, onCriticalPath)
+- `DagModel` (`@Value @Builder`): pre-execution DAG snapshot; `schemaVersion="1.0"`, `type="dag"`,
+  workflow, generatedAt, agents, tasks, parallelGroups, criticalPath; `toJson()` / `toJson(Path)`
+- `DagExporter`: static `build(Ensemble)` -- constructs `TaskDependencyGraph`, computes topological
+  levels (memoized recursion), computes parallel groups, computes critical path (endpoint backtracking)
+- `EnsembleDevTools`: static facade -- `buildDag(Ensemble)`, `exportDag(Ensemble, Path)`,
+  `exportTrace(EnsembleOutput, Path)`, `export(Ensemble, EnsembleOutput, Path)` returning `ExportResult`
+
+Tests:
+- `DagExporterTest` (17): null validation, single task, linear chain, fan-out, diamond,
+  independent roots, workflow name, agent nodes, JSON content round-trip
+- `EnsembleDevToolsTest` (12): all facade methods, null handling, directory creation, file content
+
+**New npm package: `@agentensemble/viz`**
+
+Located at `agentensemble-viz/` in the project root. Standalone TypeScript/React app.
+Distributed via npm (`npx @agentensemble/viz ./traces/`).
+
+Key files:
+- `cli.js`: Node.js HTTP server; serves built app + `/api/files` (list) + `/api/file` (serve)
+- `src/types/trace.ts`: TypeScript types for ExecutionTrace JSON (schema 1.1)
+- `src/types/dag.ts`: TypeScript types for DagModel JSON (schema 1.0)
+- `src/utils/parser.ts`: file detection, parsing, ISO-8601 duration parsing, formatting utilities
+- `src/utils/colors.ts`: agent color palette (10 colors), tool outcome colors, opacity utilities
+- `src/utils/graphLayout.ts`: dagre-based DAG layout returning ReactFlow nodes/edges
+- `src/App.tsx`: state management (useReducer), view routing, dark/light mode, CLI auto-load
+- `src/pages/LoadTrace.tsx`: landing page; CLI server file list + drag-and-drop
+- `src/pages/FlowView.tsx`: ReactFlow DAG with dagre layout, agent legend, minimap, detail panel
+- `src/pages/TimelineView.tsx`: SVG Gantt timeline; agent swimlanes; LLM sub-bars; tool markers;
+  click to open task/LLM/tool detail panels with full message history (at captureMode >= STANDARD)
+- `src/components/graph/TaskNode.tsx`: custom ReactFlow node (agent color, critical path, metrics)
+- `src/components/shared/DetailPanel.tsx`: flow view task detail (description, metrics, trace)
+- `src/components/shared/MetricsBadge.tsx`: token, latency, cost, call-count badges
+
+Tests (41/41 pass):
+- `src/__tests__/parser.test.ts` (28): detectFileType, parseJsonFile, parseDurationMs, formatDuration, formatTokenCount
+- `src/__tests__/colors.test.ts` (13): getAgentColor, seedAgentColors, getToolOutcomeColor, withOpacity
+
+Build: TypeScript (tsc + vite build) produces clean production bundle with no errors.
+
+**Documentation:**
+- `docs/guides/visualization.md`: new guide covering installation, quick start, API reference,
+  capture modes, Flow View, Timeline View, file formats
+- `docs/examples/visualization.md`: parallel workflow example with all three export patterns
+- `mkdocs.yml`: visualization pages added to Guides and Examples nav sections
+
+**Related GitHub issue:**
+- #94 created: "Distribute agentensemble-viz via Homebrew tap" (follow-up)
+
+**File schemas produced:**
+- `*.dag.json` (`type:"dag"`, schema 1.0): pre-execution graph from `DagExporter`
+- `*.trace.json` (schema 1.1): post-execution trace from `EnsembleDevTools.exportTrace()` /
+  `JsonTraceExporter`; enriched at captureMode STANDARD/FULL
+
+---
+
 ## [Unreleased] - feature/89-capture-mode
 ### Added
 - `CaptureMode` enum (OFF/STANDARD/FULL) with `isAtLeast()` and `CaptureMode.resolve()`
