@@ -95,8 +95,7 @@ class DelegationEnsembleIntegrationTest {
 
         when(researcherModel.chat(any(ChatRequest.class))).thenReturn(textResponse("research result"));
 
-        EnsembleOutput output =
-                Ensemble.builder().agent(nonDelegatingAgent).task(task).build().run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("research result");
     }
@@ -119,12 +118,7 @@ class DelegationEnsembleIntegrationTest {
 
         when(writerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Excellent blog post about AI"));
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(researchTask)
-                .build()
-                .run();
+        EnsembleOutput output = Ensemble.builder().task(researchTask).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Blog post complete");
     }
@@ -159,9 +153,6 @@ class DelegationEnsembleIntegrationTest {
         when(analystModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Analyst output"));
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(delegatingWriter)
-                .agent(analyst)
                 .task(researchTask)
                 .maxDelegationDepth(1)
                 .build()
@@ -186,12 +177,7 @@ class DelegationEnsembleIntegrationTest {
                 .thenReturn(delegationCallResponse("NonExistentAgent", "Some task"))
                 .thenReturn(textResponse("Researcher handled it directly"));
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(task)
-                .build()
-                .run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Researcher handled it directly");
     }
@@ -212,12 +198,7 @@ class DelegationEnsembleIntegrationTest {
                 .thenReturn(delegationCallResponse("Researcher", "Do this myself"))
                 .thenReturn(textResponse("Researcher completed without delegation"));
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
-                .task(task)
-                .build()
-                .run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("Researcher completed without delegation");
     }

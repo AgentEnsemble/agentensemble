@@ -53,12 +53,8 @@ class MemoryEnsembleIntegrationTest {
                 .memory("research")
                 .build();
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memoryStore(store)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().task(task).memoryStore(store).build().run();
 
         assertThat(output.getRaw()).isEqualTo("AI is growing fast.");
 
@@ -106,8 +102,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent)
-                .agent(writerAgent)
                 .task(researchTask)
                 .task(writeTask)
                 .memoryStore(store)
@@ -143,7 +137,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .build() // No .memoryStore() call
                 .run();
@@ -189,8 +182,6 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         Ensemble.builder()
-                .agent(researcherAgent)
-                .agent(writerAgent)
                 .task(researchTask)
                 .task(writeTask)
                 .memoryStore(store)
@@ -226,12 +217,8 @@ class MemoryEnsembleIntegrationTest {
                 .build();
 
         // Should not throw even though scope has no entries yet
-        EnsembleOutput output = Ensemble.builder()
-                .agent(agent)
-                .task(task)
-                .memoryStore(store)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().task(task).memoryStore(store).build().run();
 
         assertThat(output.getRaw()).isEqualTo("First run output.");
 
@@ -265,12 +252,7 @@ class MemoryEnsembleIntegrationTest {
                 .memory("research-history")
                 .build();
 
-        Ensemble.builder()
-                .agent(researcherAgent)
-                .task(task1)
-                .memoryStore(store)
-                .build()
-                .run();
+        Ensemble.builder().task(task1).memoryStore(store).build().run();
 
         // Second run -- should see run 1 output in prompt
         when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Run 2: Building on prior research."));
@@ -282,12 +264,7 @@ class MemoryEnsembleIntegrationTest {
                 .memory("research-history")
                 .build();
 
-        Ensemble.builder()
-                .agent(researcherAgent)
-                .task(task2)
-                .memoryStore(store)
-                .build()
-                .run();
+        Ensemble.builder().task(task2).memoryStore(store).build().run();
 
         // Capture second run's prompt
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
@@ -327,14 +304,8 @@ class MemoryEnsembleIntegrationTest {
                 .memory("shared-scope")
                 .build();
 
-        EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(analyst)
-                .task(t1)
-                .task(t2)
-                .memoryStore(store)
-                .build()
-                .run();
+        EnsembleOutput output =
+                Ensemble.builder().task(t1).task(t2).memoryStore(store).build().run();
 
         assertThat(output.getTaskOutputs()).hasSize(2);
 

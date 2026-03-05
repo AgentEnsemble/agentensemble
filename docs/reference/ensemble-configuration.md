@@ -2,10 +2,21 @@
 
 All fields available on `Ensemble.builder()`.
 
+## Static Factory
+
+| Method | Description |
+|---|---|
+| `Ensemble.run(ChatModel model, Task... tasks)` | Zero-ceremony: create and run a sequential ensemble with the given LLM. Agents are synthesized from task descriptions. |
+
+---
+
+## Builder Fields
+
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `agents` | `List<Agent>` | Yes | -- | All agents participating in this ensemble. Add with `.agent(a)` (singular) or `.agents(list)`. |
 | `tasks` | `List<Task>` | Yes | -- | All tasks to execute. Add with `.task(t)` (singular) or `.tasks(list)`. |
+| `chatLanguageModel` | `ChatModel` | No | `null` | Default LLM for all tasks without an explicit agent or task-level LLM. Required when any task lacks an explicit agent and does not set its own `chatLanguageModel`. Also used as the Manager LLM in hierarchical workflow if `managerLlm` is not set. |
+| `agentSynthesizer` | `AgentSynthesizer` | No | `AgentSynthesizer.template()` | Strategy for synthesizing agents for agentless tasks. `AgentSynthesizer.template()` (default) derives role, goal, and backstory from the task description deterministically. `AgentSynthesizer.llmBased()` invokes the LLM once per agentless task for a higher-quality persona. |
 | `inputs` | `Map<String, String>` | No | `{}` | Template variable values applied to all task descriptions and expected outputs at run time. Add individual entries with `.input("key", "value")` or a batch with `.inputs(map)`. Run-time values passed to `run(Map)` are merged on top; run-time values win on conflicts. See [Template Variables guide](../guides/template-variables.md). |
 | `workflow` | `Workflow` | No | `SEQUENTIAL` | Execution strategy. `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL`. |
 | `managerLlm` | `ChatModel` | No | First agent's LLM | LLM for the auto-created Manager agent (hierarchical workflow only). |
@@ -27,9 +38,8 @@ All fields available on `Ensemble.builder()`.
 
 At `Ensemble.run()` time:
 
-- At least one agent must be registered
 - At least one task must be registered
-- Every task's `agent` must be in the ensemble's `agents` list
+- Every task must have an LLM source: explicit `agent`, task-level `chatLanguageModel`, or ensemble-level `chatLanguageModel`
 - No circular context dependencies
 - Context task ordering is valid (sequential workflow only)
 - `maxDelegationDepth` must be greater than zero
@@ -64,22 +74,43 @@ Each `TaskOutput` contains:
 
 ---
 
-## Full Example
+## Full Examples
+
+**Zero-ceremony:**
+
+```java
+EnsembleOutput output = Ensemble.run(model,
+    Task.of("Research AI agents"),
+    Task.of("Write a blog post based on the research"));
+```
+
+**Explicit agents with memory:**
 
 ```java
 EnsembleOutput output = Ensemble.builder()
-    .agent(researcher)
-    .agent(writer)
-    .agent(editor)
-    .task(researchTask)
-    .task(writeTask)
-    .task(editTask)
+    .task(researchTask)     // researchTask has .agent(researcher)
+    .task(writeTask)        // writeTask has .agent(writer)
+    .task(editTask)         // editTask has .agent(editor)
     .workflow(Workflow.SEQUENTIAL)
     .input("topic", "AI agents")
     .input("audience", "developers")
     .verbose(false)
     .memoryStore(MemoryStore.inMemory())
     .maxDelegationDepth(2)
+    .build()
+    .run();
+```
+
+**Synthesized agents with LLM-based synthesis:**
+
+```java
+EnsembleOutput output = Ensemble.builder()
+    .chatLanguageModel(model)
+    .agentSynthesizer(AgentSynthesizer.llmBased())
+    .task(Task.of("Research AI trends"))
+    .task(Task.of("Analyse the findings"))
+    .task(Task.of("Write an executive summary"))
+    .workflow(Workflow.SEQUENTIAL)
     .build()
     .run();
 ```

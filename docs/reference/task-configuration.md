@@ -1,14 +1,29 @@
 # Task Configuration Reference
 
-All fields available on `Task.builder()`.
+All fields available on `Task.builder()`. Fields marked "Synthesis" are used to configure
+the synthesized agent when no explicit `agent` is set.
+
+## Convenience Factories
+
+| Method | Description |
+|---|---|
+| `Task.of(String description)` | Creates a task with a default `expectedOutput`. Agent is synthesized at runtime. |
+| `Task.of(String description, String expectedOutput)` | Creates a task with an explicit expected output. Agent is synthesized at runtime. |
+
+---
+
+## Builder Fields
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `description` | `String` | Yes | -- | What the agent should do. Supports `{variable}` template placeholders. |
-| `expectedOutput` | `String` | Yes | -- | What the output should look like. Quality guidance for the agent. Supports `{variable}` placeholders. |
-| `agent` | `Agent` | Yes | -- | The agent assigned to execute this task. |
-| `context` | `List<Task>` | No | `[]` | Prior tasks whose outputs are injected into this task's agent prompt. Sequential workflow only. |
-| `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON and the result is parsed automatically. Supported: records, POJOs, `Map<K,V>`, enums, `List<T>`, scalar wrappers (`Boolean`, `Integer`, `Long`, `Double`). Unsupported: primitives, `void`, top-level arrays. |
+| `expectedOutput` | `String` | Yes | `"Produce a complete and accurate response to the task."` (when using `Task.of(String)`) | What the output should look like. Included in the agent's prompt. Supports `{variable}` placeholders. |
+| `agent` | `Agent` | No | `null` | Explicit agent assigned to this task. When null, an agent is synthesized from the description using the ensemble's `AgentSynthesizer`. |
+| `chatLanguageModel` | `ChatModel` | No | `null` | Per-task LLM override (Synthesis). When set and no explicit agent is provided, this model is used for the synthesized agent, taking precedence over the ensemble-level `chatLanguageModel`. |
+| `tools` | `List<Object>` | No | `[]` | Tools available to the synthesized agent (Synthesis). Each entry must be an `AgentTool` or an object with `@Tool`-annotated methods. When an explicit agent is set, configure tools on the `Agent` builder instead. |
+| `maxIterations` | `Integer` | No | `null` | Max tool-call iterations for the synthesized agent (Synthesis). `null` uses the default (25). Must be `> 0` when set. When an explicit agent is set, configure `maxIterations` on the `Agent` builder instead. |
+| `context` | `List<Task>` | No | `[]` | Prior tasks whose outputs are injected into this task's prompt. Sequential workflow enforces ordering; parallel and hierarchical do not. |
+| `outputType` | `Class<?>` | No | `null` | Java class to deserialize the agent's output into. When set, the agent is prompted for JSON matching the schema. Supported: records, POJOs, `Map<K,V>`, enums, `List<T>`, scalar wrappers. Unsupported: primitives, `void`, top-level arrays. |
 | `maxOutputRetries` | `int` | No | `3` | Number of retry attempts if structured output parsing fails. `0` disables retries. Only meaningful when `outputType` is set. |
 | `inputGuardrails` | `List<InputGuardrail>` | No | `[]` | Validation hooks that run before the LLM call. Each guardrail receives a `GuardrailInput` and returns `GuardrailResult.success()` or `GuardrailResult.failure(reason)`. The first failure throws `GuardrailViolationException` and prevents any LLM call. |
 | `outputGuardrails` | `List<OutputGuardrail>` | No | `[]` | Validation hooks that run after the agent produces a response. Each guardrail receives a `GuardrailOutput` (with raw text and optionally the parsed object). The first failure throws `GuardrailViolationException`. |
@@ -18,56 +33,72 @@ All fields available on `Task.builder()`.
 
 ## Validation
 
-The following validations are applied at `build()` time:
+Applied at `build()` time:
 
 - `description` must not be null or blank
 - `expectedOutput` must not be null or blank
-- `agent` must not be null
+- `agent` is optional (null is valid in v2)
+- `maxIterations` must be `> 0` when set (null means "use default")
+- `tools`: each element must be an `AgentTool` or have `@Tool`-annotated methods
 - `outputType` must not be a primitive, `void`, or a top-level array type (when set)
 - `maxOutputRetries` must be `>= 0`
-- `inputGuardrails` defaults to an empty immutable list (no-op)
-- `outputGuardrails` defaults to an empty immutable list (no-op)
 
 At `Ensemble.run()` time:
-- All context tasks must appear earlier in the ensemble's task list (sequential workflow)
+
+- All context tasks must appear earlier in the ensemble's task list (sequential workflow only)
 - No circular context dependencies
-- The assigned agent must be registered with the ensemble
+- Each task must have an LLM source: explicit `agent`, task-level `chatLanguageModel`, or ensemble-level `chatLanguageModel`
+
+---
+
+## LLM Resolution (when no explicit agent)
+
+The LLM for a synthesized agent is resolved in this order:
+
+1. `task.chatLanguageModel` (if set)
+2. `ensemble.chatLanguageModel` (if set)
+3. `ValidationException` if neither is available
 
 ---
 
 ## Template Variables
 
-Both `description` and `expectedOutput` support `{variable}` substitution. Variables are resolved by calling `ensemble.run(Map<String, String> inputs)`.
+Both `description` and `expectedOutput` support `{variable}` substitution, resolved at
+`ensemble.run(Map<String, String> inputs)` time.
 
-Use `{{variable}}` to include a literal `{variable}` in the text without substitution.
-
-See the [Template Variables guide](../guides/template-variables.md).
-
----
-
-## Context Injection
-
-Context task outputs are injected into the agent's user prompt as a "Context from prior tasks" section. The agent sees the task description and the full raw output of each context task.
-
-When short-term memory is enabled, the `context` field is not required -- all prior outputs within the run are automatically injected.
+Use `{{variable}}` to include a literal `{variable}` without substitution.
 
 ---
 
-## Example
+## Examples
+
+**Zero-ceremony:**
 
 ```java
-var researchTask = Task.builder()
-    .description("Research the competitive landscape for {company} in the {industry} sector")
-    .expectedOutput("A structured competitive analysis with three to five key competitors, " +
-                    "their strengths, weaknesses, and market position")
-    .agent(researcher)
-    .build();
+Task task = Task.of("Research the latest developments in AI agents");
+```
 
-var strategyTask = Task.builder()
-    .description("Develop a market entry strategy for {company} based on the competitive research")
-    .expectedOutput("A 500-word strategic recommendation with three concrete action items")
-    .agent(strategist)
-    .context(List.of(researchTask))
+**With per-task LLM and tools:**
+
+```java
+Task task = Task.builder()
+    .description("Research {topic} using web search")
+    .expectedOutput("A 400-word summary")
+    .chatLanguageModel(gpt4oMiniModel)
+    .tools(List.of(new WebSearchTool()))
+    .maxIterations(15)
+    .build();
+```
+
+**With explicit agent (power-user):**
+
+```java
+Task task = Task.builder()
+    .description("Research the competitive landscape for {company}")
+    .expectedOutput("A structured competitive analysis")
+    .agent(researcher)
+    .context(List.of(priorTask))
+    .outputType(CompetitiveReport.class)
     .build();
 ```
 

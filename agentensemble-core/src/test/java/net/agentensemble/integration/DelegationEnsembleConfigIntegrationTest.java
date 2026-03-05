@@ -87,8 +87,6 @@ class DelegationEnsembleConfigIntegrationTest {
         when(writerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Writer result"));
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(task)
                 .memoryStore(MemoryStore.inMemory())
                 .build()
@@ -109,7 +107,7 @@ class DelegationEnsembleConfigIntegrationTest {
                 .agent(researcher)
                 .build();
 
-        Ensemble ensemble = Ensemble.builder().agent(researcher).task(task).build();
+        Ensemble ensemble = Ensemble.builder().task(task).build();
 
         assertThat(ensemble.getMaxDelegationDepth()).isEqualTo(3);
     }
@@ -122,11 +120,7 @@ class DelegationEnsembleConfigIntegrationTest {
                 .agent(researcher)
                 .build();
 
-        Ensemble ensemble = Ensemble.builder()
-                .agent(researcher)
-                .task(task)
-                .maxDelegationDepth(5)
-                .build();
+        Ensemble ensemble = Ensemble.builder().task(task).maxDelegationDepth(5).build();
 
         assertThat(ensemble.getMaxDelegationDepth()).isEqualTo(5);
     }
@@ -151,8 +145,7 @@ class DelegationEnsembleConfigIntegrationTest {
 
         when(analystModel.chat(any(ChatRequest.class))).thenReturn(textResponse("analysis result"));
 
-        EnsembleOutput output =
-                Ensemble.builder().agent(plainAgent).task(task).build().run();
+        EnsembleOutput output = Ensemble.builder().task(task).build().run();
 
         assertThat(output.getRaw()).isEqualTo("analysis result");
     }
@@ -196,8 +189,6 @@ class DelegationEnsembleConfigIntegrationTest {
         when(writerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Writer contribution"));
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(delegatingWorker)
-                .agent(writer)
                 .task(task)
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)

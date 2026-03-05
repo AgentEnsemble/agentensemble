@@ -58,8 +58,7 @@ class DagExporterTest {
 
     @Test
     void build_ensembleWithNoTasks_throwsIllegalArgument() {
-        Ensemble ensemble =
-                Ensemble.builder().agent(agentA).workflow(Workflow.SEQUENTIAL).build();
+        Ensemble ensemble = Ensemble.builder().workflow(Workflow.SEQUENTIAL).build();
         assertThatIllegalArgumentException().isThrownBy(() -> DagExporter.build(ensemble));
     }
 
@@ -252,8 +251,10 @@ class DagExporterTest {
 
     @Test
     void build_agentNodesIncludeAllAgents() {
-        Task task = task("Task A", "Output A", agentA);
-        Ensemble ensemble = ensemble(List.of(agentA, agentB), List.of(task), Workflow.SEQUENTIAL);
+        // In v2, agents are derived from tasks -- both agents need to appear in tasks
+        Task taskA = task("Task A", "Output A", agentA);
+        Task taskB = task("Task B", "Output B", agentB);
+        Ensemble ensemble = ensemble(List.of(agentA, agentB), List.of(taskA, taskB), Workflow.SEQUENTIAL);
 
         DagModel dag = DagExporter.build(ensemble);
 
@@ -263,14 +264,15 @@ class DagExporterTest {
 
     @Test
     void build_agentNodePreservesGoalAndDelegation() {
-        Task task = task("Task A", "Output A", agentA);
         Agent delegatingAgent = Agent.builder()
                 .role("Delegator")
                 .goal("Coordinate work")
                 .llm(new NoOpChatModel())
                 .allowDelegation(true)
                 .build();
-        Ensemble ensemble = ensemble(List.of(delegatingAgent), List.of(task), Workflow.HIERARCHICAL);
+        // In v2, agents are derived from tasks -- use delegatingAgent in the task
+        Task task = task("Task A", "Output A", delegatingAgent);
+        Ensemble ensemble = ensemble(List.of(delegatingAgent), List.of(task), Workflow.SEQUENTIAL);
 
         DagModel dag = DagExporter.build(ensemble);
 
@@ -498,8 +500,8 @@ class DagExporterTest {
                 .completedAt(Instant.now())
                 .totalDuration(Duration.ZERO)
                 .metrics(ExecutionMetrics.EMPTY)
-                .taskTrace(traces.get(0))
                 .agent(summary)
+                .taskTrace(traces.get(0))
                 .mapReduceLevel(MapReduceLevelSummary.builder()
                         .level(0)
                         .taskCount(1)
@@ -625,9 +627,6 @@ class DagExporterTest {
 
     private static Ensemble ensemble(List<Agent> agents, List<Task> tasks, Workflow workflow) {
         Ensemble.EnsembleBuilder builder = Ensemble.builder().workflow(workflow);
-        for (Agent a : agents) {
-            builder.agent(a);
-        }
         for (Task t : tasks) {
             builder.task(t);
         }

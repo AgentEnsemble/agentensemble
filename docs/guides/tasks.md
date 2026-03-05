@@ -1,32 +1,61 @@
 # Tasks
 
-A task is a unit of work assigned to one agent. It describes what the agent should do and what the output should look like.
+A task is a unit of work, optionally assigned to an explicit agent. When no agent is
+declared, the framework synthesizes one automatically from the task description.
 
 ---
 
-## Creating a Task
+## Zero-ceremony (recommended)
+
+The simplest way to create a task requires only a description:
+
+```java
+// Agent synthesized automatically from the description
+Task task = Task.of("Research the latest developments in quantum computing");
+```
+
+Or with a custom expected output:
+
+```java
+Task task = Task.of(
+    "Research the latest developments in quantum computing",
+    "A 400-word summary covering key breakthroughs and near-term outlook");
+```
+
+Run immediately:
+
+```java
+EnsembleOutput result = Ensemble.run(model, task);
+```
+
+---
+
+## Full builder
+
+For fine-grained control, use the builder:
 
 ```java
 Task task = Task.builder()
-    .description("Research the latest developments in quantum computing")
-    .expectedOutput("A 400-word summary covering key breakthroughs, key players, and near-term outlook")
-    .agent(researcher)
+    .description("Analyse the sales data for {region} in {year}")
+    .expectedOutput("A structured analysis listing three growth drivers with evidence")
+    .chatLanguageModel(model)                    // optional: per-task LLM
+    .tools(List.of(new CalculatorTool()))        // optional: per-task tools
+    .maxIterations(20)                           // optional: per-task iteration cap
     .build();
 ```
-
-The `description`, `expectedOutput`, and `agent` fields are required.
 
 ---
 
 ## Description
 
-The `description` field tells the agent what to do. Write it clearly and specifically. The description supports `{variable}` placeholders that are resolved with values from `ensemble.run(Map)`.
+The `description` field tells the agent what to do. It supports `{variable}` placeholders
+resolved at `ensemble.run(Map)` time:
 
 ```java
 Task task = Task.builder()
     .description("Analyse the sales data for {region} in {year} and identify the top three growth drivers")
     .expectedOutput("A structured analysis listing three growth drivers with supporting evidence")
-    .agent(analyst)
+    .chatLanguageModel(model)
     .build();
 ```
 
@@ -36,217 +65,166 @@ Resolved at run time:
 ensemble.run(Map.of("region", "EMEA", "year", "2025"));
 ```
 
-See the [Template Variables guide](template-variables.md) for full syntax details.
-
 ---
 
 ## Expected Output
 
-The `expectedOutput` field is quality guidance for the agent. It describes what the result should look like, not a validation rule. Include:
-
-- Format (markdown, JSON, bullet points, prose)
-- Length (word count, number of items)
-- Structure (sections, headings)
-- Constraints (what to include, what to exclude)
-
-Good example:
+The `expectedOutput` field describes the desired output format and is included in the
+agent's prompt:
 
 ```java
-.expectedOutput(
-    "A 600-800 word blog post in markdown format with: " +
-    "an engaging headline, an introduction paragraph, three main sections each with a subheading, " +
-    "and a conclusion paragraph. Suitable for a technical audience.")
+Task task = Task.builder()
+    .description("Summarise the key findings from the attached research")
+    .expectedOutput("A 200-word executive summary with three bullet points for key findings and one recommendation")
+    .chatLanguageModel(model)
+    .build();
+```
+
+When using `Task.of(String)`, a sensible default is applied automatically.
+
+---
+
+## Explicit Agent (power-user)
+
+For full control over the agent persona, bind an explicit `Agent`:
+
+```java
+Agent researcher = Agent.builder()
+    .role("Senior Research Analyst")
+    .goal("Find accurate, well-structured information on any topic")
+    .background("You are a veteran researcher with 15 years of experience.")
+    .llm(model)
+    .build();
+
+Task task = Task.builder()
+    .description("Research quantum computing breakthroughs in 2025")
+    .expectedOutput("A 400-word summary")
+    .agent(researcher)   // explicit: disables synthesis for this task
+    .build();
+```
+
+When an explicit agent is set, `chatLanguageModel`, `tools`, and `maxIterations` on the
+task are stored but not applied to the agent (configure those fields on the `Agent` builder
+instead).
+
+---
+
+## Per-task LLM
+
+Use a different LLM for specific tasks without declaring an explicit agent:
+
+```java
+Task cheapTask = Task.builder()
+    .description("Summarize this paragraph")
+    .expectedOutput("A two-sentence summary")
+    .chatLanguageModel(gpt4oMiniModel)   // cheaper model for simple tasks
+    .build();
+
+Task thoroughTask = Task.builder()
+    .description("Analyse this complex financial model")
+    .expectedOutput("A detailed analysis with risk assessment")
+    .chatLanguageModel(gpt4oModel)       // powerful model for complex tasks
+    .build();
+```
+
+When set, the task-level LLM takes precedence over the ensemble-level `chatLanguageModel`.
+
+---
+
+## Per-task Tools
+
+Declare tools directly on the task. The synthesized agent receives these tools:
+
+```java
+Task task = Task.builder()
+    .description("Research AI trends using web search and calculate the growth rate")
+    .expectedOutput("A report with trend data and calculated figures")
+    .chatLanguageModel(model)
+    .tools(List.of(new WebSearchTool(), new CalculatorTool()))
+    .build();
 ```
 
 ---
 
-## Agent Assignment
+## Per-task maxIterations
 
-Each task is assigned to exactly one agent:
+Cap the number of tool-call iterations for a specific task:
+
+```java
+Task task = Task.builder()
+    .description("Find the top 5 AI papers published this week")
+    .expectedOutput("A list of 5 paper titles with one-sentence summaries")
+    .chatLanguageModel(model)
+    .tools(List.of(new WebSearchTool()))
+    .maxIterations(10)   // stop after 10 tool calls
+    .build();
+```
+
+Default: `25` (inherited from Agent when synthesized).
+
+---
+
+## Context from Previous Tasks
+
+A task can reference prior task outputs as context using the `context` field:
 
 ```java
 Task researchTask = Task.builder()
-    .description("Research AI trends")
-    .expectedOutput("A research summary")
-    .agent(researcher)      // researcher will execute this task
+    .description("Research the latest AI breakthroughs")
+    .expectedOutput("A list of key findings")
+    .chatLanguageModel(model)
+    .build();
+
+Task writeTask = Task.builder()
+    .description("Write a blog post based on the AI research")
+    .expectedOutput("A 600-word blog post")
+    .chatLanguageModel(model)
+    .context(List.of(researchTask))   // depends on researchTask
     .build();
 ```
 
-In hierarchical workflow, the Manager agent decides at run time which worker handles each task based on agent roles and goals. You still specify an agent per task for configuration purposes and validation, but the manager may re-assign at runtime.
-
----
-
-## Context Dependencies
-
-In sequential workflow, a task can receive outputs from prior tasks using the `context` field. Context outputs are injected into the agent's user prompt before the task runs.
-
-```java
-var researchTask = Task.builder()
-    .description("Research the history of {topic}")
-    .expectedOutput("A factual historical summary")
-    .agent(researcher)
-    .build();
-
-var writeTask = Task.builder()
-    .description("Write a compelling blog post about {topic}")
-    .expectedOutput("A 700-word blog post")
-    .agent(writer)
-    .context(List.of(researchTask))   // writer sees researcher's output
-    .build();
-```
-
-Rules:
-- Context tasks must appear earlier in the ensemble's task list
-- Circular dependencies are detected at validation time and throw `ValidationException`
-- A task may declare context on multiple prior tasks
-
-When short-term memory is enabled, explicit `context` declarations are not required -- all prior task outputs within the run are automatically injected.
-
----
-
-## Multiple Context Tasks
-
-```java
-var writeTask = Task.builder()
-    .description("Write a final report incorporating both the research and the financial analysis")
-    .expectedOutput("A 1000-word executive report")
-    .agent(writer)
-    .context(List.of(researchTask, analysisTask))  // receives both prior outputs
-    .build();
-```
+Context is injected into the writing agent's user prompt as prior task outputs.
 
 ---
 
 ## Structured Output
 
-Set `outputType` to have the agent produce a structured JSON object that is automatically parsed into a typed Java object.
-
-### Typed output with a record
+Request typed output by setting `outputType`:
 
 ```java
 record ResearchReport(String title, List<String> findings, String conclusion) {}
 
 Task task = Task.builder()
-    .description("Research the latest developments in {topic}")
-    .expectedOutput("A structured research report with title, findings, and conclusion")
-    .agent(researcher)
+    .description("Research AI trends")
+    .expectedOutput("A structured research report")
+    .chatLanguageModel(model)
     .outputType(ResearchReport.class)
     .build();
+
+EnsembleOutput result = Ensemble.run(model, task);
+ResearchReport report = result.getTaskOutputs().get(0).getParsedOutput(ResearchReport.class);
 ```
-
-When the ensemble runs, the agent is instructed to produce JSON matching the schema derived from `ResearchReport`. After execution, access the parsed result:
-
-```java
-EnsembleOutput output = ensemble.run(Map.of("topic", "AI agents"));
-TaskOutput taskOutput = output.getTaskOutputs().get(0);
-
-// Raw text is always available
-System.out.println(taskOutput.getRaw());
-
-// Typed access to the parsed object
-ResearchReport report = taskOutput.getParsedOutput(ResearchReport.class);
-System.out.println(report.title());
-report.findings().forEach(System.out::println);
-```
-
-### Markdown output (no schema required)
-
-When you only need the agent to produce well-formatted text (such as Markdown), use `expectedOutput` and `Agent.responseFormat` -- no `outputType` needed:
-
-```java
-var writer = Agent.builder()
-    .role("Content Writer")
-    .goal("Write clear, well-structured content")
-    .responseFormat("Always format responses in Markdown with headers, bullet points, and code blocks where appropriate.")
-    .llm(model)
-    .build();
-
-Task task = Task.builder()
-    .description("Write a technical guide for {topic}")
-    .expectedOutput(
-        "A 600-800 word Markdown guide with: " +
-        "a title, an introduction, three main sections with subheadings, and a summary.")
-    .agent(writer)
-    .build();
-```
-
-The `raw` field of `TaskOutput` contains the formatted Markdown response.
-
-### Retry behaviour
-
-If the agent's response cannot be parsed, the framework retries automatically. On each retry the agent is shown the parse error and the required schema:
-
-```java
-Task task = Task.builder()
-    .description("Classify the following text")
-    .expectedOutput("A classification result")
-    .agent(classifier)
-    .outputType(ClassificationResult.class)
-    .maxOutputRetries(5)   // default is 3; use 0 to disable retries
-    .build();
-```
-
-If all retries are exhausted, `OutputParsingException` is thrown with the raw output, the parse error history, and the attempt count.
-
-### Supported types for `outputType`
-
-- Java **records** (recommended -- field order and names are preserved)
-- **POJOs** with declared instance fields (Jackson deserialization)
-- **Object types**: `Map<K,V>`, enums, nested objects
-- **Scalar types**: `Boolean`, boxed numerics (`Integer`, `Long`, `Double`, etc.) -- the agent is expected to respond with a bare JSON value (e.g., `42`, `true`)
-- **Collections**: `List<T>` and other `Collection` subtypes (the agent produces a JSON array)
-- **String**: the agent must produce a JSON-quoted string (e.g., `"text"`); unquoted plain text will not parse
-
-Unsupported: **primitives** (`int.class`, etc.), **void**, and **top-level arrays** (wrap the array in a record or class).
 
 ---
 
 ## Guardrails
 
-Guardrails are validation hooks that run before and after task execution. Configure them with `inputGuardrails` and `outputGuardrails`:
+Input guardrails run before the LLM call; output guardrails run after:
 
 ```java
-InputGuardrail noPiiGuardrail = input -> {
-    if (input.taskDescription().contains("SSN")) {
-        return GuardrailResult.failure("Task description contains PII");
-    }
-    return GuardrailResult.success();
-};
-
-OutputGuardrail lengthGuardrail = output -> {
-    if (output.rawResponse().length() > 5000) {
-        return GuardrailResult.failure("Response exceeds 5000 characters");
-    }
-    return GuardrailResult.success();
-};
-
-var task = Task.builder()
-    .description("Summarize the article")
+Task task = Task.builder()
+    .description("Summarize the customer feedback")
     .expectedOutput("A concise summary")
-    .agent(writer)
-    .inputGuardrails(List.of(noPiiGuardrail))
-    .outputGuardrails(List.of(lengthGuardrail))
+    .chatLanguageModel(model)
+    .inputGuardrails(List.of(input -> {
+        if (input.taskDescription().length() < 10)
+            return GuardrailResult.failure("Task description too short");
+        return GuardrailResult.success();
+    }))
+    .outputGuardrails(List.of(output -> {
+        if (output.rawOutput().contains("offensive"))
+            return GuardrailResult.failure("Output contains inappropriate content");
+        return GuardrailResult.success();
+    }))
     .build();
 ```
-
-Input guardrails fire before the LLM is called; if any fails, `GuardrailViolationException` is thrown immediately. Output guardrails fire after the response (and after structured output parsing when `outputType` is set).
-
-See the [Guardrails guide](guardrails.md) for full documentation.
-
----
-
-## Tasks Are Immutable
-
-Tasks are immutable value objects. The builder produces a new instance on each call to `build()`. Use `toBuilder()` to create modified copies:
-
-```java
-Task verboseTask = task.toBuilder()
-    .description("Research {topic} with particular focus on regulatory changes")
-    .build();
-```
-
----
-
-## Reference
-
-See the [Task Configuration reference](../reference/task-configuration.md) for the complete field table.

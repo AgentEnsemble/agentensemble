@@ -1,5 +1,7 @@
 package net.agentensemble;
 
+import dev.langchain4j.model.chat.ChatModel;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Builder;
@@ -8,37 +10,46 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryScope;
+import net.agentensemble.tool.AgentTool;
 
 /**
- * A unit of work assigned to an agent.
+ * A unit of work, optionally assigned to an explicit agent.
  *
- * Tasks are immutable value objects. Use the builder to construct instances.
- * Most validation is performed at build time (blank fields, null agent, null context
- * elements, self-referencing context). Context ordering and membership are validated
- * at {@code ensemble.run()} time by the workflow executor.
+ * <p>Tasks are immutable value objects. Use the builder to construct instances, or the
+ * convenience factories {@link #of(String)} and {@link #of(String, String)} for
+ * zero-ceremony use.
  *
- * Task descriptions and expected outputs may contain {variable} placeholders
+ * <p>When no explicit {@link #agent} is set, the framework auto-synthesizes one from
+ * the task description using the ensemble's configured {@code AgentSynthesizer}
+ * (default: template-based derivation, no extra LLM call). Set {@link #agent} explicitly
+ * only as a power-user escape hatch when you need full control over the agent persona.
+ *
+ * <p>Task descriptions and expected outputs may contain {variable} placeholders
  * that are resolved at {@code ensemble.run(inputs)} time.
  *
- * To request structured (typed) output from the agent, set {@link #outputType}
+ * <p>To request structured (typed) output from the agent, set {@link #outputType}
  * to the target Java class. The agent will be prompted to produce JSON matching
  * the schema, and the result will be automatically parsed. Use
  * {@link net.agentensemble.task.TaskOutput#getParsedOutput(Class)} to access the
  * typed result after execution.
  *
- * Example with structured output:
+ * Example -- zero-ceremony (agent synthesized automatically):
  * <pre>
- * record ResearchReport(String title, List{@code <String>} findings, String conclusion) {}
+ * EnsembleOutput result = Ensemble.run(model,
+ *     Task.of("Research AI trends and write a comprehensive report"));
+ * </pre>
  *
+ * Example -- task-level LLM and tools (agent synthesized with these settings):
+ * <pre>
  * Task task = Task.builder()
  *     .description("Research {topic} developments in {year}")
- *     .expectedOutput("A structured research report")
- *     .agent(researcher)
- *     .outputType(ResearchReport.class)
+ *     .expectedOutput("A detailed report on {topic}")
+ *     .chatLanguageModel(researchModel)
+ *     .tools(webSearchTool, calculatorTool)
  *     .build();
  * </pre>
  *
- * Example without structured output:
+ * Example -- explicit agent (power-user escape hatch):
  * <pre>
  * Task task = Task.builder()
  *     .description("Research {topic} developments in {year}")
@@ -46,10 +57,24 @@ import net.agentensemble.memory.MemoryScope;
  *     .agent(researcher)
  *     .build();
  * </pre>
+ *
+ * Example -- structured output:
+ * <pre>
+ * record ResearchReport(String title, List{@code <String>} findings, String conclusion) {}
+ *
+ * Task task = Task.builder()
+ *     .description("Research {topic} developments in {year}")
+ *     .expectedOutput("A structured research report")
+ *     .outputType(ResearchReport.class)
+ *     .build();
+ * </pre>
  */
 @Builder(toBuilder = true)
 @Value
 public class Task {
+
+    /** Default expectedOutput used by {@link #of(String)}. */
+    public static final String DEFAULT_EXPECTED_OUTPUT = "Produce a complete and accurate response to the task.";
 
     /**
      * What the agent should do. Supports {variable} template placeholders
@@ -64,8 +89,55 @@ public class Task {
      */
     String expectedOutput;
 
-    /** The agent assigned to execute this task. Required. */
+    /**
+     * The agent assigned to execute this task.
+     *
+     * <p>When null (the default), the framework auto-synthesizes an agent from the task
+     * description before execution, using the ensemble's configured
+     * {@code AgentSynthesizer}. Set this field only when you need explicit control over
+     * the agent persona (role, background, goal, verbose flag, etc.).
+     *
+     * <p>Default: null (agent is synthesized automatically).
+     */
     Agent agent;
+
+    /**
+     * Per-task LLM override.
+     *
+     * <p>When set and no explicit {@link #agent} is provided, this model is used to build
+     * the synthesized agent's LLM, taking precedence over the ensemble-level
+     * {@code chatLanguageModel}. Ignored when {@link #agent} is set explicitly.
+     *
+     * <p>Default: null (use the ensemble-level LLM).
+     */
+    ChatModel chatLanguageModel;
+
+    /**
+     * Tools available to this task's agent.
+     *
+     * <p>When set and no explicit {@link #agent} is provided, these tools are given to the
+     * synthesized agent. Each entry must be either an {@link AgentTool} instance or an
+     * object with {@code @dev.langchain4j.agent.tool.Tool} annotated methods.
+     *
+     * <p>Ignored when {@link #agent} is set explicitly (configure tools on the agent
+     * builder instead).
+     *
+     * <p>Default: empty list.
+     */
+    List<Object> tools;
+
+    /**
+     * Maximum number of tool call iterations for this task's agent.
+     *
+     * <p>When set and no explicit {@link #agent} is provided, this value overrides the
+     * default (25) for the synthesized agent. Must be greater than zero when set.
+     *
+     * <p>Ignored when {@link #agent} is set explicitly (configure {@code maxIterations}
+     * on the agent builder instead).
+     *
+     * <p>Default: null (use the agent default of 25).
+     */
+    Integer maxIterations;
 
     /**
      * Tasks whose outputs should be included as context when executing this task.
@@ -150,12 +222,63 @@ public class Task {
      */
     List<MemoryScope> memoryScopes;
 
+    // ========================
+    // Static convenience factories
+    // ========================
+
+    /**
+     * Zero-ceremony factory: create a task with only a description.
+     *
+     * <p>The {@code expectedOutput} is set to a sensible default
+     * ({@value #DEFAULT_EXPECTED_OUTPUT}). The agent is synthesized automatically
+     * by the ensemble's configured {@code AgentSynthesizer}.
+     *
+     * <pre>
+     * EnsembleOutput result = Ensemble.run(model,
+     *     Task.of("Research the latest AI developments in 2025"));
+     * </pre>
+     *
+     * @param description what the agent should do; must not be blank
+     * @return a new Task
+     */
+    public static Task of(String description) {
+        return Task.builder()
+                .description(description)
+                .expectedOutput(DEFAULT_EXPECTED_OUTPUT)
+                .build();
+    }
+
+    /**
+     * Convenience factory: create a task with a description and expected output.
+     *
+     * <p>The agent is synthesized automatically by the ensemble's configured
+     * {@code AgentSynthesizer}.
+     *
+     * <pre>
+     * Task task = Task.of("Research AI trends", "A detailed market overview");
+     * </pre>
+     *
+     * @param description    what the agent should do; must not be blank
+     * @param expectedOutput what the output should look like; must not be blank
+     * @return a new Task
+     */
+    public static Task of(String description, String expectedOutput) {
+        return Task.builder()
+                .description(description)
+                .expectedOutput(expectedOutput)
+                .build();
+    }
+
     /**
      * Custom builder that sets defaults and validates the Task configuration.
      */
     public static class TaskBuilder {
 
         // Default values
+        private Agent agent = null;
+        private ChatModel chatLanguageModel = null;
+        private List<Object> tools = List.of();
+        private Integer maxIterations = null;
         private List<Task> context = List.of();
         private Class<?> outputType = null;
         private int maxOutputRetries = 3;
@@ -219,11 +342,14 @@ public class Task {
         public Task build() {
             validateDescription();
             validateExpectedOutput();
-            validateAgent();
+            List<Object> effectiveTools = tools != null ? tools : List.of();
+            validateTools(effectiveTools);
+            validateMaxIterations();
             List<Task> effectiveContext = context != null ? context : List.of();
             validateContext(effectiveContext);
             validateOutputType();
             validateMaxOutputRetries();
+            tools = List.copyOf(effectiveTools);
             context = List.copyOf(effectiveContext);
             List<InputGuardrail> effectiveInputGuardrails = inputGuardrails != null ? inputGuardrails : List.of();
             List<OutputGuardrail> effectiveOutputGuardrails = outputGuardrails != null ? outputGuardrails : List.of();
@@ -234,6 +360,9 @@ public class Task {
                     description,
                     expectedOutput,
                     agent,
+                    chatLanguageModel,
+                    tools,
+                    maxIterations,
                     context,
                     outputType,
                     maxOutputRetries,
@@ -254,9 +383,32 @@ public class Task {
             }
         }
 
-        private void validateAgent() {
-            if (agent == null) {
-                throw new ValidationException("Task agent must not be null");
+        private void validateTools(List<Object> effectiveTools) {
+            for (int i = 0; i < effectiveTools.size(); i++) {
+                Object tool = effectiveTools.get(i);
+                if (tool == null) {
+                    throw new ValidationException("Task tool at index " + i + " must not be null");
+                }
+                if (!(tool instanceof AgentTool) && !hasToolAnnotatedMethods(tool)) {
+                    throw new ValidationException(
+                            "Task tool at index " + i + " (" + tool.getClass().getSimpleName()
+                                    + ") is neither an AgentTool nor has @Tool-annotated methods");
+                }
+            }
+        }
+
+        private static boolean hasToolAnnotatedMethods(Object obj) {
+            for (Method method : obj.getClass().getMethods()) {
+                if (method.isAnnotationPresent(dev.langchain4j.agent.tool.Tool.class)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void validateMaxIterations() {
+            if (maxIterations != null && maxIterations <= 0) {
+                throw new ValidationException("Task maxIterations must be > 0 when set, got: " + maxIterations);
             }
         }
 
@@ -269,13 +421,17 @@ public class Task {
                 if (contextTask == null) {
                     throw new ValidationException("Task context element at index " + i + " must not be null");
                 }
-                // Self-reference: context contains a task with the same identity fields
-                // (description, expectedOutput, agent) as the task being built.
-                // Comparing agent by identity (==) because two distinct Agent objects
-                // with identical fields represent distinct agents.
-                if (contextTask.getDescription().equals(description)
-                        && contextTask.getExpectedOutput().equals(expectedOutput)
-                        && contextTask.getAgent() == agent) {
+                // Self-reference detection: only reliable when both tasks have an explicit agent.
+                // For agentless tasks, description+expectedOutput alone is an unreliable proxy
+                // (two distinct Task.of("X") calls would produce identical values but are not the
+                // same task). Skip the check when agent is null to avoid false positives.
+                if (agent == null) {
+                    continue;
+                }
+                boolean descriptionMatch = contextTask.getDescription().equals(description);
+                boolean expectedOutputMatch = contextTask.getExpectedOutput().equals(expectedOutput);
+                boolean agentMatch = contextTask.getAgent() == agent;
+                if (descriptionMatch && expectedOutputMatch && agentMatch) {
                     throw new ValidationException("Task cannot reference itself in context");
                 }
             }
