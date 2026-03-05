@@ -145,6 +145,19 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 
 ## What's Left to Build
 
+### v2.0.0 -- Task-First Architecture (design complete, implementation pending)
+
+The full architecture is documented in `docs/design/15-v2-architecture.md`.
+GitHub issues created to track implementation (see activeContext.md for issue numbers).
+
+Implementation workstreams (can run in parallel once SPI contracts are agreed):
+- **Group A** (core): Task absorbs Agent responsibilities; `AgentSynthesizer` SPI
+- **Group B** (memory): `agentensemble-memory` module; task-scoped named memory scopes; cross-run persistence
+- **Group C** (review): `agentensemble-review` module; `ReviewHandler` SPI; `ConsoleReviewHandler`; before/during/after gates
+- **Group D** (output/workflow): `EnsembleOutput` partial-results redesign; workflow inference from context declarations
+- **Group E** (MapReduce refactor): rework after #98-100 land and Group A completes
+- **Group F** (finalization): `agentensemble-bom`; `docs/migration/v1-to-v2.md`; updated examples
+
 ### v2.1.0 -- MapReduceEnsemble Adaptive (Issue #99)
 
 - Adaptive reduction with `targetTokenBudget` (level-by-level, token-driven)
