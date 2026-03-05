@@ -151,6 +151,89 @@ task. Omitting this causes `ValidationException` when the inner `Ensemble` valid
 
 ---
 
+## Adaptive mode example
+
+This example uses `targetTokenBudget` instead of `chunkSize`. After the map phase runs,
+the framework measures actual output token counts and bins them to fit within the budget.
+
+```java
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(order.getItems())
+
+    // Map phase: same as static mode
+    .mapAgent(item -> Agent.builder()
+        .role(item.dish() + " Chef")
+        .goal("Prepare " + item.dish() + " to perfection")
+        .background("You are an expert in " + item.cuisine() + " cuisine.")
+        .llm(model)
+        .build())
+    .mapTask((item, agent) -> Task.builder()
+        .description("Prepare the recipe for " + item.dish() + ". "
+            + "Provide key ingredients, preparation steps, cook time, and plating.")
+        .expectedOutput("Structured recipe result as JSON")
+        .agent(agent)
+        .outputType(DishResult.class)
+        .build())
+
+    // Reduce phase: same factory -- context wiring is identical to static mode
+    .reduceAgent(() -> Agent.builder()
+        .role("Sub-Chef")
+        .goal("Consolidate dish preparations into a cohesive sub-plan")
+        .background("Senior sous chef who coordinates multiple dishes.")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Review the dish preparations in context. Create a consolidated "
+            + "sub-plan covering timing, shared mise en place, and coordination.")
+        .expectedOutput("Coordinated sub-plan with timing and coordination notes.")
+        .agent(agent)
+        .context(chunkTasks)
+        .build())
+
+    // Adaptive strategy: keep reducing until total context < 8000 tokens.
+    // The framework measures actual output token counts after each level and
+    // bin-packs groups so that each group's combined tokens stay within budget.
+    .targetTokenBudget(8_000)
+    .maxReduceLevels(5)
+    .captureMode(CaptureMode.STANDARD)
+    .build()
+    .run();
+
+// Inspect per-level breakdown from the aggregated trace
+output.getTrace().getMapReduceLevels().forEach(level ->
+    System.out.printf("Level %d: %d tasks, duration=%s%n",
+        level.getLevel(), level.getTaskCount(), level.getDuration()));
+
+// Post-execution DAG export (adaptive DAG shape is only known after execution)
+DagModel dag = DagExporter.build(output.getTrace());
+dag.toJson(Path.of("./traces/adaptive-kitchen.dag.json"));
+```
+
+The map phase, reduce factories, and `context` wiring are identical to the static example.
+Only the strategy field changes (`targetTokenBudget` instead of `chunkSize`).
+
+### When adaptive mode adds intermediate reduce levels
+
+If map outputs are large (say 2000 tokens each and budget is 8000), the executor would:
+
+```
+Map phase (7 items):  [C1:2000] [C2:2000] [C3:2000] [C4:2000] [C5:2000] [C6:2000] [C7:2000]
+                       Total = 14000 > 8000 -> bin-pack into groups
+
+  Bin-pack (FFD):     Bin A: [C1,C2,C3] (6000 <= 8000)
+                      Bin B: [C4,C5,C6] (6000 <= 8000)
+                      Bin C: [C7]       (2000 <= 8000)
+
+L1 reduce (3 tasks):  [R1:1000] [R2:1000] [R3:1000]
+                       Total = 3000 <= 8000 -> single final reduce
+
+Final reduce (1 task): [Final]
+```
+
+Total: 3 ensemble runs (map + L1 + final), vs. 2 runs if all outputs fit in budget.
+
+---
+
 ## Expected output structure
 
 ```

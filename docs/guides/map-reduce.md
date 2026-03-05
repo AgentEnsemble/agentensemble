@@ -1,9 +1,14 @@
 # MapReduceEnsemble Guide
 
 `MapReduceEnsemble` solves the context window overflow problem that arises when using
-`Workflow.PARALLEL` to fan out to a large number of agents. Instead of sending all N
-agent outputs to a single aggregator, it automatically constructs a **tree-reduction DAG**
-that keeps each reducer's input bounded by `chunkSize`.
+`Workflow.PARALLEL` to fan out to a large number of agents. It supports two reduction
+strategies:
+
+- **Static** (`chunkSize`): the DAG is pre-built at `build()` time with a fixed group size.
+  Use when N and average output sizes are predictable.
+- **Adaptive** (`targetTokenBudget`): the DAG is built level-by-level at runtime based on
+  actual output token counts. Use when output sizes vary or context window overflow is a
+  hard constraint.
 
 ---
 
@@ -229,6 +234,133 @@ The `DagExporter.build(MapReduceEnsemble)` overload enriches each task node with
 - `mapReduceMode`: `"STATIC"` on the `DagModel`
 
 `agentensemble-viz` renders these with distinct badges (MAP, REDUCE Ln, AGGREGATE).
+
+---
+
+## Adaptive mode (`targetTokenBudget`)
+
+Instead of a fixed `chunkSize`, adaptive mode measures actual output token counts after
+each level and bins them into groups that collectively fit within `targetTokenBudget`.
+This eliminates the need to guess output sizes upfront.
+
+### How it works
+
+```
+STEP 1: Run N map tasks in parallel.
+STEP 2: Estimate total output tokens.
+  - If total <= targetTokenBudget: run one final reduce, done.
+  - Else: go to step 3.
+STEP 3: Bin-pack outputs (first-fit-decreasing) into groups of <= targetTokenBudget.
+        Run one reduce per bin in parallel.
+STEP 4: Repeat from step 2 with reduce outputs, until within budget
+        or maxReduceLevels is reached.
+STEP 5: Final reduce.
+```
+
+### Adaptive quick start
+
+```java
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(order.getItems())
+    .mapAgent(item -> Agent.builder()
+        .role(item.getDish() + " Chef")
+        .goal("Prepare " + item.getDish())
+        .llm(model)
+        .build())
+    .mapTask((item, agent) -> Task.builder()
+        .description("Execute recipe for: " + item.getDish())
+        .expectedOutput("Recipe with ingredients, steps, and timing")
+        .agent(agent)
+        .build())
+    .reduceAgent(() -> Agent.builder()
+        .role("Sub-Chef")
+        .goal("Consolidate dish preparations")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Consolidate these dish preparations.")
+        .expectedOutput("Consolidated plan")
+        .agent(agent)
+        .context(chunkTasks)  // same as static mode -- wire context explicitly
+        .build())
+
+    // Adaptive strategy: keep reducing until total context < 8000 tokens
+    .targetTokenBudget(8_000)
+    .maxReduceLevels(10)   // safety valve (default: 10)
+    .build()
+    .run();
+```
+
+Or derive the budget from the model's context window:
+
+```java
+.contextWindowSize(128_000)   // model context window in tokens
+.budgetRatio(0.5)             // use at most 50% -> budget = 64_000 tokens
+```
+
+### Adaptive builder fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `targetTokenBudget` | `int` | -- | Token limit per reduce group. Must be > 0. Mutually exclusive with `chunkSize`. |
+| `contextWindowSize` | `int` | -- | Convenience: derives `targetTokenBudget = contextWindowSize * budgetRatio`. Must be set together with `budgetRatio`. |
+| `budgetRatio` | `double` | `0.5` | Fraction of context window for reduce input. Range: `(0.0, 1.0]`. Must be set together with `contextWindowSize`. |
+| `maxReduceLevels` | `int` | `10` | Maximum adaptive reduce levels before final reduce is forced. Must be >= 1. |
+| `tokenEstimator` | `Function<String, Integer>` | built-in | Custom token estimator. Overrides the heuristic fallback when the LLM provider does not return token counts. |
+
+### Token estimation
+
+The adaptive executor determines token counts using a three-tier strategy:
+
+1. **Provider count** (highest priority): `TaskOutput.getMetrics().getOutputTokens()` when
+   the LLM provider returns a non-negative value.
+2. **Custom estimator**: the `tokenEstimator` function, if provided.
+3. **Heuristic fallback**: `rawOutput.length() / 4`. A WARN is logged when this is used.
+
+For accurate bin-packing, prefer using a model that returns token usage metadata. If the
+provider does not, supply a custom estimator using a tokenizer library:
+
+```java
+.tokenEstimator(text -> myTokenizer.countTokens(text))
+```
+
+### `toEnsemble()` in adaptive mode
+
+In adaptive mode, `toEnsemble()` throws `UnsupportedOperationException` because the DAG
+shape is not known until runtime. Instead, inspect the aggregated `ExecutionTrace` after
+execution, or use `DagExporter.build(output.getTrace())` for a post-execution DAG:
+
+```java
+EnsembleOutput output = mre.run();
+
+// Post-execution DAG export for visualization
+DagModel dag = DagExporter.build(output.getTrace());
+dag.toJson(Path.of("./traces/adaptive-run.dag.json"));
+
+// Per-level timing breakdown
+output.getTrace().getMapReduceLevels().forEach(level ->
+    System.out.printf("Level %d: %d tasks, duration=%s%n",
+        level.getLevel(), level.getTaskCount(), level.getDuration()));
+```
+
+### Adaptive execution trace
+
+The aggregated `ExecutionTrace` from an adaptive run has:
+- `workflow = "MAP_REDUCE_ADAPTIVE"`
+- `mapReduceLevels`: list of per-level summaries (level index, task count, duration)
+- All `TaskTrace` objects annotated with `mapReduceLevel` (int) and `nodeType` (String)
+- `ExecutionMetrics` summed across all levels
+
+### Static vs adaptive: when to use each
+
+| Scenario | Recommended strategy |
+|---|---|
+| N is known, output sizes are predictable | **Static** (`chunkSize`) |
+| Want to inspect/export the DAG before running | **Static** (`toEnsemble()` works) |
+| Same inputs always produce the same tree shape | **Static** (deterministic) |
+| Output sizes vary significantly across agents | **Adaptive** (`targetTokenBudget`) |
+| Context window overflow is a hard constraint | **Adaptive** (measures actual sizes) |
+| LLM provider returns token usage metadata | **Adaptive** (most accurate) |
 
 ---
 
