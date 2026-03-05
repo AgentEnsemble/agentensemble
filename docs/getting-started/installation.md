@@ -174,6 +174,40 @@ See the [Logging guide](../guides/logging.md) for configuration details.
 
 ---
 
+## Execution Graph Visualizer: agentensemble-viz
+
+`agentensemble-viz` is a standalone developer tool for visualizing task dependency graphs
+and execution timelines. It reads JSON files exported by `agentensemble-devtools` and
+renders them in a local web UI.
+
+**Homebrew (macOS and Linux):**
+
+```bash
+brew install agentensemble/tap/agentensemble-viz
+agentensemble-viz ./traces/
+```
+
+This installs a self-contained native binary (no Node.js required). The formula is updated
+automatically on every AgentEnsemble release.
+
+**npx (no installation required):**
+
+```bash
+npx @agentensemble/viz ./traces/
+```
+
+**Global npm install:**
+
+```bash
+npm install -g @agentensemble/viz
+agentensemble-viz ./traces/
+```
+
+See the [Visualization Guide](../guides/visualization.md) for the complete workflow including
+how to export DAGs and execution traces from your Java application.
+
+---
+
 ## Next Steps
 
 - [Quickstart](quickstart.md) -- Build your first ensemble

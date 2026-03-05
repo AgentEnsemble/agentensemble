@@ -146,12 +146,28 @@ EnsembleDevTools.exportDag(ensemble, Path.of("./traces/"));
 
 ## Running the Viewer
 
-```bash
-# Auto-loads all .dag.json and .trace.json files from the directory
-npx @agentensemble/viz ./traces/
+**Homebrew (macOS and Linux):**
 
-# Or open at a custom port
-PORT=8080 npx @agentensemble/viz ./traces/
+```bash
+# Install once
+brew install agentensemble/tap/agentensemble-viz
+
+# Run
+agentensemble-viz ./traces/
 ```
 
-The viewer opens at `http://localhost:7329` (or your custom port) and auto-discovers the files.
+**npx (no installation required):**
+
+```bash
+npx @agentensemble/viz ./traces/
+```
+
+**Custom port:**
+
+```bash
+PORT=8080 agentensemble-viz ./traces/
+# or: PORT=8080 npx @agentensemble/viz ./traces/
+```
+
+The viewer opens at `http://localhost:7329` (or your custom port) and auto-discovers all
+`.dag.json` and `.trace.json` files in the directory.

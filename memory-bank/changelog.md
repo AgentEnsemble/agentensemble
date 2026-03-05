@@ -1,5 +1,66 @@
 # Changelog
 
+## [Unreleased] - Issue #94 -- Homebrew Tap Distribution -- 2026-03-05
+
+### Added (Issue #94 -- Distribute agentensemble-viz via Homebrew tap)
+
+**`agentensemble-viz/cli.js` changes:**
+- Replaced `__dirname`-based `distDir` with `new URL('./dist/', import.meta.url).pathname`
+  so Bun's `--compile` embeds the entire `dist/` directory into the binary at compile time
+- Added version reading: `readFileSync(new URL('./package.json', import.meta.url).pathname)`
+  so Bun embeds `package.json` into the binary (same URL pattern)
+- Added `--version` flag: prints `agentensemble-viz/<semver>` to stdout and exits 0;
+  must run before the HTTP server starts (required by Homebrew formula test block)
+
+**`agentensemble-viz/package.json` changes:**
+- Added `compile:darwin-arm64`, `compile:darwin-x64`, `compile:linux-x64` scripts using
+  `bun build --compile --target=<target> cli.js --outfile agentensemble-viz`
+
+**`.github/workflows/release.yml` changes:**
+- After Java artifact upload: set up Node 20 + Bun (`oven-sh/setup-bun@v2`)
+- `npm ci && npm run build` in `agentensemble-viz/`
+- Sequential Bun cross-compile for 3 targets; each compile: create tarball, remove binary
+  to avoid filename collision before next target
+- Upload 3 tarballs (`agentensemble-viz-darwin-arm64.tar.gz`, etc.) to the GitHub Release
+- Fire `repository_dispatch` event (`new-release` type) to `AgentEnsemble/homebrew-tap`
+  with `version` in the payload; requires `ORG_HOMEBREW_TAP_TOKEN` secret (PAT, `repo` scope)
+
+**`AgentEnsemble/homebrew-tap` repo (new files, already pushed to main):**
+- `Formula/agentensemble-viz.rb`: platform-aware Homebrew formula with `on_macos`/`on_linux`
+  DSL blocks; SHA256 lines use `# DARWIN_ARM64_SHA256`, `# DARWIN_X64_SHA256`,
+  `# LINUX_X64_SHA256` comment anchors for reliable sed-based updates; test block validates
+  `--version` output against `version.to_s`
+- `.github/workflows/update-formula.yml`: triggered by `repository_dispatch` event;
+  downloads all 3 tarballs from the GitHub Release, computes SHA256 with `sha256sum`,
+  updates version field + download URLs + SHA256 values in the formula using `sed`,
+  commits and pushes; zero manual interaction
+
+**Tests:**
+- `agentensemble-viz/src/__tests__/cli.test.ts`: new test file (4 tests);
+  `// @vitest-environment node` pragma; strips `NODE_OPTIONS` from child process env to
+  prevent vitest's internal loader flags from interfering with the spawned Node.js process;
+  covers: exit code 0 for `--version`, semver output format, no server startup, clean stderr
+
+**Documentation:**
+- `docs/guides/visualization.md`: Homebrew listed as Option 1 (recommended for regular use),
+  npx as Option 2, global npm as Option 3
+- `docs/examples/visualization.md`: Homebrew added to "Running the Viewer" section
+- `docs/getting-started/installation.md`: new "Execution Graph Visualizer" section with all
+  three install options and link to visualization guide
+- `README.md`: new "Execution Graph Visualization" section with Homebrew + npx install
+  commands, Flow View / Timeline View description, links to guide and example; docs
+  navigation table updated to include visualization in Guides and Examples
+
+### Notes
+- The `ORG_HOMEBREW_TAP_TOKEN` secret must be added to the main repo before the first
+  release to enable the `repository_dispatch` step to succeed
+- Bun cross-compilation downloads target runtimes from the Bun CDN at compile time (adds
+  ~1-2 min to release CI per target); produced binaries are ~30 MB each
+- The npm distribution (`npx @agentensemble/viz`) remains the primary path; Homebrew is
+  the recommended alternative for users who prefer native package management
+
+---
+
 ## [Unreleased] - Issue #44 -- Execution Graph Visualization -- 2026-03-05
 
 ### Added (Issue #44 -- Interactive execution graph visualization)

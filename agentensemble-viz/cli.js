@@ -12,15 +12,32 @@
 
 import { createServer } from 'node:http';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join, extname, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, extname, resolve } from 'node:path';
 import { exec } from 'node:child_process';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// Resolve version from package.json. Using new URL so Bun embeds package.json
+// into the compiled binary alongside the dist/ assets.
+let cliVersion = 'unknown';
+try {
+  const pkg = JSON.parse(
+    readFileSync(new URL('./package.json', import.meta.url).pathname, 'utf8'),
+  );
+  cliVersion = pkg.version ?? 'unknown';
+} catch {
+  // package.json not accessible in this environment
+}
+
+// Handle --version before starting the server (required by the Homebrew formula test)
+if (process.argv.includes('--version')) {
+  console.log(`agentensemble-viz/${cliVersion}`);
+  process.exit(0);
+}
 
 // Resolve the traces directory from the CLI argument or default
 const tracesDir = process.argv[2] ? resolve(process.argv[2]) : resolve('./traces');
-const distDir = join(__dirname, 'dist');
+
+// Using new URL so Bun embeds the entire dist/ directory into the compiled binary
+const distDir = new URL('./dist/', import.meta.url).pathname;
 const PORT = parseInt(process.env.PORT ?? '7329', 10);
 
 const MIME_TYPES = {
