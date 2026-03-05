@@ -238,12 +238,62 @@ public class AgentDelegationTool {
             // Allow: continue to next policy
         }
 
+        // Re-resolve target agent from workingRequest.agentRole() in case a MODIFY policy
+        // changed the agentRole. This ensures DelegationStartedEvent and worker execution
+        // always reference the same agent, and unknown-agent/self-delegation guards are
+        // applied to the final agentRole.
+        Agent resolvedTarget = workingRequest.getAgentRole().equals(target.getRole())
+                ? target
+                : findAgentByRole(workingRequest.getAgentRole());
+        if (resolvedTarget == null) {
+            String msg = "A policy modified agentRole to '"
+                    + workingRequest.getAgentRole()
+                    + "' but no agent found with that role. Available roles: "
+                    + delegationContext.getPeerAgents().stream()
+                            .map(Agent::getRole)
+                            .toList();
+            log.warn("Delegation from '{}' failed: {}", callerRole, msg);
+            DelegationResponse response =
+                    failureResponse(workingRequest, workingRequest.getAgentRole(), msg, requestStart);
+            delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            workingRequest.getTaskId(),
+                            callerRole,
+                            workingRequest.getAgentRole(),
+                            msg,
+                            null,
+                            response,
+                            Duration.between(requestStart, Instant.now())));
+            return msg;
+        }
+        if (resolvedTarget.getRole().equalsIgnoreCase(callerRole)) {
+            String msg = "A policy modified agentRole to '"
+                    + callerRole
+                    + "' which results in self-delegation. Choose a different target.";
+            log.warn("{}", msg);
+            DelegationResponse response = failureResponse(workingRequest, callerRole, msg, requestStart);
+            delegationResponses.add(response);
+            delegationContext
+                    .getExecutionContext()
+                    .fireDelegationFailed(new DelegationFailedEvent(
+                            workingRequest.getTaskId(),
+                            callerRole,
+                            callerRole,
+                            msg,
+                            null,
+                            response,
+                            Duration.between(requestStart, Instant.now())));
+            return msg;
+        }
+
         // All guards and policies passed -- fire DelegationStartedEvent
         int childDepth = delegationContext.getCurrentDepth() + 1;
         log.info(
                 "Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
                 callerRole,
-                target.getRole(),
+                resolvedTarget.getRole(),
                 childDepth,
                 delegationContext.getMaxDepth(),
                 workingRequest.getTaskDescription().length() > 80
@@ -255,7 +305,7 @@ public class AgentDelegationTool {
                 .fireDelegationStarted(new DelegationStartedEvent(
                         workingRequest.getTaskId(),
                         callerRole,
-                        target.getRole(),
+                        resolvedTarget.getRole(),
                         workingRequest.getTaskDescription(),
                         childDepth,
                         workingRequest));
@@ -270,11 +320,12 @@ public class AgentDelegationTool {
         MDC.put(MDC_DELEGATION_ID, workingRequest.getTaskId());
 
         final DelegationRequest finalRequest = workingRequest;
+        final Agent finalTarget = resolvedTarget;
         try {
             Task delegatedTask = Task.builder()
                     .description(finalRequest.getTaskDescription())
                     .expectedOutput(DEFAULT_EXPECTED_OUTPUT)
-                    .agent(target)
+                    .agent(finalTarget)
                     .build();
 
             // Descend: child runs at depth + 1
@@ -290,7 +341,7 @@ public class AgentDelegationTool {
             DelegationResponse response = new DelegationResponse(
                     finalRequest.getTaskId(),
                     DelegationStatus.SUCCESS,
-                    target.getRole(),
+                    finalTarget.getRole(),
                     output.getRaw(),
                     output.getParsedOutput(),
                     Collections.emptyMap(),
@@ -301,14 +352,14 @@ public class AgentDelegationTool {
 
             log.info(
                     "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    target.getRole(),
+                    finalTarget.getRole(),
                     output.getToolCallCount(),
                     output.getDuration());
 
             delegationContext
                     .getExecutionContext()
                     .fireDelegationCompleted(new DelegationCompletedEvent(
-                            finalRequest.getTaskId(), callerRole, target.getRole(), response, elapsed));
+                            finalRequest.getTaskId(), callerRole, finalTarget.getRole(), response, elapsed));
 
             // Option C hybrid design: the @Tool method returns the worker's plain-text output to
             // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
@@ -320,7 +371,7 @@ public class AgentDelegationTool {
             DelegationResponse response = new DelegationResponse(
                     finalRequest.getTaskId(),
                     DelegationStatus.FAILURE,
-                    target.getRole(),
+                    finalTarget.getRole(),
                     null,
                     null,
                     Collections.emptyMap(),
@@ -336,7 +387,7 @@ public class AgentDelegationTool {
                     .fireDelegationFailed(new DelegationFailedEvent(
                             finalRequest.getTaskId(),
                             callerRole,
-                            target.getRole(),
+                            finalTarget.getRole(),
                             e.getMessage() != null
                                     ? e.getMessage()
                                     : e.getClass().getSimpleName(),

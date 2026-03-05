@@ -27,7 +27,7 @@ import net.agentensemble.delegation.DelegationRequest;
  *
  * // Inject defaults and continue
  * DelegationRequest enriched = request.toBuilder()
- *     .scope(Map.of("region", "us-east-1"))
+ *     .scope(Map.&lt;String, Object&gt;of("region", "us-east-1"))
  *     .build();
  * return DelegationPolicyResult.modify(enriched);
  * </pre>

@@ -215,7 +215,7 @@ delegate to a worker. Policies run after the built-in guards and before any work
 ```java
 // Reject any delegation when required context is missing
 DelegationPolicy requireCompany = (request, ctx) -> {
-    if (request.taskDescription().contains("UNKNOWN_COMPANY")) {
+    if (request.getTaskDescription().contains("UNKNOWN_COMPANY")) {
         return DelegationPolicyResult.reject("company must be specified");
     }
     return DelegationPolicyResult.allow();
@@ -223,8 +223,8 @@ DelegationPolicy requireCompany = (request, ctx) -> {
 
 // Restrict which agents the Manager can delegate financial analysis to
 DelegationPolicy analystOnly = (request, ctx) -> {
-    if (request.taskDescription().toLowerCase().contains("financial")
-            && !"Financial Analyst".equals(request.agentRole())) {
+    if (request.getTaskDescription().toLowerCase().contains("financial")
+            && !"Financial Analyst".equals(request.getAgentRole())) {
         return DelegationPolicyResult.reject("financial tasks must go to the Financial Analyst");
     }
     return DelegationPolicyResult.allow();

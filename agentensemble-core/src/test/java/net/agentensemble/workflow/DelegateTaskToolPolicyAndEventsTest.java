@@ -126,6 +126,23 @@ class DelegateTaskToolPolicyAndEventsTest {
     }
 
     @Test
+    void modifyPolicy_changesAgentRoleToUnknown_returnsErrorAndNoWorkerExecution() {
+        DelegationContext ctx = DelegationContext.create(
+                List.of(analyst), 3, ExecutionContext.disabled(), executor, List.of((req, c) -> {
+                    var modified = req.toBuilder().agentRole("NonExistent").build();
+                    return DelegationPolicyResult.modify(modified);
+                }));
+
+        DelegateTaskTool tool = new DelegateTaskTool(List.of(analyst), executor, ExecutionContext.disabled(), ctx);
+        String result = tool.delegateTask("Analyst", "task");
+
+        assertThat(result).containsIgnoringCase("NonExistent");
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        verifyNoInteractions(executor);
+    }
+
+    @Test
     void modifyPolicy_replacesRequest_workerInvokedNormally() {
         when(executor.execute(any(Task.class), any(), any(ExecutionContext.class), any(DelegationContext.class)))
                 .thenReturn(makeOutput("output"));

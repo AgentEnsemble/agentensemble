@@ -26,18 +26,18 @@ import net.agentensemble.delegation.DelegationRequest;
  * <pre>
  * Ensemble.builder()
  *     .delegationPolicy((request, ctx) -> {
- *         if ("UNKNOWN".equals(request.scope().get("project_key"))) {
+ *         if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
  *             return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
  *         }
  *         return DelegationPolicyResult.allow();
  *     })
  *     .delegationPolicy((request, ctx) -> {
- *         if (!"Analyst".equals(request.agentRole())) {
+ *         if (!"Analyst".equals(request.getAgentRole())) {
  *             return DelegationPolicyResult.allow();
  *         }
- *         if (request.scope().get("region") == null) {
+ *         if (request.getScope().get("region") == null) {
  *             DelegationRequest enriched = request.toBuilder()
- *                 .scope(Map.of("region", "us-east-1"))
+ *                 .scope(Map.&lt;String, Object&gt;of("region", "us-east-1"))
  *                 .build();
  *             return DelegationPolicyResult.modify(enriched);
  *         }

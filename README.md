@@ -389,7 +389,7 @@ Ensemble.builder()
     .agent(analyst)
     .task(task)
     .delegationPolicy((request, ctx) -> {
-        if ("UNKNOWN".equals(request.scope().get("project_key"))) {
+        if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
             return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
         }
         return DelegationPolicyResult.allow();

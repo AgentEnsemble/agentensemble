@@ -235,7 +235,7 @@ Ensemble.builder()
     .agent(analyst)
     .task(task)
     .delegationPolicy((request, ctx) -> {
-        if ("UNKNOWN".equals(request.scope().get("project_key"))) {
+        if ("UNKNOWN".equals(request.getScope().get("project_key"))) {
             return DelegationPolicyResult.reject("project_key must not be UNKNOWN");
         }
         return DelegationPolicyResult.allow();
@@ -282,16 +282,16 @@ Ensemble.builder()
     .task(task)
     // Policy 1: require project context
     .delegationPolicy((request, ctx) -> {
-        if (request.scope().get("project_key") == null) {
+        if (request.getScope().get("project_key") == null) {
             return DelegationPolicyResult.reject("project_key is required");
         }
         return DelegationPolicyResult.allow();
     })
     // Policy 2: inject region default when missing
     .delegationPolicy((request, ctx) -> {
-        if ("Analyst".equals(request.agentRole()) && !request.scope().containsKey("region")) {
+        if ("Analyst".equals(request.getAgentRole()) && !request.getScope().containsKey("region")) {
             var enriched = request.toBuilder()
-                .scope(Map.of("region", "us-east-1"))
+                .scope(Map.<String, Object>of("region", "us-east-1"))
                 .build();
             return DelegationPolicyResult.modify(enriched);
         }

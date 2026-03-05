@@ -325,6 +325,58 @@ class AgentDelegationToolPolicyTest {
     }
 
     // ========================
+    // MODIFY policy changes agentRole -- re-resolution guards
+    // ========================
+
+    @Test
+    void modifyPolicy_changesAgentRoleToUnknownAgent_returnsErrorAndFiresFailedEvent() {
+        // MODIFY redirects to "NonExistent" which doesn't exist
+        DelegationContext ctx =
+                DelegationContext.create(List.of(writer), 3, executionContext, executor, List.of((req, c) -> {
+                    var modified = req.toBuilder().agentRole("NonExistent").build();
+                    return DelegationPolicyResult.modify(modified);
+                }));
+
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", ctx);
+        String result = tool.delegate("Writer", "task");
+
+        assertThat(result).containsIgnoringCase("NonExistent");
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        verifyNoInteractions(executor);
+    }
+
+    @Test
+    void modifyPolicy_changesAgentRoleToSelf_returnsErrorAndFiresFailedEvent() {
+        // MODIFY redirects to callerRole -- self-delegation
+        DelegationContext ctx =
+                DelegationContext.create(List.of(writer, analyst), 3, executionContext, executor, List.of((req, c) -> {
+                    var modified = req.toBuilder().agentRole("Researcher").build();
+                    return DelegationPolicyResult.modify(modified);
+                }));
+
+        // Add "Researcher" as a peer so it resolves but triggers self-delegation guard
+        Agent researcher = Agent.builder()
+                .role("Researcher")
+                .goal("Research things")
+                .llm(mock(dev.langchain4j.model.chat.ChatModel.class))
+                .build();
+        DelegationContext ctxWithSelf = DelegationContext.create(
+                List.of(writer, researcher), 3, executionContext, executor, List.of((req, c) -> {
+                    var modified = req.toBuilder().agentRole("Researcher").build();
+                    return DelegationPolicyResult.modify(modified);
+                }));
+
+        AgentDelegationTool tool = new AgentDelegationTool("Researcher", ctxWithSelf);
+        String result = tool.delegate("Writer", "task");
+
+        assertThat(result).containsIgnoringCase("self-delegation");
+        assertThat(tool.getDelegationResponses()).hasSize(1);
+        assertThat(tool.getDelegationResponses().get(0).status()).isEqualTo(DelegationStatus.FAILURE);
+        verifyNoInteractions(executor);
+    }
+
+    // ========================
     // Policy context contains correct delegation info
     // ========================
 

@@ -196,10 +196,37 @@ public class DelegateTaskTool {
             // Allow: continue to next policy
         }
 
+        // Re-resolve the agent from workingRequest.agentRole() in case a MODIFY policy changed it.
+        // This ensures the DelegationStartedEvent, Task creation, and worker execution all
+        // reference the same (final) agent, not the pre-policy one.
+        Agent finalAgent = workingRequest.getAgentRole().equals(agent.getRole())
+                ? agent
+                : findAgentByRole(workingRequest.getAgentRole());
+        if (finalAgent == null) {
+            List<String> availableRoles = agents.stream().map(Agent::getRole).toList();
+            String error = "A policy modified agentRole to '"
+                    + workingRequest.getAgentRole()
+                    + "' but no agent found with that role. Available roles: "
+                    + availableRoles;
+            log.warn("Delegation failed: {}", error);
+            DelegationResponse response =
+                    failureResponse(workingRequest, workingRequest.getAgentRole(), error, requestStart);
+            delegationResponses.add(response);
+            executionContext.fireDelegationFailed(new DelegationFailedEvent(
+                    workingRequest.getTaskId(),
+                    MANAGER_ROLE,
+                    workingRequest.getAgentRole(),
+                    error,
+                    null,
+                    response,
+                    Duration.between(requestStart, Instant.now())));
+            return error;
+        }
+
         // All policies passed -- fire DelegationStartedEvent
         log.info(
                 "Delegating task to agent '{}': {}",
-                agent.getRole(),
+                finalAgent.getRole(),
                 workingRequest.getTaskDescription().length() > 80
                         ? workingRequest.getTaskDescription().substring(0, 80) + "..."
                         : workingRequest.getTaskDescription());
@@ -207,7 +234,7 @@ public class DelegateTaskTool {
         executionContext.fireDelegationStarted(new DelegationStartedEvent(
                 workingRequest.getTaskId(),
                 MANAGER_ROLE,
-                agent.getRole(),
+                finalAgent.getRole(),
                 workingRequest.getTaskDescription(),
                 delegationContext.getCurrentDepth() + 1,
                 workingRequest));
@@ -217,7 +244,7 @@ public class DelegateTaskTool {
         Task delegatedTask = Task.builder()
                 .description(finalRequest.getTaskDescription())
                 .expectedOutput(DEFAULT_EXPECTED_OUTPUT)
-                .agent(agent)
+                .agent(finalAgent)
                 .build();
 
         // Descend: worker receives depth+1 so its peer-delegation depth tracking is correct.
@@ -236,7 +263,7 @@ public class DelegateTaskTool {
             DelegationResponse response = new DelegationResponse(
                     finalRequest.getTaskId(),
                     DelegationStatus.SUCCESS,
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     output.getRaw(),
                     output.getParsedOutput(),
                     Collections.emptyMap(),
@@ -247,12 +274,12 @@ public class DelegateTaskTool {
 
             log.info(
                     "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     output.getToolCallCount(),
                     output.getDuration());
 
             executionContext.fireDelegationCompleted(new DelegationCompletedEvent(
-                    finalRequest.getTaskId(), MANAGER_ROLE, agent.getRole(), response, elapsed));
+                    finalRequest.getTaskId(), MANAGER_ROLE, finalAgent.getRole(), response, elapsed));
 
             // Option C hybrid design: the @Tool method returns the worker's plain-text output to
             // the LLM to preserve backward compatibility. DelegationRequest and DelegationResponse
@@ -264,7 +291,7 @@ public class DelegateTaskTool {
             DelegationResponse response = new DelegationResponse(
                     finalRequest.getTaskId(),
                     DelegationStatus.FAILURE,
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     null,
                     null,
                     Collections.emptyMap(),
@@ -278,7 +305,7 @@ public class DelegateTaskTool {
             executionContext.fireDelegationFailed(new DelegationFailedEvent(
                     finalRequest.getTaskId(),
                     MANAGER_ROLE,
-                    agent.getRole(),
+                    finalAgent.getRole(),
                     e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
                     e,
                     response,
