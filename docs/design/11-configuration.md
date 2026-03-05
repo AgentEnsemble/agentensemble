@@ -37,6 +37,17 @@ All configuration is done through builder methods on domain objects. There are n
 | `tasks` | `List<Task>` | -- | Yes | All tasks to execute, in order. Must not be empty. |
 | `workflow` | `Workflow` | `SEQUENTIAL` | No | How tasks are executed. |
 | `verbose` | `boolean` | `false` | No | When true, elevates logging for all tasks/agents to INFO. |
+| `memory` | `EnsembleMemory` | `null` | No | Memory configuration (short-term, long-term, entity). |
+| `maxDelegationDepth` | `int` | `3` | No | Maximum peer-delegation depth. Must be > 0. |
+| `toolExecutor` | `Executor` | virtual threads | No | Executor for parallel tool calls within a single LLM turn. |
+| `toolMetrics` | `ToolMetrics` | `NoOpToolMetrics` | No | Metrics backend for tool execution timings. |
+| `listeners` | `List<EnsembleListener>` | `List.of()` | No | Event listeners for task/tool/delegation lifecycle events. |
+| `inputs` | `Map<String, String>` | `{}` | No | Template variable values applied to task descriptions. |
+| `hierarchicalConstraints` | `HierarchicalConstraints` | `null` | No | Constraints for hierarchical workflow (required workers, caps). |
+| `delegationPolicies` | `List<DelegationPolicy>` | `List.of()` | No | Custom policies evaluated before each delegation. |
+| `costConfiguration` | `CostConfiguration` | `null` | No | Per-token cost rates for monetary cost estimation. |
+| `traceExporter` | `ExecutionTraceExporter` | `null` | No | Called after each run with the complete execution trace. |
+| `captureMode` | `CaptureMode` | `OFF` | No | Depth of data collection: OFF, STANDARD, or FULL. Can also be set via the `agentensemble.captureMode` system property or `AGENTENSEMBLE_CAPTURE_MODE` environment variable. |
 
 ### Workflow Options
 

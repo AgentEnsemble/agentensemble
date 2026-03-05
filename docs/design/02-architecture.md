@@ -67,6 +67,43 @@ net.agentensemble
     MaxIterationsExceededException.java # Agent hit iteration limit
     PromptTemplateException.java        # Template variable error
     ConstraintViolationException.java   # Hierarchical constraint violated
+
+  net.agentensemble.metrics             # Execution metrics (issue #42)
+    TaskMetrics.java                    # Per-task token counts, timing, costs
+    ExecutionMetrics.java               # Aggregated per-run metrics
+    CostConfiguration.java              # Per-token cost rates for estimation
+    CostEstimate.java                   # Monetary cost estimate value object
+    MemoryOperationCounts.java          # STM/LTM/entity operation counters
+
+  net.agentensemble.trace               # Execution trace (issues #42, #89)
+    ExecutionTrace.java                 # Top-level immutable run trace
+    TaskTrace.java                      # Per-task trace
+    LlmInteraction.java                 # Single LLM chat() call record
+    ToolCallTrace.java                  # Single tool invocation record
+    DelegationTrace.java                # Peer delegation record
+    TaskPrompts.java                    # System/user prompt snapshot
+    AgentSummary.java                   # Agent configuration snapshot
+    ErrorTrace.java                     # Error record
+    LlmResponseType.java                # FINAL_ANSWER / TOOL_CALLS enum
+    ToolCallOutcome.java                # SUCCESS / FAILURE / ERROR / SKIPPED enum
+    CaptureMode.java                    # OFF / STANDARD / FULL capture depth (issue #89)
+    CapturedMessage.java                # Serializable LLM message snapshot (issue #89)
+
+  net.agentensemble.trace.export        # Trace export (issue #42)
+    ExecutionTraceExporter.java         # Strategy interface for exporting traces
+    JsonTraceExporter.java              # File-based JSON exporter
+
+  net.agentensemble.trace.internal      # Internal accumulator (package-private API)
+    TaskTraceAccumulator.java           # Mutable collector, frozen at task end
+
+  net.agentensemble.memory              # Memory subsystem
+    MemoryContext.java                  # Runtime memory state for one run
+    MemoryOperationListener.java        # Callback interface for memory events (issue #89)
+    EnsembleMemory.java                 # Memory configuration
+    ShortTermMemory.java                # In-run task output accumulator
+    LongTermMemory.java                 # Pluggable persistent store interface
+    EntityMemory.java                   # Key-value fact store interface
+    MemoryEntry.java                    # Memory entry value object
 ```
 
 ## Design Principles

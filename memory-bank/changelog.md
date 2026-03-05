@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - feature/89-capture-mode
+### Added
+- `CaptureMode` enum (OFF/STANDARD/FULL) with `isAtLeast()` and `CaptureMode.resolve()`
+  supporting JVM system property `agentensemble.captureMode` and env var
+  `AGENTENSEMBLE_CAPTURE_MODE` for zero-code activation
+- `CapturedMessage` value object: serializable snapshot of one LangChain4j `ChatMessage`
+- `MemoryOperationListener` interface + wired into `MemoryContext` via
+  `setOperationListener()` / `clearOperationListener()`
+- `LlmInteraction.messages` field: full per-iteration message history at STANDARD+
+- `ToolCallTrace.parsedInput` field: structured tool arguments map at FULL
+- `ExecutionTrace.captureMode` field; schema version bumped to `1.1`
+- `ExecutionContext.captureMode()` accessor + 7-param `of()` factory method
+- `Ensemble.captureMode` builder field with effective-mode resolution and FULL auto-export
+- `CaptureModeExample.java` + `runCaptureMode` Gradle task in `agentensemble-examples`
+- New docs: `docs/guides/capture-mode.md`, `docs/examples/capture-mode.md`
+### Changed
+- `AgentExecutor`: snapshots messages at STANDARD+, enriches tool traces at FULL,
+  wires/clears memory listener in try/finally per-task
+- `TaskTraceAccumulator`: new CaptureMode constructor + `setCurrentMessages()`
+- Design docs updated: 02-architecture, 04-execution-engine, 09-logging, 11-configuration,
+  13-future-roadmap
+- `docs/reference/ensemble-configuration.md`: added captureMode row
+- `README.md`: added CaptureMode section
+- `mkdocs.yml`: added CaptureMode guide + example pages
+
+
 ## [Implemented / branch ready] Issue #42 -- 2026-03-05
 
 Feature branch: `feature/42-execution-metrics`

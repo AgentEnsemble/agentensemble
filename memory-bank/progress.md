@@ -2,6 +2,24 @@
 
 ## What Works
 
+### CaptureMode (Issue #89)
+- `CaptureMode` enum (OFF/STANDARD/FULL) with `isAtLeast()` and `resolve()` (sys prop + env var)
+- `CapturedMessage` value object: converts LangChain4j `ChatMessage` subtypes to serializable form
+- `MemoryOperationListener` interface wired into `MemoryContext` for per-task operation callbacks
+- `LlmInteraction.messages` field: full message history per iteration at STANDARD+
+- `ToolCallTrace.parsedInput` field: structured tool arg map at FULL
+- `ExecutionTrace.captureMode` field: schema version bumped to 1.1
+- `ExecutionContext.captureMode()` accessor; 7-param `of()` factory method
+- `TaskTraceAccumulator`: CaptureMode constructor, `setCurrentMessages()`, per-iteration snapshot
+- `AgentExecutor`: message snapshot, parsedInput enrichment, memory listener (with finally cleanup)
+- `Ensemble`: captureMode field, system property / env var resolution, FULL auto-export
+- New guide: `docs/guides/capture-mode.md`
+- New example: `docs/examples/capture-mode.md`
+- New Java example: `CaptureModeExample.java` / `runCaptureMode` Gradle task
+- Design docs updated: 02-architecture, 04-execution-engine, 09-logging, 11-configuration, 13-future-roadmap
+- Reference and README updated with CaptureMode section
+
+
 ### Execution Metrics and Observability (Issue #42)
 - `TaskMetrics` on `TaskOutput`: token counts (input/output/total with -1 unknown), LLM latency,
   tool execution time, prompt build time, delegation count, memory operation counts, cost estimate

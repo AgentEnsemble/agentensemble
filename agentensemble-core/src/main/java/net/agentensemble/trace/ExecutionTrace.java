@@ -51,7 +51,7 @@ import net.agentensemble.trace.export.ExecutionTraceExporter;
 public class ExecutionTrace {
 
     /** Current schema version for this trace format. */
-    public static final String CURRENT_SCHEMA_VERSION = "1.0";
+    public static final String CURRENT_SCHEMA_VERSION = "1.1";
 
     private static final ObjectMapper MAPPER = buildObjectMapper();
 
@@ -61,6 +61,18 @@ public class ExecutionTrace {
      */
     @Builder.Default
     String schemaVersion = CURRENT_SCHEMA_VERSION;
+
+    /**
+     * The capture mode that was active during this run.
+     *
+     * <p>Consumers can inspect this field to determine what depth of data to expect:
+     * {@link CaptureMode#OFF} means no message history or parsed inputs are present;
+     * {@link CaptureMode#STANDARD} means LLM message history and memory counts are populated;
+     * {@link CaptureMode#FULL} means all of the above plus enriched tool I/O.
+     */
+    @NonNull
+    @Builder.Default
+    CaptureMode captureMode = CaptureMode.OFF;
 
     /**
      * Unique identifier for this ensemble run.
