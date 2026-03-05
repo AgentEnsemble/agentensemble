@@ -2,8 +2,8 @@
 
 ## Current Work Focus
 
-Issue #99 (Adaptive MapReduceEnsemble with targetTokenBudget) is complete on branch
-`feat/issue-99-adaptive-map-reduce-ensemble`. PR #119 is open.
+Issue #100 (MapReduceEnsemble short-circuit optimization) is complete.
+Issue #99 (Adaptive MapReduceEnsemble) was previously completed.
 
 ## Recent Changes
 
@@ -47,10 +47,8 @@ aggregated `EnsembleOutput` and `ExecutionTrace`.
 
 ## Next Steps
 
-- Merge/close PR #119 (issue #99)
-- Issue #100: Short-circuit optimization (`directAgent`/`directTask`) - v2.1.0
-  Depends on issue #99 (this work)
-- After #100, begin v2.0.0 workstreams (Groups A-F per design doc)
+- Issue #100: DONE -- short-circuit optimization (`directAgent`/`directTask`)
+- Begin v2.0.0 workstreams (Groups A-F per design doc)
 
 ## Important Patterns and Preferences
 
@@ -64,6 +62,52 @@ aggregated `EnsembleOutput` and `ExecutionTrace`.
 - Post-execution DAG export: `DagExporter.build(ExecutionTrace)` for adaptive runs
 - Carrier tasks use `__carry__:` role prefix for filtering from aggregated output
 
-## Active Branch
+## Issue #100 Details
 
-`feat/issue-99-adaptive-map-reduce-ensemble`
+### Issue #100: MapReduceEnsemble Short-Circuit Optimization
+
+Extends `MapReduceEnsemble<T>` adaptive mode with a pre-execution short-circuit. When
+the total estimated input size fits within `targetTokenBudget` and `directAgent`/`directTask`
+are configured, the entire map-reduce pipeline is bypassed in favour of a single direct task.
+
+**Modified classes in `agentensemble-core`:**
+- `MapReduceEnsemble` -- 3 new builder fields (`directAgent`, `directTask`, `inputEstimator`),
+  `NODE_TYPE_DIRECT = "direct"` constant, `validateDirectFields()` validation method
+- `MapReduceAdaptiveExecutor<T>` -- `estimateInputTokens()` pre-execution check,
+  `runDirectPhase()` runner, short-circuit guard in `run()` before map phase
+
+**New test files (all passing):**
+- `MapReduceEnsembleShortCircuitValidationTest` (9 tests) -- builder validation unit tests
+- `MapReduceEnsembleShortCircuitRunTest` (16 tests) -- execution unit tests with mock LLMs
+- `MapReduceEnsembleShortCircuitIntegrationTest` (7 tests) -- integration tests with Mockito
+
+**Modified test files:**
+- `DagExporterTest` -- 5 new short-circuit visualization tests
+
+**Documentation updated:**
+- `docs/reference/ensemble-configuration.md` -- `directAgent`, `directTask`, `inputEstimator` fields
+- `docs/guides/map-reduce.md` -- Short-circuit optimization section
+- `docs/examples/map-reduce.md` -- Short-circuit example section
+
+**Key design decisions:**
+- Short-circuit is opt-in: no `directAgent`/`directTask` = no check (backwards-compatible)
+- Input estimation heuristic: `text.length() / 4` (same as output heuristic in #99)
+- Boundary inclusive: fires when `estimated <= targetTokenBudget`
+- Static mode forbidden: `ValidationException` if `directAgent`/`directTask` set with `chunkSize`
+- Trace: `workflow = "MAP_REDUCE_ADAPTIVE"`, single `TaskTrace` with `nodeType = "direct"`,
+  `mapReduceLevel = 0`, `mapReduceLevels` list has exactly 1 entry
+- `TaskNode.tsx` already had the DIRECT badge -- no viz changes needed
+
+## Important Patterns and Preferences
+
+- Short-circuit check: `estimateInputTokens()` uses `inputEstimatorFn` (or `toString()`) then `length/4`
+- Short-circuit fires: `directAgentFactory != null && directTaskFactory != null && estimated <= budget`
+- Direct phase: single `Ensemble.run()` with one agent + one task; trace annotated from raw trace
+- `runDirectPhase()` builds `ExecutionTrace` directly (like `aggregate()` does) with `WORKFLOW_ADAPTIVE`
+- Static MapReduce: single `Ensemble.run()` with pre-built DAG, `toEnsemble()` works
+- Adaptive MapReduce: multiple `Ensemble.run()` calls, one per level; carrier tasks
+  bridge context between levels; `toEnsemble()` throws `UnsupportedOperationException`
+- `CONTINUE_ON_ERROR` with partial map failures: `ParallelExecutionException` carries
+  surviving `completedTaskOutputs`; adaptive executor extracts these to proceed
+- Carrier tasks use `__carry__:` role prefix for filtering from aggregated output
+- Post-execution DAG export: `DagExporter.build(ExecutionTrace)` for adaptive runs

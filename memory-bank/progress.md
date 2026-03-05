@@ -1,6 +1,12 @@
 # Progress
 
-## What Works (as of Issue #99)
+## What Works (as of Issue #100)
+
+- **MapReduceEnsemble short-circuit optimization** (`directAgent`/`directTask`): pre-execution
+  input size estimation, bypass of map-reduce pipeline for small inputs, single direct task
+  execution, trace with `nodeType = "direct"`, `mapReduceLevels` list with 1 entry,
+  `inputEstimator` customization, inclusive boundary check, validation (mutual pairing,
+  adaptive-only constraint)
 
 - **Adaptive MapReduceEnsemble** (`targetTokenBudget`): level-by-level execution with
   first-fit-decreasing bin-packing, 3-tier token estimation, carrier task propagation,
@@ -172,10 +178,11 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 - Token estimation: provider count, heuristic (length/4), custom estimator
 - Trace and metrics aggregation across multiple Ensemble.run() calls
 
-### v2.2.0 -- MapReduceEnsemble Short-Circuit (Issue #100)
+### v2.2.0 -- MapReduceEnsemble Short-Circuit (Issue #100) -- COMPLETE
 
 - `directAgent` / `directTask` for skipping map-reduce when input is small
 - Only for adaptive mode
+- Implemented in `agentensemble-core` and documented
 
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
@@ -187,11 +194,10 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 
 ## Current Status
 
-**Issue #98** implementation complete on `feat/issue-98-static-map-reduce-ensemble`:
-- `agentensemble-core` -- 35 unit + 13 integration MapReduce tests pass; coverage >= 90%
-- `agentensemble-devtools` -- all 29+11=40 tests pass; javadoc clean
-- `agentensemble-viz` -- 45/45 TypeScript tests pass
-- Full Gradle build: 159 actionable tasks, BUILD SUCCESSFUL, javadoc clean
+**Issue #100** implementation complete:
+- `agentensemble-core` -- 9+16+7=32 new short-circuit tests pass; all existing tests pass
+- `agentensemble-devtools` -- 5 new short-circuit DagExporter tests pass; all existing pass
+- Full Gradle build: 159 actionable tasks, BUILD SUCCESSFUL, javadoc clean, spotless clean
 
 ## Known Issues
 

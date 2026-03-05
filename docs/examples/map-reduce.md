@@ -239,6 +239,108 @@ Total: 3 ensemble runs (map + L1 + final), vs. 2 runs if all outputs fit in budg
 
 ---
 
+## Short-circuit: small order, single direct task
+
+When the order is small (e.g., 2-3 dishes), the map-reduce pipeline overhead is
+unnecessary. Configure `directAgent` and `directTask` alongside the standard factories.
+The framework estimates input size before any LLM call and bypasses the pipeline when it
+fits within the token budget.
+
+```java
+record OrderItem(String dish, String cuisine, boolean isVegetarian) {
+    public String summary() { return dish + " (" + cuisine + ")"; }
+}
+
+List<OrderItem> smallOrder = List.of(
+    new OrderItem("Truffle Risotto", "Italian", true),
+    new OrderItem("Pan-seared Duck Breast", "French", false)
+);
+
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .items(smallOrder)
+
+    // Standard map + reduce config (used when order is too large for direct processing)
+    .mapAgent(item -> Agent.builder()
+        .role(item.dish() + " Chef")
+        .goal("Prepare " + item.dish())
+        .llm(model)
+        .build())
+    .mapTask((item, agent) -> Task.builder()
+        .description("Execute the recipe for: " + item.dish())
+        .expectedOutput("Recipe with ingredients, steps, and timing")
+        .agent(agent)
+        .build())
+    .reduceAgent(() -> Agent.builder()
+        .role("Sub-Chef")
+        .goal("Consolidate dish preparations")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Consolidate these dish preparations.")
+        .expectedOutput("Coordinated sub-plan")
+        .agent(agent)
+        .context(chunkTasks)
+        .build())
+
+    // Short-circuit: if total estimated input fits in budget, run this instead
+    .directAgent(() -> Agent.builder()
+        .role("Head Chef")
+        .goal("Plan the entire meal directly for a small order")
+        .llm(model)
+        .build())
+    .directTask((agent, allItems) -> {
+        String dishes = allItems.stream()
+            .map(OrderItem::summary)
+            .collect(Collectors.joining(", "));
+        return Task.builder()
+            .description("Plan the complete meal: " + dishes)
+            .expectedOutput("Complete meal plan with all dishes, timing, and plating")
+            .agent(agent)
+            .build();
+    })
+
+    // Optional: use a compact representation for estimation
+    // (avoids counting the full toString() of each OrderItem)
+    .inputEstimator(OrderItem::summary)
+
+    .contextWindowSize(128_000)
+    .budgetRatio(0.5)  // targetTokenBudget = 64_000
+    .build()
+    .run();
+
+// When short-circuit fires: single task output, nodeType="direct"
+System.out.println("Task outputs: " + output.getTaskOutputs().size()); // 1
+System.out.println("Output: " + output.getRaw());
+```
+
+### Decision tree
+
+```
+Before any LLM call:
+
+  estimated_input_tokens = sum(item.summary().length() / 4 for item in smallOrder)
+
+  For a 2-dish order with summaries ~30 chars each:
+    estimated = 2 * (30 / 4) = 2 * 7 = 14 tokens
+
+  14 tokens <= 64_000 (budget) AND directAgent/directTask configured
+    --> SHORT-CIRCUIT fires
+    --> 1 LLM call (Head Chef)
+    --> EnsembleOutput with 1 TaskOutput, nodeType="direct"
+```
+
+### What the trace looks like
+
+After a short-circuit run, `output.getTrace()` has:
+- `workflow = "MAP_REDUCE_ADAPTIVE"`
+- `mapReduceLevels` with exactly 1 entry (level 0, taskCount=1)
+- 1 `TaskTrace` with `nodeType = "direct"` and `mapReduceLevel = 0`
+
+In `agentensemble-viz`, the Flow View shows a single node with a **DIRECT** badge instead
+of the normal map/reduce tree.
+
+---
+
 ## Expected output structure
 
 ```

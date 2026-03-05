@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] - Issue #100: MapReduceEnsemble Short-Circuit Optimization -- 2026-03-05
+
+### Added
+
+- `MapReduceEnsemble.Builder` -- 3 new fields:
+  - `directAgent(Supplier<Agent>)` -- factory for the direct task agent (adaptive only)
+  - `directTask(BiFunction<Agent, List<T>, Task>)` -- factory for the direct task (adaptive only)
+  - `inputEstimator(Function<T, String>)` -- converts each item to text for input size estimation
+- `MapReduceEnsemble.NODE_TYPE_DIRECT = "direct"` constant
+- `MapReduceAdaptiveExecutor.estimateInputTokens()` -- pre-execution input token estimation
+  using heuristic `text.length() / 4` (same heuristic as output estimation in #99)
+- `MapReduceAdaptiveExecutor.runDirectPhase()` -- single-task execution path for short-circuit
+- Short-circuit guard in `MapReduceAdaptiveExecutor.run()` -- fires before map phase when
+  `estimated <= targetTokenBudget` and both direct factories are configured
+
+### Tests Added
+
+- `MapReduceEnsembleShortCircuitValidationTest` (9 unit tests) -- builder validation
+- `MapReduceEnsembleShortCircuitRunTest` (16 unit tests) -- execution with mock LLMs
+- `MapReduceEnsembleShortCircuitIntegrationTest` (7 integration tests) -- Mockito mock LLMs
+- `DagExporterTest` -- 5 new short-circuit trace export tests
+
+### Documentation Updated
+
+- `docs/reference/ensemble-configuration.md` -- `directAgent`, `directTask`, `inputEstimator`
+- `docs/guides/map-reduce.md` -- "Short-circuit optimization" section
+- `docs/examples/map-reduce.md` -- "Short-circuit: small order, single direct task" section
+
+### Design Decisions
+
+- Short-circuit is opt-in (backwards-compatible); no `directAgent`/`directTask` = no check
+- Boundary is inclusive: fires when `estimated <= targetTokenBudget`
+- Static mode (`chunkSize`) forbids `directAgent`/`directTask` (`ValidationException` at build)
+- `directAgent` and `directTask` must both be set or both be null (`ValidationException`)
+- Trace: `workflow = "MAP_REDUCE_ADAPTIVE"`, single `TaskTrace` with `nodeType = "direct"`,
+  `mapReduceLevel = 0`; `mapReduceLevels` has exactly 1 entry (level 0, taskCount=1)
+- `TaskNode.tsx` already had DIRECT badge from #98 -- no visualization code changes needed
+
+---
+
 ## [Unreleased] - v2.0.0 Architecture Design -- 2026-03-05
 
 ### Added (v2.0.0 Architecture -- branch: v2-architecture-design)
