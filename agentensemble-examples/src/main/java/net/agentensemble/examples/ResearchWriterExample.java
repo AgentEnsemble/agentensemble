@@ -114,8 +114,6 @@ public class ResearchWriterExample {
         // ========================
 
         var ensemble = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(researchTask)
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)

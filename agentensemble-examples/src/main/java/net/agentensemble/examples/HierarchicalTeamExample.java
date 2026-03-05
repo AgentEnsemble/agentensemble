@@ -131,9 +131,6 @@ public class HierarchicalTeamExample {
         };
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(marketResearcher)
-                .agent(financialAnalyst)
-                .agent(reportWriter)
                 .task(marketTask)
                 .task(financialTask)
                 .task(reportTask)

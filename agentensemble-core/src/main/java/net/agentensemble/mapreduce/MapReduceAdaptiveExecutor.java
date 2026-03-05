@@ -247,7 +247,7 @@ final class MapReduceAdaptiveExecutor<T> {
         Task directTask = directTaskFactory.apply(directAgent, Collections.unmodifiableList(items));
 
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
-        builder.agent(directAgent).task(directTask);
+        builder.task(directTask);
 
         Instant start = Instant.now();
         EnsembleOutput raw = build(builder).run(inputs);
@@ -350,7 +350,7 @@ final class MapReduceAdaptiveExecutor<T> {
         for (T item : items) {
             Agent agent = mapAgentFactory.apply(item);
             Task task = mapTaskFactory.apply(item, agent);
-            builder.agent(agent).task(task);
+            builder.task(task);
         }
 
         try {
@@ -435,7 +435,7 @@ final class MapReduceAdaptiveExecutor<T> {
                         .expectedOutput(prevOutput.getRaw())
                         .agent(carrierAgent)
                         .build();
-                builder.agent(carrierAgent).task(carrierTask);
+                builder.task(carrierTask);
                 carrierTasks.add(carrierTask);
                 chunkTasks.add(carrierTask);
             }
@@ -443,7 +443,7 @@ final class MapReduceAdaptiveExecutor<T> {
             // Create the reduce agent and task (depends on all carriers in this bin)
             Agent reduceAgent = reduceAgentFactory.get();
             Task reduceTask = reduceTaskFactory.apply(reduceAgent, Collections.unmodifiableList(chunkTasks));
-            builder.agent(reduceAgent).task(reduceTask);
+            builder.task(reduceTask);
         }
 
         EnsembleOutput raw = build(builder).run(inputs);
@@ -484,14 +484,14 @@ final class MapReduceAdaptiveExecutor<T> {
                     .expectedOutput(prevOutput.getRaw())
                     .agent(carrierAgent)
                     .build();
-            builder.agent(carrierAgent).task(carrierTask);
+            builder.task(carrierTask);
             carrierTasks.add(carrierTask);
             chunkTasks.add(carrierTask);
         }
 
         Agent finalAgent = reduceAgentFactory.get();
         Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(chunkTasks));
-        builder.agent(finalAgent).task(finalTask);
+        builder.task(finalTask);
 
         EnsembleOutput raw = build(builder).run(inputs);
 

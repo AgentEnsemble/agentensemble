@@ -95,12 +95,7 @@ public class CaptureModeExample {
                 .agent(analyst)
                 .build();
 
-        return Ensemble.builder()
-                .agent(analyst)
-                .task(task)
-                .captureMode(captureMode)
-                .build()
-                .run();
+        return Ensemble.builder().task(task).captureMode(captureMode).build().run();
     }
 
     private static void printOffTrace(EnsembleOutput output) {

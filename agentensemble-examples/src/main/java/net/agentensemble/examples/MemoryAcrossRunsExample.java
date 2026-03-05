@@ -122,8 +122,6 @@ public class MemoryAcrossRunsExample {
 
         // Create the ensemble once and reuse it across all runs
         Ensemble ensemble = Ensemble.builder()
-                .agent(analyst)
-                .agent(strategist)
                 .task(analysisTask)
                 .task(recommendationTask)
                 .workflow(Workflow.SEQUENTIAL)

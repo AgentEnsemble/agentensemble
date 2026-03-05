@@ -151,11 +151,6 @@ public class DynamicAgentsExample {
 
         Ensemble.EnsembleBuilder builder = Ensemble.builder().workflow(Workflow.PARALLEL);
 
-        for (Agent agent : specialistAgents) {
-            builder.agent(agent);
-        }
-        builder.agent(headChef);
-
         for (Task task : dishTasks) {
             builder.task(task);
         }

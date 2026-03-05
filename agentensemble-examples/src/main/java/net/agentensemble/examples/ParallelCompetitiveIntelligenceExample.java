@@ -128,10 +128,6 @@ public class ParallelCompetitiveIntelligenceExample {
         // ========================
 
         EnsembleOutput output = Ensemble.builder()
-                .agent(marketResearcher)
-                .agent(financialAnalyst)
-                .agent(strategist)
-                .agent(writer)
                 .task(marketTask)
                 .task(financialTask)
                 .task(swotTask)

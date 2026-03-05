@@ -74,7 +74,7 @@ public class StructuredOutputExample {
                 .build();
 
         EnsembleOutput structuredOutput =
-                Ensemble.builder().agent(researcher).task(researchTask).build().run();
+                Ensemble.builder().task(researchTask).build().run();
 
         TaskOutput structuredTaskOutput = structuredOutput.getTaskOutputs().get(0);
 
@@ -128,8 +128,6 @@ public class StructuredOutputExample {
                 .build();
 
         EnsembleOutput markdownOutput = Ensemble.builder()
-                .agent(plainResearcher)
-                .agent(writer)
                 .task(plainResearchTask)
                 .task(writeTask)
                 .workflow(Workflow.SEQUENTIAL)

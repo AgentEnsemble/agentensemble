@@ -1,5 +1,90 @@
 # Changelog
 
+## [Unreleased] - Issues #104 + #105: Task-First Core + AgentSynthesizer SPI -- 2026-03-05
+
+### Added (Issue #104 -- Task absorbs Agent responsibilities)
+
+- `Task.agent` -- made optional (nullable). `Task.of(String)` and `Task.of(String, String)`
+  static convenience factories; no agent required.
+- `Task.chatLanguageModel` (`ChatModel`, nullable) -- per-task LLM override for synthesis.
+- `Task.tools` (`List<Object>`, default `[]`) -- tools for the synthesized agent.
+- `Task.maxIterations` (`Integer`, nullable) -- per-task iteration cap (null = use default 25).
+- `Ensemble.chatLanguageModel` (`ChatModel`) -- ensemble-level LLM for synthesis.
+- `Ensemble.agentSynthesizer` (`AgentSynthesizer`, default `template()`) -- synthesis strategy.
+- `Ensemble.run(ChatModel, Task...)` -- static zero-ceremony factory method.
+- `Ensemble.getAgents()` -- now derived from tasks (identity dedup); no longer a builder field.
+- `Ensemble.resolveAgents()` -- new internal step: synthesizes agents for agentless tasks.
+
+### Removed (Issue #104 -- breaking change)
+
+- `Ensemble.builder().agent(Agent)` -- removed. Agents are now on tasks, not the ensemble.
+- `EnsembleValidator.validateAgentsNotEmpty()` -- removed (no agents list).
+- `EnsembleValidator.validateAgentMembership()` -- removed (no membership to validate).
+- `EnsembleValidator.warnUnusedAgents()` -- removed.
+
+### Changed (Issue #104)
+
+- `EnsembleValidator` -- `validateTasksHaveLlm()` replaces the old agents checks.
+  Hierarchical role validation now derives roles from tasks with explicit agents.
+- `MapReduceEnsemble` -- removed `builder.agent(agent)` calls (agents on tasks only).
+- `MapReduceAdaptiveExecutor` -- removed all `builder.agent()` calls (agents on tasks only).
+
+### Added (Issue #105 -- AgentSynthesizer SPI)
+
+- `net.agentensemble.synthesis.AgentSynthesizer` -- SPI interface with
+  `synthesize(Task, SynthesisContext)`. Static factories: `template()`, `llmBased()`.
+- `net.agentensemble.synthesis.SynthesisContext` -- record `(ChatModel model, Locale locale)`.
+  Static factory `of(ChatModel)`.
+- `net.agentensemble.synthesis.TemplateAgentSynthesizer` -- deterministic, no LLM call.
+  25-verb verb-to-role lookup table. Role extracted from first word of description.
+  Goal = description. Backstory derived from role.
+- `net.agentensemble.synthesis.LlmBasedAgentSynthesizer` -- one LLM call per task.
+  JSON response parsed into role/goal/backstory. Falls back to TemplateAgentSynthesizer on
+  any parse or LLM error.
+
+### Tests Added (Issues #104 + #105)
+
+- `TemplateAgentSynthesizerTest` (25): role extraction parametrized tests, goal/backstory,
+  determinism, fully valid agent, factory methods
+- `LlmBasedAgentSynthesizerTest` (10): happy path, empty backstory, malformed JSON fallback,
+  missing required fields, LLM exception, null response, factory methods
+- `SynthesisContextTest` (3): of() factory, constructor, equality
+- `TaskTest`: Task.of(), task-level tools/chatLanguageModel/maxIterations
+- `TaskValidationTest`: maxIterations validation, tools validation, null agent succeeds
+- Integration tests updated: all `.agent()` calls removed from `Ensemble.builder()` across all
+  test files; `EnsembleValidationTest`, `HierarchicalEnsembleValidationIntegrationTest` updated.
+- `EnsembleConstraintValidationTest`, `HierarchicalConstraintsIntegrationTest`: updated to
+  include analyst tasks so both roles are registered for constraint validation.
+
+### Documentation Added/Updated (Issues #104 + #105)
+
+- `docs/guides/agents.md`: v2 intro (agents optional), AgentSynthesizer section,
+  template/LLM-based/custom synthesis examples, when to use explicit agents table.
+- `docs/guides/tasks.md`: zero-ceremony section, per-task LLM/tools/maxIterations,
+  explicit agent as power-user escape hatch.
+- `docs/getting-started/quickstart.md`: zero-ceremony example leads the page;
+  explicit agent section follows.
+- `docs/reference/task-configuration.md`: new fields documented
+  (chatLanguageModel, tools, maxIterations, agent now optional).
+- `docs/reference/ensemble-configuration.md`: `chatLanguageModel`, `agentSynthesizer`
+  fields added; `agents` removed; Validation section updated; static factory documented.
+- `docs/migration/v1-to-v2.md`: new migration guide (8 sections, quick checklist).
+- `mkdocs.yml`: Migration section added with v1-to-v2.md.
+
+### Design Decisions (Issues #104 + #105)
+
+- Agent resolution happens in `Ensemble.resolveAgents()` after template resolution and before
+  workflow execution -- workflow executors always see tasks with agents set.
+- Task-level `tools`, `chatLanguageModel`, `maxIterations` are used ONLY for synthesis
+  (when no explicit agent is set). When an explicit agent is set, those fields are ignored.
+- Synthesized agents are ephemeral: not cached, not in `getAgents()`, not in the trace agent list.
+- `LlmBasedAgentSynthesizer` falls back to template silently on any error to ensure an agent
+  is always produced.
+- HIERARCHICAL workflow: roles validated only for tasks with explicit agents (synthesized
+  agent roles are unknown at validation time).
+
+---
+
 ## [Unreleased] - Issue #100: MapReduceEnsemble Short-Circuit Optimization -- 2026-03-05
 
 ### Added

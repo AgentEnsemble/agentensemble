@@ -75,12 +75,17 @@ class HierarchicalConstraintsIntegrationTest {
     }
 
     private Ensemble.EnsembleBuilder baseEnsemble() {
+        // Include both researcher and analyst tasks so both roles are registered for constraints.
+        Task analystTask = Task.builder()
+                .description("Analyse data")
+                .expectedOutput("Analysis output")
+                .agent(analyst)
+                .build();
         return Ensemble.builder()
                 .workflow(Workflow.HIERARCHICAL)
                 .managerLlm(managerModel)
-                .agent(researcher)
-                .agent(analyst)
-                .task(task);
+                .task(task)
+                .task(analystTask);
     }
 
     // ========================

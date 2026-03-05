@@ -53,7 +53,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .workflow(Workflow.PARALLEL)
                 .build()
@@ -81,8 +80,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(researcher)
-                .agent(analyst)
                 .task(task1)
                 .task(task2)
                 .workflow(Workflow.PARALLEL)
@@ -126,10 +123,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
-                .agent(c)
-                .agent(d)
                 .task(ta)
                 .task(tb)
                 .task(tc)
@@ -173,9 +166,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
-                .agent(c)
                 .task(ta)
                 .task(tb)
                 .task(tc)
@@ -204,8 +194,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
                 .task(tb)
                 .task(ta) // tb listed before ta (would fail SEQUENTIAL)
                 .workflow(Workflow.PARALLEL)
@@ -240,8 +228,6 @@ class ParallelEnsembleIntegrationTest {
 
         // tb listed before ta -- fine for PARALLEL (no ordering constraint)
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
                 .task(tb)
                 .task(ta)
                 .workflow(Workflow.PARALLEL)
@@ -253,11 +239,8 @@ class ParallelEnsembleIntegrationTest {
     @Test
     void testNoTasks_throwsValidationException() {
         var agent = agentWithResponse("A", "out");
-        assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
-                        .workflow(Workflow.PARALLEL)
-                        .build()
-                        .run())
+        assertThatThrownBy(() ->
+                        Ensemble.builder().workflow(Workflow.PARALLEL).build().run())
                 .isInstanceOf(ValidationException.class);
     }
 
@@ -281,8 +264,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(researcher)
-                .agent(writer)
                 .task(task1)
                 .task(task2)
                 .workflow(Workflow.PARALLEL)
@@ -316,8 +297,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
                 .task(ta)
                 .task(tb)
                 .workflow(Workflow.PARALLEL)
@@ -343,8 +322,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(a)
-                .agent(b)
                 .task(ta)
                 .task(tb)
                 .workflow(Workflow.PARALLEL)
@@ -364,7 +341,6 @@ class ParallelEnsembleIntegrationTest {
                 .build();
 
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(task)
                 .workflow(Workflow.PARALLEL)
                 .verbose(true)

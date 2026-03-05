@@ -767,7 +767,6 @@ public final class MapReduceEnsemble<T> {
             IdentityHashMap<Task, String> nodeTypes = new IdentityHashMap<>();
             IdentityHashMap<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
 
-            List<Agent> allAgents = new ArrayList<>();
             List<Task> allTasks = new ArrayList<>();
 
             // Step 1: Create N map agents and tasks
@@ -775,7 +774,6 @@ public final class MapReduceEnsemble<T> {
             for (T item : items) {
                 Agent agent = mapAgentFactory.apply(item);
                 Task task = mapTaskFactory.apply(item, agent);
-                allAgents.add(agent);
                 allTasks.add(task);
                 mapTasks.add(task);
                 nodeTypes.put(task, NODE_TYPE_MAP);
@@ -786,7 +784,6 @@ public final class MapReduceEnsemble<T> {
             if (items.size() <= effectiveChunkSize) {
                 Agent finalAgent = reduceAgentFactory.get();
                 Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(mapTasks));
-                allAgents.add(finalAgent);
                 allTasks.add(finalTask);
                 nodeTypes.put(finalTask, NODE_TYPE_FINAL_REDUCE);
                 mapReduceLevels.put(finalTask, 1);
@@ -800,7 +797,6 @@ public final class MapReduceEnsemble<T> {
                     for (List<Task> group : groups) {
                         Agent agent = reduceAgentFactory.get();
                         Task task = reduceTaskFactory.apply(agent, Collections.unmodifiableList(group));
-                        allAgents.add(agent);
                         allTasks.add(task);
                         nextLevel.add(task);
                         nodeTypes.put(task, NODE_TYPE_REDUCE);
@@ -812,7 +808,6 @@ public final class MapReduceEnsemble<T> {
 
                 Agent finalAgent = reduceAgentFactory.get();
                 Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(currentLevel));
-                allAgents.add(finalAgent);
                 allTasks.add(finalTask);
                 nodeTypes.put(finalTask, NODE_TYPE_FINAL_REDUCE);
                 mapReduceLevels.put(finalTask, reduceLevel);
@@ -824,9 +819,6 @@ public final class MapReduceEnsemble<T> {
                     .parallelErrorStrategy(parallelErrorStrategy)
                     .captureMode(captureMode);
 
-            for (Agent agent : allAgents) {
-                ensembleBuilder.agent(agent);
-            }
             for (Task task : allTasks) {
                 ensembleBuilder.task(task);
             }

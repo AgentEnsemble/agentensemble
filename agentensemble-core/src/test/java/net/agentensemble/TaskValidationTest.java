@@ -1,5 +1,6 @@
 package net.agentensemble;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
@@ -87,18 +88,19 @@ class TaskValidationTest {
     }
 
     // ========================
-    // Validation: agent
+    // Validation: agent (optional in v2)
     // ========================
 
     @Test
-    void testBuild_withNullAgent_throwsValidation() {
-        assertThatThrownBy(() -> Task.builder()
-                        .description("Research task")
-                        .expectedOutput("A report")
-                        .agent(null)
-                        .build())
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("agent");
+    void testBuild_withNullAgent_succeeds() {
+        // Agent is optional in v2 -- tasks without an explicit agent are synthesized at runtime
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("A report")
+                .agent(null)
+                .build();
+
+        assertThat(task.getAgent()).isNull();
     }
 
     // ========================
@@ -195,5 +197,79 @@ class TaskValidationTest {
                         .build())
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("maxOutputRetries");
+    }
+
+    // ========================
+    // Validation: maxIterations (v2)
+    // ========================
+
+    @Test
+    void testBuild_withMaxIterations_zero_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .maxIterations(0)
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("maxIterations");
+    }
+
+    @Test
+    void testBuild_withMaxIterations_negative_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .maxIterations(-5)
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("maxIterations");
+    }
+
+    @Test
+    void testBuild_withMaxIterations_positive_succeeds() {
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .maxIterations(10)
+                .build();
+
+        assertThat(task.getMaxIterations()).isEqualTo(10);
+    }
+
+    @Test
+    void testBuild_withMaxIterations_null_succeeds() {
+        // null means "use synthesis default"
+        var task = Task.builder().description("Task").expectedOutput("Output").build();
+
+        assertThat(task.getMaxIterations()).isNull();
+    }
+
+    // ========================
+    // Validation: tools (v2)
+    // ========================
+
+    @Test
+    void testBuild_withNullToolInList_throwsValidation() {
+        // Use an ArrayList that permits null entries (unlike List.of)
+        java.util.List<Object> toolsWithNull = new java.util.ArrayList<>();
+        toolsWithNull.add(null);
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .tools(toolsWithNull)
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("tool");
+    }
+
+    @Test
+    void testBuild_withInvalidToolObject_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .tools(List.of("not-a-tool"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("AgentTool");
     }
 }

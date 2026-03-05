@@ -8,6 +8,8 @@ import java.util.List;
 import net.agentensemble.guardrail.GuardrailResult;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
+import net.agentensemble.tool.AgentTool;
+import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -352,5 +354,153 @@ class TaskTest {
 
         assertThat(task.getInputGuardrails()).containsExactly(inGuard);
         assertThat(task.getOutputGuardrails()).containsExactly(outGuard);
+    }
+
+    // ========================
+    // Task.of() convenience factories (v2)
+    // ========================
+
+    @Test
+    void taskOf_descriptionOnly_setsDefaultExpectedOutput() {
+        var task = Task.of("Research the latest AI developments");
+
+        assertThat(task.getDescription()).isEqualTo("Research the latest AI developments");
+        assertThat(task.getExpectedOutput()).isEqualTo(Task.DEFAULT_EXPECTED_OUTPUT);
+        assertThat(task.getAgent()).isNull();
+        assertThat(task.getContext()).isEmpty();
+        assertThat(task.getTools()).isEmpty();
+        assertThat(task.getChatLanguageModel()).isNull();
+        assertThat(task.getMaxIterations()).isNull();
+    }
+
+    @Test
+    void taskOf_descriptionAndExpectedOutput_setsCustomOutput() {
+        var task = Task.of("Research AI trends", "A detailed market analysis");
+
+        assertThat(task.getDescription()).isEqualTo("Research AI trends");
+        assertThat(task.getExpectedOutput()).isEqualTo("A detailed market analysis");
+        assertThat(task.getAgent()).isNull();
+    }
+
+    @Test
+    void taskOf_descriptionOnly_isImmutableAndRepeatable() {
+        var task1 = Task.of("Research AI");
+        var task2 = Task.of("Research AI");
+
+        assertThat(task1.getDescription()).isEqualTo(task2.getDescription());
+        assertThat(task1.getExpectedOutput()).isEqualTo(task2.getExpectedOutput());
+    }
+
+    // ========================
+    // New v2 fields: tools, chatLanguageModel, maxIterations
+    // ========================
+
+    @Test
+    void testBuild_withTools_storedAndImmutable() {
+        AgentTool tool = new AgentTool() {
+            @Override
+            public String name() {
+                return "calculator";
+            }
+
+            @Override
+            public String description() {
+                return "Does math";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                return ToolResult.success("42");
+            }
+        };
+
+        var task = Task.builder()
+                .description("Calculate something")
+                .expectedOutput("A number")
+                .tools(List.of(tool))
+                .build();
+
+        assertThat(task.getTools()).containsExactly(tool);
+        assertThat(task.getTools()).isUnmodifiable();
+    }
+
+    @Test
+    void testBuild_defaultTools_isEmpty() {
+        var task = Task.of("Do something");
+        assertThat(task.getTools()).isEmpty();
+        assertThat(task.getTools()).isUnmodifiable();
+    }
+
+    @Test
+    void testBuild_withChatLanguageModel_stored() {
+        ChatModel model = mock(ChatModel.class);
+
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .chatLanguageModel(model)
+                .build();
+
+        assertThat(task.getChatLanguageModel()).isSameAs(model);
+        assertThat(task.getAgent()).isNull(); // no explicit agent
+    }
+
+    @Test
+    void testBuild_defaultChatLanguageModel_isNull() {
+        var task = Task.of("Research task");
+        assertThat(task.getChatLanguageModel()).isNull();
+    }
+
+    @Test
+    void testBuild_withMaxIterations_stored() {
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .maxIterations(10)
+                .build();
+
+        assertThat(task.getMaxIterations()).isEqualTo(10);
+    }
+
+    @Test
+    void testBuild_defaultMaxIterations_isNull() {
+        var task = Task.of("Research task");
+        assertThat(task.getMaxIterations()).isNull();
+    }
+
+    @Test
+    void testBuild_withAllNewV2Fields_succeed() {
+        ChatModel model = mock(ChatModel.class);
+
+        var task = Task.builder()
+                .description("Research and analyse AI trends")
+                .expectedOutput("A comprehensive report")
+                .chatLanguageModel(model)
+                .maxIterations(15)
+                .build();
+
+        assertThat(task.getAgent()).isNull();
+        assertThat(task.getChatLanguageModel()).isSameAs(model);
+        assertThat(task.getMaxIterations()).isEqualTo(15);
+        assertThat(task.getTools()).isEmpty();
+    }
+
+    @Test
+    void testBuild_agentAndNewFields_agentTakesPriority() {
+        // When explicit agent is set alongside new fields, agent is stored as-is.
+        // The new fields are used during synthesis (when no agent is set).
+        ChatModel taskModel = mock(ChatModel.class);
+
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .agent(testAgent)
+                .chatLanguageModel(taskModel)
+                .maxIterations(20)
+                .build();
+
+        assertThat(task.getAgent()).isSameAs(testAgent);
+        assertThat(task.getChatLanguageModel()).isSameAs(taskModel);
+        assertThat(task.getMaxIterations()).isEqualTo(20);
     }
 }

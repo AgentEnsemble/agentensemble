@@ -1,10 +1,15 @@
 # Agents
 
-An agent is an AI entity with a defined role and goal. Each agent uses a LangChain4j `ChatModel` to reason and produce outputs. Agents are immutable value objects built via a fluent builder.
+In v2, agents are **optional**. When a task has no explicit agent, the framework synthesizes
+one automatically from the task description. You only need to declare an agent explicitly
+when you want full control over the persona (role, background, verbose logging, etc.).
+
+For most use cases, rely on the zero-ceremony API and let the framework do the rest.
+See [AgentSynthesizer](#agentsynthesizer) below for details on how synthesis works.
 
 ---
 
-## Creating an Agent
+## Creating an Agent (explicit, power-user)
 
 ```java
 Agent researcher = Agent.builder()
@@ -17,186 +22,151 @@ Agent researcher = Agent.builder()
 
 The `role`, `goal`, and `llm` fields are required. All other fields are optional.
 
+Bind the agent to a specific task:
+
+```java
+Task task = Task.builder()
+    .description("Research the latest developments in AI")
+    .expectedOutput("A 400-word summary")
+    .agent(researcher)   // explicit agent
+    .build();
+```
+
 ---
 
 ## Role and Goal
 
-The `role` and `goal` fields are the most important parts of the agent identity. They are combined into the system prompt that the agent receives before each task.
+The `role` and `goal` fields are the most important parts of the agent identity. They are
+combined into the system prompt that the agent receives before each task.
 
-- **role**: The agent's title. Keep it concise and descriptive. Example: `"Data Scientist"`, `"Legal Reviewer"`, `"Code Reviewer"`.
-- **goal**: The agent's primary objective. Write this as a directive. Example: `"Analyse data and identify statistical patterns"`.
+- **role**: The agent's title. Keep it concise and descriptive.
+  Example: `"Data Scientist"`, `"Legal Reviewer"`, `"Code Reviewer"`.
+- **goal**: The agent's primary objective. Write this as a directive.
+  Example: `"Analyse data and identify statistical patterns"`.
 
 ---
 
 ## Background
 
-The `background` field adds persona context to the system prompt. Use it to give the agent domain expertise, a specific point of view, or constraints:
+The `background` field adds context to the system prompt, giving the agent a persona and
+relevant domain knowledge.
 
 ```java
 Agent analyst = Agent.builder()
     .role("Financial Analyst")
-    .goal("Evaluate investment opportunities and risks")
-    .background("You specialise in technology sector equities. Your analysis is always " +
-                "grounded in publicly available data. You never speculate beyond the evidence.")
+    .goal("Identify investment opportunities from market data")
+    .background("You are a CFA-certified financial analyst with expertise in tech sector equities.")
     .llm(model)
     .build();
 ```
-
-When `background` is omitted, only role and goal are included in the system prompt.
 
 ---
 
 ## Tools
 
-Agents can be equipped with tools that they call during their ReAct-style reasoning loop. There are two ways to provide tools:
+The `tools` field registers tools available during the ReAct loop. Each entry must be either:
 
-### Option 1: Implement `AgentTool`
+- An `AgentTool` instance (implements `AgentTool` interface)
+- An object with `@Tool`-annotated methods
 
 ```java
-public class WebSearchTool implements AgentTool {
-    public String name() { return "web_search"; }
-    public String description() { return "Search the web for current information. Input: a search query."; }
-    public ToolResult execute(String input) {
-        String results = performSearch(input);
-        return ToolResult.success(results);
-    }
-}
-
-Agent agent = Agent.builder()
+Agent researcher = Agent.builder()
     .role("Researcher")
-    .goal("Find current information")
-    .tools(List.of(new WebSearchTool()))
+    .goal("Find up-to-date information using web search")
     .llm(model)
+    .tools(List.of(new WebSearchTool(), new CalculatorTool()))
     .build();
 ```
-
-### Option 2: LangChain4j `@Tool` Annotation
-
-```java
-public class MathTools {
-    @Tool("Calculate a mathematical expression. Input: an expression like '2 + 3 * 4'.")
-    public double calculate(String expression) {
-        return evaluateExpression(expression);
-    }
-
-    @Tool("Convert a temperature from Celsius to Fahrenheit. Input: temperature in Celsius as a number.")
-    public double celsiusToFahrenheit(double celsius) {
-        return celsius * 9.0 / 5.0 + 32;
-    }
-}
-
-Agent agent = Agent.builder()
-    .role("Analyst")
-    .goal("Perform calculations and data conversions")
-    .tools(List.of(new MathTools()))
-    .llm(model)
-    .build();
-```
-
-Both tool types can be combined in the same list:
-
-```java
-Agent agent = Agent.builder()
-    .role("Research Analyst")
-    .goal("Research and calculate")
-    .tools(List.of(new WebSearchTool(), new MathTools()))
-    .llm(model)
-    .build();
-```
-
-See the [Tools guide](tools.md) for more detail.
 
 ---
 
-## Verbose Mode
+## Other Fields
 
-When `verbose = true`, the agent's system prompt, user prompt, and LLM response are logged at INFO level. This is useful for debugging:
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `maxIterations` | `int` | `25` | Maximum tool-call iterations before forcing a final answer |
+| `allowDelegation` | `boolean` | `false` | Whether this agent may delegate to other agents |
+| `verbose` | `boolean` | `false` | Logs prompts and responses at INFO level |
+| `responseFormat` | `String` | `""` | Formatting instruction appended to the system prompt |
+
+---
+
+## AgentSynthesizer
+
+When a task has no explicit agent, the framework auto-synthesizes one using the ensemble's
+configured `AgentSynthesizer`. The synthesized agent is ephemeral -- it exists only for
+the duration of that task execution.
+
+### Template-based synthesis (default)
+
+The default synthesizer extracts a role noun from the task description using a verb-to-role
+lookup table. No extra LLM call is made:
+
+| First word | Synthesized role |
+|---|---|
+| Research / Investigate | Researcher |
+| Write / Draft / Compose | Writer |
+| Analyze / Analyse / Evaluate | Analyst |
+| Design | Designer |
+| Build / Implement / Develop | Developer |
+| Test / Verify | Tester |
+| Summarize / Summarise | Summarizer |
+| Review | Reviewer |
+| Plan | Planner |
+| (anything else) | Agent |
+
+The goal is set to the full task description. The backstory is derived from the role.
 
 ```java
-Agent agent = Agent.builder()
-    .role("Researcher")
-    .goal("Research topics")
-    .llm(model)
-    .verbose(true)
-    .build();
+// "Research AI trends" -> role "Researcher", goal "Research AI trends"
+Task task = Task.of("Research AI trends and summarise findings");
 ```
 
-Verbose can also be set at the ensemble level, which applies to all agents:
+### LLM-based synthesis (opt-in)
+
+For higher-quality personas, use `AgentSynthesizer.llmBased()`. This makes one additional
+LLM call per agentless task to generate a tailored role, goal, and backstory:
 
 ```java
 Ensemble.builder()
-    .agent(researcher)
-    .agent(writer)
-    .tasks(...)
-    .verbose(true)
-    .build();
+    .chatLanguageModel(model)
+    .agentSynthesizer(AgentSynthesizer.llmBased())
+    .task(Task.of("Analyse the quarterly earnings report"))
+    .build()
+    .run();
 ```
 
----
+### Custom synthesizer
 
-## Max Iterations
-
-The `maxIterations` field limits how many tool calls an agent can make before being forced to produce a final answer. The default is 25.
+Implement the `AgentSynthesizer` interface to provide your own strategy:
 
 ```java
-Agent agent = Agent.builder()
-    .role("Data Analyst")
-    .goal("Analyse datasets")
-    .llm(model)
-    .maxIterations(10)  // stop after 10 tool calls
+AgentSynthesizer customSynthesizer = (task, ctx) -> Agent.builder()
+    .role("Domain Expert")
+    .goal(task.getDescription())
+    .background("You are an expert in this domain.")
+    .llm(ctx.model())
     .build();
-```
 
-When the limit is exceeded, the agent receives a stop message asking it to produce a final answer with the information gathered so far. After three stop messages, a `MaxIterationsExceededException` is thrown.
-
----
-
-## Response Format
-
-Use `responseFormat` to add formatting instructions to the system prompt:
-
-```java
-Agent agent = Agent.builder()
-    .role("Report Writer")
-    .goal("Write structured reports")
-    .llm(model)
-    .responseFormat("Always respond in JSON. Use the schema: {\"title\": string, \"summary\": string, \"recommendations\": [string]}.")
-    .build();
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .agentSynthesizer(customSynthesizer)
+    .task(Task.of("Process the data"))
+    .build()
+    .run();
 ```
 
 ---
 
-## Delegation
+## When to use explicit agents
 
-When `allowDelegation = true`, the agent has access to a `delegate` tool that it can call to hand off subtasks to other agents in the ensemble:
+Use an explicit agent when you need:
 
-```java
-Agent leadResearcher = Agent.builder()
-    .role("Lead Researcher")
-    .goal("Coordinate research by delegating specialised subtasks")
-    .llm(model)
-    .allowDelegation(true)
-    .build();
-```
+- A specific persona with a crafted background
+- Verbose logging for debugging a particular task
+- A custom `responseFormat` instruction
+- An agent with `allowDelegation = true`
+- A different LLM model than the ensemble default
 
-The agent can then call `delegate("Writer", "Write an executive summary based on: ...")` during its reasoning loop.
-
-See the [Delegation guide](delegation.md) for full details.
-
----
-
-## Agent as a Value Object
-
-Agents are immutable. If you need to create a variant, use `toBuilder()`:
-
-```java
-Agent verboseResearcher = researcher.toBuilder()
-    .verbose(true)
-    .build();
-```
-
----
-
-## Reference
-
-See the [Agent Configuration reference](../reference/agent-configuration.md) for the complete field table with types and defaults.
+For all other cases, the zero-ceremony API (`Task.of()`, `Ensemble.run()`) is simpler and
+equally effective.

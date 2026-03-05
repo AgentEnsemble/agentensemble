@@ -85,7 +85,6 @@ class CallbackIntegrationTest {
         var t = task("Research AI", agent);
 
         Ensemble.builder()
-                .agent(agent)
                 .task(t)
                 .onTaskStart(event -> eventOrder.add("task_start"))
                 .build()
@@ -104,7 +103,7 @@ class CallbackIntegrationTest {
         var t = task("Research AI trends", agent);
 
         List<TaskStartEvent> events = new ArrayList<>();
-        Ensemble.builder().agent(agent).task(t).onTaskStart(events::add).build().run();
+        Ensemble.builder().task(t).onTaskStart(events::add).build().run();
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).taskDescription()).isEqualTo("Research AI trends");
@@ -124,7 +123,6 @@ class CallbackIntegrationTest {
 
         List<Integer> taskIndices = new ArrayList<>();
         Ensemble.builder()
-                .agent(agent)
                 .task(t1)
                 .task(t2)
                 .onTaskStart(event -> taskIndices.add(event.taskIndex()))
@@ -147,12 +145,7 @@ class CallbackIntegrationTest {
         var t = task("Research AI", agent);
 
         List<TaskCompleteEvent> events = new ArrayList<>();
-        Ensemble.builder()
-                .agent(agent)
-                .task(t)
-                .onTaskComplete(events::add)
-                .build()
-                .run();
+        Ensemble.builder().task(t).onTaskComplete(events::add).build().run();
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).taskOutput().getRaw()).isEqualTo("success output");
@@ -171,7 +164,6 @@ class CallbackIntegrationTest {
 
         AtomicInteger count = new AtomicInteger(0);
         Ensemble.builder()
-                .agent(agent)
                 .task(t1)
                 .task(t2)
                 .onTaskComplete(event -> count.incrementAndGet())
@@ -196,7 +188,6 @@ class CallbackIntegrationTest {
         List<TaskFailedEvent> failedEvents = new ArrayList<>();
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
                         .task(t)
                         .onTaskFailed(failedEvents::add)
                         .build()
@@ -221,7 +212,6 @@ class CallbackIntegrationTest {
         AtomicBoolean completeCalled = new AtomicBoolean(false);
 
         assertThatThrownBy(() -> Ensemble.builder()
-                        .agent(agent)
                         .task(t)
                         .onTaskComplete(event -> completeCalled.set(true))
                         .build()
@@ -256,12 +246,7 @@ class CallbackIntegrationTest {
         var t = task("Research AI", agent);
 
         List<ToolCallEvent> toolEvents = new ArrayList<>();
-        Ensemble.builder()
-                .agent(agent)
-                .task(t)
-                .onToolCall(toolEvents::add)
-                .build()
-                .run();
+        Ensemble.builder().task(t).onToolCall(toolEvents::add).build().run();
 
         assertThat(toolEvents).hasSize(1);
         assertThat(toolEvents.get(0).toolName()).isEqualTo("search");
@@ -287,7 +272,6 @@ class CallbackIntegrationTest {
         AtomicInteger l3Count = new AtomicInteger(0);
 
         Ensemble.builder()
-                .agent(agent)
                 .task(t)
                 .onTaskStart(event -> l1Count.incrementAndGet())
                 .onTaskStart(event -> l2Count.incrementAndGet())
@@ -317,7 +301,6 @@ class CallbackIntegrationTest {
 
         // First listener throws; second should still be called and execution should complete
         var output = Ensemble.builder()
-                .agent(agent)
                 .task(t)
                 .onTaskStart(event -> {
                     throw new RuntimeException("Listener boom");
@@ -350,7 +333,6 @@ class CallbackIntegrationTest {
         var t = task("Task", agent);
 
         Ensemble.builder()
-                .agent(agent)
                 .task(t)
                 .onTaskStart(event -> events.add("start"))
                 .onTaskComplete(event -> events.add("complete"))

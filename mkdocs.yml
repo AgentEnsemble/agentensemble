@@ -107,6 +107,8 @@ nav:
     - Metrics and Traces: examples/metrics.md
     - CaptureMode: examples/capture-mode.md
     - Visualization: examples/visualization.md
+  - Migration:
+    - v1.x to v2.0: migration/v1-to-v2.md
   - Design:
     - Overview: design/01-overview.md
     - Architecture: design/02-architecture.md

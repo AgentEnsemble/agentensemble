@@ -32,7 +32,7 @@ class EnsembleTest {
     @Test
     void testDefaultWorkflow_isSequential() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).build();
+        var ensemble = Ensemble.builder().build();
 
         assertThat(ensemble.getWorkflow()).isEqualTo(Workflow.SEQUENTIAL);
     }
@@ -40,7 +40,7 @@ class EnsembleTest {
     @Test
     void testDefaultVerbose_isFalse() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).build();
+        var ensemble = Ensemble.builder().build();
 
         assertThat(ensemble.isVerbose()).isFalse();
     }
@@ -52,7 +52,7 @@ class EnsembleTest {
     @Test
     void testDefaultListeners_isEmpty() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).build();
+        var ensemble = Ensemble.builder().build();
         assertThat(ensemble.getListeners()).isEmpty();
     }
 
@@ -60,37 +60,35 @@ class EnsembleTest {
     void testListener_addsToList() {
         var researcher = agent("Researcher");
         EnsembleListener listener = new EnsembleListener() {};
-        var ensemble = Ensemble.builder().agent(researcher).listener(listener).build();
+        var ensemble = Ensemble.builder().listener(listener).build();
         assertThat(ensemble.getListeners()).containsExactly(listener);
     }
 
     @Test
     void testOnTaskStart_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).onTaskStart(e -> {}).build();
+        var ensemble = Ensemble.builder().onTaskStart(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
     @Test
     void testOnTaskComplete_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble =
-                Ensemble.builder().agent(researcher).onTaskComplete(e -> {}).build();
+        var ensemble = Ensemble.builder().onTaskComplete(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
     @Test
     void testOnTaskFailed_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble =
-                Ensemble.builder().agent(researcher).onTaskFailed(e -> {}).build();
+        var ensemble = Ensemble.builder().onTaskFailed(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
     @Test
     void testOnToolCall_addsListenerToList() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).onToolCall(e -> {}).build();
+        var ensemble = Ensemble.builder().onToolCall(e -> {}).build();
         assertThat(ensemble.getListeners()).hasSize(1);
     }
 
@@ -100,7 +98,6 @@ class EnsembleTest {
         EnsembleListener l1 = new EnsembleListener() {};
         EnsembleListener l2 = new EnsembleListener() {};
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .listener(l1)
                 .listener(l2)
                 .onTaskStart(e -> {})
@@ -115,15 +112,14 @@ class EnsembleTest {
     @Test
     void testDefaultInputs_isEmpty() {
         var researcher = agent("Researcher");
-        var ensemble = Ensemble.builder().agent(researcher).build();
+        var ensemble = Ensemble.builder().build();
         assertThat(ensemble.getInputs()).isEmpty();
     }
 
     @Test
     void testInput_addsSingleEntry() {
         var researcher = agent("Researcher");
-        var ensemble =
-                Ensemble.builder().agent(researcher).input("topic", "AI agents").build();
+        var ensemble = Ensemble.builder().input("topic", "AI agents").build();
         assertThat(ensemble.getInputs()).containsExactly(Map.entry("topic", "AI agents"));
     }
 
@@ -131,7 +127,6 @@ class EnsembleTest {
     void testMultipleInput_allAccumulate() {
         var researcher = agent("Researcher");
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .input("company", "Acme")
                 .input("industry", "software")
                 .build();
@@ -145,7 +140,6 @@ class EnsembleTest {
     void testInputs_bulkAddsAllEntries() {
         var researcher = agent("Researcher");
         var ensemble = Ensemble.builder()
-                .agent(researcher)
                 .inputs(Map.of("company", "Acme", "industry", "software"))
                 .build();
         assertThat(ensemble.getInputs()).containsEntry("company", "Acme").containsEntry("industry", "software");

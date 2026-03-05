@@ -94,8 +94,7 @@ public class RemoteToolExample {
                 .agent(agent)
                 .build();
 
-        EnsembleOutput output =
-                Ensemble.builder().agent(agent).task(reviewTask).build().run();
+        EnsembleOutput output = Ensemble.builder().task(reviewTask).build().run();
 
         System.out.println("=== Remote Tool Example Output ===");
         System.out.println(output.getRaw());
