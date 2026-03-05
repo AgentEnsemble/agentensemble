@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.4.1](https://github.com/AgentEnsemble/agentensemble/compare/v1.4.0...v1.4.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* use ORG_RELEASE_TOKEN to bypass branch protection on SNAPSHOT bump ([#117](https://github.com/AgentEnsemble/agentensemble/issues/117)) ([21b9941](https://github.com/AgentEnsemble/agentensemble/commit/21b99411dae03f5df70dafa62bc90cb1484882f0))
+
+## [1.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.3.0...v1.4.0) (2026-03-05)
+
+
+### Features
+
+* **#42:** execution metrics, token tracking, cost estimation, and execution trace ([#88](https://github.com/AgentEnsemble/agentensemble/issues/88)) ([b85f735](https://github.com/AgentEnsemble/agentensemble/commit/b85f73539f75888161ae3aa6111d9f5036db0016))
+* **#89:** CaptureMode -- transparent debug/capture mode for complete execution recording ([#93](https://github.com/AgentEnsemble/agentensemble/issues/93)) ([0438232](https://github.com/AgentEnsemble/agentensemble/commit/0438232b875e8c18e033d5bd65837ba8083c3fff))
+* **core:** static MapReduceEnsemble with chunkSize (issue [#98](https://github.com/AgentEnsemble/agentensemble/issues/98)) ([#102](https://github.com/AgentEnsemble/agentensemble/issues/102)) ([6cf0f7d](https://github.com/AgentEnsemble/agentensemble/commit/6cf0f7d6c0ddec2059feceaf8380e61064783f59))
+* distribute agentensemble-viz via Homebrew tap ([#94](https://github.com/AgentEnsemble/agentensemble/issues/94)) ([#96](https://github.com/AgentEnsemble/agentensemble/issues/96)) ([495f728](https://github.com/AgentEnsemble/agentensemble/commit/495f7280a512037c0197521c8821745c12769de5))
+* interactive execution graph visualization ([#44](https://github.com/AgentEnsemble/agentensemble/issues/44)) ([#95](https://github.com/AgentEnsemble/agentensemble/issues/95)) ([b8c84cd](https://github.com/AgentEnsemble/agentensemble/commit/b8c84cd91a19bf0f88268f7f42f06d800e0dd48e))
+
+
+### Bug Fixes
+
+* address Copilot review comments from PR [#96](https://github.com/AgentEnsemble/agentensemble/issues/96) ([#97](https://github.com/AgentEnsemble/agentensemble/issues/97)) ([86bdc4f](https://github.com/AgentEnsemble/agentensemble/commit/86bdc4f78430896de51ffe402bb7125c1d20e98f))
+
 ## [1.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.2.0...v1.3.0) (2026-03-05)
 
 

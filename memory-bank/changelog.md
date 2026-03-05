@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased] - v2.0.0 Architecture Design -- 2026-03-05
+
+### Added (v2.0.0 Architecture -- branch: v2-architecture-design)
+
+- `docs/design/15-v2-architecture.md`: comprehensive v2.0.0 design document. Covers:
+  task-first paradigm shift, `AgentSynthesizer` SPI (template-based + LLM-based), what
+  moves from Agent to Task (tools, LLM, maxIterations), task-scoped cross-execution memory
+  (`MemoryStore` SPI, named scopes, TTL/eviction, `MemoryTool`), human-in-the-loop review
+  system (`ReviewHandler` SPI, `ReviewDecision` sealed type, before/during/after gate
+  timing, timeout + continue/edit/exit-early, `ConsoleReviewHandler` CLI interaction),
+  `EnsembleOutput` redesign (partial results, `isComplete()`, `exitReason()`,
+  `completedTasks()`, `ExitReason` enum), workflow inference from context declarations,
+  module split (agentensemble-core + agentensemble-memory + agentensemble-review), SPI
+  boundary definitions (section 7), breaking changes summary (section 8), parallel
+  workstream plan (Groups A-F, section 9), and migration guide outline (section 10).
+- `mkdocs.yml`: v2.0.0 Architecture added to Design nav section.
+- GitHub issues created (epic + 12 issues) tracking v2.0.0 implementation workstreams.
+
+### Architecture Decisions Recorded (v2.0.0)
+
+| Decision | Choice |
+|---|---|
+| Paradigm | Task-first; agent auto-synthesized from task description |
+| Backward compat | Clean break (semver major); no compatibility shim |
+| Agent | Optional power-user escape hatch via `Task.agent()` |
+| Memory | Task-scoped named scopes; cross-execution persistence; `MemoryStore` SPI |
+| Human-in-loop | `ReviewHandler` SPI; before/during/after timing; timeout + continue/edit/exit |
+| Partial results | `EnsembleOutput` treats incomplete pipeline as first-class outcome |
+| Workflow | Inferred sequential by default; DAG-inferred parallel from context declarations; explicit override retained |
+| Modules | agentensemble-core split: + agentensemble-memory + agentensemble-review |
+| Parallel work | Groups A/B/C can run simultaneously once SPI contracts are stable |
+| MapReduce | Ships first in v1.x API (#98-100), then refactored in Group E |
+
+---
+
 ## [Unreleased] - Dynamic Agent Creation + MapReduceEnsemble Design -- 2026-03-05
 
 ### Added (Dynamic Agent Creation -- current framework documentation)

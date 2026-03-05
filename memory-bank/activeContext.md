@@ -3,7 +3,7 @@
 ## Current Work Focus
 
 Issue #99 (Adaptive MapReduceEnsemble with targetTokenBudget) is complete on branch
-`feat/issue-99-adaptive-map-reduce-ensemble`.
+`feat/issue-99-adaptive-map-reduce-ensemble`. PR #119 is open.
 
 ## Recent Changes
 
@@ -34,14 +34,23 @@ aggregated `EnsembleOutput` and `ExecutionTrace`.
 **Tests added:**
 - Unit: `MapReduceTokenEstimatorTest` (12), `MapReduceBinPackerTest` (13),
   `MapReduceEnsembleAdaptiveValidationTest` (22)
-- Integration: `MapReduceEnsembleAdaptiveRunTest` (9) using mock ChatModels
+- Integration: `MapReduceEnsembleAdaptiveRunTest` (10) using mock ChatModels
 - Devtools: `DagExporterTest` + 8 new `build(ExecutionTrace)` tests
+
+### v2.0.0 Architecture Design (branch: v2-architecture-design)
+
+- `docs/design/15-v2-architecture.md`: full design document covering all v2.0.0
+  architectural decisions
+- Task-First API, task-scoped cross-execution memory, human-in-the-loop review gates,
+  partial results redesign
+- SPI contracts: `AgentSynthesizer`, `MemoryStore`, `ReviewHandler`
 
 ## Next Steps
 
-- PR and close issue #99
+- Merge/close PR #119 (issue #99)
 - Issue #100: Short-circuit optimization (`directAgent`/`directTask`) - v2.1.0
   Depends on issue #99 (this work)
+- After #100, begin v2.0.0 workstreams (Groups A-F per design doc)
 
 ## Important Patterns and Preferences
 
