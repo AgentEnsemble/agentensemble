@@ -123,7 +123,7 @@ jobs:
         # SHA256 hashes and commit the updated formula. Requires a PAT with
         # repo scope on homebrew-tap stored as ORG_HOMEBREW_TAP_TOKEN.
         run: |
-          curl --silent --fail -X POST \
+          curl --silent --show-error --fail-with-body -X POST \
             -H "Authorization: Bearer ${{ secrets.ORG_HOMEBREW_TAP_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
