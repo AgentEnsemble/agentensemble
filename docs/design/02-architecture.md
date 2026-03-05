@@ -47,6 +47,8 @@ net.agentensemble
     Workflow.java                       # Enum: SEQUENTIAL, HIERARCHICAL
     WorkflowExecutor.java              # Strategy interface
     SequentialWorkflowExecutor.java    # Runs tasks one-by-one
+    HierarchicalConstraints.java        # Constraints for hierarchical workflow
+    HierarchicalConstraintEnforcer.java # Enforces hierarchical constraints (package-private)
 
   net.agentensemble.tool
     AgentTool.java                      # Framework tool interface
@@ -64,6 +66,7 @@ net.agentensemble
     ToolExecutionException.java         # Tool execution failure
     MaxIterationsExceededException.java # Agent hit iteration limit
     PromptTemplateException.java        # Template variable error
+    ConstraintViolationException.java   # Hierarchical constraint violated
 ```
 
 ## Design Principles
