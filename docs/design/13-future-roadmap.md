@@ -438,5 +438,45 @@ See [Built-in Tools guide](../guides/built-in-tools.md) for usage.
 | Phase 7 | v0.7.0 | Callbacks and observability (COMPLETE) |
 | Phase 8 | v0.8.0 | Guardrails: pre/post execution validation (COMPLETE) |
 | Phase 9 | v1.0.0 | Streaming, built-in tools |
+| Phase 10 | v2.0.0 | MapReduceEnsemble (static + adaptive + short-circuit) |
+
+---
+
+## Phase 10: MapReduceEnsemble (v2.0.0)
+
+**Goal**: Provide a first-class builder for the fan-out / tree-reduce pattern, with both a
+static (pre-built DAG) and adaptive (token-budget-driven) execution strategy.
+
+The core problem this solves: when N agents each produce substantial output, a single
+aggregation agent's context can overflow the model's context window. `MapReduceEnsemble`
+automates multi-level tree reduction to keep every reduce step within a configurable token
+budget.
+
+### Three-Issue Delivery Plan
+
+**Issue A: Static MapReduceEnsemble (`chunkSize`)**
+
+Delivers the `MapReduceEnsemble` builder with a fixed `chunkSize` strategy. The entire DAG
+is pre-built before execution. The inner `Ensemble` with `Workflow.PARALLEL` handles
+concurrent execution. Includes `toEnsemble()` for DAG inspection and devtools/viz updates.
+
+**Issue B: Adaptive MapReduceEnsemble (`targetTokenBudget`)**
+
+Extends Issue A with token-budget-aware adaptive execution. After each level completes,
+actual output token counts drive bin-packing to determine the next level's shape. Includes
+`contextWindowSize`/`budgetRatio` convenience, token estimation strategies, `maxReduceLevels`
+safety valve, and trace/metrics aggregation across multiple `Ensemble.run()` calls.
+
+**Issue C: Short-Circuit Optimization**
+
+Extends Issue B with an optional pre-execution size check. When total input fits within the
+token budget, the map-reduce pipeline is bypassed in favour of a single direct task. Requires
+`directAgent` and `directTask` factory configuration.
+
+### Full Design
+
+See [docs/design/14-map-reduce.md](14-map-reduce.md) for the complete specification including
+algorithm pseudocode, API reference, visualization layer changes, edge case table, and
+implementation class structure.
 
 Each phase should be backward-compatible with previous phases. The API is designed with future phases in mind -- builder methods can be added without breaking existing code.

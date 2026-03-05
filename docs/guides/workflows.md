@@ -286,11 +286,84 @@ Parallel workflow uses `Executors.newVirtualThreadPerTaskExecutor()` (Java 21 st
 
 **MDC propagation**: The ensemble's MDC context (including `ensemble.id`) is captured before tasks are submitted and propagated to each virtual thread. Each thread also sets `agent.role` during its execution.
 
+### Dynamic Agent Creation
+
+`Workflow.PARALLEL` works equally well when agents and tasks are constructed programmatically at
+runtime. Because `Agent` and `Task` are plain immutable value objects, building them in a loop is
+identical to declaring them individually -- the framework does not distinguish between the two.
+
+This is the recommended approach when the number of agents is not known at compile time:
+
+```java
+List<Agent> agents = new ArrayList<>();
+List<Task> tasks = new ArrayList<>();
+
+for (OrderItem item : order.getItems()) {
+    Agent specialist = Agent.builder()
+            .role(item.getDish() + " Specialist")
+            .goal("Prepare " + item.getDish())
+            .llm(model)
+            .build();
+
+    Task dishTask = Task.builder()
+            .description("Prepare the recipe for " + item.getDish())
+            .expectedOutput("Recipe with ingredients, steps, and timing")
+            .agent(specialist)
+            .build();
+
+    agents.add(specialist);
+    tasks.add(dishTask);
+}
+
+// Fan-in: single aggregation task depends on all specialist tasks
+Agent headChef = Agent.builder()
+        .role("Head Chef")
+        .goal("Coordinate all dishes into a cohesive meal plan")
+        .llm(model)
+        .build();
+
+Task mealPlan = Task.builder()
+        .description("Create a coordinated meal service plan from all dish preparations.")
+        .expectedOutput("Meal plan with serving order and timing.")
+        .agent(headChef)
+        .context(tasks)  // depends on ALL specialist tasks
+        .build();
+
+// Assemble and run
+Ensemble.EnsembleBuilder builder = Ensemble.builder()
+        .workflow(Workflow.PARALLEL);
+
+agents.forEach(builder::agent);
+builder.agent(headChef);
+tasks.forEach(builder::task);
+builder.task(mealPlan);
+
+EnsembleOutput output = builder.build().run();
+```
+
+Execution pattern:
+
+```
+[Specialist 1] ----+
+[Specialist 2] ----+--> [Head Chef] --> Final Output
+[Specialist N] ----+
+```
+
+**Context size warning**: Each specialist task's output is injected into the aggregation task's
+prompt. With a large number of specialists each producing verbose output, this context can
+approach or exceed the model's context window. For large `N`, use `outputType(RecordClass.class)`
+on each specialist task to produce compact structured JSON, or implement a tree-reduction pattern
+where outputs are aggregated in batches across multiple levels.
+
+See the [Dynamic Agent Creation example](../examples/dynamic-agents.md) for a full working
+example with the kitchen scenario.
+
 ### When to Use PARALLEL
 
 - Multiple independent tasks can run concurrently to reduce total wall-clock time
 - Your pipeline has a natural DAG structure (some tasks depend on others, some are independent)
 - You want to maximize throughput for LLM API calls
+- The number of agents is not known at compile time (dynamic fan-out/fan-in)
 
 ---
 

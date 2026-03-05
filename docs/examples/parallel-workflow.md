@@ -148,10 +148,10 @@ export OPENAI_API_KEY=your-api-key
 ./gradlew :agentensemble-examples:runParallelWorkflow
 
 # Analyse a different company
-./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla"
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Acme Corp"
 
 # Specify company and industry
-./gradlew :agentensemble-examples:runParallelWorkflow --args="Tesla automotive"
+./gradlew :agentensemble-examples:runParallelWorkflow --args="Acme Corp enterprise software"
 ```
 
 ## Execution Timeline

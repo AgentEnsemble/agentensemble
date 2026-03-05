@@ -134,7 +134,7 @@ export OPENAI_API_KEY=your-api-key
 ./gradlew :agentensemble-examples:runHierarchicalTeam
 
 # Analyse a different company
-./gradlew :agentensemble-examples:runHierarchicalTeam --args="Tesla"
+./gradlew :agentensemble-examples:runHierarchicalTeam --args="Acme Corp"
 ```
 
 ---
