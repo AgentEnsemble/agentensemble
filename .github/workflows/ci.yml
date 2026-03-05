@@ -30,7 +30,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Build and test
+      - name: Build and test (Java)
         run: ./gradlew build :agentensemble-core:javadoc --continue
 
       - name: Upload coverage to Codecov
@@ -47,6 +47,32 @@ jobs:
         with:
           files: '**/build/test-results/test/TEST-*.xml'
           comment_mode: always
+
+  build-viz:
+    name: Build and Test (agentensemble-viz)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: agentensemble-viz/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: agentensemble-viz
+
+      - name: Build (tsc + vite)
+        run: npm run build
+        working-directory: agentensemble-viz
+
+      - name: Test
+        run: npm test
+        working-directory: agentensemble-viz
 
   dependency-submission:
     name: Submit Dependency Graph
@@ -70,7 +96,7 @@ jobs:
   dependabot-automerge:
     name: Dependabot Auto-Merge
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, build-viz]
     # Guard against 'skipped' in addition to 'failure'/'cancelled'. Without this guard,
     # a skipped build (where tests never ran) would still satisfy the condition and could
     # allow auto-merge to proceed without any CI validation.
