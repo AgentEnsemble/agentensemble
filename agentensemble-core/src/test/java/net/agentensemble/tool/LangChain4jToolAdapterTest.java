@@ -1,11 +1,13 @@
 package net.agentensemble.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import net.agentensemble.exception.ExitEarlyException;
 import org.junit.jupiter.api.Test;
 
 class LangChain4jToolAdapterTest {
@@ -98,6 +100,20 @@ class LangChain4jToolAdapterTest {
         String result = LangChain4jToolAdapter.execute(tool, "{\"input\": \"query\"}");
 
         assertThat(result).startsWith("Error:").contains("Service unavailable");
+    }
+
+    @Test
+    void testExecuteForResult_exitEarlyException_isRethrownNotConverted() {
+        // ExitEarlyException must propagate through the adapter unchanged,
+        // not be swallowed and converted to ToolResult.failure().
+        var tool = mock(AgentTool.class);
+        when(tool.name()).thenReturn("human_input");
+        when(tool.description()).thenReturn("Human input");
+        when(tool.execute(anyString())).thenThrow(new ExitEarlyException("User requested exit early"));
+
+        assertThatThrownBy(() -> LangChain4jToolAdapter.executeForResult(tool, "{\"input\": \"question\"}"))
+                .isInstanceOf(ExitEarlyException.class)
+                .hasMessageContaining("exit early");
     }
 
     @Test

@@ -90,6 +90,42 @@ class EnsembleOutputTest {
     }
 
     @Test
+    void testOf_exitReasonDefaultsToCompleted() {
+        EnsembleOutput output = EnsembleOutput.of("result", List.of(), Duration.ZERO, 0);
+        assertThat(output.getExitReason()).isEqualTo(ExitReason.COMPLETED);
+    }
+
+    @Test
+    void testBuilder_withExitReasonUserExitEarly_setsExitReason() {
+        EnsembleOutput output = EnsembleOutput.builder()
+                .raw("partial result")
+                .totalDuration(Duration.ofSeconds(1))
+                .totalToolCalls(0)
+                .exitReason(ExitReason.USER_EXIT_EARLY)
+                .build();
+        assertThat(output.getExitReason()).isEqualTo(ExitReason.USER_EXIT_EARLY);
+    }
+
+    @Test
+    void testBuilder_withNullExitReason_defaultsToCompleted() {
+        EnsembleOutput output = EnsembleOutput.builder()
+                .raw("result")
+                .totalDuration(Duration.ZERO)
+                .totalToolCalls(0)
+                .exitReason(null)
+                .build();
+        assertThat(output.getExitReason()).isEqualTo(ExitReason.COMPLETED);
+    }
+
+    @Test
+    void exitReason_allValuesAreAccessible() {
+        // Ensure all ExitReason enum values are reachable
+        assertThat(ExitReason.COMPLETED).isNotNull();
+        assertThat(ExitReason.USER_EXIT_EARLY).isNotNull();
+        assertThat(ExitReason.values()).hasSize(2);
+    }
+
+    @Test
     void testTaskOutputsList_isImmutable() {
         TaskOutput taskOutput = taskOutputWithMetrics("Agent", TaskMetrics.EMPTY);
 

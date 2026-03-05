@@ -82,6 +82,7 @@ nav:
     - CaptureMode: guides/capture-mode.md
     - Visualization: guides/visualization.md
     - Memory: guides/memory.md
+    - Review: guides/review.md
     - Delegation: guides/delegation.md
     - Error Handling: guides/error-handling.md
     - Callbacks: guides/callbacks.md
@@ -107,6 +108,7 @@ nav:
     - Metrics and Traces: examples/metrics.md
     - CaptureMode: examples/capture-mode.md
     - Visualization: examples/visualization.md
+    - Human-in-the-Loop: examples/human-in-the-loop.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
   - Design:

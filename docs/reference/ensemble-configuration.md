@@ -31,6 +31,8 @@ All fields available on `Ensemble.builder()`.
 | `costConfiguration` | `CostConfiguration` | No | `null` | Optional per-token cost rates. When set, each task's LLM token usage is multiplied by `inputTokenRate` / `outputTokenRate` to produce a `CostEstimate` on both `TaskMetrics` and `ExecutionMetrics`. Requires the LLM provider to return token usage metadata. See [Metrics guide](../guides/metrics.md#cost-estimation). |
 | `traceExporter` | `ExecutionTraceExporter` | No | `null` | Optional exporter called at the end of each `run()` with the complete `ExecutionTrace`. Use `JsonTraceExporter` to write traces to JSON files, or implement the functional interface for custom destinations. See [Metrics guide](../guides/metrics.md#automatic-export). |
 | `captureMode` | `CaptureMode` | No | `OFF` | Depth of data collection during execution. `OFF` captures the base trace (prompts, tool args/results, timing, tokens). `STANDARD` also captures full LLM message history per iteration and wires memory operation counts. `FULL` adds auto-export to `./traces/` and enriched tool I/O with parsed JSON arguments. Can also be activated without code changes via the `agentensemble.captureMode` JVM system property or `AGENTENSEMBLE_CAPTURE_MODE` environment variable (resolution order: builder > system property > env var > OFF). `CaptureMode.OFF` has zero performance overhead beyond the always-active base trace. See [CaptureMode guide](../guides/capture-mode.md). |
+| `reviewHandler` | `ReviewHandler` | No | `null` | Optional review handler for human-in-the-loop gates (requires `agentensemble-review` on the classpath). When set, the workflow executor fires review gates at configured timing points. Built-in factories: `ReviewHandler.console()`, `ReviewHandler.autoApprove()`, `ReviewHandler.autoApproveWithDelay(Duration)`, `ReviewHandler.web(URI)` (stub). See [Review guide](../guides/review.md). |
+| `reviewPolicy` | `ReviewPolicy` | No | `null` (treated as `NEVER`) | Ensemble-level policy controlling when after-execution review gates fire for tasks without an explicit `.review()` configuration. `NEVER` (default): only tasks with `.review(Review.required())` fire. `AFTER_EVERY_TASK`: all tasks fire; tasks with `.review(Review.skip())` are exempt. `AFTER_LAST_TASK`: only the final task fires. Requires `reviewHandler` to be set. See [Review guide](../guides/review.md). |
 
 ---
 
@@ -58,6 +60,7 @@ At `Ensemble.run()` time:
 | `getTotalToolCalls()` | `int` | Total number of tool calls across all agents |
 | `getMetrics()` | `ExecutionMetrics` | Aggregated metrics: total token counts, LLM latency, tool execution time, cost estimate, etc. |
 | `getTrace()` | `ExecutionTrace` | Complete execution trace with every LLM interaction, tool call, prompt text, and delegation record. Serializes to JSON via `getTrace().toJson()`. |
+| `getExitReason()` | `ExitReason` | Why the run terminated. `COMPLETED` for a full run; `USER_EXIT_EARLY` when a reviewer chose ExitEarly. When `USER_EXIT_EARLY`, `getTaskOutputs()` contains only the tasks that completed before the exit signal. |
 
 Each `TaskOutput` contains:
 

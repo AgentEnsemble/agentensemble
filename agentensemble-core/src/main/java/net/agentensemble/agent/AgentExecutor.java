@@ -25,6 +25,7 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.exception.AgentExecutionException;
+import net.agentensemble.exception.ExitEarlyException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.guardrail.GuardrailInput;
@@ -219,7 +220,8 @@ public class AgentExecutor {
                     finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt, accumulator, captureMode);
                     log.debug("Agent '{}' completed (no tools)", agent.getRole());
                 }
-            } catch (AgentExecutionException | MaxIterationsExceededException e) {
+            } catch (AgentExecutionException | MaxIterationsExceededException | ExitEarlyException e) {
+                // Re-throw framework-controlled exceptions without wrapping
                 throw e;
             } catch (Exception e) {
                 throw new AgentExecutionException(
@@ -620,8 +622,17 @@ public class AgentExecutor {
             }
         }
 
-        // Wait for all futures then process in order
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        // Wait for all futures then process in order.
+        // If any tool threw ExitEarlyException, CompletableFuture wraps it in CompletionException.
+        // Unwrap and re-throw so the workflow executor can assemble partial results.
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        } catch (java.util.concurrent.CompletionException ce) {
+            if (ce.getCause() instanceof ExitEarlyException exitEarly) {
+                throw exitEarly;
+            }
+            throw ce;
+        }
 
         int updatedStopCount = stopMessageCount;
         for (CompletableFuture<ToolExecution> future : futures) {
