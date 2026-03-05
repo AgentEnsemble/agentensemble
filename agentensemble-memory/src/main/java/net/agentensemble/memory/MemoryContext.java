@@ -2,6 +2,7 @@ package net.agentensemble.memory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -11,7 +12,7 @@ import org.slf4j.LoggerFactory;
  * Runtime memory state for a single ensemble run.
  *
  * Created at the start of each {@code Ensemble.run()} call and passed through
- * the execution pipeline. Coordinates all three memory types:
+ * the execution pipeline. Coordinates all three legacy memory types:
  * <ul>
  *   <li>Short-term memory: accumulated task outputs from this run</li>
  *   <li>Long-term memory: persistent store queried and updated per task</li>
@@ -188,11 +189,11 @@ public class MemoryContext {
             return;
         }
 
+        Map<String, String> metadata = buildMetadata(record);
         MemoryEntry entry = MemoryEntry.builder()
                 .content(record.content())
-                .agentRole(record.agentRole())
-                .taskDescription(record.taskDescription())
-                .timestamp(record.completedAt() != null ? record.completedAt() : Instant.now())
+                .storedAt(record.completedAt() != null ? record.completedAt() : Instant.now())
+                .metadata(metadata)
                 .build();
 
         MemoryOperationListener listener = operationListener.get();
@@ -272,5 +273,20 @@ public class MemoryContext {
             listener.onEntityLookup(Duration.between(start, Instant.now()));
         }
         return facts;
+    }
+
+    // ========================
+    // Private helpers
+    // ========================
+
+    private static Map<String, String> buildMetadata(MemoryRecord record) {
+        HashMap<String, String> map = new HashMap<>();
+        if (record.agentRole() != null) {
+            map.put(MemoryEntry.META_AGENT_ROLE, record.agentRole());
+        }
+        if (record.taskDescription() != null) {
+            map.put(MemoryEntry.META_TASK_DESCRIPTION, record.taskDescription());
+        }
+        return Map.copyOf(map);
     }
 }

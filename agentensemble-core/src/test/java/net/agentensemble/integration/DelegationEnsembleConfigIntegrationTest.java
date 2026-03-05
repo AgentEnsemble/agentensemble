@@ -14,7 +14,7 @@ import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.memory.EnsembleMemory;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,7 +73,7 @@ class DelegationEnsembleConfigIntegrationTest {
     // ========================
 
     @Test
-    void sequential_delegationWithShortTermMemory_memoryContextThreadedThrough() {
+    void sequential_delegationWithMemoryStore_memoryContextThreadedThrough() {
         Task task = Task.builder()
                 .description("Research and delegate")
                 .expectedOutput("Result with memory")
@@ -90,7 +90,7 @@ class DelegationEnsembleConfigIntegrationTest {
                 .agent(researcher)
                 .agent(writer)
                 .task(task)
-                .memory(EnsembleMemory.builder().shortTerm(true).build())
+                .memoryStore(MemoryStore.inMemory())
                 .build()
                 .run();
 

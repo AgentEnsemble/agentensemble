@@ -12,6 +12,7 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
@@ -70,6 +71,7 @@ public final class ExecutionContext {
     private final ToolMetrics toolMetrics;
     private final CostConfiguration costConfiguration;
     private final CaptureMode captureMode;
+    private final MemoryStore memoryStore;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -78,7 +80,8 @@ public final class ExecutionContext {
             Executor toolExecutor,
             ToolMetrics toolMetrics,
             CostConfiguration costConfiguration,
-            CaptureMode captureMode) {
+            CaptureMode captureMode,
+            MemoryStore memoryStore) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -86,6 +89,7 @@ public final class ExecutionContext {
         this.toolMetrics = toolMetrics;
         this.costConfiguration = costConfiguration;
         this.captureMode = captureMode != null ? captureMode : CaptureMode.OFF;
+        this.memoryStore = memoryStore;
     }
 
     // ========================
@@ -105,6 +109,21 @@ public final class ExecutionContext {
      *                          when {@code null}
      * @return a new ExecutionContext
      */
+    /**
+     * Create an ExecutionContext with all fields specified, including capture mode and
+     * memory store. This is the primary factory used by {@code Ensemble}.
+     *
+     * @param memoryContext     runtime memory state for this run; must not be null
+     * @param verbose           when true, elevates execution logging to INFO level
+     * @param listeners         event listeners to notify; must not be null
+     * @param toolExecutor      executor for parallel tool calls; must not be null
+     * @param toolMetrics       metrics backend for tool execution; must not be null
+     * @param costConfiguration optional per-token cost rates; may be {@code null}
+     * @param captureMode       depth of data collection; defaults to {@link CaptureMode#OFF}
+     *                          when {@code null}
+     * @param memoryStore       optional scoped memory store; may be {@code null}
+     * @return a new ExecutionContext
+     */
     public static ExecutionContext of(
             MemoryContext memoryContext,
             boolean verbose,
@@ -112,7 +131,8 @@ public final class ExecutionContext {
             Executor toolExecutor,
             ToolMetrics toolMetrics,
             CostConfiguration costConfiguration,
-            CaptureMode captureMode) {
+            CaptureMode captureMode,
+            MemoryStore memoryStore) {
         if (memoryContext == null) {
             throw new IllegalArgumentException("memoryContext must not be null");
         }
@@ -132,7 +152,8 @@ public final class ExecutionContext {
                 toolExecutor,
                 toolMetrics,
                 costConfiguration,
-                captureMode);
+                captureMode,
+                memoryStore);
     }
 
     /**
@@ -152,8 +173,20 @@ public final class ExecutionContext {
             List<EnsembleListener> listeners,
             Executor toolExecutor,
             ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode) {
+        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, costConfiguration, captureMode, null);
+    }
+
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
             CostConfiguration costConfiguration) {
-        return of(memoryContext, verbose, listeners, toolExecutor, toolMetrics, costConfiguration, CaptureMode.OFF);
+        return of(
+                memoryContext, verbose, listeners, toolExecutor, toolMetrics, costConfiguration, CaptureMode.OFF, null);
     }
 
     /**
@@ -194,7 +227,8 @@ public final class ExecutionContext {
                 Executors.newVirtualThreadPerTaskExecutor(),
                 NoOpToolMetrics.INSTANCE,
                 null,
-                CaptureMode.OFF);
+                CaptureMode.OFF,
+                null);
     }
 
     /**
@@ -226,7 +260,8 @@ public final class ExecutionContext {
                 Executors.newVirtualThreadPerTaskExecutor(),
                 NoOpToolMetrics.INSTANCE,
                 null,
-                CaptureMode.OFF);
+                CaptureMode.OFF,
+                null);
     }
 
     // ========================
@@ -297,6 +332,19 @@ public final class ExecutionContext {
      */
     public CaptureMode captureMode() {
         return captureMode;
+    }
+
+    /**
+     * The optional memory store for task-scoped cross-execution memory.
+     *
+     * <p>When non-null, tasks with declared memory scopes read from and write to
+     * this store during execution. The {@link net.agentensemble.agent.AgentExecutor}
+     * retrieves scope entries before execution and stores task output after completion.
+     *
+     * @return the memory store, or {@code null} when scoped memory is not configured
+     */
+    public MemoryStore memoryStore() {
+        return memoryStore;
     }
 
     // ========================

@@ -11,21 +11,18 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import java.time.Instant;
 import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.memory.EnsembleMemory;
-import net.agentensemble.memory.InMemoryEntityMemory;
-import net.agentensemble.memory.LongTermMemory;
 import net.agentensemble.memory.MemoryEntry;
+import net.agentensemble.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * End-to-end integration tests for ensemble execution with memory enabled.
+ * End-to-end integration tests for ensemble execution with the v2.0.0 scoped MemoryStore API.
  * Uses mocked LLMs to avoid real network calls.
  */
 class MemoryEnsembleIntegrationTest {
@@ -41,33 +38,45 @@ class MemoryEnsembleIntegrationTest {
     }
 
     // ========================
-    // Short-term memory
+    // Single task -- output stored in scope
     // ========================
 
     @Test
-    void testShortTermMemory_singleTask_outputRecorded() {
+    void testSingleTask_withScope_outputStoredInStore() {
+        MemoryStore store = MemoryStore.inMemory();
+
         var agent = agentWithResponse("Researcher", "AI is growing fast.");
         var task = Task.builder()
                 .description("Research AI trends")
                 .expectedOutput("A report")
                 .agent(agent)
+                .memory("research")
                 .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(agent)
                 .task(task)
-                .memory(memory)
+                .memoryStore(store)
                 .build()
                 .run();
 
-        // Output is correct regardless of memory
         assertThat(output.getRaw()).isEqualTo("AI is growing fast.");
+
+        // The output should now be persisted in the "research" scope
+        List<MemoryEntry> stored = store.retrieve("research", "AI", 10);
+        assertThat(stored).hasSize(1);
+        assertThat(stored.get(0).getContent()).isEqualTo("AI is growing fast.");
+        assertThat(stored.get(0).getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
     }
 
+    // ========================
+    // Second task sees first task output via shared scope
+    // ========================
+
     @Test
-    void testShortTermMemory_secondTaskPrompt_containsFirstTaskOutput() {
+    void testSecondTask_sameScope_receivesFirstTaskOutputInPrompt() {
+        MemoryStore store = MemoryStore.inMemory();
+
         var researcher = mock(ChatModel.class);
         var writer = mock(ChatModel.class);
 
@@ -87,184 +96,37 @@ class MemoryEnsembleIntegrationTest {
                 .description("Research healthcare AI")
                 .expectedOutput("A detailed report")
                 .agent(researcherAgent)
+                .memory("ai-research")
                 .build();
         var writeTask = Task.builder()
                 .description("Write a blog post about the research")
                 .expectedOutput("A blog post")
                 .agent(writerAgent)
+                .memory("ai-research") // declares same scope
                 .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder().shortTerm(true).build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(researcherAgent)
                 .agent(writerAgent)
                 .task(researchTask)
                 .task(writeTask)
-                .memory(memory)
+                .memoryStore(store)
                 .build()
                 .run();
 
-        // Capture the request sent to the writer's LLM
+        // Capture the writer's prompt
         ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
         verify(writer, atLeast(1)).chat(captor.capture());
 
-        // The writer's prompt should contain the research result (from STM)
         String writerPrompt =
                 captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
+
+        // The "Memory: ai-research" section should be present because the research task
+        // already stored its output before the write task runs
+        assertThat(writerPrompt).contains("Memory: ai-research");
         assertThat(writerPrompt).contains("AI is revolutionizing healthcare");
 
         assertThat(output.getTaskOutputs()).hasSize(2);
-    }
-
-    @Test
-    void testShortTermMemory_promptContainsShortTermMemorySection() {
-        var researcher = mock(ChatModel.class);
-        var writer = mock(ChatModel.class);
-
-        when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Research output here."));
-        when(writer.chat(any(ChatRequest.class))).thenReturn(textResponse("Written."));
-
-        var researcherAgent = Agent.builder()
-                .role("Researcher")
-                .goal("Research")
-                .llm(researcher)
-                .build();
-        var writerAgent =
-                Agent.builder().role("Writer").goal("Write").llm(writer).build();
-
-        var researchTask = Task.builder()
-                .description("Research task")
-                .expectedOutput("Report")
-                .agent(researcherAgent)
-                .build();
-        var writeTask = Task.builder()
-                .description("Write task")
-                .expectedOutput("Article")
-                .agent(writerAgent)
-                .build();
-
-        EnsembleOutput output = Ensemble.builder()
-                .agent(researcherAgent)
-                .agent(writerAgent)
-                .task(researchTask)
-                .task(writeTask)
-                .memory(EnsembleMemory.builder().shortTerm(true).build())
-                .build()
-                .run();
-
-        // Capture writer's prompt and verify STM section heading
-        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
-        verify(writer, atLeast(1)).chat(captor.capture());
-        String writerPrompt =
-                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
-
-        assertThat(writerPrompt).contains("Short-Term Memory");
-        assertThat(output.getTaskOutputs()).hasSize(2);
-    }
-
-    // ========================
-    // Long-term memory
-    // ========================
-
-    @Test
-    void testLongTermMemory_outputStoredAfterExecution() {
-        LongTermMemory ltm = mock(LongTermMemory.class);
-        when(ltm.retrieve(any(), any(Integer.class))).thenReturn(List.of());
-
-        var agent = agentWithResponse("Researcher", "AI findings here.");
-        var task = Task.builder()
-                .description("Research AI")
-                .expectedOutput("A report")
-                .agent(agent)
-                .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
-
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
-
-        // The task output should be stored into long-term memory
-        ArgumentCaptor<MemoryEntry> captor = ArgumentCaptor.forClass(MemoryEntry.class);
-        verify(ltm).store(captor.capture());
-
-        MemoryEntry stored = captor.getValue();
-        assertThat(stored.getContent()).isEqualTo("AI findings here.");
-        assertThat(stored.getAgentRole()).isEqualTo("Researcher");
-        assertThat(stored.getTaskDescription()).isEqualTo("Research AI");
-        assertThat(stored.getTimestamp()).isNotNull();
-    }
-
-    @Test
-    void testLongTermMemory_retrievedBeforeTask_injectedIntoPrompt() {
-        LongTermMemory ltm = mock(LongTermMemory.class);
-        // Return a relevant past memory
-        MemoryEntry pastMemory = MemoryEntry.builder()
-                .content("Previous AI research: neural networks are trending.")
-                .agentRole("OldResearcher")
-                .taskDescription("Past research task")
-                .timestamp(Instant.now())
-                .build();
-        when(ltm.retrieve(any(), any(Integer.class))).thenReturn(List.of(pastMemory));
-
-        var llm = mock(ChatModel.class);
-        when(llm.chat(any(ChatRequest.class))).thenReturn(textResponse("New research done."));
-        var agent = Agent.builder().role("Researcher").goal("Research").llm(llm).build();
-        var task = Task.builder()
-                .description("Research AI trends 2026")
-                .expectedOutput("A report")
-                .agent(agent)
-                .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder().longTerm(ltm).build();
-
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
-
-        // Capture the prompt sent to the LLM
-        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
-        verify(llm).chat(captor.capture());
-
-        String prompt =
-                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
-
-        // The LTM section should be present with the past memory content
-        assertThat(prompt).contains("Long-Term Memory");
-        assertThat(prompt).contains("neural networks are trending");
-    }
-
-    // ========================
-    // Entity memory
-    // ========================
-
-    @Test
-    void testEntityMemory_factsInjectedIntoPrompt() {
-        InMemoryEntityMemory em = new InMemoryEntityMemory();
-        em.put("Acme Corp", "A SaaS startup founded in 2015");
-        em.put("Alice", "The lead researcher on this project");
-
-        var llm = mock(ChatModel.class);
-        when(llm.chat(any(ChatRequest.class))).thenReturn(textResponse("Report done."));
-        var agent = Agent.builder().role("Analyst").goal("Analyse").llm(llm).build();
-        var task = Task.builder()
-                .description("Analyse Acme Corp performance")
-                .expectedOutput("Analysis report")
-                .agent(agent)
-                .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder().entityMemory(em).build();
-
-        Ensemble.builder().agent(agent).task(task).memory(memory).build().run();
-
-        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
-        verify(llm).chat(captor.capture());
-
-        String prompt =
-                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
-
-        assertThat(prompt).contains("Entity Knowledge");
-        assertThat(prompt).contains("Acme Corp");
-        assertThat(prompt).contains("SaaS startup");
-        assertThat(prompt).contains("Alice");
-        assertThat(prompt).contains("lead researcher");
     }
 
     // ========================
@@ -283,64 +145,201 @@ class MemoryEnsembleIntegrationTest {
         EnsembleOutput output = Ensemble.builder()
                 .agent(agent)
                 .task(task)
-                .build() // No .memory() call
+                .build() // No .memoryStore() call
                 .run();
 
         assertThat(output.getRaw()).isEqualTo("Research complete.");
     }
 
     // ========================
-    // Multiple tasks with all memory types
+    // Scope isolation -- task cannot read from undeclared scope
     // ========================
 
     @Test
-    void testAllMemoryTypes_threeTasks_executesSuccessfully() {
-        LongTermMemory ltm = mock(LongTermMemory.class);
-        when(ltm.retrieve(any(), any(Integer.class))).thenReturn(List.of());
+    void testScopeIsolation_taskOnlySeesOwnScope() {
+        MemoryStore store = MemoryStore.inMemory();
 
-        InMemoryEntityMemory em = new InMemoryEntityMemory();
-        em.put("AI", "Artificial Intelligence -- a broad field of computer science");
+        var researcher = mock(ChatModel.class);
+        var writer = mock(ChatModel.class);
+
+        when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Confidential research output."));
+        when(writer.chat(any(ChatRequest.class))).thenReturn(textResponse("Generic article."));
+
+        var researcherAgent = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(researcher)
+                .build();
+        var writerAgent =
+                Agent.builder().role("Writer").goal("Write").llm(writer).build();
+
+        // Research task writes to "confidential-research"
+        var researchTask = Task.builder()
+                .description("Research sensitive data")
+                .expectedOutput("Sensitive report")
+                .agent(researcherAgent)
+                .memory("confidential-research")
+                .build();
+        // Writer task only declares "public-writing" -- should NOT see confidential-research
+        var writeTask = Task.builder()
+                .description("Write a public article")
+                .expectedOutput("Article")
+                .agent(writerAgent)
+                .memory("public-writing")
+                .build();
+
+        Ensemble.builder()
+                .agent(researcherAgent)
+                .agent(writerAgent)
+                .task(researchTask)
+                .task(writeTask)
+                .memoryStore(store)
+                .build()
+                .run();
+
+        // Capture writer prompt
+        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(writer, atLeast(1)).chat(captor.capture());
+
+        String writerPrompt =
+                captor.getValue().messages().stream().map(Object::toString).reduce("", String::concat);
+
+        // Writer should NOT see confidential-research entries
+        assertThat(writerPrompt).doesNotContain("Confidential research output");
+        assertThat(writerPrompt).doesNotContain("confidential-research");
+    }
+
+    // ========================
+    // Empty scope on first run
+    // ========================
+
+    @Test
+    void testEmptyScope_firstRun_taskRunsNormally() {
+        MemoryStore store = MemoryStore.inMemory();
+
+        var agent = agentWithResponse("Researcher", "First run output.");
+        var task = Task.builder()
+                .description("Research AI for the first time")
+                .expectedOutput("Report")
+                .agent(agent)
+                .memory("fresh-scope") // scope has no prior entries
+                .build();
+
+        // Should not throw even though scope has no entries yet
+        EnsembleOutput output = Ensemble.builder()
+                .agent(agent)
+                .task(task)
+                .memoryStore(store)
+                .build()
+                .run();
+
+        assertThat(output.getRaw()).isEqualTo("First run output.");
+
+        // After the run, the output is stored
+        List<MemoryEntry> stored = store.retrieve("fresh-scope", "AI", 10);
+        assertThat(stored).hasSize(1);
+    }
+
+    // ========================
+    // Cross-run persistence
+    // ========================
+
+    @Test
+    void testCrossRunPersistence_secondRunSeesFirstRunOutput() {
+        MemoryStore store = MemoryStore.inMemory(); // shared across runs
+
+        var researcher = mock(ChatModel.class);
+        var researcherAgent = Agent.builder()
+                .role("Researcher")
+                .goal("Research")
+                .llm(researcher)
+                .build();
+
+        // First run
+        when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Run 1: AI trends identified."));
+
+        var task1 = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("Report")
+                .agent(researcherAgent)
+                .memory("research-history")
+                .build();
+
+        Ensemble.builder()
+                .agent(researcherAgent)
+                .task(task1)
+                .memoryStore(store)
+                .build()
+                .run();
+
+        // Second run -- should see run 1 output in prompt
+        when(researcher.chat(any(ChatRequest.class))).thenReturn(textResponse("Run 2: Building on prior research."));
+
+        var task2 = Task.builder()
+                .description("Continue AI research")
+                .expectedOutput("Updated report")
+                .agent(researcherAgent)
+                .memory("research-history")
+                .build();
+
+        Ensemble.builder()
+                .agent(researcherAgent)
+                .task(task2)
+                .memoryStore(store)
+                .build()
+                .run();
+
+        // Capture second run's prompt
+        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(researcher, atLeast(2)).chat(captor.capture());
+
+        // The last call (second run) should see prior research in the prompt
+        List<ChatRequest> allRequests = captor.getAllValues();
+        ChatRequest secondRunRequest = allRequests.get(allRequests.size() - 1);
+        String secondRunPrompt =
+                secondRunRequest.messages().stream().map(Object::toString).reduce("", String::concat);
+
+        assertThat(secondRunPrompt).contains("Memory: research-history");
+        assertThat(secondRunPrompt).contains("Run 1: AI trends identified");
+    }
+
+    // ========================
+    // Multiple tasks sharing a scope
+    // ========================
+
+    @Test
+    void testMultipleTasksSharingScope_allOutputsStoredAndRetrievable() {
+        MemoryStore store = MemoryStore.inMemory();
 
         var researcher = agentWithResponse("Researcher", "AI research findings.");
         var analyst = agentWithResponse("Analyst", "Analysis complete.");
-        var writer = agentWithResponse("Writer", "Article written.");
 
         var t1 = Task.builder()
                 .description("Research AI")
                 .expectedOutput("Report")
                 .agent(researcher)
+                .memory("shared-scope")
                 .build();
         var t2 = Task.builder()
                 .description("Analyse findings")
                 .expectedOutput("Analysis")
                 .agent(analyst)
-                .build();
-        var t3 = Task.builder()
-                .description("Write article")
-                .expectedOutput("Article")
-                .agent(writer)
-                .build();
-
-        EnsembleMemory memory = EnsembleMemory.builder()
-                .shortTerm(true)
-                .longTerm(ltm)
-                .entityMemory(em)
+                .memory("shared-scope")
                 .build();
 
         EnsembleOutput output = Ensemble.builder()
                 .agent(researcher)
                 .agent(analyst)
-                .agent(writer)
                 .task(t1)
                 .task(t2)
-                .task(t3)
-                .memory(memory)
+                .memoryStore(store)
                 .build()
                 .run();
 
-        assertThat(output.getTaskOutputs()).hasSize(3);
-        assertThat(output.getRaw()).isEqualTo("Article written.");
-        // Three tasks were stored in LTM
-        verify(ltm, atLeast(3)).store(any(MemoryEntry.class));
+        assertThat(output.getTaskOutputs()).hasSize(2);
+
+        // Both outputs should be in the shared scope
+        List<MemoryEntry> stored = store.retrieve("shared-scope", "query", 10);
+        assertThat(stored).hasSize(2);
     }
 }

@@ -1,173 +1,266 @@
 # Memory
 
-AgentEnsemble supports three complementary memory types that can be used independently or together. Memory is configured via `EnsembleMemory` on the `Ensemble` builder.
+AgentEnsemble v2.0.0 introduces task-scoped cross-execution memory, allowing agents to
+accumulate and recall information across separate `Ensemble.run()` invocations. Memory is
+organized into named **scopes** and backed by a pluggable `MemoryStore`.
 
 ---
 
-## Memory Types
-
-### Short-Term Memory
-
-Accumulates all task outputs produced during a single `run()` call and injects them into each subsequent agent's prompt. When short-term memory is active, agents automatically receive the outputs of all prior tasks without requiring explicit `context` declarations.
-
-**Use when:** You want agents to be aware of everything that has been done in the current run, without manually wiring context dependencies.
-
-### Long-Term Memory
-
-Persists task outputs across ensemble runs using a LangChain4j `EmbeddingStore`. Before each task, the framework searches the store for past outputs relevant to the current task description and injects them into the agent's prompt.
-
-**Use when:** You run the same or similar ensembles repeatedly and want agents to benefit from previous runs. For example, a weekly report ensemble that learns from prior weeks.
-
-### Entity Memory
-
-A user-populated key-value store of known facts about named entities. All stored facts are injected into every agent's prompt for every task. Entity memory is seeded before running the ensemble.
-
-**Use when:** You have stable, well-known facts that should be consistently available to all agents. For example, facts about a company, a project, or key people.
-
----
-
-## Configuring Memory
-
-### Short-Term Only
+## Quick Start
 
 ```java
-EnsembleMemory memory = EnsembleMemory.builder()
-    .shortTerm(true)
+// Create a store -- use inMemory() for dev/testing
+MemoryStore store = MemoryStore.inMemory();
+
+// Tasks declare which scopes they read from and write to
+Task researchTask = Task.builder()
+    .description("Research current AI trends")
+    .expectedOutput("A research report")
+    .agent(researcher)
+    .memory("ai-research")  // declares the "ai-research" scope
     .build();
 
+// Wire the store to the ensemble
 EnsembleOutput output = Ensemble.builder()
     .agent(researcher)
-    .agent(writer)
     .task(researchTask)
-    .task(writeTask)
-    .memory(memory)
+    .memoryStore(store)
     .build()
     .run();
 ```
 
-With short-term memory enabled, the `writeTask` does not need `context(List.of(researchTask))` -- the researcher's output is automatically injected.
+After the run, `store.retrieve("ai-research", ...)` will return the task's output.
+On a second run with the same store, the agent's prompt will include entries from the first run.
 
-### Long-Term Memory
+---
 
-Long-term memory requires a LangChain4j `EmbeddingStore` and `EmbeddingModel`:
+## How It Works
+
+1. **At task startup:** The framework retrieves entries from every declared scope and injects
+   them into the agent's prompt as `## Memory: {scope}` sections.
+
+2. **At task completion:** The framework stores the task output into every declared scope.
+
+3. **Cross-run persistence:** Because entries are stored in the `MemoryStore` (not discarded
+   between runs), agents in later runs automatically see outputs from earlier runs.
+
+---
+
+## Declaring Scopes on Tasks
+
+Three builder overloads are available:
 
 ```java
-// For development/testing -- use a durable store in production
-EmbeddingStore<TextSegment> store = new InMemoryEmbeddingStore<>();
+// Single scope by name
+Task.builder()
+    .description("Research AI trends")
+    .memory("research")
+    .build()
 
+// Multiple scopes by name
+Task.builder()
+    .description("Write summary")
+    .memory("research", "draft-history")
+    .build()
+
+// Fully configured scope with eviction
+Task.builder()
+    .description("Research AI trends")
+    .memory(MemoryScope.builder()
+        .name("research")
+        .keepLastEntries(10)   // retain only the 10 most recent entries
+        .build())
+    .build()
+```
+
+---
+
+## MemoryStore Implementations
+
+### In-Memory (development and testing)
+
+```java
+MemoryStore store = MemoryStore.inMemory();
+```
+
+Entries are accumulated in insertion order per scope. Retrieval returns the most recent
+entries (no semantic similarity search). Suitable for development and single-JVM runs.
+Entries do **not** survive JVM restarts; reuse the same instance across multiple
+`ensemble.run()` calls to simulate cross-run persistence in tests.
+
+### Embedding-Based (production)
+
+```java
 EmbeddingModel embeddingModel = OpenAiEmbeddingModel.builder()
     .apiKey(System.getenv("OPENAI_API_KEY"))
     .modelName("text-embedding-3-small")
     .build();
 
-LongTermMemory longTerm = new EmbeddingStoreLongTermMemory(store, embeddingModel);
+// Use any LangChain4j EmbeddingStore for durability
+EmbeddingStore<TextSegment> embeddingStore = ChromaEmbeddingStore.builder()
+    .baseUrl("http://localhost:8000")
+    .collectionName("agentensemble-memory")
+    .build();
 
-EnsembleMemory memory = EnsembleMemory.builder()
-    .longTerm(longTerm)
-    .longTermMaxResults(5)   // retrieve up to 5 relevant memories per task (default: 5)
+MemoryStore store = MemoryStore.embeddings(embeddingModel, embeddingStore);
+```
+
+Entries are embedded on storage and retrieved via semantic similarity search. The backing
+`EmbeddingStore` controls durability (in-memory, Chroma, Qdrant, Pinecone, pgvector, etc.).
+
+---
+
+## Scope Isolation
+
+A task can only read from scopes it explicitly declares. If task A stores output in
+`"research"` and task B declares only `"drafts"`, task B's prompt will **not** contain
+task A's output.
+
+```java
+// Task A: stores into "research"
+Task taskA = Task.builder()
+    .description("Research confidential data")
+    .memory("research")
+    .build();
+
+// Task B: only declares "drafts" -- cannot see "research" entries
+Task taskB = Task.builder()
+    .description("Write public article")
+    .memory("drafts")
     .build();
 ```
 
-**Supported stores (via LangChain4j):** Chroma, Qdrant, Pinecone, Weaviate, Milvus, Redis, PostgreSQL (pgvector), and more.
+---
 
-### Entity Memory
+## Eviction Policies
 
-```java
-EntityMemory entities = new InMemoryEntityMemory();
-entities.put("Acme Corp", "A mid-sized SaaS company founded in 2015, publicly traded as ACME. " +
-                          "Their primary product is a B2B CRM platform with 15,000 customers.");
-entities.put("Alice Chen", "Head of Product at Acme Corp. Background in ML research. " +
-                           "Joined in 2021 from Google.");
-
-EnsembleMemory memory = EnsembleMemory.builder()
-    .entityMemory(entities)
-    .build();
-```
-
-### All Three Together
+`MemoryScope` supports optional eviction to keep scope sizes bounded:
 
 ```java
-EmbeddingStore<TextSegment> store = loadDurableStore();  // e.g., Chroma
-EmbeddingModel embeddingModel = buildEmbeddingModel();
-
-EntityMemory entities = new InMemoryEntityMemory();
-entities.put("Project Phoenix", "Internal codename for the new mobile app, launching in Q3.");
-
-EnsembleMemory memory = EnsembleMemory.builder()
-    .shortTerm(true)
-    .longTerm(new EmbeddingStoreLongTermMemory(store, embeddingModel))
-    .entityMemory(entities)
-    .longTermMaxResults(3)
-    .build();
-
-EnsembleOutput output = Ensemble.builder()
-    .agent(researcher)
-    .agent(writer)
-    .task(researchTask)
-    .task(writeTask)
-    .memory(memory)
+// Retain only the 5 most recent entries
+MemoryScope.builder()
+    .name("research")
+    .keepLastEntries(5)
     .build()
-    .run(Map.of("topic", "Project Phoenix launch strategy"));
+
+// Retain only entries stored within the past 7 days
+MemoryScope.builder()
+    .name("research")
+    .keepEntriesWithin(Duration.ofDays(7))
+    .build()
 ```
+
+Eviction is applied after each task stores its output. For `MemoryStore.embeddings()`,
+eviction is a no-op (embedding stores generally do not support deletion of individual entries).
 
 ---
 
-## How Memory Appears in Prompts
+## MemoryTool: Explicit Agent Access
 
-When memory is active, the agent's user prompt contains additional sections before the task description:
-
-```
-## Short-Term Memory (Current Run)
-[Prior task outputs from this run]
-
-## Long-Term Memory
-[Relevant outputs from previous runs, retrieved by semantic similarity]
-
-## Entity Knowledge
-[All entity facts from the entity memory store]
-
-## Your Task
-[Task description and expected output]
-```
-
-Short-term memory replaces the "Context from prior tasks" section when active.
-
----
-
-## Memory Lifecycle
-
-| Memory type | Scope | Created | Cleared |
-|---|---|---|---|
-| Short-term | Per `run()` call | At start of `run()` | At end of `run()` |
-| Long-term | Persistent | Controlled by your `EmbeddingStore` | When you clear the store |
-| Entity | Controlled by you | Before `run()` | When you update the store |
-
-Long-term memory and entity memory are shared across runs. Their lifecycle is entirely under your control -- AgentEnsemble never clears or modifies them outside of storing new entries.
-
----
-
-## Custom Long-Term Memory
-
-You can implement the `LongTermMemory` interface for custom storage backends or retrieval strategies:
+Agents can also interact with memory directly during their ReAct loop using `MemoryTool`:
 
 ```java
-public class MyDatabaseMemory implements LongTermMemory {
+MemoryStore store = MemoryStore.inMemory();
 
-    @Override
-    public void store(MemoryEntry entry) {
-        // Persist to your database
-    }
+Agent researcher = Agent.builder()
+    .role("Researcher")
+    .goal("Research and remember important facts")
+    .tools(MemoryTool.of("research", store))
+    .llm(llm)
+    .build();
+```
 
-    @Override
-    public List<MemoryEntry> retrieve(String query, int maxResults) {
-        // Return relevant entries for the given query
-        return myDatabase.search(query, maxResults);
-    }
-}
+`MemoryTool` provides two tool methods the LLM can call:
+- `storeMemory(key, value)` -- store an arbitrary fact
+- `retrieveMemory(query)` -- retrieve relevant memories by query
+
+When the same `MemoryStore` instance is used for both `MemoryTool` and
+`Ensemble.builder().memoryStore(...)`, explicit tool access and automatic scope-based
+access share the same backing store.
+
+---
+
+## Cross-Run Persistence Example
+
+```java
+MemoryStore store = MemoryStore.inMemory(); // reused across runs
+
+Task researchTask = Task.builder()
+    .description("Research AI trends for week {week}")
+    .expectedOutput("Weekly AI intelligence briefing")
+    .agent(analyst)
+    .memory("weekly-research")
+    .build();
+
+Ensemble ensemble = Ensemble.builder()
+    .agent(analyst)
+    .task(researchTask)
+    .memoryStore(store)
+    .build();
+
+// Week 1 -- no prior entries
+ensemble.run(Map.of("week", "2026-01-06"));
+
+// Week 2 -- analyst sees Week 1 output in "## Memory: weekly-research" section
+ensemble.run(Map.of("week", "2026-01-13"));
+
+// Week 3 -- analyst sees both Week 1 and Week 2 outputs
+ensemble.run(Map.of("week", "2026-01-20"));
+```
+
+See the [full example](../examples/memory-across-runs.md).
+
+---
+
+## Multiple Tasks Sharing a Scope
+
+Multiple tasks can declare the same scope name. Each task writes its output to the scope
+after it completes, so later tasks (in sequential workflow) see earlier tasks' outputs.
+
+```java
+MemoryStore store = MemoryStore.inMemory();
+
+Task research = Task.builder()
+    .description("Research AI trends")
+    .memory("ai-project")
+    .build();
+
+Task analysis = Task.builder()
+    .description("Analyse the research findings")
+    .memory("ai-project")  // also declares "ai-project" -- sees research output
+    .build();
+
+Ensemble.builder()
+    .task(research)
+    .task(analysis)
+    .memoryStore(store)
+    .build()
+    .run();
 ```
 
 ---
 
-## Memory Configuration Reference
+## Memory in Prompts
 
-See the [Memory Configuration reference](../reference/memory-configuration.md) for the complete field table.
+When a task has declared scopes and the scope has prior entries, the agent's user prompt
+contains a section for each scope:
+
+```
+## Memory: ai-project
+The following information from scope "ai-project" may be relevant:
+
+---
+Research findings from previous run: AI is accelerating in healthcare and finance...
+---
+
+## Task
+Analyse the research findings
+```
+
+---
+
+## Reference
+
+- [MemoryStore configuration](../reference/memory-configuration.md)
+- [Task configuration: memoryScopes](../reference/task-configuration.md)
+- [Ensemble configuration: memoryStore](../reference/ensemble-configuration.md)

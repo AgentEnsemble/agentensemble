@@ -25,6 +25,118 @@ feature.
 
 ---
 
+## `MemoryStore` (v2.0.0 primary API)
+
+`MemoryStore` is the v2.0.0 SPI for task-scoped cross-execution memory. Set it on the ensemble
+and declare scopes on tasks:
+
+```java
+MemoryStore store = MemoryStore.inMemory();
+
+Ensemble.builder()
+    .memoryStore(store)
+    .task(Task.builder()
+        .description("Research AI trends")
+        .memory("research")   // declares the scope
+        .build())
+    .build()
+    .run();
+```
+
+### Interface
+
+```java
+public interface MemoryStore {
+    void store(String scope, MemoryEntry entry);
+    List<MemoryEntry> retrieve(String scope, String query, int maxResults);
+    void evict(String scope, EvictionPolicy policy);
+
+    static MemoryStore inMemory() { ... }
+    static MemoryStore embeddings(EmbeddingModel model, EmbeddingStore<TextSegment> store) { ... }
+}
+```
+
+### Factories
+
+| Factory | Description |
+|---|---|
+| `MemoryStore.inMemory()` | Lightweight in-memory implementation. Entries stored in insertion order; retrieval returns most recent (no semantic search). For dev/testing. |
+| `MemoryStore.embeddings(EmbeddingModel, EmbeddingStore)` | Production implementation using LangChain4j embeddings for semantic similarity retrieval. |
+
+---
+
+## `MemoryScope`
+
+Declares a named scope with optional eviction configuration.
+
+```java
+// Simple -- no eviction
+MemoryScope.of("research")
+
+// Keep last N entries
+MemoryScope.builder()
+    .name("research")
+    .keepLastEntries(10)
+    .build()
+
+// Keep entries within a time window
+MemoryScope.builder()
+    .name("research")
+    .keepEntriesWithin(Duration.ofDays(30))
+    .build()
+```
+
+| Builder Field | Type | Description |
+|---|---|---|
+| `name` | `String` | Scope identifier; must not be blank |
+| `keepLastEntries` | `int` | Eviction: retain only the N most recent entries after storage |
+| `keepEntriesWithin` | `Duration` | Eviction: retain only entries stored within this window |
+
+---
+
+## `EvictionPolicy`
+
+Applied after each storage operation on a scope with a configured eviction policy.
+
+| Factory | Description |
+|---|---|
+| `EvictionPolicy.keepLastEntries(int n)` | Retains the `n` most recent entries; evicts oldest first. `n` must be positive. |
+| `EvictionPolicy.keepEntriesWithin(Duration d)` | Retains entries whose `storedAt` is within the given duration. `d` must be positive. |
+
+---
+
+## `MemoryEntry` (v2.0.0)
+
+Immutable record of a single stored entry.
+
+| Field | Type | Description |
+|---|---|---|
+| `content` | `String` | Raw text content (typically the agent's task output) |
+| `structuredContent` | `Object` | Parsed structured output (nullable) |
+| `storedAt` | `Instant` | When the entry was stored |
+| `metadata` | `Map<String, String>` | Metadata; standard keys: `"agentRole"`, `"taskDescription"` |
+
+Use `entry.getMeta("agentRole")` to read metadata values.
+
+---
+
+## `MemoryTool`
+
+Gives agents explicit mid-task access to a named scope:
+
+```java
+MemoryStore store = MemoryStore.inMemory();
+
+Agent agent = Agent.builder()
+    .role("Researcher")
+    .tools(MemoryTool.of("research", store))
+    .build();
+```
+
+The LLM can call `storeMemory(key, value)` and `retrieveMemory(query)` during its ReAct loop.
+
+---
+
 ## `EnsembleMemory`
 
 Configured via `EnsembleMemory.builder()`. At least one memory type must be enabled.

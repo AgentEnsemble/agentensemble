@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -109,7 +110,6 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().entityMemory(em).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // Entity memory is present but empty -- hasEntityMemory() returns false
         assertThat(ctx.hasEntityMemory()).isFalse();
     }
 
@@ -127,8 +127,8 @@ class MemoryContextTest {
         List<MemoryEntry> entries = ctx.getShortTermEntries();
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getContent()).isEqualTo("Research complete");
-        assertThat(entries.get(0).getAgentRole()).isEqualTo("Researcher");
-        assertThat(entries.get(0).getTaskDescription()).isEqualTo("Research AI");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
+        assertThat(entries.get(0).getMeta(MemoryEntry.META_TASK_DESCRIPTION)).isEqualTo("Research AI");
     }
 
     @Test
@@ -148,7 +148,6 @@ class MemoryContextTest {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // Should not throw
         ctx.record(null);
         assertThat(ctx.getShortTermEntries()).isEmpty();
     }
@@ -169,20 +168,28 @@ class MemoryContextTest {
     }
 
     @Test
-    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
-        // A MemoryContext configured with short-term only must not route records to any
-        // long-term store.
+    void testRecord_storedEntryHasMetadata() {
         EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
         MemoryContext ctx = MemoryContext.from(config);
 
-        // No long-term memory is configured
+        ctx.record(new MemoryRecord("content", "Researcher", "Research task", Instant.now()));
+
+        MemoryEntry entry = ctx.getShortTermEntries().get(0);
+        assertThat(entry.getMeta(MemoryEntry.META_AGENT_ROLE)).isEqualTo("Researcher");
+        assertThat(entry.getMeta(MemoryEntry.META_TASK_DESCRIPTION)).isEqualTo("Research task");
+        assertThat(entry.getStoredAt()).isNotNull();
+    }
+
+    @Test
+    void testRecord_withoutLongTerm_doesNotStoreToLongTerm() {
+        EnsembleMemory config = EnsembleMemory.builder().shortTerm(true).build();
+        MemoryContext ctx = MemoryContext.from(config);
+
         assertThat(ctx.hasLongTerm()).isFalse();
 
         ctx.record(memoryRecord("Content", "Agent", "Task"));
 
-        // Short-term was recorded
         assertThat(ctx.getShortTermEntries()).hasSize(1);
-        // Long-term query returns empty (no long-term store)
         assertThat(ctx.queryLongTerm("Content")).isEmpty();
     }
 
@@ -196,9 +203,8 @@ class MemoryContextTest {
         when(ltm.retrieve(anyString(), anyInt()))
                 .thenReturn(List.of(MemoryEntry.builder()
                         .content("past memory")
-                        .agentRole("Agent")
-                        .taskDescription("old task")
-                        .timestamp(Instant.now())
+                        .storedAt(Instant.now())
+                        .metadata(Map.of(MemoryEntry.META_AGENT_ROLE, "Agent"))
                         .build()));
 
         EnsembleMemory config =
@@ -274,8 +280,7 @@ class MemoryContextTest {
 
         List<MemoryEntry> entries = ctx.getShortTermEntries();
         assertThat(entries).hasSize(1);
-        // timestamp should be set (not null) even when completedAt was null
-        assertThat(entries.get(0).getTimestamp()).isNotNull();
+        assertThat(entries.get(0).getStoredAt()).isNotNull();
     }
 
     // ========================
@@ -388,7 +393,6 @@ class MemoryContextTest {
             }
         });
 
-        // Set null removes the listener
         ctx.setOperationListener(null);
         ctx.record(memoryRecord("content", "Agent", "task"));
 

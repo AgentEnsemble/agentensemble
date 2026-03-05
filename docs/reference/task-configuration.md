@@ -12,6 +12,7 @@ All fields available on `Task.builder()`.
 | `maxOutputRetries` | `int` | No | `3` | Number of retry attempts if structured output parsing fails. `0` disables retries. Only meaningful when `outputType` is set. |
 | `inputGuardrails` | `List<InputGuardrail>` | No | `[]` | Validation hooks that run before the LLM call. Each guardrail receives a `GuardrailInput` and returns `GuardrailResult.success()` or `GuardrailResult.failure(reason)`. The first failure throws `GuardrailViolationException` and prevents any LLM call. |
 | `outputGuardrails` | `List<OutputGuardrail>` | No | `[]` | Validation hooks that run after the agent produces a response. Each guardrail receives a `GuardrailOutput` (with raw text and optionally the parsed object). The first failure throws `GuardrailViolationException`. |
+| `memoryScopes` | `List<MemoryScope>` | No | `[]` | Named memory scopes this task reads from and writes to. Requires `Ensemble.builder().memoryStore(MemoryStore)`. Declare with `.memory(String)`, `.memory(String...)`, or `.memory(MemoryScope)` on the builder. At task startup entries are retrieved from each scope and injected into the prompt; at completion the output is stored into each scope. See [Memory guide](../guides/memory.md). |
 
 ---
 

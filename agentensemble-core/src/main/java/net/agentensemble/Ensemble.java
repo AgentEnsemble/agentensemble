@@ -30,8 +30,8 @@ import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
-import net.agentensemble.memory.EnsembleMemory;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.tool.NoOpToolMetrics;
@@ -109,11 +109,15 @@ public class Ensemble {
     private final boolean verbose = false;
 
     /**
-     * Optional memory configuration.
-     * When set, short-term, long-term, and/or entity memory are enabled.
-     * Default: null (no memory).
+     * Optional memory store for task-scoped cross-execution memory (v2.0.0).
+     *
+     * <p>When set, tasks with declared memory scopes (via
+     * {@link Task.TaskBuilder#memory(String)}) automatically read from their scopes before
+     * execution and write their output into each scope after completion.
+     *
+     * <p>Default: null (no scoped memory).
      */
-    private final EnsembleMemory memory;
+    private final MemoryStore memoryStore;
 
     /**
      * Maximum delegation depth for agent-to-agent delegation.
@@ -434,19 +438,16 @@ public class Ensemble {
             // Step 2: Resolve template variables in task descriptions and expected outputs
             List<Task> resolvedTasks = resolveTasks(resolvedInputs);
 
-            // Step 3: Create memory context for this run (no-op when memory is not configured)
-            MemoryContext memoryContext = memory != null ? MemoryContext.from(memory) : MemoryContext.disabled();
+            // Step 3: Memory context is disabled in v2.0.0; scoped memory is handled
+            // via MemoryStore in ExecutionContext (set on Ensemble via .memoryStore()).
+            MemoryContext memoryContext = MemoryContext.disabled();
 
-            if (memoryContext.isActive()) {
-                log.info(
-                        "Memory enabled | shortTerm={} longTerm={} entityMemory={}",
-                        memoryContext.hasShortTerm(),
-                        memoryContext.hasLongTerm(),
-                        memoryContext.hasEntityMemory());
+            if (memoryStore != null) {
+                log.info("MemoryStore enabled for task-scoped memory");
             }
 
             // Step 4: Build execution context -- bundles memory, verbosity, listeners,
-            // tool executor, tool metrics, cost configuration, and capture mode
+            // tool executor, tool metrics, cost configuration, capture mode, and memoryStore
             ExecutionContext executionContext = ExecutionContext.of(
                     memoryContext,
                     verbose,
@@ -454,7 +455,8 @@ public class Ensemble {
                     toolExecutor,
                     toolMetrics,
                     costConfiguration,
-                    effectiveCaptureMode);
+                    effectiveCaptureMode,
+                    memoryStore);
 
             // Step 5: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor();

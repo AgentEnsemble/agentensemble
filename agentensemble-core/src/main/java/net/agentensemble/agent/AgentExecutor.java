@@ -33,8 +33,11 @@ import net.agentensemble.guardrail.GuardrailViolationException;
 import net.agentensemble.guardrail.GuardrailViolationException.GuardrailType;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
+import net.agentensemble.memory.MemoryEntry;
 import net.agentensemble.memory.MemoryOperationListener;
 import net.agentensemble.memory.MemoryRecord;
+import net.agentensemble.memory.MemoryScope;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.ToolResult;
 import net.agentensemble.trace.CaptureMode;
@@ -171,8 +174,8 @@ public class AgentExecutor {
             // Time prompt building
             Instant promptStart = Instant.now();
             String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
-            String userPrompt =
-                    AgentPromptBuilder.buildUserPrompt(task, contextOutputs, executionContext.memoryContext());
+            String userPrompt = AgentPromptBuilder.buildUserPrompt(
+                    task, contextOutputs, executionContext.memoryContext(), executionContext.memoryStore());
             Duration promptBuildTime = Duration.between(promptStart, Instant.now());
             accumulator.recordPrompts(systemPrompt, userPrompt, promptBuildTime);
 
@@ -269,6 +272,15 @@ public class AgentExecutor {
                     .trace(taskTrace)
                     .build();
 
+            // Store output in task-declared memory scopes (v2.0.0 MemoryStore API)
+            MemoryStore memStore = executionContext.memoryStore();
+            if (memStore != null
+                    && task.getMemoryScopes() != null
+                    && !task.getMemoryScopes().isEmpty()) {
+                storeInDeclaredScopes(task, output, memStore);
+            }
+
+            // Legacy record call: no-op when MemoryContext is disabled (default in v2.0.0)
             executionContext
                     .memoryContext()
                     .record(new MemoryRecord(
@@ -283,6 +295,37 @@ public class AgentExecutor {
             // Always clear the memory listener, even when an exception is thrown
             if (captureMode.isAtLeast(CaptureMode.STANDARD)) {
                 executionContext.memoryContext().clearOperationListener();
+            }
+        }
+    }
+
+    /**
+     * Store the task output into each declared memory scope and apply eviction if configured.
+     *
+     * @param task      the task with declared memory scopes
+     * @param output    the completed task output
+     * @param memStore  the memory store to write into
+     */
+    private static void storeInDeclaredScopes(
+            Task task, net.agentensemble.task.TaskOutput output, MemoryStore memStore) {
+        java.util.HashMap<String, String> metadata = new java.util.HashMap<>();
+        if (output.getAgentRole() != null) {
+            metadata.put(MemoryEntry.META_AGENT_ROLE, output.getAgentRole());
+        }
+        if (output.getTaskDescription() != null) {
+            metadata.put(MemoryEntry.META_TASK_DESCRIPTION, output.getTaskDescription());
+        }
+        MemoryEntry entry = MemoryEntry.builder()
+                .content(output.getRaw())
+                .structuredContent(output.getParsedOutput())
+                .storedAt(output.getCompletedAt())
+                .metadata(java.util.Map.copyOf(metadata))
+                .build();
+
+        for (MemoryScope scope : task.getMemoryScopes()) {
+            memStore.store(scope.getName(), entry);
+            if (scope.getEvictionPolicy() != null) {
+                memStore.evict(scope.getName(), scope.getEvictionPolicy());
             }
         }
     }

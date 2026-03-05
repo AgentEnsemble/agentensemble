@@ -1,29 +1,66 @@
 package net.agentensemble.memory;
 
 import java.time.Instant;
+import java.util.Map;
 import lombok.Builder;
 import lombok.Value;
 
 /**
- * An immutable record of a single memory -- a task output captured during
- * execution for later injection into agent prompts.
+ * An immutable record of a single memory entry stored in a {@link MemoryStore} scope.
  *
- * Memory entries are produced by the framework after each agent task completes
- * and are stored in short-term or long-term memory depending on configuration.
+ * <p>Memory entries are produced by the framework after each agent task completes and are
+ * stored into each scope declared on the task. They can also be written explicitly via
+ * {@link MemoryTool}.
+ *
+ * <p>The {@code metadata} map carries arbitrary string key-value pairs. The framework
+ * populates the following keys automatically:
+ * <ul>
+ *   <li>{@code "agentRole"} -- the role of the agent that produced the entry</li>
+ *   <li>{@code "taskDescription"} -- the description of the task that was executed</li>
+ * </ul>
  */
 @Builder
 @Value
 public class MemoryEntry {
 
-    /** The text content of the memory (typically the agent's task output). */
+    /**
+     * The raw text content of the memory entry.
+     * Typically the agent's task output.
+     */
     String content;
 
-    /** The role of the agent that produced this memory. */
-    String agentRole;
+    /**
+     * Optional parsed structured output.
+     * Populated when the task was configured with an {@code outputType} and
+     * structured output parsing succeeded.
+     * Default: {@code null}.
+     */
+    Object structuredContent;
 
-    /** The description of the task that produced this memory. */
-    String taskDescription;
+    /**
+     * When this entry was stored into the memory scope.
+     */
+    Instant storedAt;
 
-    /** When this memory was recorded. */
-    Instant timestamp;
+    /**
+     * Arbitrary metadata associated with this entry.
+     * Never null; may be empty.
+     */
+    Map<String, String> metadata;
+
+    /**
+     * Convenience method to look up a metadata value by key.
+     *
+     * @param key the metadata key
+     * @return the value, or {@code null} if the key is not present
+     */
+    public String getMeta(String key) {
+        return metadata != null ? metadata.get(key) : null;
+    }
+
+    /** Standard metadata key for the agent role that produced this entry. */
+    public static final String META_AGENT_ROLE = "agentRole";
+
+    /** Standard metadata key for the task description that produced this entry. */
+    public static final String META_TASK_DESCRIPTION = "taskDescription";
 }

@@ -1,11 +1,13 @@
 package net.agentensemble;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.Builder;
 import lombok.Value;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
+import net.agentensemble.memory.MemoryScope;
 
 /**
  * A unit of work assigned to an agent.
@@ -134,6 +136,21 @@ public class Task {
     List<OutputGuardrail> outputGuardrails;
 
     /**
+     * Named memory scopes this task reads from and writes to.
+     *
+     * At task startup, the framework retrieves entries from each declared scope and
+     * injects them into the agent prompt. At task completion, the task output is
+     * stored into each declared scope.
+     *
+     * Use the {@link TaskBuilder#memory(String)},
+     * {@link TaskBuilder#memory(String...)}, or
+     * {@link TaskBuilder#memory(MemoryScope)} builder methods to declare scopes.
+     *
+     * Default: empty list (no scoped memory).
+     */
+    List<MemoryScope> memoryScopes;
+
+    /**
      * Custom builder that sets defaults and validates the Task configuration.
      */
     public static class TaskBuilder {
@@ -144,6 +161,60 @@ public class Task {
         private int maxOutputRetries = 3;
         private List<InputGuardrail> inputGuardrails = List.of();
         private List<OutputGuardrail> outputGuardrails = List.of();
+        private List<MemoryScope> memoryScopes = new ArrayList<>();
+
+        /**
+         * Declare a single named memory scope for this task.
+         *
+         * <p>May be called multiple times; each call adds a scope to the list.
+         *
+         * @param scope the scope name; must not be blank
+         * @return this builder
+         */
+        public TaskBuilder memory(String scope) {
+            if (this.memoryScopes == null) {
+                this.memoryScopes = new ArrayList<>();
+            }
+            this.memoryScopes.add(MemoryScope.of(scope));
+            return this;
+        }
+
+        /**
+         * Declare multiple named memory scopes for this task.
+         *
+         * <p>May be called multiple times; each call adds all supplied scopes.
+         *
+         * @param scopes one or more scope names; each must not be blank
+         * @return this builder
+         */
+        public TaskBuilder memory(String... scopes) {
+            if (this.memoryScopes == null) {
+                this.memoryScopes = new ArrayList<>();
+            }
+            for (String s : scopes) {
+                this.memoryScopes.add(MemoryScope.of(s));
+            }
+            return this;
+        }
+
+        /**
+         * Declare a fully configured memory scope for this task.
+         *
+         * <p>May be called multiple times; each call adds the scope to the list.
+         *
+         * @param scope the configured scope; must not be null
+         * @return this builder
+         */
+        public TaskBuilder memory(MemoryScope scope) {
+            if (scope == null) {
+                throw new IllegalArgumentException("MemoryScope must not be null");
+            }
+            if (this.memoryScopes == null) {
+                this.memoryScopes = new ArrayList<>();
+            }
+            this.memoryScopes.add(scope);
+            return this;
+        }
 
         public Task build() {
             validateDescription();
@@ -156,6 +227,7 @@ public class Task {
             context = List.copyOf(effectiveContext);
             List<InputGuardrail> effectiveInputGuardrails = inputGuardrails != null ? inputGuardrails : List.of();
             List<OutputGuardrail> effectiveOutputGuardrails = outputGuardrails != null ? outputGuardrails : List.of();
+            List<MemoryScope> effectiveMemoryScopes = memoryScopes != null ? memoryScopes : List.of();
             inputGuardrails = List.copyOf(effectiveInputGuardrails);
             outputGuardrails = List.copyOf(effectiveOutputGuardrails);
             return new Task(
@@ -166,7 +238,8 @@ public class Task {
                     outputType,
                     maxOutputRetries,
                     inputGuardrails,
-                    outputGuardrails);
+                    outputGuardrails,
+                    List.copyOf(effectiveMemoryScopes));
         }
 
         private void validateDescription() {
