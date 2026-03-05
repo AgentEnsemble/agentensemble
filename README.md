@@ -169,6 +169,35 @@ If `managerLlm` is not set, the Manager uses the first agent's LLM. All worker a
 
 **Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Hierarchical Team Example](https://docs.agentensemble.net/examples/hierarchical-team/)
 
+### Hierarchical Constraints
+
+Add `HierarchicalConstraints` to impose deterministic guardrails on the delegation graph without losing the LLM-directed nature of the workflow:
+
+```java
+HierarchicalConstraints constraints = HierarchicalConstraints.builder()
+    .requiredWorker("Researcher")        // must be called at least once
+    .allowedWorker("Researcher")         // only these workers can be delegated to
+    .allowedWorker("Analyst")
+    .maxCallsPerWorker("Analyst", 2)     // Analyst may be called at most 2 times
+    .globalMaxDelegations(5)             // total delegation cap across all workers
+    .requiredStage(List.of("Researcher")) // stage 0: Researcher must complete first
+    .requiredStage(List.of("Analyst"))    // stage 1: Analyst only after Researcher
+    .build();
+
+Ensemble.builder()
+    .workflow(Workflow.HIERARCHICAL)
+    .agent(researcher)
+    .agent(analyst)
+    .task(task)
+    .hierarchicalConstraints(constraints)
+    .build()
+    .run();
+```
+
+Pre-delegation violations (disallowed worker, cap exceeded, stage order) are returned as error messages to the Manager LLM so it can adjust its plan. Post-execution, if a required worker was never called, a `ConstraintViolationException` is thrown with the full violation list and any partial worker outputs.
+
+**Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#hierarchical-constraints)
+
 ---
 
 ## Parallel Workflow
@@ -605,6 +634,7 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 | `onDelegationStarted` | `Consumer<DelegationStartedEvent>` | -- | Lambda: fired before each delegation handoff (passes all guards and policies). Carries a `delegationId` for correlation (repeatable). |
 | `onDelegationCompleted` | `Consumer<DelegationCompletedEvent>` | -- | Lambda: fired after a delegation completes successfully. Carries a `delegationId` matching the start event (repeatable). |
 | `onDelegationFailed` | `Consumer<DelegationFailedEvent>` | -- | Lambda: fired when a delegation fails (guard, policy, or worker exception). Guard/policy failures have no matching start event (repeatable). |
+| `hierarchicalConstraints` | `HierarchicalConstraints` | `null` | Optional guardrails for the delegation graph (hierarchical workflow only): required workers, allowed workers, per-worker caps, global delegation cap, stage ordering. See [Hierarchical Constraints](#hierarchical-constraints). |
 
 **Full documentation:** [Ensemble Configuration Reference](https://docs.agentensemble.net/reference/ensemble-configuration/)
 

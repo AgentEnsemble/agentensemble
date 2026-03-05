@@ -72,6 +72,8 @@ Manager -> delegates -> Worker A
         -> synthesizes final output
 ```
 
+Optionally, add `HierarchicalConstraints` to impose deterministic guardrails (required workers, allowed workers, per-worker caps, stage ordering) while keeping the workflow LLM-directed. See the [Delegation guide](../guides/delegation.md#hierarchical-constraints).
+
 See the [Workflows guide](../guides/workflows.md).
 
 ---

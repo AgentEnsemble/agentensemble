@@ -16,6 +16,7 @@ All fields available on `Ensemble.builder()`.
 | `memory` | `EnsembleMemory` | No | `null` | Memory configuration. See [Memory Configuration reference](memory-configuration.md). |
 | `maxDelegationDepth` | `int` | No | `3` | Maximum peer-delegation depth. Applies when agents have `allowDelegation = true`. Must be greater than zero. |
 | `delegationPolicies` | `List<DelegationPolicy>` | No | `[]` | Pluggable hooks evaluated before each delegation attempt (after built-in guards). Add individual policies with `.delegationPolicy(policy)` (Lombok singular) or a collection with `.delegationPolicies(list)`. Policies run in registration order. A `REJECT` result blocks the delegation; a `MODIFY` result replaces the request; an `ALLOW` result continues evaluation. Applies to both peer and hierarchical delegation. See [Delegation guide](../guides/delegation.md#delegation-policy-hooks). |
+| `hierarchicalConstraints` | `HierarchicalConstraints` | No | `null` | Optional guardrails for the delegation graph (hierarchical workflow only). Enforces required workers, allowed workers, per-worker caps, global delegation cap, and stage ordering. When requiredWorkers are not called by run end, ConstraintViolationException is thrown. See the Delegation guide for full documentation. |
 
 ---
 

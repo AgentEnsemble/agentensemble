@@ -33,6 +33,7 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.workflow.DefaultManagerPromptStrategy;
+import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
 import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.ParallelErrorStrategy;
@@ -228,6 +229,35 @@ public class Ensemble {
     private final Map<String, String> inputs;
 
     /**
+     * Optional guardrails for the delegation graph in hierarchical workflow.
+     *
+     * <p>When set, a {@code HierarchicalConstraintEnforcer} is created for each run. The enforcer
+     * is prepended to the delegation policy chain to enforce
+     * pre-delegation checks: allowed workers, per-worker caps, global delegation cap, and stage
+     * ordering. After the Manager finishes, the enforcer validates that all required workers were
+     * called; if not, a {@link net.agentensemble.exception.ConstraintViolationException} is thrown
+     * carrying the violations and any partial worker outputs.
+     *
+     * <p>Only exercised when {@code workflow = Workflow.HIERARCHICAL}. Ignored for sequential and
+     * parallel workflows.
+     *
+     * <p>Default: null (no constraints).
+     *
+     * <pre>
+     * Ensemble.builder()
+     *     .workflow(Workflow.HIERARCHICAL)
+     *     .hierarchicalConstraints(HierarchicalConstraints.builder()
+     *         .requiredWorker("Researcher")
+     *         .allowedWorker("Researcher")
+     *         .allowedWorker("Analyst")
+     *         .globalMaxDelegations(5)
+     *         .build())
+     *     .build();
+     * </pre>
+     */
+    private final HierarchicalConstraints hierarchicalConstraints;
+
+    /**
      * Delegation policies evaluated before each delegation attempt.
      *
      * <p>Policies run after built-in guards (self-delegation, depth limit, unknown agent)
@@ -411,7 +441,8 @@ public class Ensemble {
                     managerMaxIterations,
                     maxDelegationDepth,
                     managerPromptStrategy,
-                    policies);
+                    policies,
+                    hierarchicalConstraints);
             case PARALLEL -> new ParallelWorkflowExecutor(agents, maxDelegationDepth, parallelErrorStrategy, policies);
         };
     }

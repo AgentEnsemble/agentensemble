@@ -432,3 +432,135 @@ For guard/policy failures (worker never starts):
 | Depth limit | `ensemble.maxDelegationDepth(n)` | `managerMaxIterations` |
 
 Both can be used together: hierarchical workflow with worker agents that also support peer delegation.
+
+---
+
+## Hierarchical Constraints
+
+`HierarchicalConstraints` imposes deterministic guardrails on the delegation graph when using `Workflow.HIERARCHICAL`. Constraints are configured on the `Ensemble` builder and enforced automatically -- the LLM-directed nature of the workflow is preserved throughout.
+
+```java
+HierarchicalConstraints constraints = HierarchicalConstraints.builder()
+    .requiredWorker("Researcher")         // must be called at least once
+    .allowedWorker("Researcher")          // only Researcher and Analyst may be delegated to
+    .allowedWorker("Analyst")
+    .maxCallsPerWorker("Analyst", 2)      // Analyst may be called at most 2 times
+    .globalMaxDelegations(5)              // total delegation cap across all workers
+    .requiredStage(List.of("Researcher")) // stage 0: Researcher must complete first
+    .requiredStage(List.of("Analyst"))    // stage 1: Analyst only after Researcher
+    .build();
+
+Ensemble.builder()
+    .workflow(Workflow.HIERARCHICAL)
+    .agent(researcher)
+    .agent(analyst)
+    .task(task)
+    .hierarchicalConstraints(constraints)
+    .build()
+    .run();
+```
+
+---
+
+### Required Workers
+
+`requiredWorkers` lists roles that MUST be delegated to at least once during the run. After the Manager finishes, the framework checks that every listed role was successfully called. If any are missing, `ConstraintViolationException` is thrown with a description of each violation and the task outputs from workers that did complete.
+
+```java
+HierarchicalConstraints.builder()
+    .requiredWorker("Researcher")
+    .requiredWorker("Analyst")
+    .build();
+```
+
+---
+
+### Allowed Workers
+
+`allowedWorkers` restricts which workers the Manager may delegate to. When non-empty, any attempt to delegate to a role not in the set is rejected before the worker executes. The Manager receives the rejection reason as a tool error and can adjust its delegation plan.
+
+```java
+HierarchicalConstraints.builder()
+    .allowedWorker("Researcher")
+    .allowedWorker("Analyst")
+    .build();
+```
+
+When `allowedWorkers` is non-empty, every role in `requiredWorkers` must also appear in `allowedWorkers` -- this is validated at `Ensemble.run()` time before any LLM calls are made.
+
+---
+
+### Per-Worker Delegation Caps
+
+`maxCallsPerWorker` limits how many times the Manager may delegate to a specific worker. The cap counts delegation attempts that passed all other checks (not just successful completions).
+
+```java
+HierarchicalConstraints.builder()
+    .maxCallsPerWorker("Analyst", 2)  // Analyst may be called at most 2 times
+    .build();
+```
+
+When the cap is reached, further attempts to delegate to that worker are rejected. The rejection is returned to the Manager as a tool error.
+
+---
+
+### Global Delegation Cap
+
+`globalMaxDelegations` limits total delegations across all workers. A value of `0` (the default) means no global cap.
+
+```java
+HierarchicalConstraints.builder()
+    .globalMaxDelegations(5)  // no more than 5 total delegations
+    .build();
+```
+
+---
+
+### Stage Ordering
+
+`requiredStages` enforces a strict delegation order. Each stage is a group of worker roles. All workers in stage N must have completed successfully before any worker in stage N+1 can be delegated to. Workers not listed in any stage are unconstrained.
+
+```java
+HierarchicalConstraints.builder()
+    .requiredStage(List.of("Researcher"))          // stage 0
+    .requiredStage(List.of("Analyst", "Writer"))   // stage 1: both must be called after Researcher
+    .build();
+```
+
+If the Manager attempts to delegate to a stage-1 worker before all stage-0 workers have completed, it receives a rejection message naming which stage-0 worker has not yet finished. The Manager can retry once the prerequisite is satisfied.
+
+---
+
+### Error Handling
+
+Pre-delegation violations (disallowed worker, cap exceeded, stage ordering) are surfaced as tool rejection errors returned to the Manager LLM -- they are **not** exceptions from `Ensemble.run()`. The Manager receives the reason and can adjust its strategy.
+
+Post-execution violation (a required worker was never called) throws `ConstraintViolationException` after the Manager finishes:
+
+```java
+try {
+    ensemble.run();
+} catch (ConstraintViolationException e) {
+    // All violations listed
+    for (String violation : e.getViolations()) {
+        System.err.println("Constraint violated: " + violation);
+    }
+    // Worker outputs that DID complete successfully
+    for (TaskOutput output : e.getCompletedTaskOutputs()) {
+        System.out.println("Completed: " + output.getAgentRole() + " - " + output.getRaw());
+    }
+}
+```
+
+---
+
+### Validation
+
+All constraint roles are validated against the registered ensemble agents at `Ensemble.run()` time before any LLM calls are made. A `ValidationException` is thrown if:
+
+- A role in `requiredWorkers` or `allowedWorkers` is not a registered agent
+- A key in `maxCallsPerWorker` is not a registered agent
+- A `maxCallsPerWorker` value is `<= 0`
+- `globalMaxDelegations` is `< 0`
+- A role in `requiredStages` is not a registered agent
+- A `requiredWorkers` role is not in `allowedWorkers` (when `allowedWorkers` is non-empty)

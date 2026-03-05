@@ -294,6 +294,120 @@ public class EnsembleOutput {
 
 ---
 
+## HierarchicalConstraints
+
+Immutable value object attached to an `Ensemble` when `workflow = Workflow.HIERARCHICAL`. Governs which worker agents the manager may delegate to, how many times each worker may be called, and the sequence of stages the workflow must progress through. All fields are validated at `ensemble.run()` time before execution begins.
+
+```java
+@Value
+@Builder
+public class HierarchicalConstraints {
+
+    /**
+     * Agents the manager MUST delegate to at least once during execution.
+     * If any required worker has not received a delegation by the time the
+     * manager produces its final answer, a ConstraintViolationException is
+     * thrown after the manager run completes (post-execution).
+     * Default: empty set.
+     */
+    @Singular
+    Set<String> requiredWorkers;
+
+    /**
+     * Agents the manager is permitted to delegate to.
+     * When non-empty, delegation to any agent not in this set is blocked and
+     * returns a DelegationResponse with DelegationStatus.FAILURE.
+     * When empty, all agents registered in the ensemble are allowed.
+     * Default: empty set (all workers allowed).
+     */
+    @Singular
+    Set<String> allowedWorkers;
+
+    /**
+     * Per-worker cap on the number of delegation calls.
+     * Key: agent role string. Value: maximum number of allowed calls (must be > 0).
+     * Attempts beyond the cap are blocked and return DelegationStatus.FAILURE.
+     * Agents not present in the map are uncapped.
+     * Default: empty map (no per-worker cap).
+     */
+    @Singular
+    Map<String, Integer> maxCallsPerWorker;
+
+    /**
+     * Total number of delegation calls the manager may make across all workers
+     * during a single run(). Once the limit is reached every subsequent
+     * delegation attempt is blocked.
+     * 0 means unlimited. Must be >= 0.
+     * Default: 0 (unlimited).
+     */
+    @Builder.Default
+    int globalMaxDelegations = 0;
+
+    /**
+     * Ordered list of stages, where each stage is itself an ordered list of
+     * agent roles. The manager must complete all delegations in stage N before
+     * delegating to any agent in stage N+1. Useful for enforcing pipeline-style
+     * workflows (e.g. research → draft → review).
+     * An empty outer list means no stage ordering is enforced.
+     * Default: empty list.
+     */
+    @Singular
+    List<List<String>> requiredStages;
+}
+```
+
+### Usage
+
+`HierarchicalConstraints` is set on an `Ensemble` via the `hierarchicalConstraints` field and is **only evaluated when `workflow = Workflow.HIERARCHICAL`**. It is ignored for all other workflow types.
+
+```java
+Ensemble ensemble = Ensemble.builder()
+    .workflow(Workflow.HIERARCHICAL)
+    .hierarchicalConstraints(
+        HierarchicalConstraints.builder()
+            .requiredWorker("researcher")
+            .allowedWorker("researcher")
+            .allowedWorker("writer")
+            .maxCallsPerWorker("researcher", 3)
+            .maxCallsPerWorker("writer", 2)
+            .globalMaxDelegations(10)
+            .requiredStage(List.of("researcher"))
+            .requiredStage(List.of("writer"))
+            .build()
+    )
+    .agent(managerAgent)
+    .agent(researcherAgent)
+    .agent(writerAgent)
+    .task(orchestrationTask)
+    .build();
+```
+
+### Cross-Validation Rules (enforced at `run()` time)
+
+| Rule | Condition | Error |
+|---|---|---|
+| `allowedWorkers` ⊆ ensemble agents | Every role in `allowedWorkers` must match an agent in the `agents` list | `ValidationException("HierarchicalConstraints.allowedWorkers references unknown agent: '{role}'")`|
+| `requiredWorkers` ⊆ `allowedWorkers` | When `allowedWorkers` is non-empty, every required worker must also be allowed | `ValidationException("HierarchicalConstraints.requiredWorkers contains '{role}' which is not in allowedWorkers")` |
+| `requiredWorkers` ⊆ ensemble agents | Every required worker must be registered in the ensemble | `ValidationException("HierarchicalConstraints.requiredWorkers references unknown agent: '{role}'")`|
+| `maxCallsPerWorker` keys ⊆ ensemble agents | Every key must match an agent role in the ensemble | `ValidationException("HierarchicalConstraints.maxCallsPerWorker references unknown agent: '{role}'")`|
+| `maxCallsPerWorker` values > 0 | Each per-worker cap must be a positive integer | `ValidationException("HierarchicalConstraints.maxCallsPerWorker value for '{role}' must be > 0, got: {value}")`|
+| `globalMaxDelegations` >= 0 | Must not be negative | `ValidationException("HierarchicalConstraints.globalMaxDelegations must be >= 0, got: {value}")`|
+| `requiredStages` agent roles ⊆ ensemble agents | Every role in every stage list must match an agent in the ensemble | `ValidationException("HierarchicalConstraints.requiredStages references unknown agent: '{role}'")`|
+| `requiredStages` no duplicates across stages | An agent role must not appear in more than one stage | `ValidationException("HierarchicalConstraints.requiredStages contains duplicate agent role '{role}' in multiple stages")`|
+
+### Runtime Enforcement
+
+Guards are applied inside `DelegateTaskTool` on every delegation attempt:
+
+1. **`allowedWorkers` check** — blocks delegation to any worker not in the set (when set is non-empty).
+2. **`globalMaxDelegations` check** — blocks all further delegations once the global count is reached (when > 0).
+3. **`maxCallsPerWorker` check** — blocks delegation when the per-worker approved attempt count reaches the cap.
+4. **`requiredStages` ordering check** — blocks delegation to a stage-N+1 agent before all stage-N agents have completed at least once.
+
+After execution completes, `requiredWorkers` are verified: if any required worker was never delegated to, a `ConstraintViolationException` is thrown carrying the violations list and any partial worker outputs.
+
+---
+
 ## Ensemble
 
 ```java
