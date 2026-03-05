@@ -341,4 +341,25 @@ class CallbackIntegrationTest {
 
         assertThat(events).containsExactly("start", "llm", "complete");
     }
+
+    @Test
+    void testDelegationListenerBuilderMethods_registerWithoutError() {
+        // Covers Ensemble.builder().onDelegationStarted/Completed/Failed() builder methods.
+        // Delegation doesn't occur in this run; the test verifies registration completes.
+        var llm = mock(ChatModel.class);
+        when(llm.chat(any(ChatRequest.class))).thenReturn(textResponse("done."));
+
+        var agent = mockAgent("Analyst", llm);
+        var t = task("Analyse data", agent);
+
+        var output = Ensemble.builder()
+                .task(t)
+                .onDelegationStarted(e -> {})
+                .onDelegationCompleted(e -> {})
+                .onDelegationFailed(e -> {})
+                .build()
+                .run();
+
+        assertThat(output.getRaw()).isEqualTo("done.");
+    }
 }

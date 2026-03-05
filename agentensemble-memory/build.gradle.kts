@@ -7,8 +7,8 @@ plugins {
 
 // Coverage verification -- wired into check so CI fails if coverage drops below thresholds.
 // Thresholds are set conservatively below the current measured levels:
-//   LINE:   actual 94.1%  -> minimum 90%
-//   BRANCH: actual 81.4%  -> minimum 75%
+//   LINE:   minimum 90%
+//   BRANCH: minimum 75%
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     violationRules {
         rule {
@@ -30,18 +30,8 @@ tasks.named("check") {
 }
 
 dependencies {
-    // Memory module - compileOnly so it is not shipped transitively; users who want
-    // memory add agentensemble-memory explicitly. Available at test runtime via
-    // testImplementation below.
-    compileOnly(project(":agentensemble-memory"))
-    testImplementation(project(":agentensemble-memory"))
-
-    // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
+    // LangChain4j core - for EmbeddingModel, EmbeddingStore, and related types
     api(libs.langchain4j.core)
-
-    // JSON serialization for tool I/O and execution trace export
-    implementation(libs.jackson.databind)
-    implementation(libs.jackson.datatype.jsr310)
 
     // Logging facade - no implementation, users bring their own
     implementation(libs.slf4j.api)
@@ -67,8 +57,8 @@ mavenPublishing {
     signAllPublications()
 
     pom {
-        name = "AgentEnsemble Core"
-        description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
+        name = "AgentEnsemble Memory"
+        description = "Memory subsystem for AgentEnsemble: short-term, long-term, and entity memory"
         url = "https://github.com/AgentEnsemble/agentensemble"
 
         licenses {

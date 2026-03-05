@@ -10,7 +10,9 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,14 +41,8 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingStoreLongTermMemory.class);
 
-    /** Metadata key for the agent role. */
-    private static final String META_AGENT_ROLE = "agentRole";
-
-    /** Metadata key for the task description. */
-    private static final String META_TASK_DESCRIPTION = "taskDescription";
-
-    /** Metadata key for the ISO-8601 timestamp string. */
-    private static final String META_TIMESTAMP = "timestamp";
+    /** Metadata key for the ISO-8601 stored-at timestamp string. */
+    private static final String META_STORED_AT = "storedAt";
 
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final EmbeddingModel embeddingModel;
@@ -75,17 +71,25 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
         if (content == null) {
             throw new IllegalArgumentException("MemoryEntry content must not be null");
         }
-        Instant timestamp = entry.getTimestamp() != null ? entry.getTimestamp() : Instant.now();
+        Instant storedAt = entry.getStoredAt() != null ? entry.getStoredAt() : Instant.now();
 
-        Metadata metadata = Metadata.from(META_AGENT_ROLE, entry.getAgentRole())
-                .put(META_TASK_DESCRIPTION, entry.getTaskDescription())
-                .put(META_TIMESTAMP, timestamp.toString());
+        Metadata metadata = Metadata.from(META_STORED_AT, storedAt.toString());
+
+        // Persist all user-supplied metadata into segment metadata
+        if (entry.getMetadata() != null) {
+            for (Map.Entry<String, String> e : entry.getMetadata().entrySet()) {
+                if (e.getValue() != null) {
+                    metadata.put(e.getKey(), e.getValue());
+                }
+            }
+        }
 
         TextSegment segment = TextSegment.from(content, metadata);
         Embedding embedding = embeddingModel.embed(content).content();
         embeddingStore.add(embedding, segment);
 
-        log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars", entry.getAgentRole(), content.length());
+        String agentRole = entry.getMeta(MemoryEntry.META_AGENT_ROLE);
+        log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars", agentRole, content.length());
     }
 
     @Override
@@ -110,14 +114,20 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
                 continue;
             }
             Metadata meta = segment.metadata();
-            String timestampStr = meta.getString(META_TIMESTAMP);
-            Instant timestamp = timestampStr != null ? Instant.parse(timestampStr) : Instant.EPOCH;
+            String storedAtStr = meta.getString(META_STORED_AT);
+            Instant storedAt = storedAtStr != null ? Instant.parse(storedAtStr) : Instant.EPOCH;
+
+            // Reconstruct user metadata from segment metadata
+            HashMap<String, String> metadataMap = new HashMap<>();
+            String agentRole = meta.getString(MemoryEntry.META_AGENT_ROLE);
+            if (agentRole != null) metadataMap.put(MemoryEntry.META_AGENT_ROLE, agentRole);
+            String taskDesc = meta.getString(MemoryEntry.META_TASK_DESCRIPTION);
+            if (taskDesc != null) metadataMap.put(MemoryEntry.META_TASK_DESCRIPTION, taskDesc);
 
             entries.add(MemoryEntry.builder()
                     .content(segment.text())
-                    .agentRole(meta.getString(META_AGENT_ROLE))
-                    .taskDescription(meta.getString(META_TASK_DESCRIPTION))
-                    .timestamp(timestamp)
+                    .storedAt(storedAt)
+                    .metadata(Map.copyOf(metadataMap))
                     .build());
         }
 

@@ -32,6 +32,10 @@ dependencies {
     implementation("net.agentensemble:agentensemble-tools-process:1.0.0")
     implementation("net.agentensemble:agentensemble-tools-http:1.0.0")
 
+    // Optional: memory subsystem (MemoryStore SPI for task-scoped cross-execution memory;
+    // also includes legacy short-term, long-term, and entity memory)
+    implementation("net.agentensemble:agentensemble-memory:2.0.0")
+
     // Optional: Micrometer metrics integration
     implementation("net.agentensemble:agentensemble-metrics-micrometer:1.0.0")
 
@@ -139,6 +143,7 @@ dependencies {
 | `agentensemble-tools-process` | Subprocess execution (cross-language) |
 | `agentensemble-tools-http` | HTTP endpoint wrapping |
 | `agentensemble-tools-bom` | Version alignment BOM |
+| `agentensemble-memory` | Memory subsystem: task-scoped cross-execution memory with MemoryStore SPI; also includes legacy short-term, long-term, and entity memory |
 | `agentensemble-metrics-micrometer` | Micrometer metrics integration |
 
 ---

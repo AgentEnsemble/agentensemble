@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
-import net.agentensemble.exception.ValidationException;
 import org.junit.jupiter.api.Test;
 
 class EnsembleMemoryTest {
@@ -98,38 +97,38 @@ class EnsembleMemoryTest {
     // ========================
 
     @Test
-    void testBuilder_noMemoryTypeEnabled_throwsValidationException() {
+    void testBuilder_noMemoryTypeEnabled_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> EnsembleMemory.builder().build())
-                .isInstanceOf(ValidationException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least one memory type");
     }
 
     @Test
-    void testBuilder_shortTermFalseAndNullLtmAndNullEntity_throwsValidationException() {
+    void testBuilder_shortTermFalseAndNullLtmAndNullEntity_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> EnsembleMemory.builder().shortTerm(false).build())
-                .isInstanceOf(ValidationException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void testBuilder_longTermMaxResultsZero_throwsValidationException() {
+    void testBuilder_longTermMaxResultsZero_throwsIllegalArgumentException() {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
         assertThatThrownBy(() -> EnsembleMemory.builder()
                         .longTerm(ltm)
                         .longTermMaxResults(0)
                         .build())
-                .isInstanceOf(ValidationException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("longTermMaxResults");
     }
 
     @Test
-    void testBuilder_longTermMaxResultsNegative_throwsValidationException() {
+    void testBuilder_longTermMaxResultsNegative_throwsIllegalArgumentException() {
         LongTermMemory ltm = mock(LongTermMemory.class);
 
         assertThatThrownBy(() -> EnsembleMemory.builder()
                         .longTerm(ltm)
                         .longTermMaxResults(-1)
                         .build())
-                .isInstanceOf(ValidationException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

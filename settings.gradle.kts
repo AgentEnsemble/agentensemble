@@ -16,6 +16,7 @@ pluginManagement {
 rootProject.name = "agentensemble"
 
 include("agentensemble-core")
+include("agentensemble-memory")
 
 // Per-tool modules nested under agentensemble-tools/
 include("agentensemble-tools:calculator")
