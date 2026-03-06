@@ -614,13 +614,27 @@ public class Ensemble {
      * invoked with the task-level or ensemble-level LLM. Task-level tools and
      * maxIterations are applied to the synthesized agent. Tasks with explicit agents
      * are returned unchanged.
+     *
+     * <p>Uses a two-pass approach to keep context references consistent after synthesis
+     * (fix for issue #148):
+     * <ol>
+     *   <li>Pass 1: synthesize agents, building an identity map of old task -&gt; new task.</li>
+     *   <li>Pass 2: rewrite each task's context list so every reference points to the new
+     *       agent-resolved instance. This mirrors the pattern used in
+     *       {@link #resolveTasks(Map)} and ensures that the identity-based
+     *       {@code completedOutputs} lookup in the workflow executor can find upstream
+     *       outputs for context-bearing tasks.</li>
+     * </ol>
      */
     private List<Task> resolveAgents(List<Task> templateResolvedTasks) {
-        List<Task> resolved = new ArrayList<>(templateResolvedTasks.size());
+        // Pass 1: synthesize agents; build old-identity -> new-identity map.
+        IdentityHashMap<Task, Task> oldToNew = new IdentityHashMap<>();
+        List<Task> firstPass = new ArrayList<>(templateResolvedTasks.size());
         for (Task task : templateResolvedTasks) {
+            Task agentResolved;
             if (task.getAgent() != null) {
                 // Explicit agent: use as-is (power-user escape hatch)
-                resolved.add(task);
+                agentResolved = task;
             } else {
                 // Synthesize agent: use task-level LLM if set, else ensemble-level LLM
                 ChatModel llm = task.getChatLanguageModel() != null ? task.getChatLanguageModel() : chatLanguageModel;
@@ -642,16 +656,47 @@ public class Ensemble {
                     agentBuilder.tools(task.getTools());
                 }
 
-                Task withAgent = task.toBuilder().agent(agentBuilder.build()).build();
-                resolved.add(withAgent);
+                agentResolved = task.toBuilder().agent(agentBuilder.build()).build();
 
                 log.debug(
                         "Synthesized agent '{}' for task '{}'",
-                        withAgent.getAgent().getRole(),
+                        agentResolved.getAgent().getRole(),
                         truncate(task.getDescription(), 80));
             }
+            oldToNew.put(task, agentResolved);
+            firstPass.add(agentResolved);
         }
-        return resolved;
+
+        // Pass 2: rewrite context references to point to the agent-resolved task instances.
+        // Without this pass, a downstream task's context list still references the old
+        // template-resolved task identity. The workflow executor stores outputs under the
+        // new identity, so the identity-based completedOutputs.get(contextTask) lookup
+        // would return null, triggering a spurious TaskExecutionException (and NPE in its
+        // error path) for any agentless task with context dependencies.
+        //
+        // The map is updated when a new identity is created so that tasks processed later
+        // in this same pass (with a context dependency on an already-remapped task) resolve
+        // to the correct final identity. This mirrors the resolveTasks() pattern exactly.
+        List<Task> result = new ArrayList<>(firstPass.size());
+        for (int i = 0; i < firstPass.size(); i++) {
+            Task agentResolved = firstPass.get(i);
+            List<Task> originalContext = agentResolved.getContext();
+            if (originalContext.isEmpty()) {
+                result.add(agentResolved);
+            } else {
+                List<Task> remappedContext = new ArrayList<>(originalContext.size());
+                for (Task ctxTask : originalContext) {
+                    remappedContext.add(oldToNew.getOrDefault(ctxTask, ctxTask));
+                }
+                Task finalTask =
+                        agentResolved.toBuilder().context(remappedContext).build();
+                // Update the map so subsequent tasks in this pass that reference
+                // templateResolvedTasks.get(i) will resolve to finalTask's identity.
+                oldToNew.put(templateResolvedTasks.get(i), finalTask);
+                result.add(finalTask);
+            }
+        }
+        return result;
     }
 
     /**
