@@ -2,267 +2,60 @@
 
 ## Current Work Focus
 
-Issue #74 (Tool Pipeline / Chaining) is implemented on branch `feature/tool-pipeline-74`.
+Issue #131 (feat: WebSocketStreamingListener -- bridge callbacks to WebSocket, v2.1.0) is
+complete on branch `feat/131-streaming-listener`.
 
-## Recent Changes
+### Issue #131 summary
 
-### Issue #74: Explicit Tool Pipeline / Chaining (Unix-pipe-style composition)
-
-**New classes in `agentensemble-core` (`net.agentensemble.tool`):**
-- `PipelineErrorStrategy` enum -- `FAIL_FAST` (default) and `CONTINUE_ON_FAILURE`
-- `ToolPipeline` -- `AbstractAgentTool` subclass; builder pattern; `step(AgentTool)` + `adapter(Function<ToolResult,String>)` + `errorStrategy(PipelineErrorStrategy)` builder methods; `of(AgentTool...)` and `of(String, String, AgentTool...)` factory methods; `getSteps()` and `getErrorStrategy()` accessors; overrides package-private `setContext(ToolContext)` to propagate context to nested `AbstractAgentTool` steps
-
-**Design:**
-- The pipeline exposes a single `ToolSpecification` to the LLM; all steps execute inside `doExecute()` with no LLM round-trips between steps
-- Default data handoff: `ToolResult.getOutput()` (String) from step N passed verbatim to step N+1
-- Adapters: optional `Function<ToolResult, String>` transformers attached to any step; receive the full `ToolResult` (including `structuredOutput`); only called when the step succeeds and there is a next step
-- `FAIL_FAST`: short-circuits on first failure, returning the failed step's result immediately
-- `CONTINUE_ON_FAILURE`: forwards error message to next step's input; runs to completion
-- `ToolContext` propagation: `setContext()` override forwards context to all nested `AbstractAgentTool` steps so each gets metrics, logging, executor, and review handler wired correctly
-
-**Tests:**
-- `ToolPipelineTest` (49 unit tests): happy path chaining, both error strategies, adapters (including structured output access), ToolContext propagation, factory method validation, builder validation, empty pipeline pass-through, null input handling
-- `ToolPipelineIntegrationTest` (7 integration tests with mocked LLMs): single-tool LLM call with all steps executing internally, error strategies in ensemble context, ToolContext propagation through full ensemble, adapter in ensemble context, v2 task-first API registration
-
-**Example:**
-- `ToolPipelineExample.java` -- two pipelines using `JsonParserTool` + `CalculatorTool` and chained `JsonParserTool` instances; demonstrates adapters and `getSteps()`/`getErrorStrategy()` inspection
-- `runToolPipeline` Gradle task registered in `agentensemble-examples/build.gradle.kts`
-
-**Documentation:**
-- `docs/design/17-tool-pipeline.md` -- full design specification
-- `docs/guides/tool-pipeline.md` -- user guide with quick start, data flow, error strategies, builder reference, factory methods, metrics, approval gates, common patterns
-- `docs/examples/tool-pipeline.md` -- example page with walk-through and sample output
-- `docs/design/06-tool-system.md` -- "Tool Pipeline" section added
-- `docs/guides/built-in-tools.md` -- "Pipelining Built-in Tools" section added
-- `README.md` -- Tool Pipeline in Core Concepts table; "Option 3: Chain tools with ToolPipeline" in Creating Tools; `runToolPipeline` in Running Examples; design/17 in Design Documentation list
-- `mkdocs.yml` -- Tool Pipeline added to Guides and Examples nav; design/17 added to Design nav
-
----
-
-## Previous Work
-
-### Issue #130: agentensemble-web module -- Live Execution Dashboard
-
-### Issue #130: agentensemble-web module -- Live Execution Dashboard
-
-**New Gradle module `agentensemble-web`:**
-- `WebDashboard` -- builder + `onPort()` factory, start/stop lifecycle, `streamingListener()`, `reviewHandler()`, and all accessor methods (`getPort()`, `getHost()`, `getReviewTimeout()`, `getOnTimeout()`, `isRunning()`)
-- `WebSocketStreamingListener` -- `EnsembleListener` implementation that serializes all 7 lifecycle event types (task start/complete/fail, tool calls, delegation started/completed/failed) to JSON and broadcasts over WebSocket
-- `WebReviewHandler` -- `ReviewHandler` implementation with per-reviewId `CompletableFuture`-based blocking gates; timeout handling for `CONTINUE`, `EXIT_EARLY`, and `FAIL`; interrupt support via virtual threads; broadcasts `review_requested` and `review_timed_out` messages
-- `ConnectionManager` -- thread-safe `ConcurrentHashMap`-based session registry with broadcast, targeted send, pending-review tracking (`registerPendingReview`/`resolveReview`), and `onDisconnect` cleanup of pending reviews
-- `WsSession` -- package-private interface abstracting a WebSocket connection (`id()`, `isOpen()`, `send()`)
-- `WebSocketServer` -- embedded Javalin 6.3.0 server with WebSocket at `/ws`, HTTP at `/api/status`, origin validation (CSRF protection for localhost binding), 15-second heartbeat, `setClientMessageHandler()` for review decision routing
-- `EnsembleDashboard` -- new interface in `agentensemble-core` (`net.agentensemble.dashboard`) for optional wiring
-- `Ensemble.builder().webDashboard(EnsembleDashboard)` -- convenience wiring method
-
-**Wire Protocol (15+ message types):**
-- `ServerMessage` hierarchy (Jackson `@JsonSubTypes`): `HelloMessage`, `HeartbeatMessage`, `EnsembleStartedMessage`, `EnsembleCompletedMessage`, `TaskStartedMessage`, `TaskCompletedMessage`, `TaskFailedMessage`, `ToolCalledMessage`, `DelegationStartedMessage`, `DelegationCompletedMessage`, `DelegationFailedMessage`, `ReviewRequestedMessage`, `ReviewTimedOutMessage`, `PongMessage`
-- `ClientMessage` hierarchy: `PingMessage`, `ReviewDecisionMessage` (reviewId, decision, revisedOutput)
-- `MessageSerializer` -- thread-safe Jackson `ObjectMapper` with `JavaTimeModule`, `FAIL_ON_UNKNOWN_PROPERTIES=false`
-
-**Tests (119 total, all passing):**
-- `ConnectionManagerTest` (16 tests): session lifecycle, broadcast, targeted send, pending review, disconnect cleanup, send to closed session
-- `WebDashboardTest` (26 tests): builder validation, lifecycle, component accessors, custom builder fields
-- `WebReviewHandlerTest` (22 tests): all `ReviewDecision` mapping branches (approve/continue/edit/exit_early/unknown), case-insensitive, edit with null, empty-string disconnect, real timeout with all 3 `OnTimeoutAction` values, long description truncation, `InterruptedException`, `ExecutionException`, broadcast verification
-- `WebSocketStreamingListenerTest` (14 tests): all `EnsembleListener` methods, `extractToolCallCount` branches (null output/trace/interactions/toolCalls, null interaction in list, serializer throws)
-- `WebSocketServerTest` (28 tests): lifecycle, heartbeat scheduling (mock + captured Runnable), origin validation (static), protocol serialization smoke tests, real WebSocket integration tests (connect, reject, ping-pong, review with/without handler, handler-throws, malformed JSON, disconnect, broadcast, `/api/status`)
-- `ProtocolSerializationTest` (26 tests): round-trip for all 15+ message types, null fields, fromJson error paths
-- JaCoCo: LINE >= 90%, BRANCH >= 75% -- both thresholds pass
-
-**Documentation added:**
-- `docs/guides/live-dashboard.md` -- new complete guide (WebDashboard API, builder options, review flow, protocol, origin validation, heartbeat, lifecycle, ephemeral ports)
-- `docs/examples/live-dashboard.md` -- runnable examples with basic streaming, review gates, parallel workflow, ephemeral port, reusing dashboard across runs, Gradle tasks
-- `docs/getting-started/installation.md` -- `agentensemble-web:2.1.0` added to Gradle snippet and Available Modules table
-- `docs/guides/review.md` -- "Browser-Based Review with WebDashboard" section added
-- `docs/examples/human-in-the-loop.md` -- replaced stub with real working API
-- `mkdocs.yml` -- Live Dashboard added to Guides and Examples nav
-- `README.md` -- "Live Execution Dashboard" section, `agentensemble-web:2.1.0` optional dependency, v2.1.0 roadmap entry marked done
-
-### Issue #113: MapReduceEnsemble task-first refactor
-
-**MapReduceEnsemble.Builder -- new task-first API:**
-- `mapTask(Function<T, Task>)` -- task-first map factory (no agent required); overloads existing `mapTask(BiFunction<T, Agent, Task>)`
-- `reduceTask(Function<List<Task>, Task>)` -- task-first reduce factory; overloads existing `reduceTask(BiFunction<Agent, List<Task>, Task>)`
-- `directTask(Function<List<T>, Task>)` -- task-first short-circuit factory; overloads existing `directTask(BiFunction<Agent, List<T>, Task>)`
-- `chatLanguageModel(ChatModel)` -- default LLM for synthesised agents
-- `mapAgent` and `reduceAgent` -- retained as optional power-user fields (backward compatible)
-
-**Zero-ceremony factory:**
-- `MapReduceEnsemble.of(model, items, mapDescription, reduceDescription)` -- builds and runs in one call
-
-**Validation -- mutual exclusivity:**
-- Each phase (map/reduce/direct) must use either task-first OR agent-first, never both
-- Agent-first: both agent factory AND task factory must be set
-- Task-first: task factory alone is sufficient
-
-**Build logic:**
-- `buildStatic()` uses `createMapTask(item)` / `createReduceTask(chunkTasks)` helpers that dispatch to the correct factory style
-- Inner `Ensemble.builder().chatLanguageModel(chatLanguageModel)` set so `resolveAgents()` synthesises agents at run time
-- `MapReduceAdaptiveExecutor` updated with same factory dispatch logic + `chatLanguageModel` propagated to each inner Ensemble
-
-**Tests:**
-- `MapReduceEnsembleTaskFirstTest` (17 unit tests): DAG structure, no explicit agents, context wiring, factory counts, chatLanguageModel passthrough, tools on task
-- `MapReduceEnsembleTaskFirstValidationTest` (15 validation tests): mutual exclusivity, zero-ceremony factory validation
-- `MapReduceEnsembleTaskFirstIntegrationTest` (12 integration tests): static/adaptive end-to-end, tools, per-task LLM, zero-ceremony, agent-first regression
-
-**Documentation:**
-- `docs/guides/map-reduce.md`: new "Task-first API (v2.0.0)" section, updated builder reference with task-first / agent-first tables
-- `docs/examples/map-reduce.md`: new "Task-first examples (v2.0.0)" section with zero-ceremony and builder examples; existing agent-first examples moved under own heading
-- `agentensemble-examples/.../MapReduceTaskFirstKitchenExample.java`: runnable example with zero-ceremony and task-first builder approaches
-- `agentensemble-examples/build.gradle.kts`: `runMapReduceTaskFirstKitchen` Gradle task registered
-
-### Issue #111: EnsembleOutput partial results and graceful exit-early
-
-**ExitReason (extended):**
-- TIMEOUT -- review gate timeout expired with onTimeout(EXIT_EARLY)
-- ERROR -- unrecoverable exception terminated the pipeline
-- (existing: COMPLETED, USER_EXIT_EARLY)
-
-**ReviewDecision.ExitEarly (breaking change):**
-- Changed from no-arg record to `ExitEarly(boolean timedOut)` record
-- Factory `exitEarly()` returns `new ExitEarly(false)` (unchanged behavior)
-- New factory `exitEarlyTimeout()` returns `new ExitEarly(true)`
-- `ConsoleReviewHandler.handleTimeout()` with EXIT_EARLY now returns `exitEarlyTimeout()`
-
-**ExitEarlyException (extended):**
-- Added `boolean timedOut` field with `isTimedOut()` accessor
-- 2-arg constructor `(message, timedOut)` + 1-arg defaults to false
-- HumanInputTool propagates `exitEarly.timedOut()` when creating exception
-
-**EnsembleOutput (new convenience API):**
-- `isComplete()` -- true only when exitReason == COMPLETED
-- `completedTasks()` -- alias for getTaskOutputs(); always safe to call
-- `lastCompletedOutput()` -- Optional<TaskOutput> last element
-- `getOutput(Task task)` -- identity-based Optional<TaskOutput> lookup
-- `taskOutputIndex` internal field (Map<Task,TaskOutput>, excluded from equals/hashCode)
-- All workflow executors now populate taskOutputIndex
-
-**Ensemble.runWithInputs() fix:**
-- After execution, remaps executor's agentResolved-keyed taskOutputIndex back to
-  original task instances using positional correspondence:
-  `tasks.get(i)` -> `agentResolvedTasks.get(i)` -> lookup in executor index
-
-**Executor changes:**
-- SequentialWorkflowExecutor: TIMEOUT vs USER_EXIT_EARLY distinction in all 3 gate paths
-- ParallelWorkflowExecutor: full exit-early support via AtomicReference<ExitReason>
-- ParallelTaskCoordinator: after-execution review gate, ExitEarlyException handling,
-  HumanInputTool injection, shouldSkip() respects exit-early signal
-
-### Issue #112: Workflow inference from task context declarations
-
-**Ensemble.workflow (changed):**
-- Field is now nullable (removed @Builder.Default); default is null
-- When null, `resolveWorkflow(List<Task>)` infers PARALLEL if any task has context dep
-  on another ensemble task, else SEQUENTIAL
-- `selectExecutor(Workflow, List<Agent>)` takes explicit workflow
-- Logs "Workflow inferred: X" when inference fires
-
-**EnsembleValidator (updated):**
-- Added `resolveWorkflow()` with same inference logic
-- All workflow-specific validations take effective workflow as parameter
-- `validateContextOrdering(effective)` skips for both inferred and explicit PARALLEL
-
-**Tests updated:**
-- EnsembleTest: `testDefaultWorkflow_isNullWhenNotSet`
-- EnsembleValidationTest: forward-reference and ordering tests use explicit SEQUENTIAL
-
-
-### Issues #114 + #115: agentensemble-bom + Migration Guide + v2 Examples
-
-**agentensemble-bom (Issue #114):**
-- New `agentensemble-bom/build.gradle.kts`: `java-platform` module with constraints for
-  all framework modules (core, memory, review, metrics-micrometer, devtools) and all 9
-  tool sub-modules + tools BOM. Published as `net.agentensemble:agentensemble-bom`.
-- `settings.gradle.kts`: added `include("agentensemble-bom")`.
-- `build.gradle.kts` (root): skip condition extended to `name == "agentensemble-bom"` so
-  the `java-platform` project is not incorrectly given the `java` plugin.
-- `docs/getting-started/installation.md`: BOM now the primary recommended dependency
-  approach with Gradle Kotlin DSL, Groovy DSL, and Maven examples.
-- `README.md`: quickstart step 1 updated to use `agentensemble-bom:2.0.0`; steps 2-3
-  show task-first API (no explicit agents, chatLanguageModel at ensemble level).
-
-**Migration Guide (Issue #115):**
-- `docs/migration/v1-to-v2.md`: comprehensive 10-section migration guide covering:
-  removing redundant agent declarations, moving tools/chatLanguageModel/maxIterations from
-  Agent to Task, memory API migration, EnsembleOutput API changes, workflow inference,
-  BOM usage, when to keep explicit agents, zero-ceremony static factory.
-
-**v2 Task-First Examples (Issue #115):**
-- All example classes converted to task-first API (agents auto-synthesised from task
-  descriptions). Removed all redundant `Agent.builder()` constructs and `.agent()` calls.
-  `chatLanguageModel(model)` moved to `Ensemble.builder()`. Tools and maxIterations moved
-  from Agent to Task where applicable. `workflow(SEQUENTIAL)` removed (inferred).
-- `ResearchWriterExample.java`: task-first conversion.
-- `ParallelCompetitiveIntelligenceExample.java`: task-first conversion.
-- `HierarchicalTeamExample.java`: removed worker agents; kept `workflow(HIERARCHICAL)`,
-  `chatLanguageModel(fastModel)`, `managerLlm(powerfulModel)`, `managerPromptStrategy`.
-- `MemoryAcrossRunsExample.java`: removed analyst/strategist agents; chatLanguageModel at
-  ensemble; workflow(SEQUENTIAL) removed (default inferred).
-- `CallbackExample.java`: removed researcher/writer agents; chatLanguageModel at ensemble;
-  workflow(SEQUENTIAL) removed.
-- `StructuredOutputExample.java`: Part 1 and Part 2 both converted; writer responseFormat
-  moved into writeTask.expectedOutput.
-- `MetricsExample.java`: removed analyst agent; tools + maxIterations on task.
-- `CaptureModeExample.java`: removed analyst agent in runEnsemble(); tools + maxIterations on task.
-- `RemoteToolExample.java`: removed text-analyst agent; tools + maxIterations on task.
-- `HumanInTheLoopExample.java` (NEW): demonstrates beforeReview, review, Review.skip(),
-  ReviewHandler.console(), OnTimeoutAction.CONTINUE/EXIT_EARLY, and v2 EnsembleOutput API
-  (isComplete, getExitReason, completedTasks, lastCompletedOutput, getOutput).
-- `agentensemble-examples/build.gradle.kts`: added `agentensemble-review` dependency;
-  added `runHumanInTheLoop` Gradle task.
-- Build: 183 tasks, BUILD SUCCESSFUL. All tests pass. Spotless clean.
-- Intentionally NOT converted: `DynamicAgentsExample` (explicit agents are the whole point),
-  `MapReduceKitchenExample`, `MapReduceAdaptiveKitchenExample`, `MapReduceTaskFirstKitchenExample`
-  (use .mapAgent() factory lambdas).
-
-### Issue #126: Tool-Level Approval Gates
-
-**Infrastructure (agentensemble-core):**
-- `ToolContext`: added `Object reviewHandler` field and 4-arg `of()` factory. Stored as `Object` to avoid class loading issues when `agentensemble-review` is absent from runtime classpath.
-- `ToolResolver.resolve()`: extended to accept a `reviewHandler` parameter (4-arg overload); threads it into `ToolContext.of()` for each resolved `AbstractAgentTool`.
-- `AgentExecutor`: passes `executionContext.reviewHandler()` to `ToolResolver.resolve()`.
-- `AbstractAgentTool`: added `protected ReviewDecision requestApproval(String)`, `protected ReviewDecision requestApproval(String, Duration, OnTimeoutAction)`, `protected Object rawReviewHandler()`, `IllegalStateException` re-throw in `execute()`, and `static final ReentrantLock CONSOLE_APPROVAL_LOCK` to serialize concurrent console reviews.
-- `LangChain4jToolAdapter.executeForResult()`: added `IllegalStateException` re-throw (configuration errors must not be silently converted to `ToolResult.failure()`).
-
-**Built-in tool updates (agentensemble-tools):**
-- `ProcessAgentTool`: added `requireApproval(boolean)` builder option. Requests approval before `ProcessBuilder.start()`. Edit replaces stdin input; ExitEarly returns failure without starting process.
-- `FileWriteTool`: added `Builder` pattern with `requireApproval(boolean)`. Requests approval before `Files.writeString()`. Edit replaces file content; ExitEarly returns failure without writing.
-- `HttpAgentTool`: added `requireApproval(boolean)` builder option. Requests approval before `httpClient.send()`. Edit replaces request body; ExitEarly returns failure without sending.
-- All three tool modules: added `compileOnly(":agentensemble-review")` and `testImplementation(":agentensemble-review")` to build files.
-
-**Tests:**
-- `ToolContextTest` (new, 10 tests): factory with/without reviewHandler, accessor, null validation
-- `AbstractAgentToolApprovalTest` (new, 18 tests): Continue/Edit/ExitEarly decisions, null handler auto-approves, custom timeout, ISE propagation, CONSOLE_APPROVAL_LOCK
-- `ToolResolverTest` (extended, +5 tests): reviewHandler threaded from resolve() into ToolContext
-- `ProcessAgentToolTest` (extended, +7 tests): approval enabled Continue/Edit/ExitEarly/disabled/no-handler matrix
-- `FileWriteToolTest` (extended, +10 tests): same matrix + builder factory tests + content truncation
-- `HttpAgentToolTest` (extended, +8 tests): same matrix + verify no HTTP send on ExitEarly
-- `ToolApprovalIntegrationTest` (new, 6 tests): end-to-end with mock LLM + programmatic ReviewHandler; parallel approval
-
-**Documentation:**
-- `docs/guides/review.md`: new "Tool-Level Approval Gates" section
-- `docs/guides/built-in-tools.md`: "Approval Gate" subsections for ProcessAgentTool, FileWriteTool, HttpAgentTool
-- `docs/examples/human-in-the-loop.md`: "Tool-Level Approval" example section
-- `docs/design/06-tool-system.md`: new "Tool-Level Approval Gates" architecture section
-
-## Key Design Decisions (Issues #111/#112)
-
-- `ReviewDecision.ExitEarly(boolean timedOut)` breaking change to record signature;
-  code using `exitEarly()` factory is unaffected; direct `new ExitEarly()` needs the arg
-- Identity-based task index: remapped in runWithInputs() using positional correspondence
-  because resolveTasks() always creates new Task instances even for tasks without templates
-- Workflow null default (not SEQUENTIAL) makes inference explicit; existing code with
-  `.workflow(Workflow.SEQUENTIAL)` is unaffected
-- Context ordering validation skipped for inferred PARALLEL (same as explicit PARALLEL):
-  context deps with out-of-order declaration are valid in DAG-based execution
+- All 7 `EnsembleListener` methods bridge to WebSocket JSON messages (task start/complete/
+  fail, tool_called, delegation started/completed/failed)
+- `EnsembleDashboard` SPI extended with `onEnsembleStarted()` / `onEnsembleCompleted()`
+  default lifecycle hooks
+- `Ensemble.java` stores dashboard reference and calls hooks from `runWithInputs()`
+- `WebDashboard` implements hooks to broadcast `ensemble_started` / `ensemble_completed`
+- Late-join snapshot: `ConnectionManager` accumulates all broadcast messages in a
+  `CopyOnWriteArrayList`; `onConnect()` sends them as a JSON array in the `hello` message
+- Also applied Copilot review fixes from PR #138: heartbeat future cancellation,
+  IPv6 loopback origin handling, null outcome for tool_called, -1 tokenCount sentinel,
+  agentensemble-review promoted from compileOnly to api
+- All 141+ tests pass; JaCoCo LINE >= 90% / BRANCH >= 75% both pass; full build clean
 
 ## Next Steps
 
-- Merge PR #138 (`feat/130-agentensemble-web` -> main) after review
-- Continue with v2.1.0 viz live mode (Issue #131 and #132: agentensemble-viz WebSocket client, live `/live` route, review approval UI)
-- Group F (v2.0.0 finalization): `agentensemble-bom`, `docs/migration/v1-to-v2.md` updates, examples polish
+- Open PR for `feat/131-streaming-listener` against main
+- Continue with v2.1.0 viz live mode (Issue #132+: agentensemble-viz WebSocket client,
+  live `/live` route, review approval UI)
+
+## Key Design Decisions (Issue #131)
+
+- `EnsembleDashboard.onEnsembleStarted/Completed()` added as default no-op interface
+  methods -- backward-compatible; existing implementations not broken
+- `Ensemble.dashboard` field stored alongside listener/reviewHandler so
+  `runWithInputs()` can call lifecycle hooks before/after `executor.execute()`
+- Snapshot format: JSON array of all broadcast messages (including `ensemble_started`)
+  rather than a serialized `ExecutionTrace` -- simpler, and the client-side `liveReducer`
+  can replay the array to reconstruct state
+- `CopyOnWriteArrayList` chosen for snapshot messages: safe for concurrent appends from
+  parallel workflow virtual threads; read (for hello) is a point-in-time snapshot
+- `noteEnsembleStarted()` clears the snapshot before recording new metadata so
+  sequential re-runs do not accumulate events across runs
 
 ## Important Patterns and Preferences
+
+### agentensemble-web module (v2.1.0)
+
+- `WebDashboard.onPort(port)` -- zero-config; `WebDashboard.builder()` for full config
+- `Ensemble.builder().webDashboard(dashboard)` -- single call wires listener + review
+  handler + lifecycle hooks
+- `EnsembleDashboard` interface: `streamingListener()`, `reviewHandler()`,
+  `start()`, `stop()`, `isRunning()`, `onEnsembleStarted(...)`, `onEnsembleCompleted(...)`
+- `WebSocketStreamingListener` broadcasts and appends to snapshot after each event
+- `ConnectionManager.noteEnsembleStarted(ensembleId, startedAt)` clears snapshot and
+  records metadata for the hello message
+- `ConnectionManager.appendToSnapshot(json)` adds each broadcast message to the late-join log
+- Late-join hello message: `HelloMessage(ensembleId, startedAt, snapshotTrace)` where
+  `snapshotTrace` is a `JsonNode` array of all past broadcast messages (or null if empty)
+- agentensemble-review is now `api` dependency in agentensemble-web (not compileOnly)
 
 ### v2.0.0 EnsembleOutput API (Issue #111)
 - `output.isComplete()` -- true only when all tasks ran to completion
@@ -270,56 +63,14 @@ Issue #74 (Tool Pipeline / Chaining) is implemented on branch `feature/tool-pipe
 - `output.completedTasks()` -- same as getTaskOutputs(); always safe
 - `output.lastCompletedOutput()` -- Optional<TaskOutput> last completed
 - `output.getOutput(researchTask)` -- identity-based lookup; pass the same Task instance
-- taskOutputIndex is excluded from equals/hashCode/toString (implementation detail)
-
-### v2.0.0 Workflow Inference (Issue #112)
-- No `.workflow(...)` call -> framework infers at run time
-- Tasks with no context deps -> SEQUENTIAL inferred
-- Any task with context dep on another ensemble task -> PARALLEL inferred
-- Explicit `.workflow(Workflow.X)` always wins over inference
-- Context ordering validation only fires for explicit or inferred SEQUENTIAL
-- `EnsembleValidator.resolveWorkflow()` and `Ensemble.resolveWorkflow()` share same logic
 
 ### v2.0.0 Review API (Issues #108/#109/#110)
 - ReviewHandler + ReviewPolicy is the v2.0.0 review API
 - Ensemble.builder().reviewHandler(ReviewHandler) + .reviewPolicy(ReviewPolicy)
 - Task.builder().review(Review) / .beforeReview(Review)
-- Review.required() / Review.skip() / Review.builder()
 - HumanInputTool.of() for mid-task clarification (DURING_EXECUTION gate)
-- EnsembleOutput.getExitReason() to check if pipeline stopped early
-- agentensemble-review is optional; add to classpath only when review gates needed
-- reviewPolicy field is NOT @Builder.Default (avoids ReviewPolicy class loading when
-  review module is absent; null treated as NEVER by ExecutionContext)
-
-### v2.0.0 Memory API (Issues #106/#107)
-- MemoryStore + task scopes is the v2.0.0 primary memory API (replaces EnsembleMemory)
-- Tasks declare scopes with .memory("name") -- framework auto-reads before and auto-writes after
-- InMemoryStore: insertion order, most-recent retrieval, eviction supported
-- EmbeddingMemoryStore: semantic similarity via LangChain4j, eviction is no-op
-- MemoryEntry.metadata uses string map -- standard keys "agentRole" and "taskDescription"
 
 ### v2 Task-First API (Issues #104/#105)
 - Task.of(description) -- zero-ceremony, default expectedOutput, no agent required
-- Task.of(description, expectedOutput) -- zero-ceremony with custom output
 - Ensemble.run(model, tasks...) -- static factory, single-line ensemble execution
 - Ensemble.builder().chatLanguageModel(model) -- ensemble-level LLM for synthesis
-- Ensemble.builder().agentSynthesizer(...) -- synthesis strategy (default: template)
-- Task.builder().agent(Agent) -- explicit agent (power-user escape hatch)
-- Task.builder().chatLanguageModel(ChatModel) -- per-task LLM override
-- Task.builder().tools(List) -- per-task tools for synthesized agent
-- Task.builder().maxIterations(int) -- per-task iteration cap
-
-### Agent Resolution Order (in Ensemble.resolveAgents())
-1. If task.getAgent() != null: use as-is
-2. Else: synthesize using agentSynthesizer with (task-level LLM or ensemble LLM)
-3. Apply task-level maxIterations and tools to synthesized agent
-4. Set resolved agent on task via toBuilder()
-
-## Previous Issues (complete)
-
-### Issues #111, #112: Partial results and workflow inference (complete, branch committed)
-### Issues #108, #109, #110: Human-in-the-loop review system (complete, PR #125)
-### Issues #106, #107: agentensemble-memory module + task-scoped memory (complete, main)
-### Issues #104, #105: Task-First Core + AgentSynthesizer SPI (complete, main)
-### Issue #100: MapReduceEnsemble Short-Circuit Optimization (complete)
-### Issue #99: Adaptive MapReduceEnsemble (complete)

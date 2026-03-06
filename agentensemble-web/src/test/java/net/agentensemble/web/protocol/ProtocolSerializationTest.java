@@ -104,7 +104,7 @@ class ProtocolSerializationTest {
                 "Senior Research Analyst",
                 Instant.parse("2026-03-05T14:00:45Z"),
                 44000L,
-                1842,
+                1842L,
                 3);
         String json = serializer.toJson(msg);
 
@@ -117,8 +117,20 @@ class ProtocolSerializationTest {
         assertThat(deserialized).isInstanceOf(TaskCompletedMessage.class);
         TaskCompletedMessage rt = (TaskCompletedMessage) deserialized;
         assertThat(rt.durationMs()).isEqualTo(44000L);
-        assertThat(rt.tokenCount()).isEqualTo(1842);
+        assertThat(rt.tokenCount()).isEqualTo(1842L);
         assertThat(rt.toolCallCount()).isEqualTo(3);
+    }
+
+    @Test
+    void taskCompletedMessage_minusOneTokenCount_sentinelRoundTrip() throws Exception {
+        // -1 is the sentinel for "token count unknown" (consistent with TaskMetrics.totalTokens).
+        TaskCompletedMessage msg = new TaskCompletedMessage(1, 1, "Task", "Agent", Instant.now(), 5000L, -1L, 0);
+        String json = serializer.toJson(msg);
+
+        assertThat(json).contains("\"tokenCount\":-1");
+
+        TaskCompletedMessage rt = (TaskCompletedMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.tokenCount()).isEqualTo(-1L);
     }
 
     @Test
@@ -161,6 +173,20 @@ class ProtocolSerializationTest {
         assertThat(rt.toolResult()).isEqualTo("results");
         // structuredResult was null; after round-trip it is null (field absent or explicit null)
         assertThat(rt.structuredResult()).isNull();
+    }
+
+    @Test
+    void toolCalledMessage_nullOutcome_serializesAsNull() throws Exception {
+        // When the outcome is not known (e.g. ToolCallEvent has no outcome field), the
+        // protocol message uses null rather than a misleading "SUCCESS".
+        ToolCalledMessage msg = new ToolCalledMessage("Analyst", 0, "calculator", 500L, null, "{}", "42", null);
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("tool_called");
+        assertThat(json).contains("\"outcome\":null");
+
+        ToolCalledMessage rt = (ToolCalledMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.outcome()).isNull();
     }
 
     @Test

@@ -1,5 +1,90 @@
 # Changelog
 
+## [Unreleased] - Issue #131: WebSocketStreamingListener -- bridge callbacks to WebSocket (v2.1.0) -- 2026-03-06
+
+### Added (Issue #131 -- WebSocketStreamingListener, ensemble lifecycle messages, late-join snapshot)
+
+**`EnsembleDashboard` SPI extensions (agentensemble-core):**
+- `onEnsembleStarted(String ensembleId, Instant startedAt, int totalTasks, String workflow)` --
+  default no-op; called by `Ensemble.runWithInputs()` before `executor.execute()`
+- `onEnsembleCompleted(String ensembleId, Instant completedAt, long durationMs, String exitReason, long totalTokens, int totalToolCalls)` --
+  default no-op; called after `executor.execute()` returns
+- `Ensemble.dashboard` field -- stores the `EnsembleDashboard` registered via
+  `Ensemble.builder().webDashboard(dashboard)` so `runWithInputs()` can call lifecycle hooks
+
+**`WebDashboard` lifecycle hooks (agentensemble-web):**
+- `onEnsembleStarted()` -- calls `connectionManager.noteEnsembleStarted(ensembleId, startedAt)`,
+  broadcasts `EnsembleStartedMessage`, appends to snapshot
+- `onEnsembleCompleted()` -- broadcasts `EnsembleCompletedMessage`, appends to snapshot
+
+**Late-join snapshot (agentensemble-web):**
+- `ConnectionManager.snapshotMessages` -- `CopyOnWriteArrayList<String>` accumulates every
+  broadcast message in order; thread-safe for concurrent appends from parallel workflow
+- `ConnectionManager.noteEnsembleStarted(ensembleId, startedAt)` -- clears snapshot and
+  records metadata so sequential re-runs don't accumulate stale events
+- `ConnectionManager.appendToSnapshot(String)` -- called after each `broadcast()` in
+  `WebSocketStreamingListener.broadcast()` and in the `WebDashboard` lifecycle hooks
+- `ConnectionManager.onConnect()` -- builds `HelloMessage(ensembleId, startedAt, snapshotTrace)`
+  where `snapshotTrace` is a `JsonNode` JSON array of all past broadcast messages (or null
+  when empty); late-joining clients replay the array to reconstruct state
+
+**Copilot review fixes from PR #138 (applied on this branch):**
+- `WebSocketServer`: store `ScheduledFuture<?>` from `scheduleAtFixedRate`; cancel on `stop()`
+  to prevent orphaned heartbeat tasks across stop/restart cycles
+- `WebSocketServer.isOriginAllowed()`: treat `::1` and `[::1]` as loopback bindings (same
+  strict origin policy as `localhost`/`127.0.0.1`); also fix start() warning to match
+- `WebSocketStreamingListener.onToolCall()`: outcome changed from hardcoded `"SUCCESS"` to
+  `null` -- `ToolCallEvent` carries no success/failure signal, so `null` is honest
+- `TaskCompletedMessage.tokenCount`: changed from `int` to `long`; sentinel changed from
+  `0` (ambiguous) to `-1` (explicit "unknown"), matching `TaskMetrics.totalTokens`
+- `agentensemble-web/build.gradle.kts`: `agentensemble-review` changed from `compileOnly`
+  to `api` -- public types in `WebDashboard` and `WebReviewHandler` have hard references
+  to `net.agentensemble.review.*`, causing `NoClassDefFoundError` for consumers with only
+  `agentensemble-web` on the classpath when declared as `compileOnly`
+- `docs/guides/live-dashboard.md`: Origin Validation section rewritten to accurately describe
+  the actual policy (loopback-only check, not host-matching); Dependency section comment
+  updated to reflect the promotion to `api`
+- `docs/getting-started/installation.md`: BOM version aligned to `2.1.0`; explicit version
+  removed from `agentensemble-web` entry (managed by BOM)
+- `memory-bank/progress.md`: typo fixed (`WebDashboard.builder().webDashboard(dashboard)`
+  -> `Ensemble.builder().webDashboard(dashboard)`)
+
+### Tests Added (Issue #131)
+
+**Unit:**
+- `ConnectionManagerTest`: `lateJoinerReceivesSnapshotOfPastEvents`,
+  `noteEnsembleStarted_clearsOldSnapshotFromPreviousRun`,
+  `snapshotGrowsIncrementallyAsEventsArrive`,
+  `concurrentSnapshotAppends_doNotCorruptSnapshot`,
+  `newConnectionReceivesEmptySnapshotInHelloWhenNoEventsYet`;
+  `MockWsSession.messages` upgraded from `ArrayList` to `CopyOnWriteArrayList` for thread safety
+- `WebSocketStreamingListenerTest`: `broadcastBuildsSnapshotIncrementally`,
+  `concurrentCallsFromMultipleThreads_doNotCorruptMessages`,
+  `onToolCall_outcomeIsNullBecauseToolCallEventHasNoOutcomeField`,
+  `onTaskComplete_tokenCountIsMinusOneToIndicateUnknown`
+- `WebDashboardTest`: `onEnsembleStarted_broadcastsToConnectedClients`,
+  `onEnsembleCompleted_broadcastsToConnectedClients`,
+  `onEnsembleStarted_withNoConnectedClients_doesNotThrow`,
+  `onEnsembleStarted_populatesSnapshotForLateJoiners`
+- `WebSocketServerTest`: `heartbeatFutureCancelledOnStop`,
+  `ipv6LoopbackBindingTreatedAsLocalBinding`
+- `ProtocolSerializationTest`: `taskCompletedMessage_minusOneTokenCount_sentinelRoundTrip`,
+  `toolCalledMessage_nullOutcome_serializesAsNull`; updated `taskCompletedMessageRoundTrip`
+  to use `1842L` (explicit long)
+
+**Integration:**
+- `WebDashboardIntegrationTest` (new file, 5 tests): `allLifecycleMessageTypesArriveInOrder`,
+  `taskFailedEventArrivesAtClient`, `delegationEventsArriveAtClient`,
+  `lateJoinerReceivesSnapshotWithAllPastEvents`, `multipleClientsAllReceiveBroadcasts` --
+  all use a real embedded Javalin server and Java `HttpClient` WebSocket client
+
+### Opportunistic Coverage Added (Issue #131)
+
+- All 6 `WebSocketServer` origin validation tests now also cover IPv6 loopback (`::1`/`[::1]`)
+  as local bindings, locking down the security boundary
+- Heartbeat cancellation test (`heartbeatFutureCancelledOnStop`) covers the stop/restart
+  lifecycle to prevent resource leaks from orphaned scheduled tasks
+
 ## [Unreleased] - Issue #74: Explicit Tool Pipeline / Chaining -- 2026-03-06
 
 ### Added (Issue #74 -- Unix-pipe-style tool composition)

@@ -4,6 +4,7 @@ import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -46,6 +47,11 @@ class WebSocketServer {
     private Javalin app;
     private volatile int runningPort = -1;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    /**
+     * The scheduled heartbeat task; stored so it can be cancelled when the server stops to
+     * prevent stale tasks from accumulating across stop/restart cycles.
+     */
+    private volatile ScheduledFuture<?> heartbeatFuture;
 
     /** Optional handler called for every parsed client message (e.g. review decisions). */
     private volatile Consumer<ClientMessage> clientMessageHandler;
@@ -75,7 +81,7 @@ class WebSocketServer {
             return;
         }
 
-        if (!"localhost".equals(host) && !"127.0.0.1".equals(host)) {
+        if (!"localhost".equals(host) && !"127.0.0.1".equals(host) && !"::1".equals(host) && !"[::1]".equals(host)) {
             log.warn(
                     "WebDashboard is binding to host '{}'. The live dashboard will be accessible from "
                             + "remote clients. Ensure your network is appropriately secured.",
@@ -129,8 +135,10 @@ class WebSocketServer {
         running.set(true);
 
         // Schedule heartbeat; guard body with isRunning() so that tasks scheduled before
-        // stop() fire do not broadcast after the server is stopped or restarted.
-        heartbeatScheduler.scheduleAtFixedRate(
+        // stop() fires do not broadcast after the server is stopped or restarted. The
+        // returned future is stored so stop() can cancel it, preventing stale tasks from
+        // accumulating if the server is stopped and restarted multiple times.
+        heartbeatFuture = heartbeatScheduler.scheduleAtFixedRate(
                 () -> {
                     if (running.get()) {
                         sendHeartbeat();
@@ -155,6 +163,15 @@ class WebSocketServer {
             return;
         }
         running.set(false);
+
+        // Cancel the scheduled heartbeat task. This prevents orphaned heartbeat tasks from
+        // firing after the server has stopped, especially across stop/restart cycles.
+        ScheduledFuture<?> hb = heartbeatFuture;
+        if (hb != null) {
+            hb.cancel(false);
+            heartbeatFuture = null;
+        }
+
         runningPort = -1;
         if (app != null) {
             app.stop();
@@ -202,7 +219,8 @@ class WebSocketServer {
      * @return true if the origin is allowed
      */
     static boolean isOriginAllowed(String origin, String host) {
-        boolean isLocalBinding = "localhost".equals(host) || "127.0.0.1".equals(host);
+        boolean isLocalBinding =
+                "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
         if (!isLocalBinding) {
             return true; // Non-local binding: accept any origin
         }

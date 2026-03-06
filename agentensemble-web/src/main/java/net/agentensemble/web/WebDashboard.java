@@ -1,6 +1,7 @@
 package net.agentensemble.web;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -9,6 +10,8 @@ import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.web.protocol.EnsembleCompletedMessage;
+import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ReviewDecisionMessage;
 import org.slf4j.Logger;
@@ -197,6 +200,54 @@ public final class WebDashboard implements EnsembleDashboard {
     @Override
     public boolean isRunning() {
         return server.isRunning();
+    }
+
+    // ========================
+    // EnsembleDashboard lifecycle hooks
+    // ========================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Broadcasts an {@code ensemble_started} message to all connected clients and
+     * notifies the {@link ConnectionManager} to clear any stale snapshot from a
+     * previous run and record the new ensemble ID and start time.
+     */
+    @Override
+    public void onEnsembleStarted(String ensembleId, Instant startedAt, int totalTasks, String workflow) {
+        connectionManager.noteEnsembleStarted(ensembleId, startedAt);
+        try {
+            EnsembleStartedMessage msg = new EnsembleStartedMessage(ensembleId, startedAt, totalTasks, workflow);
+            String json = serializer.toJson(msg);
+            connectionManager.broadcast(json);
+            connectionManager.appendToSnapshot(json);
+        } catch (Exception e) {
+            log.warn("Failed to broadcast ensemble_started message: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Broadcasts an {@code ensemble_completed} message to all connected clients.
+     */
+    @Override
+    public void onEnsembleCompleted(
+            String ensembleId,
+            Instant completedAt,
+            long durationMs,
+            String exitReason,
+            long totalTokens,
+            int totalToolCalls) {
+        try {
+            EnsembleCompletedMessage msg = new EnsembleCompletedMessage(
+                    ensembleId, completedAt, durationMs, exitReason, totalTokens, totalToolCalls);
+            String json = serializer.toJson(msg);
+            connectionManager.broadcast(json);
+            connectionManager.appendToSnapshot(json);
+        } catch (Exception e) {
+            log.warn("Failed to broadcast ensemble_completed message: {}", e.getMessage(), e);
+        }
     }
 
     // ========================

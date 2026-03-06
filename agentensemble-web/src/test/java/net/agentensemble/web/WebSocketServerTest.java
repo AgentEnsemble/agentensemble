@@ -3,6 +3,7 @@ package net.agentensemble.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -16,6 +17,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import net.agentensemble.web.protocol.ClientMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
@@ -113,6 +115,24 @@ class WebSocketServerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void heartbeatFutureCancelledOnStop() {
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        ScheduledFuture<Object> mockFuture = mock(ScheduledFuture.class);
+        doReturn(mockFuture)
+                .when(mockScheduler)
+                .scheduleAtFixedRate(any(Runnable.class), eq(15L), eq(15L), eq(TimeUnit.SECONDS));
+
+        server = new WebSocketServer(connectionManager, serializer, mockScheduler);
+        server.start(0, "localhost");
+        server.stop();
+
+        // The ScheduledFuture returned by scheduleAtFixedRate must be cancelled on stop()
+        // to prevent orphaned heartbeat tasks accumulating across stop/restart cycles.
+        verify(mockFuture).cancel(false);
+    }
+
+    @Test
     void heartbeatTaskBroadcastsHeartbeatMessage() {
         // Capture the scheduled heartbeat task and execute it directly
         ScheduledExecutorService capturingScheduler = mock(ScheduledExecutorService.class);
@@ -194,6 +214,24 @@ class WebSocketServerTest {
         assertThat(WebSocketServer.isOriginAllowed("http://any-origin.com", "0.0.0.0"))
                 .isTrue();
         assertThat(WebSocketServer.isOriginAllowed(null, "0.0.0.0")).isTrue();
+    }
+
+    @Test
+    void ipv6LoopbackBindingTreatedAsLocalBinding() {
+        // When bound to the IPv6 loopback address, the same strict origin policy applies
+        // as for localhost/127.0.0.1 -- only loopback origins are accepted.
+        assertThat(WebSocketServer.isOriginAllowed("http://localhost:3000", "::1"))
+                .isTrue();
+        assertThat(WebSocketServer.isOriginAllowed("http://127.0.0.1:3000", "::1"))
+                .isTrue();
+        assertThat(WebSocketServer.isOriginAllowed("http://[::1]:3000", "::1")).isTrue();
+        assertThat(WebSocketServer.isOriginAllowed("http://evil.com", "::1")).isFalse();
+        assertThat(WebSocketServer.isOriginAllowed(null, "::1")).isFalse();
+
+        // Same for [::1] variant (bracketed form)
+        assertThat(WebSocketServer.isOriginAllowed("http://localhost:3000", "[::1]"))
+                .isTrue();
+        assertThat(WebSocketServer.isOriginAllowed("http://evil.com", "[::1]")).isFalse();
     }
 
     // ========================

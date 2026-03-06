@@ -1,5 +1,6 @@
 package net.agentensemble.dashboard;
 
+import java.time.Instant;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.review.ReviewHandler;
 
@@ -74,4 +75,40 @@ public interface EnsembleDashboard {
      * @return true when running
      */
     boolean isRunning();
+
+    /**
+     * Called by the {@link net.agentensemble.Ensemble} executor before the first task
+     * begins, after validation and agent synthesis are complete. Implementations can
+     * broadcast an {@code ensemble_started} message to connected dashboard clients.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param ensembleId a UUID identifying this run
+     * @param startedAt  the instant this run began
+     * @param totalTasks total number of tasks in this run
+     * @param workflow   the workflow strategy in use (e.g. {@code "SEQUENTIAL"})
+     */
+    default void onEnsembleStarted(String ensembleId, Instant startedAt, int totalTasks, String workflow) {}
+
+    /**
+     * Called by the {@link net.agentensemble.Ensemble} executor after the run has
+     * completed (either normally or via an early exit). Implementations can broadcast
+     * an {@code ensemble_completed} message to connected dashboard clients.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param ensembleId     the UUID identifying this run
+     * @param completedAt    the instant this run completed
+     * @param durationMs     total elapsed time in milliseconds
+     * @param exitReason     the reason the run ended (e.g. {@code "COMPLETED"})
+     * @param totalTokens    total token count across all tasks ({@code -1} if unknown)
+     * @param totalToolCalls total number of tool invocations across all tasks
+     */
+    default void onEnsembleCompleted(
+            String ensembleId,
+            Instant completedAt,
+            long durationMs,
+            String exitReason,
+            long totalTokens,
+            int totalToolCalls) {}
 }

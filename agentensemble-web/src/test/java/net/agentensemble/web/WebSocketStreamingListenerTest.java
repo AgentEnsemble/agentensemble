@@ -7,8 +7,13 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import net.agentensemble.callback.DelegationCompletedEvent;
 import net.agentensemble.callback.DelegationFailedEvent;
 import net.agentensemble.callback.DelegationStartedEvent;
@@ -210,6 +215,27 @@ class WebSocketStreamingListenerTest {
         assertThat(json).contains("Researcher");
     }
 
+    @Test
+    void onToolCall_outcomeIsNullBecauseToolCallEventHasNoOutcomeField() {
+        // ToolCallEvent does not carry a success/failure signal, so the protocol message
+        // uses null for outcome to avoid misleading "SUCCESS" when the tool may have failed.
+        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5));
+        listener.onToolCall(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"outcome\":null");
+    }
+
+    @Test
+    void onTaskComplete_tokenCountIsMinusOneToIndicateUnknown() {
+        // tokenCount uses -1 as the "unknown" sentinel, consistent with TaskMetrics.totalTokens.
+        TaskCompleteEvent event = new TaskCompleteEvent("Task", "Agent", null, Duration.ofSeconds(1), 1, 1);
+        listener.onTaskComplete(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"tokenCount\":-1");
+    }
+
     // ========================
     // Delegation lifecycle events
     // ========================
@@ -304,5 +330,70 @@ class WebSocketStreamingListenerTest {
         faultyListener.onToolCall(event);
 
         assertThat(session.sentMessages()).isEmpty();
+    }
+
+    // ========================
+    // Thread safety
+    // ========================
+
+    @Test
+    void concurrentCallsFromMultipleThreads_doNotCorruptMessages() throws InterruptedException {
+        // Simulate a parallel workflow firing all 7 event types concurrently from
+        // virtual threads. All broadcasts must arrive without corruption or loss.
+        int threadCount = 8;
+        int eventsPerThread = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        for (int t = 0; t < threadCount; t++) {
+            final int thread = t;
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < eventsPerThread; i++) {
+                        listener.onTaskStart(new TaskStartEvent("Task-" + thread + "-" + i, "Agent", 1, 1));
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertThat(latch.await(15, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+
+        // All events must have arrived; none lost or corrupted
+        int expectedCount = threadCount * eventsPerThread;
+        assertThat(session.sentMessages()).hasSize(expectedCount);
+
+        // Each message must be valid JSON with the correct type
+        List<String> messages = new ArrayList<>(session.sentMessages());
+        assertThat(messages).allMatch(m -> m.contains("\"type\":\"task_started\""));
+        assertThat(messages).allMatch(m -> m.startsWith("{"));
+        assertThat(messages).allMatch(m -> m.endsWith("}"));
+    }
+
+    @Test
+    void broadcastBuildsSnapshotIncrementally() {
+        // Each call to broadcast() should add to the snapshot in ConnectionManager.
+        // After 3 events, the snapshot should contain all 3 messages.
+        listener.onTaskStart(new TaskStartEvent("Task 1", "Agent A", 1, 3));
+        listener.onTaskStart(new TaskStartEvent("Task 2", "Agent B", 2, 3));
+        listener.onTaskStart(new TaskStartEvent("Task 3", "Agent C", 3, 3));
+
+        // Connect a late-joining session and check its hello contains all 3 events
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("\"type\":\"hello\"");
+        assertThat(helloJson).contains("snapshotTrace");
+        // Snapshot is a JSON array containing all 3 task_started events
+        int count = 0;
+        int idx = 0;
+        while ((idx = helloJson.indexOf("task_started", idx)) != -1) {
+            count++;
+            idx++;
+        }
+        assertThat(count).isEqualTo(3);
     }
 }

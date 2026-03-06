@@ -11,7 +11,8 @@ import java.time.Instant;
  * @param agentRole       role of the agent that executed the task
  * @param completedAt     when the task completed
  * @param durationMs      elapsed time in milliseconds
- * @param tokenCount      total tokens used (0 if metrics not available)
+ * @param tokenCount      total tokens used; {@code -1} when the LLM provider did not
+ *                        return usage metadata (consistent with {@code TaskMetrics.totalTokens})
  * @param toolCallCount   number of tool calls made during this task
  */
 public record TaskCompletedMessage(
@@ -21,6 +22,6 @@ public record TaskCompletedMessage(
         String agentRole,
         Instant completedAt,
         long durationMs,
-        int tokenCount,
+        long tokenCount,
         int toolCallCount)
         implements ServerMessage {}

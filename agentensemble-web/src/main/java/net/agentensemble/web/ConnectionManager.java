@@ -1,8 +1,12 @@
 package net.agentensemble.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import net.agentensemble.web.protocol.HelloMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import org.slf4j.Logger;
@@ -26,7 +30,19 @@ class ConnectionManager {
     private final ConcurrentHashMap<String, WsSession> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
     private final MessageSerializer serializer;
-    private volatile String currentSnapshotJson = null;
+
+    /**
+     * Ordered log of all messages broadcast during the current run, used to send a
+     * late-join snapshot via the {@code hello} message. Thread-safe: append via
+     * CopyOnWriteArrayList; snapshot is obtained by iterating the list at connect time.
+     */
+    private final CopyOnWriteArrayList<String> snapshotMessages = new CopyOnWriteArrayList<>();
+
+    /** Ensemble ID from the most recent {@code ensemble_started} message, for hello. */
+    private volatile String currentEnsembleId = null;
+
+    /** Ensemble start time from the most recent {@code ensemble_started} message, for hello. */
+    private volatile Instant ensembleStartedAt = null;
 
     ConnectionManager(MessageSerializer serializer) {
         this.serializer = serializer;
@@ -34,8 +50,12 @@ class ConnectionManager {
 
     /**
      * Called when a new WebSocket client connects. Adds the session and immediately sends a
-     * {@code hello} message containing the current execution snapshot (if any), so that
-     * late-joining browsers can reconstruct the display without waiting for the next event.
+     * {@code hello} message containing the current partial execution snapshot (if any), so
+     * that late-joining browsers can reconstruct the in-progress display without waiting for
+     * the next live event.
+     *
+     * <p>The snapshot is a JSON array of all messages broadcast since the run started. The
+     * browser-side {@code liveReducer} can replay this array to restore state.
      *
      * @param session the newly connected session
      */
@@ -43,9 +63,10 @@ class ConnectionManager {
         sessions.put(session.id(), session);
         log.debug("WebSocket client connected: {}", session.id());
 
-        // Include any stored snapshot so late-joining browsers can reconstruct the state
-        JsonNode snapshotNode = serializer.toJsonNode(currentSnapshotJson);
-        HelloMessage hello = new HelloMessage(null, null, snapshotNode);
+        // Build a snapshot JSON array from all messages broadcast so far. Taking a
+        // copy of the CopyOnWriteArrayList is atomic and safe without external locking.
+        JsonNode snapshotNode = buildSnapshotNode();
+        HelloMessage hello = new HelloMessage(currentEnsembleId, ensembleStartedAt, snapshotNode);
         String helloJson = serializer.toJson(hello);
         session.send(helloJson);
     }
@@ -110,13 +131,33 @@ class ConnectionManager {
     }
 
     /**
-     * Updates the snapshot JSON stored for late-joining clients. Called by
-     * {@link WebSocketStreamingListener} after each significant event.
+     * Appends a JSON message to the late-join snapshot log. Called by
+     * {@link WebSocketStreamingListener} after each broadcast so that late-joining
+     * clients receive all past events in the {@code hello} message.
      *
-     * @param snapshotJson the current partial execution trace as a JSON string; may be null
+     * <p>Thread-safe: {@link CopyOnWriteArrayList#add} is atomic.
+     *
+     * @param messageJson the serialized JSON message that was just broadcast; must not be null
      */
-    void updateSnapshotJson(String snapshotJson) {
-        this.currentSnapshotJson = snapshotJson;
+    void appendToSnapshot(String messageJson) {
+        snapshotMessages.add(messageJson);
+    }
+
+    /**
+     * Records ensemble metadata for the {@code hello} message sent to late-joining clients.
+     * Called by {@link net.agentensemble.web.WebDashboard} when it receives the
+     * {@code onEnsembleStarted} lifecycle hook, immediately before the first task begins.
+     *
+     * <p>Also clears any snapshot accumulated from a previous run so that late-joining
+     * clients see only the current run's events.
+     *
+     * @param ensembleId the UUID identifying this run
+     * @param startedAt  when this run began
+     */
+    void noteEnsembleStarted(String ensembleId, Instant startedAt) {
+        snapshotMessages.clear();
+        this.currentEnsembleId = ensembleId;
+        this.ensembleStartedAt = startedAt;
     }
 
     /**
@@ -150,5 +191,32 @@ class ConnectionManager {
      */
     int sessionCount() {
         return sessions.size();
+    }
+
+    // ========================
+    // Private helpers
+    // ========================
+
+    /**
+     * Builds a {@link JsonNode} JSON array from the current snapshot message log.
+     * Returns {@code null} when no messages have been recorded yet (empty snapshot).
+     *
+     * <p>The CopyOnWriteArrayList iterator provides a consistent snapshot of the list
+     * state at the time of this call, safe under concurrent appends.
+     */
+    private JsonNode buildSnapshotNode() {
+        List<String> snapshot = new ArrayList<>(snapshotMessages);
+        if (snapshot.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < snapshot.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(snapshot.get(i));
+        }
+        sb.append(']');
+        return serializer.toJsonNode(sb.toString());
     }
 }

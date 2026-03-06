@@ -15,25 +15,30 @@
 - Pipelines nest -- a pipeline can be a step inside another pipeline
 - 49 unit tests + 7 integration tests; all pass; branch `feature/tool-pipeline-74`
 
-## What Works (as of Issue #130 -- agentensemble-web Live Execution Dashboard)
+## What Works (as of Issue #131 -- WebSocketStreamingListener v2.1.0)
 
-**agentensemble-web module (Issue #130):**
+**agentensemble-web module (Issues #130 + #131):**
 - `WebDashboard.onPort(port)` -- zero-config factory; `WebDashboard.builder()` for full config
 - `WebDashboard.start()` / `WebDashboard.stop()` -- lifecycle management; idempotent
 - `WebDashboard.streamingListener()` -- returns `EnsembleListener` to wire into Ensemble
 - `WebDashboard.reviewHandler()` -- returns `ReviewHandler` to wire into Ensemble
-- `WebDashboard.builder().webDashboard(dashboard)` on `Ensemble.builder()` -- one-line wiring
+- `Ensemble.builder().webDashboard(dashboard)` -- one-line wiring (listener + review + lifecycle hooks)
 - Embedded Javalin 6.3.0 WebSocket server at `ws://{host}:{port}/ws`
 - HTTP endpoint `GET /api/status` returning `{"status":"running","clients":N,"port":P}`
-- 15-second heartbeat broadcast to all connected sessions
-- Origin validation: localhost-only connections accepted when server bound to `localhost`/`127.0.0.1` (CSRF protection); non-local binding accepts any origin
-- `WebSocketStreamingListener` broadcasts JSON messages for all 7 `EnsembleListener` event types
-- `WebReviewHandler` gates execution via `CompletableFuture`; supports `CONTINUE`, `EXIT_EARLY`, and `FAIL` on timeout; interrupt-safe via virtual threads
-- `ConnectionManager` tracks sessions, routes review decisions, resolves pending futures on disconnect
+- 15-second heartbeat broadcast; heartbeat `ScheduledFuture` cancelled on `stop()`
+- Origin validation: loopback-only origins accepted when server bound to `localhost`/`127.0.0.1`/`::1`/`[::1]` (CSRF protection); URI-based host comparison prevents subdomain spoofing
+- `WebSocketStreamingListener` broadcasts JSON messages for all 7 `EnsembleListener` event types; appends each to the late-join snapshot log
+- `WebReviewHandler` gates execution via `CompletableFuture`; supports `CONTINUE`, `EXIT_EARLY`, and `FAIL` on timeout
+- `ConnectionManager` tracks sessions, routes review decisions, resolves pending futures when last client disconnects
+- Ensemble lifecycle messages: `ensemble_started` broadcast before first task; `ensemble_completed` broadcast after `Ensemble.run()` returns
+- Late-join snapshot: all broadcast messages accumulated in `CopyOnWriteArrayList`; new clients receive `hello` with `ensembleId`, `startedAt`, and `snapshotTrace` (JSON array of all past events)
+- `EnsembleDashboard` SPI: `onEnsembleStarted()` + `onEnsembleCompleted()` default no-op hooks
+- `Ensemble.dashboard` field: calls lifecycle hooks from `runWithInputs()` before/after executor
 - Wire protocol: 15+ `ServerMessage` subtypes + 2 `ClientMessage` subtypes with Jackson polymorphic dispatch
 - `MessageSerializer` serializes/deserializes with `type` discriminator; `FAIL_ON_UNKNOWN_PROPERTIES=false`
-- 119 tests across 6 test classes; JaCoCo LINE >= 90% and BRANCH >= 75% both pass
-- PR #138 open against main
+- agentensemble-review promoted from `compileOnly` to `api` dependency in agentensemble-web
+- 155+ tests across 7 test classes (including new `WebDashboardIntegrationTest`); all pass; JaCoCo LINE >= 90% and BRANCH >= 75% both pass
+- Branch `feat/131-streaming-listener`; PR pending
 
 ## What Works (as of Issue #113 -- MapReduce task-first refactor)
 
