@@ -732,6 +732,116 @@ class ToolPipelineTest {
     }
 
     // ========================
+    // Opportunistic: plain AgentTool exceptions caught per-step
+    // ========================
+
+    @Test
+    void execute_plainAgentToolThrows_failFast_pipelineReturnFailureWithStepName() {
+        var throwingTool = new AgentTool() {
+            @Override
+            public String name() {
+                return "throwing_step";
+            }
+
+            @Override
+            public String description() {
+                return "";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                throw new RuntimeException("boom from plain tool");
+            }
+        };
+        var step2Called = new java.util.concurrent.atomic.AtomicInteger(0);
+        var pipeline = ToolPipeline.builder()
+                .name("p")
+                .description("d")
+                .step(throwingTool)
+                .step(new AgentTool() {
+                    @Override
+                    public String name() {
+                        return "step2";
+                    }
+
+                    @Override
+                    public String description() {
+                        return "";
+                    }
+
+                    @Override
+                    public ToolResult execute(String input) {
+                        step2Called.incrementAndGet();
+                        return ToolResult.success("done");
+                    }
+                })
+                .errorStrategy(PipelineErrorStrategy.FAIL_FAST)
+                .build();
+
+        ToolResult result = pipeline.execute("x");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("throwing_step");
+        assertThat(result.getErrorMessage()).contains("boom from plain tool");
+        // Step 2 was never called
+        assertThat(step2Called.get()).isEqualTo(0);
+    }
+
+    @Test
+    void execute_plainAgentToolThrows_continueOnFailure_nextStepReceivesErrorMessage() {
+        var throwingTool = new AgentTool() {
+            @Override
+            public String name() {
+                return "throwing_step";
+            }
+
+            @Override
+            public String description() {
+                return "";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                throw new RuntimeException("boom");
+            }
+        };
+        var recording = new RecordingTool("step2", "_done");
+        var pipeline = ToolPipeline.builder()
+                .name("p")
+                .description("d")
+                .step(throwingTool)
+                .step(recording)
+                .errorStrategy(PipelineErrorStrategy.CONTINUE_ON_FAILURE)
+                .build();
+
+        ToolResult result = pipeline.execute("x");
+
+        // Step 2 ran; received the error message from the exception
+        assertThat(recording.receivedInputs).hasSize(1);
+        assertThat(recording.receivedInputs.get(0)).contains("throwing_step");
+        assertThat(recording.receivedInputs.get(0)).contains("boom");
+        // Final result is step 2's result
+        assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    void execute_adapterReturnsNull_nextStepReceivesEmptyString() {
+        var recording = new RecordingTool("step_b", "_done");
+        var pipeline = ToolPipeline.builder()
+                .name("p")
+                .description("d")
+                .step(fixedOutputTool("step_a", "some output"))
+                .adapter(result -> null) // adapter returns null
+                .step(recording)
+                .build();
+
+        pipeline.execute("x");
+
+        // Null adapter output must be normalized to ""
+        assertThat(recording.receivedInputs).containsExactly("");
+    }
+
+    // ========================
     // Helpers
     // ========================
 

@@ -160,7 +160,23 @@ public final class ToolPipeline extends AbstractAgentTool {
                             steps.size(),
                             step.tool().name());
 
-            lastResult = step.tool().execute(currentInput);
+            try {
+                lastResult = step.tool().execute(currentInput);
+            } catch (Exception e) {
+                // Catch exceptions from plain AgentTool steps (AbstractAgentTool catches its own).
+                // Re-throw control-flow signals so the framework can handle them correctly.
+                if (e instanceof net.agentensemble.exception.ExitEarlyException
+                        || e instanceof net.agentensemble.exception.ToolConfigurationException) {
+                    throw e;
+                }
+                log().warn(
+                                "Pipeline '{}': step '{}' threw exception: {}",
+                                name,
+                                step.tool().name(),
+                                e.getMessage(),
+                                e);
+                lastResult = ToolResult.failure("Step '" + step.tool().name() + "' threw: " + e.getMessage());
+            }
 
             if (!lastResult.isSuccess()) {
                 log().debug(
@@ -206,7 +222,7 @@ public final class ToolPipeline extends AbstractAgentTool {
     // ========================
 
     /**
-     * Create a pipeline from two or more tools with an auto-generated name and description.
+     * Create a pipeline from one or more tools with an auto-generated name and description.
      *
      * <p>The pipeline name is the step names joined with {@code "_then_"}, and the description
      * is {@code "Pipeline: step1 -> step2 -> ..."}. Use {@link Builder} for full control over
@@ -214,8 +230,8 @@ public final class ToolPipeline extends AbstractAgentTool {
      *
      * <p>The error strategy defaults to {@link PipelineErrorStrategy#FAIL_FAST}.
      *
-     * @param first the first step in the pipeline; must not be null
-     * @param rest  the remaining steps, in order; must not contain null elements
+     * @param first the first (and optionally only) step in the pipeline; must not be null
+     * @param rest  additional steps, in order; may be empty; must not contain null elements
      * @return a new ToolPipeline
      */
     public static ToolPipeline of(AgentTool first, AgentTool... rest) {
@@ -427,12 +443,19 @@ public final class ToolPipeline extends AbstractAgentTool {
         /**
          * Apply the adapter (if present) to transform the result, or return
          * {@link ToolResult#getOutput()} as-is when no adapter is configured.
+         *
+         * <p>Guarantees a non-null {@code String} output: any {@code null} returned by the
+         * adapter (or by {@link ToolResult#getOutput()}) is normalized to {@code ""} so that
+         * downstream steps always receive a non-null input string.
          */
         String adaptOutput(ToolResult result) {
+            String output;
             if (adapter != null) {
-                return adapter.apply(result);
+                output = adapter.apply(result);
+            } else {
+                output = result.getOutput();
             }
-            return result.getOutput();
+            return output != null ? output : "";
         }
     }
 }
