@@ -3,7 +3,8 @@
 ## Current Work Focus
 
 Issues #108, #109, and #110 (v2.0.0 Human-in-the-Loop Review System) are complete on
-branch `feat/108-109-110-review-module`. A PR should be opened to merge into main.
+branch `feat/108-109-110-review-module`. PR #125 is open and Copilot review comments have
+been addressed (commit `2e7798e`).
 
 ## Recent Changes
 

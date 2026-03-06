@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - PR #125 Copilot review fixes -- 2026-03-05
+
+### Fixed (PR #125 -- Copilot inline review comments, commit `2e7798e`)
+
+Five issues addressed from Copilot's automated review of the initial #108/#109/#110 commit:
+
+- **`SequentialWorkflowExecutor` (Fix 1)**: policy-driven after-review gates (triggered by
+  `ReviewPolicy` with no explicit `task.review()`) were passing `timeout = null` to the
+  `ReviewRequest`, causing `ConsoleReviewHandler` to take the indefinite blocking path and
+  hang forever. Now defaults to `Review.DEFAULT_TIMEOUT` and `Review.DEFAULT_ON_TIMEOUT`
+  when `task.getReview()` is null.
+
+- **`ConsoleReviewHandler` (Fix 2)**: two problems resolved:
+  1. Thread accumulation: the timed path created new `ExecutorService` instances per call
+     and used `BufferedReader.readLine()` which does not respond to `Thread.interrupt()` on
+     blocking streams like `System.in`. Replaced with `pollReadLine()` -- a polling loop
+     using `reader.ready()` + 50ms sleeps that checks the interrupt flag between attempts,
+     so `cancel(true)` after a timeout causes the reader thread to exit cleanly.
+  2. Countdown accuracy: `remainingSeconds = timeout.toSeconds()` truncated sub-second
+     durations (e.g., a 200ms timeout showed "0:00" from the start). Changed to track
+     `remainingMillis` as an `AtomicLong` and convert to seconds only for display.
+
+- **`HumanInputTool` (Fix 3/4)**: two inconsistencies between code, logs, and Javadoc:
+  1. Log warning said "Returning empty response" but the method returns
+     "No reviewer is available. Please proceed with your best judgment." -- fixed to
+     "Returning default response".
+  2. Class Javadoc said "an empty acknowledgement string" for the `Continue` path but code
+     returns "Understood. Please continue." -- fixed to document the actual return value.
+
+- **`AutoApproveWithDelayReviewHandler` (Fix 5)**: `Thread.sleep(delay.toMillis())` throws
+  `ArithmeticException` for `Duration` values exceeding `Long.MAX_VALUE` milliseconds.
+  Replaced with `Thread.sleep(Duration)` (Java 21 API) which routes through
+  `TimeUnit.NANOSECONDS.convert(Duration)` that clamps overflow to `Long.MAX_VALUE`,
+  avoiding the exception. Log message updated to use `delay.toString()` (no overflow risk).
+
+### Tests Added (PR #125 Copilot fixes)
+
+- `HumanInputToolTest`: `doExecute_handlerReturnsContinue_returnsExactAcknowledgementText`
+  (locks down "Understood. Please continue." string); `doExecute_noReviewHandler_returnsDefaultFallbackMessage`
+  (locks down "No reviewer is available..." string)
+- `ReviewGateIntegrationTest`: `policyDrivenReview_noTaskReview_requestHasDefaultTimeoutAndOnTimeout`
+  -- captures the `ReviewRequest` from a policy-driven gate and asserts both
+  `timeout == Review.DEFAULT_TIMEOUT` and `onTimeoutAction == Review.DEFAULT_ON_TIMEOUT`
+- `AutoApproveWithDelayReviewHandlerTest` (new class, 9 tests): zero/small delay normal
+  operation; `ignoresTimeoutOnRequest` contract; interrupt path restores flag and returns
+  Continue; overflow-safe Duration (`Duration.ofSeconds(Long.MAX_VALUE / 1000 + 1)`) does
+  not throw `ArithmeticException`; constructor null/negative/zero/positive validation
+
+---
+
 ## [Unreleased] - Issues #108 + #109 + #110: Human-in-the-Loop Review System -- 2026-03-05
 
 ### Added (Issues #108, #109, #110 -- Human-in-the-Loop Review System)
