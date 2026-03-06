@@ -1,8 +1,81 @@
 # MapReduce Kitchen Examples
 
-This page demonstrates both the **static** and **adaptive** `MapReduceEnsemble` strategies
-using a restaurant kitchen scenario. A large order with 7 dishes is processed using
-tree-reduction, keeping each reducer's context bounded at every level.
+This page demonstrates `MapReduceEnsemble` using a restaurant kitchen scenario -- both the
+**task-first API** (v2.0.0, agents synthesised automatically) and the **agent-first API**
+(explicit agent declarations).
+
+---
+
+## Task-first examples (v2.0.0)
+
+In the task-first paradigm, you declare what work needs to be done and the framework
+synthesises agents automatically. No agent builders are required.
+
+**Task-first (zero-ceremony + builder)**: Full source: `agentensemble-examples/src/main/java/net/agentensemble/examples/MapReduceTaskFirstKitchenExample.java`
+
+```
+./gradlew :agentensemble-examples:runMapReduceTaskFirstKitchen
+```
+
+### Zero-ceremony factory
+
+```java
+EnsembleOutput output = MapReduceEnsemble.of(
+    model,
+    List.of("Truffle Risotto", "Duck Breast", "Salmon", "Fondant", "Onion Soup"),
+    "Prepare a complete recipe for",
+    "Combine these individual recipes into a unified dinner service plan");
+
+System.out.println(output.getRaw());
+```
+
+Two lines of configuration. The framework synthesises one agent per dish and one agent
+for the final reduce -- all from the task descriptions.
+
+### Task-first builder
+
+For more control over task configuration (structured output, tools, per-task LLM):
+
+```java
+record DishResult(String dish, List<String> ingredients, int prepMinutes, String plating) {}
+
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .chatLanguageModel(model)
+    .items(order.getItems())
+
+    // Map phase: task-first, agent synthesised from description
+    .mapTask(item -> Task.builder()
+        .description("Prepare the recipe for " + item.dish() + ". "
+            + "Dietary requirements: " + item.dietaryNotes() + ". "
+            + "Provide key ingredients, preparation steps, cook time, and plating.")
+        .expectedOutput("Structured recipe result as JSON")
+        .outputType(DishResult.class)   // structured output supported
+        .build())
+
+    // Reduce phase: task-first, agent synthesised from description
+    .reduceTask(chunkTasks -> Task.builder()
+        .description("Review the dish preparations provided in context. "
+            + "Create a consolidated sub-plan: note timing dependencies, "
+            + "common mise en place, and any coordination required between dishes.")
+        .expectedOutput("A coordinated sub-plan covering timing, shared prep, and coordination notes.")
+        .context(chunkTasks)            // wire context explicitly
+        .build())
+
+    .chunkSize(3)
+    .verbose(true)
+    .build()
+    .run();
+```
+
+The `AgentSynthesizer` (template-based by default) derives the agent role from the task
+description verb and noun. For "Prepare the recipe for Truffle Risotto", it produces a
+"Chef/Cook" persona with a matching goal. No extra LLM call is made.
+
+---
+
+## Agent-first examples (power-user)
+
+When you need precise control over agent personas, use the agent-first API.
 
 **Static mode** (`chunkSize=3`): Full source: `agentensemble-examples/src/main/java/net/agentensemble/examples/MapReduceKitchenExample.java`
 

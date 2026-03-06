@@ -1,5 +1,20 @@
 # Progress
 
+## What Works (as of Issue #113 -- MapReduce task-first refactor)
+
+**MapReduceEnsemble task-first API (Issue #113):**
+- `MapReduceEnsemble.builder().mapTask(Function<T, Task>)` -- task-first map factory; agents synthesised automatically
+- `MapReduceEnsemble.builder().reduceTask(Function<List<Task>, Task>)` -- task-first reduce factory
+- `MapReduceEnsemble.builder().directTask(Function<List<T>, Task>)` -- task-first short-circuit factory
+- `MapReduceEnsemble.builder().chatLanguageModel(ChatModel)` -- LLM for synthesis, passed to inner Ensembles
+- `MapReduceEnsemble.of(model, items, mapDescription, reduceDescription)` -- zero-ceremony factory
+- Mutual exclusivity validation: task-first and agent-first styles cannot be mixed per phase
+- Backward compatibility: all existing agent-first API (`mapAgent`, `mapTask(BiFunction)`, `reduceAgent`, `reduceTask(BiFunction)`) unchanged
+- `MapReduceAdaptiveExecutor` supports both styles; `chatLanguageModel` propagated to each inner Ensemble
+- All v2.0.0 task features work in map/reduce tasks: tools, memory scopes, review gates, outputType
+- 44 new tests (17 unit + 15 validation + 12 integration)
+- `MapReduceTaskFirstKitchenExample.java` + `runMapReduceTaskFirstKitchen` Gradle task
+
 ## What Works (as of Issues #111 + #112)
 
 - **EnsembleOutput partial results and workflow inference** (Issues #111, #112):
@@ -239,7 +254,7 @@ v2.0.0 implementation status:
 - Group B (agentensemble-memory, scoped memory): COMPLETE (#106, #107)
 - Group C (agentensemble-review, review gates): COMPLETE (#108, #109, #110)
 - Group D (partial results, workflow inference): COMPLETE (#111, #112)
-- Group E (MapReduce refactor): PENDING
+- Group E (MapReduce refactor): COMPLETE (#113, branch feat/113-mapreduce-task-first)
 - Group F (BOM, migration guide, examples): PENDING
 
 ## Known Issues

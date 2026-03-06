@@ -1,5 +1,91 @@
 # Changelog
 
+## [Unreleased] - Issue #113: MapReduceEnsemble Task-First Refactor -- 2026-03-05
+
+### Added (Issue #113 -- Rework MapReduceEnsemble for task-first paradigm)
+
+**MapReduceEnsemble.Builder -- new task-first factory methods:**
+- `mapTask(Function<T, Task>)` -- creates one Task per item with no explicit agent; overloads the existing `mapTask(BiFunction<T, Agent, Task>)`
+- `reduceTask(Function<List<Task>, Task>)` -- creates one Task per reduce group with no explicit agent; overloads the existing `reduceTask(BiFunction<Agent, List<Task>, Task>)`
+- `directTask(Function<List<T>, Task>)` -- creates the direct short-circuit Task with no explicit agent; overloads the existing `directTask(BiFunction<Agent, List<T>, Task>)`
+- `chatLanguageModel(ChatModel)` -- default LLM propagated to each inner Ensemble for `AgentSynthesizer` to use
+
+**MapReduceEnsemble.of() zero-ceremony factory:**
+- `MapReduceEnsemble.of(ChatModel model, List<T> items, String mapDescription, String reduceDescription)` -- static factory that builds and runs a map-reduce pipeline in one call; agents synthesised automatically
+
+**Validation -- mutual exclusivity per phase:**
+- Using task-first `mapTask(Function)` together with agent-first `mapAgent` or `mapTask(BiFunction)` throws `ValidationException("Ambiguous map configuration...")`
+- Same for reduce and direct phases
+- Agent-first validation updated: requires BOTH agent factory AND task factory (unchanged semantics, improved messages)
+
+**Build logic (static and adaptive):**
+- `createMapTask(item)` helper dispatches to task-first or agent-first factory
+- `createReduceTask(chunkTasks)` helper dispatches to task-first or agent-first factory
+- `createDirectTask()` helper dispatches to task-first or agent-first factory
+- `buildStatic()` passes `chatLanguageModel` to inner `Ensemble.builder()` when set
+- `MapReduceAdaptiveExecutor`: new constructor parameters for `chatLanguageModel`, `mapTaskOnlyFactory`, `reduceTaskOnlyFactory`, `directTaskOnlyFactory`; `newEnsembleBuilder()` sets `chatLanguageModel` when non-null
+
+**Backward compatibility:**
+- All existing agent-first builder methods (`mapAgent`, `mapTask(BiFunction)`, `reduceAgent`, `reduceTask(BiFunction)`, `directAgent`, `directTask(BiFunction)`) retained unchanged
+- All existing tests pass
+
+### Tests Added (Issue #113)
+
+**Unit tests -- `MapReduceEnsembleTaskFirstTest` (17 tests):**
+- `taskFirst_staticMode_buildSucceeds`, `taskFirst_adaptiveMode_buildSucceeds`
+- `taskFirst_mapTasks_haveNoExplicitAgent`, `taskFirst_reduceTasks_haveNoExplicitAgent`
+- `taskFirst_N3_K5_noIntermediateLevel_fourTasksTotal`, `taskFirst_N4_K3_oneIntermediateLevel_sevenTasksTotal`
+- `taskFirst_N4_K3_contextWiringIsCorrect`, `taskFirst_nodeTypes_areCorrect`, `taskFirst_mapReduceLevels_areCorrect`
+- `taskFirst_mapTaskFactory_calledOncePerItem`, `taskFirst_reduceTaskFactory_calledOncePerGroup`
+- `chatLanguageModel_passedToInnerEnsemble`, `taskFirst_perTaskChatLanguageModel_isPreserved`
+- `taskFirst_toolsOnTask_arePreserved`
+
+**Validation tests -- `MapReduceEnsembleTaskFirstValidationTest` (15 tests):**
+- `noMapFactory_throwsValidationException`, `noReduceFactory_throwsValidationException`
+- `taskFirstMap_combinedWithAgentFirstMapTask_throwsValidationException`
+- `taskFirstMap_combinedWithAgentFactory_throwsValidationException`
+- `agentFirstMap_withoutMapAgent_throwsValidationException`, `agentFirstMap_withoutMapTask_throwsValidationException`
+- `taskFirstReduce_combinedWithAgentFirstReduceTask_throwsValidationException`
+- `agentFirstReduce_withoutReduceAgent_throwsValidationException`, `agentFirstReduce_withoutReduceTask_throwsValidationException`
+- `taskFirstDirect_staticMode_throwsValidationException`, `taskFirstDirect_combinedWithAgentFirstDirect_throwsValidationException`
+- Zero-ceremony factory: null model, null items, empty items, blank map description, blank reduce description (5 tests)
+
+**Integration tests -- `MapReduceEnsembleTaskFirstIntegrationTest` (12 tests):**
+- `taskFirst_staticMode_N3_K5_completesSuccessfully`, `taskFirst_staticMode_finalOutputComesFromReduceTask`
+- `taskFirst_staticMode_N6_K3_completesSuccessfully`
+- `taskFirst_adaptiveMode_completesSuccessfully`
+- `taskFirst_toolsOnMapTask_includedInSynthesisedAgent`
+- `taskFirst_perTaskChatLanguageModel_usedForSynthesis`
+- `zeroCeremony_completesSuccessfully`, `zeroCeremony_taskDescriptionsIncludeItemText`
+- `agentFirst_regression_explicitAgents_stillWorkCorrectly`
+- `taskFirst_bothPhasesWithDifferentPerTaskModels_completesSuccessfully`
+- `taskFirst_taskOutputs_areAccessible_withCorrectCount`
+
+### Documentation Updated (Issue #113)
+
+- `docs/guides/map-reduce.md`: new "Task-first API (v2.0.0)" section (before "Problem" section) with:
+  - Zero-ceremony factory example
+  - Task-first builder example with structured output
+  - Task-first with tools on task example
+  - Choosing task-first vs agent-first comparison table
+  - Updated "Builder reference" with separate "Task-first fields" and "Agent-first fields" tables
+- `docs/examples/map-reduce.md`: restructured with "Task-first examples (v2.0.0)" section first:
+  - `runMapReduceTaskFirstKitchen` Gradle command
+  - Zero-ceremony factory code snippet
+  - Task-first builder code snippet with explanation of `AgentSynthesizer`
+  - Existing agent-first examples moved under "Agent-first examples (power-user)" heading
+- `agentensemble-examples/src/main/java/.../MapReduceTaskFirstKitchenExample.java`: new runnable example demonstrating zero-ceremony factory and task-first builder with structured output; uses same 7-dish kitchen scenario as `MapReduceKitchenExample.java`
+- `agentensemble-examples/build.gradle.kts`: `"runMapReduceTaskFirstKitchen"` Gradle task registered
+
+### Design Decisions (Issue #113)
+
+- Task-first factories use **method overloading** (`Function<T,Task>` vs `BiFunction<T,Agent,Task>`): Java can resolve these at compile time since the arity differs (1-arg vs 2-arg lambda). This avoids new method names and keeps the builder fluent.
+- **Agent synthesis happens inside the inner Ensemble's `resolveAgents()` step**, not in `MapReduceEnsemble` itself. This reuses all existing synthesis logic (template/LLM synthesizers, per-task LLM, tools, maxIterations application) without duplication.
+- **`chatLanguageModel` is optional**: if every task carries its own `chatLanguageModel`, the ensemble-level field is not needed. The inner `EnsembleValidator` will catch missing LLM at `run()` time if neither is provided.
+- **Mutual exclusivity validated at `build()` time**, not `run()` time, so errors are caught early before any tasks are created.
+
+---
+
 ## [Unreleased] - Issues #111 + #112: Partial Results and Workflow Inference -- 2026-03-05
 
 ### Added (Issue #111 -- EnsembleOutput partial results and graceful exit-early)
