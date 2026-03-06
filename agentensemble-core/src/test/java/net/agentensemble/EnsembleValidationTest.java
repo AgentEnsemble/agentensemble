@@ -92,13 +92,19 @@ class EnsembleValidationTest {
         // True A->B->A cycles cannot be constructed with immutable Task objects.
         // This test verifies that a forward reference (taskA depends on taskB, but
         // taskA appears before taskB in the list) is caught by validateContextOrdering.
+        // An explicit SEQUENTIAL workflow is required: without it, the framework would
+        // infer PARALLEL from the context dependencies and skip ordering validation.
         var researcher = agent("Researcher");
         var taskA = task("Task A", researcher);
         var taskB =
                 taskA.toBuilder().description("Task B").context(List.of(taskA)).build();
         var taskAWithDep = taskA.toBuilder().context(List.of(taskB)).build();
 
-        var ensemble = Ensemble.builder().task(taskAWithDep).task(taskB).build();
+        var ensemble = Ensemble.builder()
+                .task(taskAWithDep)
+                .task(taskB)
+                .workflow(net.agentensemble.workflow.Workflow.SEQUENTIAL)
+                .build();
 
         // taskAWithDep references taskB, but taskB appears later in the list
         assertThatThrownBy(ensemble::run)
@@ -114,7 +120,9 @@ class EnsembleValidationTest {
     void testRun_withContextOrderViolation_throwsValidation() {
         var researcher = agent("Researcher");
         var firstTask = task("First task", researcher);
-        // Second task has context pointing to first, but they're added in wrong order
+        // Second task has context pointing to first, but they're added in wrong order.
+        // An explicit SEQUENTIAL workflow is required: without it, the framework would
+        // infer PARALLEL from the context dependencies and skip ordering validation.
         var secondTask = Task.builder()
                 .description("Second task")
                 .expectedOutput("Output")
@@ -122,10 +130,11 @@ class EnsembleValidationTest {
                 .context(List.of(firstTask))
                 .build();
 
-        // Adding secondTask BEFORE firstTask in the list violates ordering
+        // Adding secondTask BEFORE firstTask in the list violates SEQUENTIAL ordering
         var ensemble = Ensemble.builder()
                 .task(secondTask) // second task first -- violation
                 .task(firstTask)
+                .workflow(Workflow.SEQUENTIAL)
                 .build();
 
         assertThatThrownBy(ensemble::run)
