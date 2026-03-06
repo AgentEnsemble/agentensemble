@@ -14,6 +14,8 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.trace.CaptureMode;
@@ -72,6 +74,8 @@ public final class ExecutionContext {
     private final CostConfiguration costConfiguration;
     private final CaptureMode captureMode;
     private final MemoryStore memoryStore;
+    private final ReviewHandler reviewHandler;
+    private final ReviewPolicy reviewPolicy;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -81,7 +85,9 @@ public final class ExecutionContext {
             ToolMetrics toolMetrics,
             CostConfiguration costConfiguration,
             CaptureMode captureMode,
-            MemoryStore memoryStore) {
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -90,6 +96,8 @@ public final class ExecutionContext {
         this.costConfiguration = costConfiguration;
         this.captureMode = captureMode != null ? captureMode : CaptureMode.OFF;
         this.memoryStore = memoryStore;
+        this.reviewHandler = reviewHandler;
+        this.reviewPolicy = reviewPolicy != null ? reviewPolicy : ReviewPolicy.NEVER;
     }
 
     // ========================
@@ -120,6 +128,48 @@ public final class ExecutionContext {
             CostConfiguration costConfiguration,
             CaptureMode captureMode,
             MemoryStore memoryStore) {
+        return of(
+                memoryContext,
+                verbose,
+                listeners,
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                null,
+                null);
+    }
+
+    /**
+     * Create an ExecutionContext with all fields including review handler and policy.
+     *
+     * <p>This is the primary factory used by {@code Ensemble} when a review handler is
+     * configured.
+     *
+     * @param memoryContext     runtime memory state for this run; must not be null
+     * @param verbose           when true, elevates execution logging to INFO level
+     * @param listeners         event listeners to notify; must not be null
+     * @param toolExecutor      executor for parallel tool calls; must not be null
+     * @param toolMetrics       metrics backend for tool execution; must not be null
+     * @param costConfiguration optional per-token cost rates; may be {@code null}
+     * @param captureMode       depth of data collection; defaults to {@link CaptureMode#OFF}
+     * @param memoryStore       optional scoped memory store; may be {@code null}
+     * @param reviewHandler     optional review handler for human-in-the-loop gates; may be {@code null}
+     * @param reviewPolicy      ensemble-level review policy; defaults to {@link ReviewPolicy#NEVER}
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy) {
         if (memoryContext == null) {
             throw new IllegalArgumentException("memoryContext must not be null");
         }
@@ -140,7 +190,9 @@ public final class ExecutionContext {
                 toolMetrics,
                 costConfiguration,
                 captureMode,
-                memoryStore);
+                memoryStore,
+                reviewHandler,
+                reviewPolicy);
     }
 
     /**
@@ -248,6 +300,8 @@ public final class ExecutionContext {
                 NoOpToolMetrics.INSTANCE,
                 null,
                 CaptureMode.OFF,
+                null,
+                null,
                 null);
     }
 
@@ -332,6 +386,28 @@ public final class ExecutionContext {
      */
     public MemoryStore memoryStore() {
         return memoryStore;
+    }
+
+    /**
+     * The optional review handler for human-in-the-loop gates.
+     *
+     * <p>When non-null, the workflow executor fires review gates at the configured
+     * timing points (before execution, after execution) and the {@code HumanInputTool}
+     * can pause the ReAct loop to collect human input.
+     *
+     * @return the review handler, or {@code null} when review gates are not configured
+     */
+    public ReviewHandler reviewHandler() {
+        return reviewHandler;
+    }
+
+    /**
+     * The ensemble-level review policy controlling when after-execution review gates fire.
+     *
+     * @return the review policy; never null, defaults to {@link ReviewPolicy#NEVER}
+     */
+    public ReviewPolicy reviewPolicy() {
+        return reviewPolicy;
     }
 
     // ========================

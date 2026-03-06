@@ -35,6 +35,8 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
 import net.agentensemble.synthesis.SynthesisContext;
 import net.agentensemble.tool.NoOpToolMetrics;
@@ -272,6 +274,28 @@ public class Ensemble {
     @Builder.Default
     private final CaptureMode captureMode = CaptureMode.OFF;
 
+    /**
+     * Optional review handler for human-in-the-loop review gates.
+     *
+     * <p>When set, the workflow executor fires review gates at configured timing points
+     * (before execution, after execution). The {@code HumanInputTool} also uses this
+     * handler to pause the ReAct loop during execution.
+     *
+     * <p>Default: null (no review gates fire).
+     */
+    private final ReviewHandler reviewHandler;
+
+    /**
+     * Ensemble-level policy that controls when after-execution review gates fire.
+     *
+     * <p>Task-level {@link net.agentensemble.review.Review#required()} overrides this to
+     * always fire. Task-level {@link net.agentensemble.review.Review#skip()} overrides to
+     * never fire.
+     *
+     * <p>Default: null (treated as {@code ReviewPolicy.NEVER} by the execution engine).
+     */
+    private final ReviewPolicy reviewPolicy;
+
     // ========================
     // Static zero-ceremony factory
     // ========================
@@ -411,7 +435,13 @@ public class Ensemble {
                     toolMetrics,
                     costConfiguration,
                     effectiveCaptureMode,
-                    memoryStore);
+                    memoryStore,
+                    reviewHandler,
+                    reviewPolicy);
+
+            if (reviewHandler != null) {
+                log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
+            }
 
             // Step 7: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor(derivedAgents);
@@ -435,7 +465,7 @@ public class Ensemble {
                     effectiveCaptureMode,
                     derivedAgents);
 
-            // Step 9: Attach trace to EnsembleOutput
+            // Step 9: Attach trace to EnsembleOutput, preserving exitReason from workflow
             EnsembleOutput outputWithTrace = EnsembleOutput.builder()
                     .raw(output.getRaw())
                     .taskOutputs(output.getTaskOutputs())
@@ -443,6 +473,7 @@ public class Ensemble {
                     .totalToolCalls(output.getTotalToolCalls())
                     .metrics(output.getMetrics())
                     .trace(trace)
+                    .exitReason(output.getExitReason())
                     .build();
 
             // Step 10: Export trace
