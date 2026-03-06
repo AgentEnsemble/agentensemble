@@ -1,5 +1,67 @@
 # Changelog
 
+## [Unreleased] - Issue #130: agentensemble-web module -- WebSocket server + protocol (v2.1.0) -- 2026-03-05
+
+### Added (Issue #130 -- agentensemble-web Live Execution Dashboard)
+
+**New Gradle module `agentensemble-web`:**
+- `WebDashboard` -- builder + `onPort(port)` zero-config factory; `start()`/`stop()` lifecycle; `streamingListener()` + `reviewHandler()` accessors; `getPort()`, `getHost()`, `getReviewTimeout()`, `getOnTimeout()`, `isRunning()` read accessors
+- `WebSocketStreamingListener` -- `EnsembleListener` implementation broadcasting all 7 event types (task start/complete/fail, tool calls, delegation started/completed/failed) as JSON over WebSocket
+- `WebReviewHandler` -- `ReviewHandler` implementation replacing the stub in `agentensemble-review`; per-reviewId `CompletableFuture`-based blocking gates; `CONTINUE`/`EXIT_EARLY`/`FAIL` timeout action support; interrupt-safe via virtual threads; broadcasts `review_requested` and `review_timed_out` messages
+- `ConnectionManager` -- thread-safe `ConcurrentHashMap`-backed session registry; broadcast to all, targeted send, pending-review tracking, `onDisconnect` cleanup of pending futures
+- `WsSession` -- package-private interface (`id()`, `isOpen()`, `send()`) abstracting Javalin `WsContext`
+- `WebSocketServer` -- package-private embedded Javalin 6.3.0 server; WS at `/ws`; HTTP GET `/api/status`; origin validation (CSRF protection for localhost-bound server); 15s heartbeat via injected `ScheduledExecutorService`; `setClientMessageHandler()` for review decision routing; `start(port, host)` / `stop()` lifecycle
+- `EnsembleDashboard` -- new public interface in `agentensemble-core` (`net.agentensemble.dashboard`); `streamingListener()` + `reviewHandler()` + `start()` + `stop()` + `isRunning()`
+- `Ensemble.builder().webDashboard(EnsembleDashboard)` -- convenience wiring method that registers both streaming listener and review handler
+- `settings.gradle.kts` -- `include("agentensemble-web")`
+- `gradle/libs.versions.toml` -- `javalin = "6.3.0"` version entry
+
+**Wire Protocol (15+ message types):**
+- `ServerMessage` sealed hierarchy (Jackson `@JsonTypeInfo` + `@JsonSubTypes`, `type` discriminator, `@JsonInclude(NON_NULL)`): `HelloMessage`, `HeartbeatMessage`, `EnsembleStartedMessage`, `EnsembleCompletedMessage`, `TaskStartedMessage`, `TaskCompletedMessage`, `TaskFailedMessage`, `ToolCalledMessage`, `DelegationStartedMessage`, `DelegationCompletedMessage`, `DelegationFailedMessage`, `ReviewRequestedMessage`, `ReviewTimedOutMessage`, `PongMessage`
+- `ClientMessage` sealed hierarchy: `PingMessage`, `ReviewDecisionMessage` (reviewId, decision, revisedOutput)
+- `MessageSerializer` -- thread-safe `ObjectMapper` with `JavaTimeModule`, `WRITE_DATES_AS_TIMESTAMPS=false`, `FAIL_ON_UNKNOWN_PROPERTIES=false`; `toJson(Object)` throws `IllegalStateException`; `fromJson(String, Class)` throws `IllegalArgumentException`
+
+**Security:**
+- Origin validation in `WebSocketServer.isOriginAllowed(origin, host)`: static method, fully unit-tested
+- Localhost binding (`localhost`/`127.0.0.1`): only origins containing `localhost`, `127.0.0.1`, or `[::1]` accepted; null/empty/"null" rejected
+- Non-local binding (`0.0.0.0` etc.): any origin accepted (warning logged at startup)
+
+**Dependencies:**
+- `javalin = "6.3.0"` added to `gradle/libs.versions.toml`
+- `jackson-databind`, `jackson-datatype-jsr310` already in version catalog; reused
+- `compileOnly(project(":agentensemble-review"))` -- optional; only `WebReviewHandler` needs review types
+- `testImplementation(project(":agentensemble-review"))` for `WebReviewHandlerTest`
+
+### Tests Added (Issue #130)
+
+- `ConnectionManagerTest` (16 tests): `onConnect` sends hello, hello includes snapshot, broadcast to all/skip closed/send targeted/nonexistent, disconnect removes, sessionCount, no-op edge cases, pending review lifecycle, disconnect resolves pending with empty string, send to closed session drops message
+- `WebDashboardTest` (26 tests): port validation (-1, 65536, boundaries 0/1/65535), host null/blank, reviewTimeout null/negative, onPort factory, defaultHost/defaultReviewTimeout/defaultOnTimeout, startAndStop, stop when not started, double start idempotent, streamingListener non-null/same instance, reviewHandler non-null/same instance, builderConfiguresAllFields
+- `WebReviewHandlerTest` (22 tests): decision mapping (approve/APPROVE/continue/CONTINUE/edit/Edit/exit_early/EXIT_EARLY/unknown -> all ReviewDecision variants), edit with null -> Edit(""), empty string resolution with CONTINUE/EXIT_EARLY/FAIL on-timeout, real timeout with CONTINUE/EXIT_EARLY/FAIL on-timeout, long description truncation in FAIL exception message, InterruptedException restores thread interrupt flag, ExecutionException with CONTINUE/EXIT_EARLY, broadcast verification (review_requested, review_timed_out)
+- `WebSocketStreamingListenerTest` (14 tests): onTaskStart, onTaskComplete with null output/real trace/null trace/null interactions/null toolCalls on one/null interaction in list, onTaskFailed with message/null message/null cause, onToolCall, onDelegationStarted/Completed/Failed, serializer-throws resilience
+- `WebSocketServerTest` (28 tests): serverStartsAndIsRunning, serverStopsCleanly, serverCanRestartAfterStop, stopOnNonRunningServerIsNoOp, heartbeatIsScheduledEvery15Seconds, heartbeatTaskBroadcastsHeartbeatMessage (captured Runnable), localhostOriginAllowed/crossOriginRejected/nullOriginRejected/anyOriginAllowedNonLocalhost, heartbeatMessageSerializesCorrectly, taskStartedMessageSerializesCorrectly, reviewRequestedMessageSerializesCorrectly, connect_acceptsConnectionOnNonLocalBinding, connect_withoutOriginOnLocalhostBinding_isRejected, message_ping_serverRespondsPong, message_reviewDecision_forwardedToRegisteredHandler, message_reviewDecision_withNoHandler_serverRemainsRunning, message_clientHandlerThrows_serverRemainsRunning, message_malformedJson_serverRemainsRunning, disconnect_removesSessionFromConnectionManager, broadcast_deliveredToConnectedSession, statusEndpoint_returnsRunningStatus
+- `ProtocolSerializationTest` (26 tests): round-trip for all 15+ message types, helloMessageWithSnapshot, nullFieldsOmittedInHelloMessage, fromJson_malformedJson_throwsIllegalArgumentException, fromJson_unknownTypeDiscriminator_throwsIllegalArgumentException
+- JaCoCo: LINE >= 90%, BRANCH >= 75% -- both pass
+
+### Documentation Added/Updated (Issue #130)
+
+- `docs/guides/live-dashboard.md` -- NEW: complete guide covering WebDashboard API, builder options, wiring with Ensemble, review flow (full, request-only, ephemeral port), protocol (message types table, lifecycle), origin validation, heartbeat, lifecycle methods, `EnsembleDashboard` interface
+- `docs/examples/live-dashboard.md` -- NEW: runnable examples with basic streaming, review gates, parallel workflow, ephemeral port, reusing dashboard across runs, Gradle tasks
+- `docs/getting-started/installation.md` -- `agentensemble-web:2.1.0` added to Gradle snippet and Available Modules table
+- `docs/guides/review.md` -- "Browser-Based Review with WebDashboard" section added after `ReviewHandler.web(URI)` stub section
+- `docs/examples/human-in-the-loop.md` -- "Browser-Based Approval (Coming in v2.1.0)" section replaced with real working API examples
+- `mkdocs.yml` -- `Live Dashboard: guides/live-dashboard.md` added after Review in Guides nav; `Live Dashboard: examples/live-dashboard.md` added after Human-in-the-Loop in Examples nav
+- `README.md` -- `agentensemble-web:2.1.0` optional dependency comment, "## Live Execution Dashboard" section with code example, v2.1.0 roadmap marked done, design docs 15 and 16 added
+
+### Design Decisions (Issue #130)
+
+- `WebReviewHandler` resolves `CompletableFuture<String>` with decision string from the browser (not a `ReviewDecision` object) -- string parsing done in `WebReviewHandler.review()` to keep `ConnectionManager` decoupled from review types
+- Origin validation returns `true` for non-local bindings (security delegated to network layer); this is intentional and documented
+- `compileOnly` for `agentensemble-review` in `agentensemble-web` -- users who only want streaming (no review gates) do not pull review transitively; they must add review explicitly
+- Integration tests use `0.0.0.0` host binding (bypasses origin check) so Java's built-in `java.net.http.WebSocket` client (which does not set an `Origin` header by default) can connect; the rejection path tested with `localhost` binding + no origin header
+- `JavalinWsSession.send()` has an `isOpen()` guard + exception swallow to tolerate sessions that close between the `connectionManager.broadcast()` call and the actual write
+
+---
+
 ## [Planned] - v2.1.0 Live Execution Dashboard -- 2026-03-05
 
 ### Design Decisions

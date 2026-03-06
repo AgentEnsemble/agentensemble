@@ -2,11 +2,45 @@
 
 ## Current Work Focus
 
-Issue #113 (v2.0.0 MapReduce task-first refactor) is complete on branch
-`feat/113-mapreduce-task-first`. Implementation covers all acceptance criteria from the
-issue.
+Issue #130 (v2.1.0 agentensemble-web module -- WebSocket server + protocol) is complete
+on branch `feat/130-agentensemble-web`. PR #138 is open against main.
 
 ## Recent Changes
+
+### Issue #130: agentensemble-web module -- Live Execution Dashboard
+
+**New Gradle module `agentensemble-web`:**
+- `WebDashboard` -- builder + `onPort()` factory, start/stop lifecycle, `streamingListener()`, `reviewHandler()`, and all accessor methods (`getPort()`, `getHost()`, `getReviewTimeout()`, `getOnTimeout()`, `isRunning()`)
+- `WebSocketStreamingListener` -- `EnsembleListener` implementation that serializes all 7 lifecycle event types (task start/complete/fail, tool calls, delegation started/completed/failed) to JSON and broadcasts over WebSocket
+- `WebReviewHandler` -- `ReviewHandler` implementation with per-reviewId `CompletableFuture`-based blocking gates; timeout handling for `CONTINUE`, `EXIT_EARLY`, and `FAIL`; interrupt support via virtual threads; broadcasts `review_requested` and `review_timed_out` messages
+- `ConnectionManager` -- thread-safe `ConcurrentHashMap`-based session registry with broadcast, targeted send, pending-review tracking (`registerPendingReview`/`resolveReview`), and `onDisconnect` cleanup of pending reviews
+- `WsSession` -- package-private interface abstracting a WebSocket connection (`id()`, `isOpen()`, `send()`)
+- `WebSocketServer` -- embedded Javalin 6.3.0 server with WebSocket at `/ws`, HTTP at `/api/status`, origin validation (CSRF protection for localhost binding), 15-second heartbeat, `setClientMessageHandler()` for review decision routing
+- `EnsembleDashboard` -- new interface in `agentensemble-core` (`net.agentensemble.dashboard`) for optional wiring
+- `Ensemble.builder().webDashboard(EnsembleDashboard)` -- convenience wiring method
+
+**Wire Protocol (15+ message types):**
+- `ServerMessage` hierarchy (Jackson `@JsonSubTypes`): `HelloMessage`, `HeartbeatMessage`, `EnsembleStartedMessage`, `EnsembleCompletedMessage`, `TaskStartedMessage`, `TaskCompletedMessage`, `TaskFailedMessage`, `ToolCalledMessage`, `DelegationStartedMessage`, `DelegationCompletedMessage`, `DelegationFailedMessage`, `ReviewRequestedMessage`, `ReviewTimedOutMessage`, `PongMessage`
+- `ClientMessage` hierarchy: `PingMessage`, `ReviewDecisionMessage` (reviewId, decision, revisedOutput)
+- `MessageSerializer` -- thread-safe Jackson `ObjectMapper` with `JavaTimeModule`, `FAIL_ON_UNKNOWN_PROPERTIES=false`
+
+**Tests (119 total, all passing):**
+- `ConnectionManagerTest` (16 tests): session lifecycle, broadcast, targeted send, pending review, disconnect cleanup, send to closed session
+- `WebDashboardTest` (26 tests): builder validation, lifecycle, component accessors, custom builder fields
+- `WebReviewHandlerTest` (22 tests): all `ReviewDecision` mapping branches (approve/continue/edit/exit_early/unknown), case-insensitive, edit with null, empty-string disconnect, real timeout with all 3 `OnTimeoutAction` values, long description truncation, `InterruptedException`, `ExecutionException`, broadcast verification
+- `WebSocketStreamingListenerTest` (14 tests): all `EnsembleListener` methods, `extractToolCallCount` branches (null output/trace/interactions/toolCalls, null interaction in list, serializer throws)
+- `WebSocketServerTest` (28 tests): lifecycle, heartbeat scheduling (mock + captured Runnable), origin validation (static), protocol serialization smoke tests, real WebSocket integration tests (connect, reject, ping-pong, review with/without handler, handler-throws, malformed JSON, disconnect, broadcast, `/api/status`)
+- `ProtocolSerializationTest` (26 tests): round-trip for all 15+ message types, null fields, fromJson error paths
+- JaCoCo: LINE >= 90%, BRANCH >= 75% -- both thresholds pass
+
+**Documentation added:**
+- `docs/guides/live-dashboard.md` -- new complete guide (WebDashboard API, builder options, review flow, protocol, origin validation, heartbeat, lifecycle, ephemeral ports)
+- `docs/examples/live-dashboard.md` -- runnable examples with basic streaming, review gates, parallel workflow, ephemeral port, reusing dashboard across runs, Gradle tasks
+- `docs/getting-started/installation.md` -- `agentensemble-web:2.1.0` added to Gradle snippet and Available Modules table
+- `docs/guides/review.md` -- "Browser-Based Review with WebDashboard" section added
+- `docs/examples/human-in-the-loop.md` -- replaced stub with real working API
+- `mkdocs.yml` -- Live Dashboard added to Guides and Examples nav
+- `README.md` -- "Live Execution Dashboard" section, `agentensemble-web:2.1.0` optional dependency, v2.1.0 roadmap entry marked done
 
 ### Issue #113: MapReduceEnsemble task-first refactor
 
@@ -109,9 +143,9 @@ issue.
 
 ## Next Steps
 
-- Open PR for feat/111-112-partial-results-workflow-inference -> main
-- Continue with remaining v2.0.0 issues in epic #103
-- v2.1.0 Live Execution Dashboard: design complete (docs/design/16-live-dashboard.md), GitHub issues to be created
+- Merge PR #138 (`feat/130-agentensemble-web` -> main) after review
+- Continue with v2.1.0 viz live mode (Issue #131 and #132: agentensemble-viz WebSocket client, live `/live` route, review approval UI)
+- Group F (v2.0.0 finalization): `agentensemble-bom`, `docs/migration/v1-to-v2.md` updates, examples polish
 
 ## Important Patterns and Preferences
 
