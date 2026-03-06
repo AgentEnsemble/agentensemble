@@ -2,7 +2,27 @@
 
 ## Current Focus
 
-Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
+Branch `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
+
+The Homebrew-installed `agentensemble-viz` binary showed "Not Found" on every request.
+Root cause: Bun's `--compile` bundler does not recursively embed entire directories
+referenced via `new URL('./dist/', import.meta.url)`. All `readFileSync` calls using
+dynamically-joined paths from `distDir` hit an absent filesystem in the compiled binary.
+
+Fix implemented:
+- `scripts/embed-dist.mjs`: build-time script that reads all non-source-map files from
+  `dist/` and generates `dist-assets.js` with each file's content as a base64 string
+  inside a JavaScript Map
+- `dist-assets.js`: committed as an empty placeholder (empty Map); populated by
+  `npm run embed` before binary compilation
+- `cli.js`: statically imports `dist-assets.js`; decodes base64 into Buffers at startup;
+  `useEmbedded=true` when map is populated (binary mode) -- serves from memory; `false`
+  when placeholder (dev mode) -- falls back to filesystem
+- `NO_OPEN=1` env var added to suppress browser opening in tests/CI
+- Compile scripts updated: `build -> embed -> bun build --compile`
+- `prepublishOnly` also runs embed for npm distribution
+
+Previous focus: Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
 Issue #132 (WebReviewHandler real implementation) is complete on `main`.
 
 - **#132** (WebReviewHandler -- real implementation replacing stub, v2.1.0): Done (merged to main)

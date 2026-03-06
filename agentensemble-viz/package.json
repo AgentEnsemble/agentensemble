@@ -10,20 +10,24 @@
   "files": [
     "dist",
     "cli.js",
+    "dist-assets.js",
+    "scripts",
     "README.md"
   ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "embed": "node scripts/embed-dist.mjs",
+    "check:assets": "node scripts/check-assets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
-    "compile:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 cli.js --outfile agentensemble-viz",
-    "compile:darwin-x64": "bun build --compile --target=bun-darwin-x64 cli.js --outfile agentensemble-viz",
-    "compile:linux-x64": "bun build --compile --target=bun-linux-x64 cli.js --outfile agentensemble-viz"
+    "prepublishOnly": "npm run build && npm run embed",
+    "compile:darwin-arm64": "npm run build && npm run embed && bun build --compile --target=bun-darwin-arm64 cli.js --outfile agentensemble-viz",
+    "compile:darwin-x64": "npm run build && npm run embed && bun build --compile --target=bun-darwin-x64 cli.js --outfile agentensemble-viz",
+    "compile:linux-x64": "npm run build && npm run embed && bun build --compile --target=bun-linux-x64 cli.js --outfile agentensemble-viz"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.0.4",
