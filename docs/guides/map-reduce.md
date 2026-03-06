@@ -12,6 +12,92 @@ strategies:
 
 ---
 
+## Task-first API (v2.0.0)
+
+In the v2.0.0 task-first paradigm, agents are optional. You declare what work needs to be
+done, and the framework synthesises agents automatically from each task description using
+the configured `AgentSynthesizer` (default: template-based derivation, no extra LLM call).
+
+### Zero-ceremony factory
+
+For the simplest cases, `MapReduceEnsemble.of()` builds and runs a map-reduce in a single
+call:
+
+```java
+EnsembleOutput output = MapReduceEnsemble.of(
+    model,
+    List.of("Risotto", "Duck Breast", "Salmon"),
+    "Prepare a detailed recipe for",
+    "Combine these individual recipes into a cohesive dinner menu");
+```
+
+Each map task gets a description of `mapDescription + ": " + item.toString()`. The reduce
+task uses `reduceDescription` and receives all map outputs as context. Static mode with
+`chunkSize=5` is used. The model is used to synthesise all agents automatically.
+
+### Task-first builder
+
+For more control over task configuration without declaring agents:
+
+```java
+EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
+    .chatLanguageModel(model)               // LLM for all synthesised agents
+    .items(order.getItems())
+
+    // Map phase: one task per item -- agent synthesised from description
+    .mapTask(item -> Task.builder()
+        .description("Prepare a detailed recipe for: " + item.getDish()
+            + ". Dietary requirements: " + item.getDietaryNotes())
+        .expectedOutput("Recipe with ingredients, preparation steps, and timing")
+        .outputType(DishResult.class)       // structured output supported
+        .build())
+
+    // Reduce phase: one task per chunk -- agent synthesised from description
+    .reduceTask(chunkTasks -> Task.builder()
+        .description("Consolidate these dish preparations into a coordinated sub-plan. "
+            + "Note timing dependencies and shared mise en place.")
+        .expectedOutput("A coordinated sub-plan")
+        .context(chunkTasks)               // wire context explicitly
+        .build())
+
+    .chunkSize(3)
+    .build()
+    .run();
+```
+
+Agents are synthesised at `run()` time from each task's description. The synthesised agent
+inherits any tools, `chatLanguageModel`, and `maxIterations` declared on the task.
+
+### Task-first with tools on the task
+
+Tools can be declared directly on tasks without defining an agent:
+
+```java
+.mapTask(item -> Task.builder()
+    .description("Research and summarise: " + item.getTopic())
+    .expectedOutput("A research summary with key findings")
+    .tools(List.of(webSearchTool, calculatorTool))     // tools on the task
+    .chatLanguageModel(researchModel)                   // per-task LLM override
+    .build())
+```
+
+The framework applies the task-level tools and LLM to the synthesised agent before
+execution.
+
+### Choosing task-first vs agent-first
+
+| | Task-first (v2.0.0) | Agent-first (power-user) |
+|---|---|---|
+| Agent declaration | None required | Explicit per item / per group |
+| Agent persona control | Via description | Full control (role, goal, background) |
+| Required fields | `items`, `mapTask(Function)`, `reduceTask(Function)`, `chatLanguageModel` | `items`, `mapAgent`, `mapTask(BiFunction)`, `reduceAgent`, `reduceTask(BiFunction)` |
+| When to use | Most use cases | When precise persona matters |
+
+The two styles are mutually exclusive per phase. You cannot combine `mapTask(Function)` with
+`mapAgent` in the same builder.
+
+---
+
 ## Problem: context window limits at scale
 
 With a standard parallel workflow, the aggregation task receives all N outputs as context:
@@ -87,15 +173,24 @@ EnsembleOutput output = MapReduceEnsemble.<OrderItem>builder()
 
 ## Builder reference
 
-### Required fields
+### Task-first fields (v2.0.0)
 
 | Field | Type | Description |
 |---|---|---|
 | `items` | `List<T>` | Input items. Must not be null or empty. |
-| `mapAgent` | `Function<T, Agent>` | Factory called once per item to create the map-phase agent. |
-| `mapTask` | `BiFunction<T, Agent, Task>` | Factory called once per item to create the map-phase task. Receives the item and the agent produced by `mapAgent`. |
-| `reduceAgent` | `Supplier<Agent>` | Factory called once per reduce group (at every level) to create the reduce agent. |
-| `reduceTask` | `BiFunction<Agent, List<Task>, Task>` | Factory called once per reduce group. Receives the agent and the upstream tasks for that group. **Must call `.context(chunkTasks)` on the returned task.** |
+| `mapTask(Function<T, Task>)` | `Function<T, Task>` | **Task-first:** factory called once per item. Agent is synthesised automatically. Mutually exclusive with `mapAgent` + `mapTask(BiFunction)`. |
+| `reduceTask(Function<List<Task>, Task>)` | `Function<List<Task>, Task>` | **Task-first:** factory called once per reduce group. Must wire `.context(chunkTasks)`. Mutually exclusive with `reduceAgent` + `reduceTask(BiFunction)`. |
+| `chatLanguageModel` | `ChatModel` | LLM for synthesised agents. Required when using task-first factories unless each task carries its own `chatLanguageModel`. |
+
+### Agent-first fields (power-user)
+
+| Field | Type | Description |
+|---|---|---|
+| `items` | `List<T>` | Input items. Must not be null or empty. |
+| `mapAgent` | `Function<T, Agent>` | Factory called once per item to create the map-phase agent. Must be paired with `mapTask(BiFunction)`. |
+| `mapTask(BiFunction<T, Agent, Task>)` | `BiFunction<T, Agent, Task>` | Factory called once per item. Receives the item and agent from `mapAgent`. Must be paired with `mapAgent`. |
+| `reduceAgent` | `Supplier<Agent>` | Factory called once per reduce group. Must be paired with `reduceTask(BiFunction)`. |
+| `reduceTask(BiFunction<Agent, List<Task>, Task>)` | `BiFunction<Agent, List<Task>, Task>` | Factory called once per group. Receives the agent and upstream tasks. **Must call `.context(chunkTasks)`.** Must be paired with `reduceAgent`. |
 
 ### Optional fields
 

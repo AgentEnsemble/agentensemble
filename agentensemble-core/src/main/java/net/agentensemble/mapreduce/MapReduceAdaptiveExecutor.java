@@ -1,5 +1,6 @@
 package net.agentensemble.mapreduce;
 
+import dev.langchain4j.model.chat.ChatModel;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,6 +40,9 @@ import org.slf4j.LoggerFactory;
  * Adaptive map-reduce executor that drives tree reduction based on actual output
  * token counts rather than a fixed chunk size.
  *
+ * <p>Supports both the agent-first API (explicit agent factories) and the task-first API
+ * (v2.0.0, agents synthesised automatically by the inner {@link Ensemble}).
+ *
  * <p>Implements the adaptive execution algorithm from the design doc (section 7):
  * <ol>
  *   <li>Map phase: run N independent map tasks in parallel.</li>
@@ -68,14 +72,24 @@ final class MapReduceAdaptiveExecutor<T> {
     // ========================
 
     private final List<T> items;
+
+    // Default LLM for agent synthesis (task-first API)
+    private final ChatModel chatLanguageModel;
+
+    // Agent-first factories (null when using task-first API)
     private final Function<T, Agent> mapAgentFactory;
     private final BiFunction<T, Agent, Task> mapTaskFactory;
     private final Supplier<Agent> reduceAgentFactory;
     private final BiFunction<Agent, List<Task>, Task> reduceTaskFactory;
 
+    // Task-first factories (null when using agent-first API)
+    private final Function<T, Task> mapTaskOnlyFactory;
+    private final Function<List<Task>, Task> reduceTaskOnlyFactory;
+
     // Short-circuit fields (null when not configured)
     private final Supplier<Agent> directAgentFactory;
     private final BiFunction<Agent, List<T>, Task> directTaskFactory;
+    private final Function<List<T>, Task> directTaskOnlyFactory;
     private final Function<T, String> inputEstimatorFn;
 
     private final int targetTokenBudget;
@@ -94,12 +108,16 @@ final class MapReduceAdaptiveExecutor<T> {
 
     MapReduceAdaptiveExecutor(
             List<T> items,
+            ChatModel chatLanguageModel,
             Function<T, Agent> mapAgentFactory,
             BiFunction<T, Agent, Task> mapTaskFactory,
+            Function<T, Task> mapTaskOnlyFactory,
             Supplier<Agent> reduceAgentFactory,
             BiFunction<Agent, List<Task>, Task> reduceTaskFactory,
+            Function<List<Task>, Task> reduceTaskOnlyFactory,
             Supplier<Agent> directAgentFactory,
             BiFunction<Agent, List<T>, Task> directTaskFactory,
+            Function<List<T>, Task> directTaskOnlyFactory,
             Function<T, String> inputEstimatorFn,
             int targetTokenBudget,
             int maxReduceLevels,
@@ -113,12 +131,16 @@ final class MapReduceAdaptiveExecutor<T> {
             Executor toolExecutor,
             ToolMetrics toolMetrics) {
         this.items = items;
+        this.chatLanguageModel = chatLanguageModel;
         this.mapAgentFactory = mapAgentFactory;
         this.mapTaskFactory = mapTaskFactory;
+        this.mapTaskOnlyFactory = mapTaskOnlyFactory;
         this.reduceAgentFactory = reduceAgentFactory;
         this.reduceTaskFactory = reduceTaskFactory;
+        this.reduceTaskOnlyFactory = reduceTaskOnlyFactory;
         this.directAgentFactory = directAgentFactory;
         this.directTaskFactory = directTaskFactory;
+        this.directTaskOnlyFactory = directTaskOnlyFactory;
         this.inputEstimatorFn = inputEstimatorFn;
         this.targetTokenBudget = targetTokenBudget;
         this.maxReduceLevels = maxReduceLevels;
@@ -139,9 +161,9 @@ final class MapReduceAdaptiveExecutor<T> {
      * Execute the adaptive map-reduce run.
      *
      * <p>Before the map phase, checks whether the total estimated input size fits within
-     * {@code targetTokenBudget}. If both {@code directAgent} and {@code directTask} are
-     * configured and the estimate is within budget, a single direct task is executed
-     * instead of the full map-reduce pipeline (short-circuit optimization).
+     * {@code targetTokenBudget}. If a direct task factory is configured and the estimate
+     * is within budget, a single direct task is executed instead of the full map-reduce
+     * pipeline (short-circuit optimization).
      *
      * @param inputs template variable inputs
      * @return aggregated {@link EnsembleOutput} covering all levels
@@ -151,7 +173,9 @@ final class MapReduceAdaptiveExecutor<T> {
 
         // SHORT-CIRCUIT: if direct factories are configured and total input fits in budget,
         // bypass the entire map-reduce pipeline and run a single direct task.
-        if (directAgentFactory != null && directTaskFactory != null) {
+        boolean hasDirectAgentFirst = directAgentFactory != null && directTaskFactory != null;
+        boolean hasDirectTaskFirst = directTaskOnlyFactory != null;
+        if (hasDirectAgentFirst || hasDirectTaskFirst) {
             long estimatedInputTokens = estimateInputTokens();
             log.debug(
                     "Adaptive MapReduce: estimated input tokens = {} (budget = {})",
@@ -231,20 +255,14 @@ final class MapReduceAdaptiveExecutor<T> {
     // ========================
 
     /**
-     * Run the direct (short-circuit) phase.
-     *
-     * <p>Creates a single agent via {@code directAgentFactory}, builds a task via
-     * {@code directTaskFactory} with the complete item list, and runs it as a single-task
-     * ensemble. The resulting {@link EnsembleOutput} has exactly one {@link TaskOutput} and
-     * a trace with {@code nodeType = "direct"} and {@code mapReduceLevel = 0}.
+     * Run the direct (short-circuit) phase using whichever direct factory style is configured.
      *
      * @param ensembleId the ensemble ID for trace correlation
      * @param inputs     template variable inputs
      * @return the {@link EnsembleOutput} from the direct task
      */
     private EnsembleOutput runDirectPhase(String ensembleId, Map<String, String> inputs) {
-        Agent directAgent = directAgentFactory.get();
-        Task directTask = directTaskFactory.apply(directAgent, Collections.unmodifiableList(items));
+        Task directTask = createDirectTask();
 
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
         builder.task(directTask);
@@ -348,9 +366,7 @@ final class MapReduceAdaptiveExecutor<T> {
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
 
         for (T item : items) {
-            Agent agent = mapAgentFactory.apply(item);
-            Task task = mapTaskFactory.apply(item, agent);
-            builder.task(task);
+            builder.task(createMapTask(item));
         }
 
         try {
@@ -440,9 +456,8 @@ final class MapReduceAdaptiveExecutor<T> {
                 chunkTasks.add(carrierTask);
             }
 
-            // Create the reduce agent and task (depends on all carriers in this bin)
-            Agent reduceAgent = reduceAgentFactory.get();
-            Task reduceTask = reduceTaskFactory.apply(reduceAgent, Collections.unmodifiableList(chunkTasks));
+            // Create the reduce task (task-first or agent-first)
+            Task reduceTask = createReduceTask(Collections.unmodifiableList(chunkTasks));
             builder.task(reduceTask);
         }
 
@@ -489,8 +504,7 @@ final class MapReduceAdaptiveExecutor<T> {
             chunkTasks.add(carrierTask);
         }
 
-        Agent finalAgent = reduceAgentFactory.get();
-        Task finalTask = reduceTaskFactory.apply(finalAgent, Collections.unmodifiableList(chunkTasks));
+        Task finalTask = createReduceTask(Collections.unmodifiableList(chunkTasks));
         builder.task(finalTask);
 
         EnsembleOutput raw = build(builder).run(inputs);
@@ -498,6 +512,45 @@ final class MapReduceAdaptiveExecutor<T> {
         // Filter out carrier task outputs
         List<TaskOutput> finalOnlyOutputs = filterCarrierOutputs(raw.getTaskOutputs(), carrierTasks);
         return rebuildOutput(raw, finalOnlyOutputs);
+    }
+
+    // ========================
+    // Factory helpers
+    // ========================
+
+    /**
+     * Create a map task for one item, using whichever factory style is configured.
+     */
+    private Task createMapTask(T item) {
+        if (mapTaskOnlyFactory != null) {
+            return mapTaskOnlyFactory.apply(item);
+        }
+        Agent agent = mapAgentFactory.apply(item);
+        return mapTaskFactory.apply(item, agent);
+    }
+
+    /**
+     * Create a reduce task for a chunk of upstream tasks, using whichever factory style
+     * is configured.
+     */
+    private Task createReduceTask(List<Task> chunkTasks) {
+        if (reduceTaskOnlyFactory != null) {
+            return reduceTaskOnlyFactory.apply(chunkTasks);
+        }
+        Agent agent = reduceAgentFactory.get();
+        return reduceTaskFactory.apply(agent, chunkTasks);
+    }
+
+    /**
+     * Create the direct (short-circuit) task for all items, using whichever factory style
+     * is configured.
+     */
+    private Task createDirectTask() {
+        if (directTaskOnlyFactory != null) {
+            return directTaskOnlyFactory.apply(Collections.unmodifiableList(items));
+        }
+        Agent agent = directAgentFactory.get();
+        return directTaskFactory.apply(agent, Collections.unmodifiableList(items));
     }
 
     // ========================
@@ -570,6 +623,9 @@ final class MapReduceAdaptiveExecutor<T> {
                 .parallelErrorStrategy(parallelErrorStrategy)
                 .captureMode(captureMode);
 
+        if (chatLanguageModel != null) {
+            builder.chatLanguageModel(chatLanguageModel);
+        }
         for (EnsembleListener listener : listeners) {
             builder.listener(listener);
         }
