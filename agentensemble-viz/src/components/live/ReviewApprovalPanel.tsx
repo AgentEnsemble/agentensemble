@@ -342,6 +342,7 @@ export default function ReviewApprovalPanel({
             <div className="flex gap-2">
               <button
                 type="button"
+                data-testid="approve-button"
                 onClick={handleApprove}
                 className="flex-1 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
               >
@@ -349,6 +350,7 @@ export default function ReviewApprovalPanel({
               </button>
               <button
                 type="button"
+                data-testid="edit-button"
                 onClick={() => {
                   setEditText(review.taskOutput);
                   setMode('edit');
@@ -359,6 +361,7 @@ export default function ReviewApprovalPanel({
               </button>
               <button
                 type="button"
+                data-testid="exit-early-button"
                 onClick={() => setMode('exit-confirm')}
                 className="flex-1 rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
               >

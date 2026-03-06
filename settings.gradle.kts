@@ -44,6 +44,9 @@ include("agentensemble-devtools")
 // Examples
 include("agentensemble-examples")
 
+// End-to-end tests (Playwright + Java E2E test server -- not published)
+include("agentensemble-e2e")
+
 // Maven artifact coordinates (groupId:artifactId:version) are configured via
 // mavenPublishing in each module's build.gradle.kts or the convention plugin.
 // This gives published artifacts the full name e.g. agentensemble-tools-calculator
