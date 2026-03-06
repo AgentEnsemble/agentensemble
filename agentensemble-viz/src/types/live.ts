@@ -354,4 +354,10 @@ export type LiveAction =
   | { type: 'DISCONNECTED' }
   | { type: 'ERROR'; error: string }
   | { type: 'RESET' }
-  | { type: 'MESSAGE'; message: ServerMessage };
+  | { type: 'MESSAGE'; message: ServerMessage }
+  /**
+   * Optimistically removes a review from pendingReviews after the user submits a
+   * decision. Dispatched by LiveServerContext.sendDecision() immediately after
+   * sending the review_decision wire message.
+   */
+  | { type: 'RESOLVE_REVIEW'; reviewId: string };

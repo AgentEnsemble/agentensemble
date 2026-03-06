@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { LiveServerProvider, useLiveServer } from '../contexts/LiveServerContext.js';
 import LiveHeader, { type LiveView } from '../components/live/LiveHeader.js';
+import ReviewApprovalPanel from '../components/live/ReviewApprovalPanel.js';
 import ConnectionStatusBar from '../components/shared/ConnectionStatusBar.js';
 import TimelineView from './TimelineView.js';
 import FlowView from './FlowView.js';
@@ -56,7 +57,7 @@ function LivePageInner({
   darkMode: boolean;
   onToggleDarkMode: () => void;
 }) {
-  const { liveState, connect } = useLiveServer();
+  const { liveState, connect, sendDecision } = useLiveServer();
   const [activeView, setActiveView] = useState<LiveView>('timeline');
 
   // Auto-connect to the server URL supplied via the ?server query param
@@ -68,6 +69,11 @@ function LivePageInner({
     // connect is stable (wrapped in useCallback), but we only want to run this once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The oldest pending review is shown first (FIFO). key={reviewId} ensures a fresh
+  // component instance (and countdown reset) each time a new review becomes current.
+  const pendingReviews = liveState.pendingReviews;
+  const currentReview = pendingReviews.length > 0 ? pendingReviews[0] : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -86,6 +92,16 @@ function LivePageInner({
         {activeView === 'timeline' && <TimelineView trace={null} isLive />}
         {activeView === 'flow' && <FlowView dag={null} trace={null} isLive />}
       </main>
+
+      {/* Review approval panel -- rendered as a fixed overlay above all other content. */}
+      {currentReview !== null && (
+        <ReviewApprovalPanel
+          key={currentReview.reviewId}
+          review={currentReview}
+          additionalPendingCount={pendingReviews.length - 1}
+          sendDecision={sendDecision}
+        />
+      )}
     </div>
   );
 }

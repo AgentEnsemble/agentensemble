@@ -53,6 +53,22 @@
   }
 }
 
+/* Review approval panel countdown bar -- shrinks from 100% to 0% over the timeout duration. */
+/* animation-duration is set inline from the timeoutMs prop. */
+/* animation-delay is set inline (negative) to account for time already elapsed. */
+@keyframes ae-countdown-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+@layer utilities {
+  .ae-countdown-bar {
+    animation-name: ae-countdown-shrink;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+}
+
 /* Live mode animations */
 @keyframes ae-pulse {
   0%, 100% { opacity: 1; }

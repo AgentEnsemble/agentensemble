@@ -379,6 +379,13 @@ export function liveActionReducer(state: LiveState, action: LiveAction): LiveSta
       return { ...initialLiveState, serverUrl: state.serverUrl };
     case 'MESSAGE':
       return liveReducer(state, action.message);
+    case 'RESOLVE_REVIEW':
+      // Optimistic removal: the user has submitted a decision and the review is no longer
+      // pending. The server will also send review_timed_out or simply stop tracking it.
+      return {
+        ...state,
+        pendingReviews: state.pendingReviews.filter((r) => r.reviewId !== action.reviewId),
+      };
     default:
       return state;
   }

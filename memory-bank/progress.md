@@ -303,8 +303,8 @@ Design document: `docs/design/16-live-dashboard.md`
 - Group I1: agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine; 163 tests pass
 - Group I2: Live timeline/flow updates -- TimelineView isLive + FlowView isLive + TaskNode live status; 163 tests pass
 
-**Remaining:**
-- Group H2: Viz review approval UI (modal with Approve/Edit/Exit Early + countdown timer)
+**Complete (feat/135-viz-review-approval-ui -- Issue #135):**
+- Group H2: Viz review approval UI -- `ReviewApprovalPanel` component with Approve/Edit/Exit Early actions, CSS-animated countdown bar, review queue badge, timed-out message; `RESOLVE_REVIEW` action for optimistic state removal; `sendDecision` convenience method in `LiveServerContext`; 237 tests pass
 
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)

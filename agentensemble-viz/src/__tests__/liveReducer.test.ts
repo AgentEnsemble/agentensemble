@@ -840,6 +840,90 @@ describe('liveActionReducer', () => {
     expect(next.workflow).toBe('PARALLEL');
     expect(next.totalTasks).toBe(4);
   });
+
+  describe('RESOLVE_REVIEW', () => {
+    const stateWithReviews: LiveState = {
+      ...BASE_STATE,
+      pendingReviews: [
+        {
+          reviewId: 'review-1',
+          taskDescription: 'Task A',
+          taskOutput: 'Output A',
+          timing: 'AFTER_EXECUTION',
+          prompt: null,
+          timeoutMs: 300000,
+          onTimeout: 'CONTINUE',
+          receivedAt: Date.now(),
+        },
+        {
+          reviewId: 'review-2',
+          taskDescription: 'Task B',
+          taskOutput: 'Output B',
+          timing: 'AFTER_EXECUTION',
+          prompt: null,
+          timeoutMs: 300000,
+          onTimeout: 'CONTINUE',
+          receivedAt: Date.now(),
+        },
+        {
+          reviewId: 'review-3',
+          taskDescription: 'Task C',
+          taskOutput: 'Output C',
+          timing: 'AFTER_EXECUTION',
+          prompt: null,
+          timeoutMs: 300000,
+          onTimeout: 'EXIT_EARLY',
+          receivedAt: Date.now(),
+        },
+      ],
+    };
+
+    it('removes the resolved review from pendingReviews', () => {
+      const action: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-1' };
+      const next = liveActionReducer(stateWithReviews, action);
+      expect(next.pendingReviews).toHaveLength(2);
+      expect(next.pendingReviews.find((r) => r.reviewId === 'review-1')).toBeUndefined();
+    });
+
+    it('leaves other reviews intact when one is resolved', () => {
+      const action: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-2' };
+      const next = liveActionReducer(stateWithReviews, action);
+      expect(next.pendingReviews).toHaveLength(2);
+      expect(next.pendingReviews[0].reviewId).toBe('review-1');
+      expect(next.pendingReviews[1].reviewId).toBe('review-3');
+    });
+
+    it('resolving all reviews one by one empties the queue (FIFO order)', () => {
+      const a1: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-1' };
+      const a2: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-2' };
+      const a3: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-3' };
+
+      const s1 = liveActionReducer(stateWithReviews, a1);
+      expect(s1.pendingReviews).toHaveLength(2);
+      expect(s1.pendingReviews[0].reviewId).toBe('review-2');
+
+      const s2 = liveActionReducer(s1, a2);
+      expect(s2.pendingReviews).toHaveLength(1);
+      expect(s2.pendingReviews[0].reviewId).toBe('review-3');
+
+      const s3 = liveActionReducer(s2, a3);
+      expect(s3.pendingReviews).toHaveLength(0);
+    });
+
+    it('is a no-op when the reviewId is not found', () => {
+      const action: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-unknown' };
+      const next = liveActionReducer(stateWithReviews, action);
+      expect(next.pendingReviews).toHaveLength(3);
+    });
+
+    it('does not mutate the input state', () => {
+      const original = [...stateWithReviews.pendingReviews];
+      const action: LiveAction = { type: 'RESOLVE_REVIEW', reviewId: 'review-1' };
+      liveActionReducer(stateWithReviews, action);
+      expect(stateWithReviews.pendingReviews).toHaveLength(3);
+      expect(stateWithReviews.pendingReviews).toEqual(original);
+    });
+  });
 });
 
 // Restore fake timers after each test
