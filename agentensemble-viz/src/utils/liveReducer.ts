@@ -19,6 +19,7 @@ import type {
   TaskCompletedMessage,
   TaskFailedMessage,
   ToolCalledMessage,
+  TokenMessage,
   ReviewRequestedMessage,
   ReviewTimedOutMessage,
   EnsembleCompletedMessage,
@@ -149,8 +150,47 @@ function applyTaskCompleted(state: LiveState, msg: TaskCompletedMessage): LiveSt
     durationMs: msg.durationMs,
     tokenCount: msg.tokenCount,
     toolCallCount: msg.toolCallCount,
+    // Clear streaming output: task_completed carries the authoritative final output.
+    // The streaming buffer is no longer needed once the task finishes.
+    streamingOutput: undefined,
   };
 
+  const tasks = [...state.tasks];
+  tasks[idx] = updated;
+  return { ...state, tasks };
+}
+
+/**
+ * Append a streaming token to the most recent running task for the given agentRole.
+ *
+ * Falls back to the most recent running task (regardless of role) when no exact match
+ * exists, so parallel-workflow scenarios with reassigned roles still receive tokens.
+ */
+function applyToken(state: LiveState, msg: TokenMessage): LiveState {
+  // Find the most recent running task for this agentRole
+  let idx = -1;
+  for (let i = state.tasks.length - 1; i >= 0; i--) {
+    if (state.tasks[i].status === 'running' && state.tasks[i].agentRole === msg.agentRole) {
+      idx = i;
+      break;
+    }
+  }
+  // Fallback: most recent running task regardless of role
+  if (idx === -1) {
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running') {
+        idx = i;
+        break;
+      }
+    }
+  }
+  if (idx === -1) return state;
+
+  const existing = state.tasks[idx].streamingOutput ?? '';
+  const updated: LiveTask = {
+    ...state.tasks[idx],
+    streamingOutput: existing + msg.token,
+  };
   const tasks = [...state.tasks];
   tasks[idx] = updated;
   return { ...state, tasks };
@@ -286,6 +326,8 @@ export function liveReducer(state: LiveState, message: ServerMessage): LiveState
       return applyReviewTimedOut(state, message);
     case 'ensemble_completed':
       return applyEnsembleCompleted(state, message);
+    case 'token':
+      return applyToken(state, message);
     // delegation_started, delegation_completed, delegation_failed, heartbeat, pong:
     // No state change needed for core live rendering.
     default:

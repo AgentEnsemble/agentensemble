@@ -8,8 +8,10 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -21,6 +23,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
 import net.agentensemble.delegation.DelegationContext;
@@ -208,6 +211,9 @@ public class AgentExecutor {
             String finalResponse;
 
             try {
+                // Resolve the streaming model for this agent: agent-level > task-level > ensemble-level
+                StreamingChatModel streamingModel = resolveStreamingModel(agent, task, executionContext);
+
                 if (resolvedTools.hasTools()) {
                     finalResponse = executeWithTools(
                             agent,
@@ -220,7 +226,14 @@ public class AgentExecutor {
                             accumulator,
                             captureMode);
                 } else {
-                    finalResponse = executeWithoutTools(agent, systemPrompt, userPrompt, accumulator, captureMode);
+                    finalResponse = executeWithoutTools(
+                            agent,
+                            systemPrompt,
+                            userPrompt,
+                            accumulator,
+                            captureMode,
+                            streamingModel,
+                            executionContext);
                     log.debug("Agent '{}' completed (no tools)", agent.getRole());
                 }
             } catch (AgentExecutionException | MaxIterationsExceededException | ExitEarlyException e) {
@@ -364,17 +377,96 @@ public class AgentExecutor {
     // Execution paths
     // ========================
 
+    /**
+     * Resolve the effective streaming model for this agent.
+     *
+     * <p>Resolution order (first non-null wins):
+     * {@code agent.streamingLlm} &gt; {@code task.streamingChatLanguageModel} &gt;
+     * {@code executionContext.streamingChatModel()}.
+     *
+     * @return the resolved streaming model, or {@code null} when streaming is not configured
+     */
+    private static StreamingChatModel resolveStreamingModel(Agent agent, Task task, ExecutionContext ctx) {
+        if (agent.getStreamingLlm() != null) {
+            return agent.getStreamingLlm();
+        }
+        if (task.getStreamingChatLanguageModel() != null) {
+            return task.getStreamingChatLanguageModel();
+        }
+        return ctx.streamingChatModel();
+    }
+
+    /**
+     * Execute the final LLM call using a {@link StreamingChatModel}, firing a
+     * {@link TokenEvent} to all registered listeners for each token received.
+     *
+     * <p>Blocks the calling thread until the streaming response completes.
+     *
+     * @param streamingModel the streaming model to use
+     * @param request        the chat request
+     * @param ctx            execution context (used to fire token events)
+     * @param agentRole      the role of the agent (included in each token event)
+     * @return the completed {@link ChatResponse}
+     * @throws AgentExecutionException if the streaming future is interrupted or fails
+     */
+    private static ChatResponse executeStreaming(
+            StreamingChatModel streamingModel, ChatRequest request, ExecutionContext ctx, String agentRole) {
+        CompletableFuture<ChatResponse> future = new CompletableFuture<>();
+        streamingModel.chat(request, new StreamingChatResponseHandler() {
+            @Override
+            public void onPartialResponse(String partialResponse) {
+                ctx.fireToken(new TokenEvent(partialResponse, agentRole));
+            }
+
+            @Override
+            public void onCompleteResponse(ChatResponse completeResponse) {
+                future.complete(completeResponse);
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                future.completeExceptionally(error);
+            }
+        });
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AgentExecutionException(
+                    "Streaming interrupted for agent '" + agentRole + "'", agentRole, null, e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new AgentExecutionException(
+                    "Streaming failed for agent '" + agentRole + "': " + cause.getMessage(), agentRole, null, cause);
+        }
+    }
+
+    /**
+     * Execute the direct LLM-to-answer path (no tools).
+     *
+     * <p>When {@code streamingModel} is non-null, uses streaming and fires
+     * {@link TokenEvent}s for each received token. Otherwise falls back to the
+     * synchronous {@code ChatModel.chat()} call on the agent's configured LLM.
+     */
     private String executeWithoutTools(
             Agent agent,
             String systemPrompt,
             String userPrompt,
             TaskTraceAccumulator accumulator,
-            CaptureMode captureMode) {
+            CaptureMode captureMode,
+            StreamingChatModel streamingModel,
+            ExecutionContext executionContext) {
         List<ChatMessage> messages = List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt));
         ChatRequest request = ChatRequest.builder().messages(messages).build();
         Instant llmStart = Instant.now();
         accumulator.beginLlmCall(llmStart);
-        ChatResponse response = agent.getLlm().chat(request);
+        ChatResponse response;
+        if (streamingModel != null) {
+            log.debug("Agent '{}' using streaming model for final response", agent.getRole());
+            response = executeStreaming(streamingModel, request, executionContext, agent.getRole());
+        } else {
+            response = agent.getLlm().chat(request);
+        }
         accumulator.endLlmCall(Instant.now(), response.tokenUsage());
         String text = response.aiMessage().text();
         // Snapshot messages at STANDARD+ -- includes system + user (+ assistant final answer)

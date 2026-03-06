@@ -314,6 +314,33 @@ class ProtocolSerializationTest {
         assertThat(deserialized).isInstanceOf(PongMessage.class);
     }
 
+    @Test
+    void tokenMessageRoundTrip() throws Exception {
+        TokenMessage msg = new TokenMessage("Hello ", "Senior Research Analyst", Instant.parse("2026-03-05T14:01:00Z"));
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("token");
+        assertThat(json).contains("\"token\":\"Hello \"");
+        assertThat(json).contains("Senior Research Analyst");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(TokenMessage.class);
+        TokenMessage rt = (TokenMessage) deserialized;
+        assertThat(rt.token()).isEqualTo("Hello ");
+        assertThat(rt.agentRole()).isEqualTo("Senior Research Analyst");
+        assertThat(rt.sentAt()).isEqualTo(Instant.parse("2026-03-05T14:01:00Z"));
+    }
+
+    @Test
+    void tokenMessage_emptyToken_roundTrip() throws Exception {
+        TokenMessage msg = new TokenMessage("", "Writer", Instant.now());
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("token");
+        TokenMessage rt = (TokenMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.token()).isEqualTo("");
+    }
+
     // ========================
     // Client -> Server messages
     // ========================

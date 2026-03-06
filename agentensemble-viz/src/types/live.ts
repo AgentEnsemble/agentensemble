@@ -34,7 +34,7 @@ export interface LiveToolCall {
 
 /**
  * Incremental state of a single task, built from task_started / task_completed /
- * task_failed / tool_called messages.
+ * task_failed / tool_called / token messages.
  */
 export interface LiveTask {
   /** 1-based task index as sent by the server (matches Java TaskStartedMessage.taskIndex). */
@@ -55,6 +55,12 @@ export interface LiveTask {
   toolCalls: LiveToolCall[];
   /** Failure reason from task_failed message. Null unless task failed. */
   reason: string | null;
+  /**
+   * Accumulated streaming output from token messages.
+   * Present while the task is running and a StreamingChatModel is configured.
+   * Cleared to undefined when task_completed arrives (the final output is authoritative).
+   */
+  streamingOutput?: string;
 }
 
 // ========================
@@ -268,6 +274,24 @@ export interface PongMessage {
   type: 'pong';
 }
 
+/**
+ * Sent for each token emitted by a StreamingChatModel during the final agent response.
+ *
+ * Token messages are ephemeral -- they are NOT added to the late-join snapshot.
+ * The authoritative final output is delivered in task_completed.
+ *
+ * Mirrors the Java {@code TokenMessage} record in net.agentensemble.web.protocol.
+ */
+export interface TokenMessage {
+  type: 'token';
+  /** The text fragment emitted by the streaming model. */
+  token: string;
+  /** The role of the agent that produced this token. */
+  agentRole: string;
+  /** ISO-8601 server-side timestamp when this message was sent. */
+  sentAt: string;
+}
+
 /** All messages the server can send to the client. */
 export type ServerMessage =
   | HelloMessage
@@ -283,7 +307,8 @@ export type ServerMessage =
   | ReviewTimedOutMessage
   | EnsembleCompletedMessage
   | HeartbeatMessage
-  | PongMessage;
+  | PongMessage
+  | TokenMessage;
 
 // ========================
 // Client -> Server wire messages

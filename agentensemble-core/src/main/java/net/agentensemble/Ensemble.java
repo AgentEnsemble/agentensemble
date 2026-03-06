@@ -1,6 +1,7 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,6 +26,7 @@ import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
+import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.dashboard.EnsembleDashboard;
@@ -323,6 +325,20 @@ public class Ensemble {
      */
     private final EnsembleDashboard dashboard;
 
+    /**
+     * Optional ensemble-level streaming model for token-by-token generation of final responses.
+     *
+     * <p>When set, agents that produce a direct LLM answer (no tool loop) stream each token
+     * through {@link net.agentensemble.callback.EnsembleListener#onToken(TokenEvent)} and,
+     * when using {@link #webDashboard(EnsembleDashboard)}, over the WebSocket wire protocol.
+     *
+     * <p>Resolution order (first non-null wins):
+     * {@code Agent.streamingLlm} &gt; {@code Task.streamingChatLanguageModel} &gt; this value.
+     *
+     * <p>Default: null (non-streaming).
+     */
+    private final StreamingChatModel streamingChatLanguageModel;
+
     // ========================
     // Static zero-ceremony factory
     // ========================
@@ -471,7 +487,8 @@ public class Ensemble {
                     effectiveCaptureMode,
                     memoryStore,
                     reviewHandler,
-                    reviewPolicy);
+                    reviewPolicy,
+                    streamingChatLanguageModel);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
@@ -941,6 +958,23 @@ public class Ensemble {
          * @return this builder
          * @throws IllegalArgumentException when {@code dashboard} is null
          */
+        /**
+         * Register a lambda that is called for each token emitted during streaming
+         * generation of the final agent response.
+         *
+         * <p>Only invoked when a {@code StreamingChatModel} is resolved for the agent
+         * (see {@link Ensemble#streamingChatLanguageModel}).
+         */
+        public EnsembleBuilder onToken(Consumer<TokenEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onToken(TokenEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
         public EnsembleBuilder webDashboard(EnsembleDashboard dashboard) {
             Objects.requireNonNull(dashboard, "dashboard must not be null");
             if (!dashboard.isRunning()) {

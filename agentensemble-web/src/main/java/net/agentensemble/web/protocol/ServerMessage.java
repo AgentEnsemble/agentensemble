@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *   <li>{@link EnsembleCompletedMessage} -- sent when ensemble execution ends</li>
  *   <li>{@link HeartbeatMessage} -- sent every 15 seconds to keep connections alive</li>
  *   <li>{@link PongMessage} -- sent in response to a client {@link PingMessage}</li>
+ *   <li>{@link TokenMessage} -- sent for each token during streaming final response generation</li>
  * </ul>
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.PROPERTY)
@@ -44,6 +45,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = EnsembleCompletedMessage.class, name = "ensemble_completed"),
     @JsonSubTypes.Type(value = HeartbeatMessage.class, name = "heartbeat"),
     @JsonSubTypes.Type(value = PongMessage.class, name = "pong"),
+    @JsonSubTypes.Type(value = TokenMessage.class, name = "token"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -59,4 +61,5 @@ public sealed interface ServerMessage
                 ReviewTimedOutMessage,
                 EnsembleCompletedMessage,
                 HeartbeatMessage,
-                PongMessage {}
+                PongMessage,
+                TokenMessage {}
