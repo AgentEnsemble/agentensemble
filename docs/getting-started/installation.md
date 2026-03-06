@@ -10,7 +10,13 @@
 
 ## Add the Dependency
 
-### Gradle (Kotlin DSL)
+### Recommended: Use the agentensemble-bom
+
+`agentensemble-bom` is a Bill of Materials that aligns every AgentEnsemble module to the
+same version. Import it once and add only the modules you need -- no individual version
+numbers required.
+
+**Gradle (Kotlin DSL):**
 
 ```kotlin
 repositories {
@@ -18,27 +24,25 @@ repositories {
 }
 
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:1.0.0")
+    // Import the BOM -- aligns all AgentEnsemble module versions
+    implementation(platform("net.agentensemble:agentensemble-bom:2.0.0"))
 
-    // Optional: add individual tools -- only include what you need.
-    // Use the BOM (see below) to align all tool versions automatically.
-    implementation("net.agentensemble:agentensemble-tools-calculator:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-datetime:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-web-search:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-web-scraper:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-json-parser:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-file-read:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-file-write:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-process:1.0.0")
-    implementation("net.agentensemble:agentensemble-tools-http:1.0.0")
+    // Core framework -- always required
+    implementation("net.agentensemble:agentensemble-core")
 
-    // Optional: memory subsystem (MemoryStore SPI for task-scoped cross-execution memory;
-    // also includes legacy short-term, long-term, and entity memory)
-    implementation("net.agentensemble:agentensemble-memory:2.0.0")
+    // Optional: task-scoped cross-execution memory (MemoryStore SPI)
+    implementation("net.agentensemble:agentensemble-memory")
 
-    // Optional: human-in-the-loop review gates (ReviewHandler SPI, ConsoleReviewHandler,
-    // and HumanInputTool integration)
-    implementation("net.agentensemble:agentensemble-review:2.0.0")
+    // Optional: human-in-the-loop review gates (ReviewHandler SPI, ConsoleReviewHandler)
+    implementation("net.agentensemble:agentensemble-review")
+
+    // Optional: built-in tools -- add only the ones you need
+    implementation("net.agentensemble:agentensemble-tools-web-search")
+    implementation("net.agentensemble:agentensemble-tools-web-scraper")
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-datetime")
+    // Other tools: agentensemble-tools-json-parser, agentensemble-tools-file-read,
+    // agentensemble-tools-file-write, agentensemble-tools-process, agentensemble-tools-http
 
     // Optional: live execution dashboard -- embedded WebSocket server that streams
     // real-time task/tool events to a browser and supports browser-based review gates.
@@ -47,29 +51,14 @@ dependencies {
     implementation("net.agentensemble:agentensemble-web:2.1.0")
 
     // Optional: Micrometer metrics integration
-    implementation("net.agentensemble:agentensemble-metrics-micrometer:1.0.0")
+    implementation("net.agentensemble:agentensemble-metrics-micrometer")
 
     // Add the LangChain4j integration for your LLM provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
 }
 ```
 
-### Using the BOM
-
-The BOM (Bill of Materials) aligns all tool versions automatically:
-
-```kotlin
-dependencies {
-    implementation(platform("net.agentensemble:agentensemble-tools-bom:1.0.0"))
-    implementation("net.agentensemble:agentensemble-core:1.0.0")
-
-    // No version needed for tools -- resolved from BOM
-    implementation("net.agentensemble:agentensemble-tools-calculator")
-    implementation("net.agentensemble:agentensemble-tools-web-search")
-}
-```
-
-### Gradle (Groovy DSL)
+**Gradle (Groovy DSL):**
 
 ```groovy
 repositories {
@@ -77,51 +66,23 @@ repositories {
 }
 
 dependencies {
-    implementation 'net.agentensemble:agentensemble-core:1.0.0'
-    implementation 'net.agentensemble:agentensemble-tools-calculator:1.0.0'
+    implementation platform('net.agentensemble:agentensemble-bom:2.0.0')
+    implementation 'net.agentensemble:agentensemble-core'
+    implementation 'net.agentensemble:agentensemble-memory'
+    implementation 'net.agentensemble:agentensemble-review'
     implementation 'dev.langchain4j:langchain4j-open-ai:1.11.0'
 }
 ```
 
-### Maven
-
-```xml
-<dependencies>
-    <dependency>
-        <groupId>net.agentensemble</groupId>
-        <artifactId>agentensemble-core</artifactId>
-        <version>1.0.0</version>
-    </dependency>
-
-    <!-- Individual tool modules -->
-    <dependency>
-        <groupId>net.agentensemble</groupId>
-        <artifactId>agentensemble-tools-calculator</artifactId>
-        <version>1.0.0</version>
-    </dependency>
-    <dependency>
-        <groupId>net.agentensemble</groupId>
-        <artifactId>agentensemble-tools-web-search</artifactId>
-        <version>1.0.0</version>
-    </dependency>
-
-    <dependency>
-        <groupId>dev.langchain4j</groupId>
-        <artifactId>langchain4j-open-ai</artifactId>
-        <version>1.11.0</version>
-    </dependency>
-</dependencies>
-```
-
-**With BOM (Maven):**
+**Maven:**
 
 ```xml
 <dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>net.agentensemble</groupId>
-            <artifactId>agentensemble-tools-bom</artifactId>
-            <version>1.0.0</version>
+            <artifactId>agentensemble-bom</artifactId>
+            <version>2.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -130,10 +91,51 @@ dependencies {
 <dependencies>
     <dependency>
         <groupId>net.agentensemble</groupId>
-        <artifactId>agentensemble-tools-calculator</artifactId>
+        <artifactId>agentensemble-core</artifactId>
         <!-- version from BOM -->
     </dependency>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-memory</artifactId>
+        <!-- version from BOM -->
+    </dependency>
+    <dependency>
+        <groupId>net.agentensemble</groupId>
+        <artifactId>agentensemble-review</artifactId>
+        <!-- version from BOM -->
+    </dependency>
+    <dependency>
+        <groupId>dev.langchain4j</groupId>
+        <artifactId>langchain4j-open-ai</artifactId>
+        <version>1.11.0</version>
+    </dependency>
 </dependencies>
+```
+
+### Minimal: Core Only
+
+If you need only the framework core (no memory, no review, no built-in tools):
+
+```kotlin
+dependencies {
+    implementation("net.agentensemble:agentensemble-core:2.0.0")
+    implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
+}
+```
+
+### Tools-Only BOM
+
+If you want to align just the built-in tool versions without importing the full BOM:
+
+```kotlin
+dependencies {
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:2.0.0"))
+    implementation("net.agentensemble:agentensemble-core:2.0.0")
+
+    // No version needed for tools -- resolved from tools BOM
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-web-search")
+}
 ```
 
 ---
@@ -157,6 +159,7 @@ dependencies {
 | `agentensemble-review` | Human-in-the-loop review gates: ReviewHandler SPI, ConsoleReviewHandler, and HumanInputTool |
 | `agentensemble-web` | Live execution dashboard: embedded WebSocket server that streams real-time task/tool/delegation events to a browser and supports browser-based review gates |
 | `agentensemble-metrics-micrometer` | Micrometer metrics integration |
+| `agentensemble-bom` | Top-level BOM -- aligns all module versions in one import |
 
 ---
 

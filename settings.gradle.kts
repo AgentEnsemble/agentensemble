@@ -15,6 +15,7 @@ pluginManagement {
 
 rootProject.name = "agentensemble"
 
+include("agentensemble-bom")
 include("agentensemble-core")
 include("agentensemble-memory")
 include("agentensemble-review")

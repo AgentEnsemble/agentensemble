@@ -2,17 +2,15 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.List;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.task.TaskOutput;
-import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Demonstrates a parallel workflow for competitive intelligence analysis.
+ * Demonstrates a parallel workflow for competitive intelligence analysis using the v2 task-first API.
  *
  * Four tasks with dependency-driven scheduling:
  *   1. Market Research    -- gathers competitor landscape data (no dependencies)
@@ -22,6 +20,9 @@ import org.slf4j.LoggerFactory;
  *
  * Tasks 1 and 2 run concurrently. Task 3 waits for both. Task 4 waits for 3.
  * Parallelism is derived automatically from context declarations -- no extra annotations needed.
+ *
+ * No explicit Agent declarations are needed. Agents are synthesized from task descriptions.
+ * The LLM is declared once at the ensemble level.
  *
  * Usage:
  *   Set OPENAI_API_KEY environment variable, then run:
@@ -52,47 +53,16 @@ public class ParallelCompetitiveIntelligenceExample {
                 .build();
 
         // ========================
-        // Define agents
-        // ========================
-
-        var marketResearcher = Agent.builder()
-                .role("Market Research Analyst")
-                .goal("Gather comprehensive data on the competitive landscape")
-                .background("You specialize in identifying market trends and competitor positioning.")
-                .llm(model)
-                .build();
-
-        var financialAnalyst = Agent.builder()
-                .role("Financial Analyst")
-                .goal("Analyse financial metrics and performance indicators for competitors")
-                .background("You specialize in financial statement analysis and KPI benchmarking.")
-                .llm(model)
-                .build();
-
-        var strategist = Agent.builder()
-                .role("Strategy Consultant")
-                .goal("Synthesize market and financial findings into strategic insights")
-                .background("You produce SWOT analyses and strategic recommendations.")
-                .llm(model)
-                .build();
-
-        var writer = Agent.builder()
-                .role("Executive Writer")
-                .goal("Write concise, clear executive summaries for senior leadership")
-                .llm(model)
-                .build();
-
-        // ========================
         // Define tasks
+        // No Agent declarations needed -- agents are synthesized from task descriptions.
+        // Tasks 1 and 2 have no context dependencies so they run in PARALLEL.
         // ========================
-        // Tasks 1 and 2 have no context dependencies -- they run in PARALLEL.
 
         var marketTask = Task.builder()
                 .description("Research the competitive landscape for {company} in the {industry} industry. "
                         + "Identify the top 5 competitors, their market positioning, and key differentiators.")
                 .expectedOutput("A structured competitor analysis covering market share, positioning, "
                         + "strengths, and recent strategic moves for each competitor.")
-                .agent(marketResearcher)
                 .build();
 
         var financialTask = Task.builder()
@@ -100,7 +70,6 @@ public class ParallelCompetitiveIntelligenceExample {
                         + "{industry} industry. Focus on revenue growth, margins, and R&D spend.")
                 .expectedOutput("A financial comparison table and narrative highlighting which "
                         + "competitors are gaining or losing financial ground.")
-                .agent(financialAnalyst)
                 .build();
 
         // Task 3 depends on BOTH market and financial tasks
@@ -109,7 +78,6 @@ public class ParallelCompetitiveIntelligenceExample {
                         + "produce a SWOT analysis for {company} relative to its key competitors.")
                 .expectedOutput("A complete SWOT analysis (Strengths, Weaknesses, Opportunities, "
                         + "Threats) with supporting evidence from the market and financial data.")
-                .agent(strategist)
                 .context(List.of(marketTask, financialTask))
                 .build();
 
@@ -119,20 +87,22 @@ public class ParallelCompetitiveIntelligenceExample {
                         + "{company} based on the SWOT analysis provided in context.")
                 .expectedOutput("A concise, well-structured executive summary suitable for "
                         + "presentation to the board of directors.")
-                .agent(writer)
                 .context(List.of(swotTask))
                 .build();
 
         // ========================
         // Build and run the ensemble
+        //
+        // chatLanguageModel() sets the default LLM for all synthesized agents.
+        // workflow() is not declared -- PARALLEL is inferred from context declarations.
         // ========================
 
         EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
                 .task(marketTask)
                 .task(financialTask)
                 .task(swotTask)
                 .task(summaryTask)
-                .workflow(Workflow.PARALLEL)
                 .input("company", company)
                 .input("industry", industry)
                 .build()

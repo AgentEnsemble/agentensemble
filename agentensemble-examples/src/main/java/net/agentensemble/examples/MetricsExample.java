@@ -6,7 +6,6 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -21,6 +20,9 @@ import net.agentensemble.tools.datetime.DateTimeTool;
  * - Configures a SimpleMeterRegistry for in-process metric collection
  * - Runs an ensemble with calculator and datetime tools instrumented with metrics
  * - Prints the recorded metrics (execution counts and timing) after the run
+ *
+ * Tools and maxIterations are configured directly on the task.
+ * The agent is auto-synthesised from the task description.
  *
  * In production, replace SimpleMeterRegistry with your preferred Micrometer
  * registry implementation (Prometheus, Datadog, InfluxDB, etc.).
@@ -48,14 +50,6 @@ public class MetricsExample {
                 .modelName("gpt-4o-mini")
                 .build();
 
-        var analyst = Agent.builder()
-                .role("Data Analyst")
-                .goal("Answer quantitative questions using calculation and date tools")
-                .tools(List.of(new CalculatorTool(), new DateTimeTool()))
-                .llm(chatModel)
-                .maxIterations(10)
-                .build();
-
         var task = Task.builder()
                 .description("A project started on 2024-01-15. Calculate:\n"
                         + "1. What is today's date?\n"
@@ -65,14 +59,19 @@ public class MetricsExample {
                         + "what percentage complete is it? (use the calculator)")
                 .expectedOutput("Current date, number of days the project has been running, "
                         + "and the percentage complete as a decimal to 2 places.")
-                .agent(analyst)
+                .tools(List.of(new CalculatorTool(), new DateTimeTool()))
+                .maxIterations(10)
                 .build();
 
         // ========================
         // Run with metrics configured
         // ========================
-        EnsembleOutput output =
-                Ensemble.builder().task(task).toolMetrics(toolMetrics).build().run();
+        EnsembleOutput output = Ensemble.builder()
+                .task(task)
+                .chatLanguageModel(chatModel)
+                .toolMetrics(toolMetrics)
+                .build()
+                .run();
 
         System.out.println("=== Agent Output ===");
         System.out.println(output.getRaw());

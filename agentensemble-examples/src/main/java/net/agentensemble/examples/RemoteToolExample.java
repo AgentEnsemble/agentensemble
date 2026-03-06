@@ -3,7 +3,6 @@ package net.agentensemble.examples;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.time.Duration;
 import java.util.List;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -12,6 +11,9 @@ import net.agentensemble.tools.process.ProcessAgentTool;
 
 /**
  * Demonstrates cross-language tool execution using ProcessAgentTool and HttpAgentTool.
+ *
+ * Tools are configured directly on the task. The agent is auto-synthesised
+ * from the task description.
  *
  * Prerequisites:
  *
@@ -38,8 +40,7 @@ import net.agentensemble.tools.process.ProcessAgentTool;
  *    to point to a real service.
  *
  * Run with:
- *   ./gradlew :agentensemble-examples:run \
- *     -PmainClass=net.agentensemble.examples.RemoteToolExample
+ *   ./gradlew :agentensemble-examples:runRemoteTool
  */
 public class RemoteToolExample {
 
@@ -77,24 +78,21 @@ public class RemoteToolExample {
                         + "Input: the text to count. Returns the word count as a number.",
                 "http://localhost:8080/");
 
-        var agent = Agent.builder()
-                .role("Text Analyst")
-                .goal("Analyze text using available tools")
-                .tools(List.of(sentiment, wordCount))
-                .llm(chatModel)
-                .maxIterations(5)
-                .build();
-
         var reviewTask = Task.builder()
                 .description("Analyze the following product review:\n\n"
                         + "\"The battery life on this laptop is amazing and the screen is excellent. "
                         + "However, the keyboard feels cheap and the trackpad is terrible.\"\n\n"
                         + "Determine the overall sentiment and count the number of words.")
                 .expectedOutput("The sentiment (positive/negative/neutral) and word count of the review")
-                .agent(agent)
+                .tools(List.of(sentiment, wordCount))
+                .maxIterations(5)
                 .build();
 
-        EnsembleOutput output = Ensemble.builder().task(reviewTask).build().run();
+        EnsembleOutput output = Ensemble.builder()
+                .task(reviewTask)
+                .chatLanguageModel(chatModel)
+                .build()
+                .run();
 
         System.out.println("=== Remote Tool Example Output ===");
         System.out.println(output.getRaw());

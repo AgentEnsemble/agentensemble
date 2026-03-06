@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.callback.EnsembleListener;
@@ -14,7 +13,6 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.ensemble.EnsembleOutput;
-import net.agentensemble.workflow.Workflow;
 
 /**
  * Demonstrates the callback and event listener API.
@@ -23,8 +21,9 @@ import net.agentensemble.workflow.Workflow;
  *   1. Lambda convenience methods (.onTaskStart, .onTaskComplete, .onTaskFailed, .onToolCall)
  *   2. Full EnsembleListener interface implementation (MetricsCollector)
  *
- * A Researcher and Writer run sequentially. Listeners observe every lifecycle
- * event and print a summary at the end.
+ * Two tasks run sequentially with a shared model. Agents are auto-synthesised
+ * from the task descriptions. Listeners observe every lifecycle event and print
+ * a summary at the end.
  *
  * Usage:
  *   Set OPENAI_API_KEY environment variable, then run:
@@ -135,33 +134,18 @@ public class CallbackExample {
                 .build();
 
         // ========================
-        // Define agents and tasks
+        // Define tasks
+        // Agents are auto-synthesised from the task descriptions.
         // ========================
-        var researcher = Agent.builder()
-                .role("Researcher")
-                .goal("Research topics thoroughly and produce clear summaries")
-                .background("You are a knowledgeable research analyst.")
-                .llm(model)
-                .build();
-
-        var writer = Agent.builder()
-                .role("Writer")
-                .goal("Write concise, engaging content based on research")
-                .background("You are an experienced technology writer.")
-                .llm(model)
-                .build();
-
         var researchTask = Task.builder()
                 .description("Research {topic} and summarize the 3 most important trends in 200 words.")
                 .expectedOutput("A 200-word research summary with 3 key trends.")
-                .agent(researcher)
                 .build();
 
         var writeTask = Task.builder()
                 .description(
                         "Based on the research, write a 150-word introduction paragraph for a blog post about {topic}.")
                 .expectedOutput("A compelling 150-word opening paragraph.")
-                .agent(writer)
                 .context(List.of(researchTask))
                 .build();
 
@@ -179,7 +163,7 @@ public class CallbackExample {
         var ensemble = Ensemble.builder()
                 .task(researchTask)
                 .task(writeTask)
-                .workflow(Workflow.SEQUENTIAL)
+                .chatLanguageModel(model)
                 .input("topic", topic)
                 // Full interface listener: collects all metrics
                 .listener(metrics)

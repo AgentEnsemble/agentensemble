@@ -321,6 +321,167 @@ Ensemble.builder()
 
 ---
 
+## Tool-Level Approval Gates
+
+In addition to task-level gates, individual tools can request human approval
+**before executing a dangerous or irreversible action** -- for example, before running a
+shell command, overwriting a file, or sending a destructive HTTP request. This gate fires
+inside the ReAct tool-call loop, mid-execution.
+
+### Enabling on Built-in Tools
+
+The three built-in tools that support this pattern expose a `requireApproval(boolean)` builder
+option (default: `false`):
+
+```java
+// Require approval before executing any subprocess
+ProcessAgentTool tool = ProcessAgentTool.builder()
+    .name("shell")
+    .description("Runs shell commands")
+    .command("sh", "-c")
+    .requireApproval(true)
+    .build();
+
+// Require approval before writing any file
+FileWriteTool writeTool = FileWriteTool.builder(outputDir)
+    .requireApproval(true)
+    .build();
+
+// Require approval before sending any HTTP request
+HttpAgentTool apiTool = HttpAgentTool.builder()
+    .name("production_api")
+    .description("Calls the production API")
+    .url("https://api.production.example.com")
+    .method("DELETE")
+    .requireApproval(true)
+    .build();
+```
+
+The same `ReviewHandler` configured on the ensemble is reused:
+
+```java
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .reviewHandler(ReviewHandler.console())   // handles both task-level and tool-level gates
+    .task(Task.builder()
+        .description("Clean up old data")
+        .agent(Agent.builder()
+            .role("Operator")
+            .goal("Perform system maintenance")
+            .llm(model)
+            .tools(List.of(tool, writeTool))
+            .build())
+        .build())
+    .build()
+    .run();
+```
+
+**A `ReviewHandler` must be configured when `requireApproval(true)` is set.** If no handler
+is present, an `IllegalStateException` is thrown at execution time (fail-fast). This differs from
+`HumanInputTool`, which silently auto-approves when no handler is set. See
+[Distinction from HumanInputTool](#distinction-from-humaninputtool) below.
+
+### Implementing in Custom Tools
+
+Extend `AbstractAgentTool` and call `requestApproval()` inside `doExecute()` before
+performing the action:
+
+```java
+public class DangerousTool extends AbstractAgentTool {
+
+    private final boolean requireApproval;
+
+    @Override
+    protected ToolResult doExecute(String input) {
+        String command = parseCommand(input);
+
+        if (requireApproval) {
+            if (rawReviewHandler() == null) {
+                throw new IllegalStateException(
+                    "Tool '" + name() + "' requires approval but no ReviewHandler is configured. "
+                    + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");
+            }
+            ReviewDecision decision = requestApproval("Execute: " + command);
+            if (decision instanceof ReviewDecision.ExitEarly) {
+                // Return failure -- lets the agent adapt rather than stopping the pipeline
+                return ToolResult.failure("Rejected by reviewer: " + command);
+            }
+            if (decision instanceof ReviewDecision.Edit edit) {
+                command = edit.revisedOutput();  // use the reviewer's revision
+            }
+            // ReviewDecision.Continue: proceed normally
+        }
+
+        return executeCommand(command);
+    }
+}
+```
+
+**ExitEarly vs ExitEarlyException**: `requestApproval()` returns `ReviewDecision`, not an
+exception. Built-in tools return `ToolResult.failure()` on `ExitEarly`, which allows the agent
+to adapt and produce a final answer. Custom tools can alternatively throw
+`ExitEarlyException` directly to stop the entire pipeline immediately -- choose based on
+your use case.
+
+### Timeout Configuration
+
+The no-argument overload uses `Review.DEFAULT_TIMEOUT` (5 minutes) and
+`Review.DEFAULT_ON_TIMEOUT` (`EXIT_EARLY`), consistent with task-level gates:
+
+```java
+ReviewDecision decision = requestApproval("Execute: " + command);
+```
+
+To customize, use the overload that accepts timeout and on-timeout action:
+
+```java
+ReviewDecision decision = requestApproval(
+    "Execute: " + command,
+    Duration.ofMinutes(2),
+    OnTimeoutAction.CONTINUE);
+```
+
+### Edit Semantics per Tool
+
+Each tool interprets `ReviewDecision.Edit` differently:
+
+| Tool | Edit behavior |
+|------|--------------|
+| `ProcessAgentTool` | `edit.revisedOutput()` replaces the **input** sent to the subprocess |
+| `FileWriteTool` | `edit.revisedOutput()` replaces the **file content** written |
+| `HttpAgentTool` | `edit.revisedOutput()` replaces the **request body** sent |
+| Custom tool | Caller decides; document your tool's Edit contract |
+
+### Parallel Tool Execution
+
+When the agent executor runs multiple tools concurrently in the same ReAct turn and both
+request approval via a `ConsoleReviewHandler`, the prompts are serialized via a shared lock
+(`AbstractAgentTool.CONSOLE_APPROVAL_LOCK`) to prevent interleaved console output. The second
+tool waits for the first reviewer interaction to complete before printing its prompt.
+
+Non-console handlers (e.g., auto-approve, custom webhook) are not serialized -- concurrent
+requests proceed independently.
+
+### @Tool-Annotated Objects
+
+Tool-level approval is **only available to `AbstractAgentTool` subclasses**. Objects annotated
+with `@Tool` go through `LangChain4jToolAdapter` and cannot call `requestApproval()`. Do not
+attempt to retrofit `@Tool` objects with approval logic -- implement an `AbstractAgentTool`
+subclass instead.
+
+### Distinction from HumanInputTool
+
+| | `HumanInputTool` | `requireApproval` on `AbstractAgentTool` |
+|--|--|--|
+| **Purpose** | Agent asks the human a question | Tool requests human approval before an action |
+| **When** | Agent decides when to invoke | Always fires before the flagged action |
+| **No handler configured** | Silently auto-approves | Throws `IllegalStateException` (fail-fast) |
+| **Timing** | `DURING_EXECUTION` | `DURING_EXECUTION` |
+| **ExitEarly handling** | Throws `ExitEarlyException` (stops pipeline) | Built-in tools return `ToolResult.failure()` (agent adapts) |
+| **Works with** | Any task tool list | `AbstractAgentTool` subclasses only |
+
+---
+
 ## Task-Level Override Summary
 
 Task-level review configuration always overrides the ensemble policy:

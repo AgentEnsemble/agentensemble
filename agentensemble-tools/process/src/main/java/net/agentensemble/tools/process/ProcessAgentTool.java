@@ -14,6 +14,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import net.agentensemble.exception.ToolConfigurationException;
+import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.ToolResult;
 
@@ -39,6 +41,31 @@ import net.agentensemble.tool.ToolResult;
  *       as the error message.</li>
  *   <li><strong>Timeout</strong>: configurable; the process is killed if it exceeds the limit.</li>
  * </ol>
+ *
+ * <h2>Approval Gate</h2>
+ *
+ * <p>When {@link Builder#requireApproval(boolean) requireApproval(true)} is set, a human
+ * reviewer must approve the command before execution:
+ *
+ * <pre>
+ * var tool = ProcessAgentTool.builder()
+ *     .name("shell")
+ *     .description("Runs shell commands")
+ *     .command("sh", "-c")
+ *     .requireApproval(true)
+ *     .build();
+ * </pre>
+ *
+ * <p>The reviewer sees the command and input, and may:
+ * <ul>
+ *   <li>Continue -- execute as-is</li>
+ *   <li>Edit -- replace the input sent to the subprocess</li>
+ *   <li>Exit early -- return failure without executing the process</li>
+ * </ul>
+ *
+ * <p>A {@link net.agentensemble.review.ReviewHandler} must be configured on the ensemble
+ * when {@code requireApproval(true)} is set; otherwise an {@link IllegalStateException}
+ * is thrown at execution time.
  *
  * <h2>Example Python tool following the protocol</h2>
  *
@@ -70,12 +97,14 @@ public final class ProcessAgentTool extends AbstractAgentTool {
     private final String toolDescription;
     private final List<String> command;
     private final Duration timeout;
+    private final boolean requireApproval;
 
     private ProcessAgentTool(Builder builder) {
         this.toolName = builder.name;
         this.toolDescription = builder.description;
         this.command = Collections.unmodifiableList(new ArrayList<>(builder.command));
         this.timeout = builder.timeout;
+        this.requireApproval = builder.requireApproval;
     }
 
     /** Returns a new builder for configuring a {@code ProcessAgentTool}. */
@@ -95,8 +124,29 @@ public final class ProcessAgentTool extends AbstractAgentTool {
 
     @Override
     protected ToolResult doExecute(String input) {
+        String effectiveInput = input != null ? input : "";
+
+        if (requireApproval) {
+            if (rawReviewHandler() == null) {
+                throw new ToolConfigurationException("Tool '"
+                        + name()
+                        + "' requires approval but no ReviewHandler is configured on the ensemble. "
+                        + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");
+            }
+            String commandStr = String.join(" ", command);
+            ReviewDecision decision = requestApproval(
+                    "Execute command: " + commandStr + "\nInput: " + truncateForApproval(effectiveInput));
+            if (decision instanceof ReviewDecision.ExitEarly) {
+                return ToolResult.failure("Command execution rejected by reviewer: " + commandStr);
+            }
+            if (decision instanceof ReviewDecision.Edit edit) {
+                log().debug("Reviewer edited input for command '{}': replacing input with revised content", commandStr);
+                effectiveInput = edit.revisedOutput();
+            }
+        }
+
         try {
-            return executeProcess(input);
+            return executeProcess(effectiveInput);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.failure("Process execution was interrupted");
@@ -208,6 +258,11 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         return OBJECT_MAPPER.writeValueAsString(node);
     }
 
+    private static String truncateForApproval(String text) {
+        if (text == null) return "";
+        return text.length() > 200 ? text.substring(0, 200) + "..." : text;
+    }
+
     // ========================
     // Builder
     // ========================
@@ -219,6 +274,7 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         private String description;
         private List<String> command;
         private Duration timeout = DEFAULT_TIMEOUT;
+        private boolean requireApproval = false;
 
         private Builder() {}
 
@@ -287,6 +343,28 @@ public final class ProcessAgentTool extends AbstractAgentTool {
                 throw new IllegalArgumentException("timeout must be positive");
             }
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Require human approval before executing the subprocess.
+         *
+         * <p>When {@code true}, the ensemble's configured
+         * {@link net.agentensemble.review.ReviewHandler} is invoked before the process is
+         * started. The reviewer sees the command and input, and may approve, edit the
+         * input, or reject the execution.
+         *
+         * <p>If {@code requireApproval(true)} is set but no {@code ReviewHandler} is
+         * configured on the ensemble, an {@link IllegalStateException} is thrown at
+         * execution time (fail-fast -- see issue #126).
+         *
+         * <p>Default: {@code false}.
+         *
+         * @param requireApproval {@code true} to require approval before process execution
+         * @return this builder
+         */
+        public Builder requireApproval(boolean requireApproval) {
+            this.requireApproval = requireApproval;
             return this;
         }
 
