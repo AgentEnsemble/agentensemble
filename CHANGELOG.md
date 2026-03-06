@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.0.0...v2.1.0) (2026-03-06)
+
+
+### Features
+
+* **#130:** agentensemble-web module -- WebSocket server + protocol (v2.1.0) ([#138](https://github.com/AgentEnsemble/agentensemble/issues/138)) ([4f7497b](https://github.com/AgentEnsemble/agentensemble/commit/4f7497bb1c0099da7f10e5fbb1fe303cdda7a312))
+* **#131:** WebSocketStreamingListener -- bridge callbacks to WebSocket (v2.1.0) ([#142](https://github.com/AgentEnsemble/agentensemble/issues/142)) ([97de9f5](https://github.com/AgentEnsemble/agentensemble/commit/97de9f5c2aa24991b787aff21c8a35bdfbc8bb42))
+* **#132:** WebReviewHandler -- real implementation replacing stub (v2.1.0) ([#143](https://github.com/AgentEnsemble/agentensemble/issues/143)) ([f9d4641](https://github.com/AgentEnsemble/agentensemble/commit/f9d464185f4d7806c730214686c9958aafadd6e3))
+* explicit tool pipeline / chaining (issue [#74](https://github.com/AgentEnsemble/agentensemble/issues/74)) ([#140](https://github.com/AgentEnsemble/agentensemble/issues/140)) ([118d3fc](https://github.com/AgentEnsemble/agentensemble/commit/118d3fcd7835c4fdd91b664d7ece7f4b1992bcc8))
+* token-by-token streaming via StreamingChatModel ([#61](https://github.com/AgentEnsemble/agentensemble/issues/61)) ([#146](https://github.com/AgentEnsemble/agentensemble/issues/146)) ([3cc1cf6](https://github.com/AgentEnsemble/agentensemble/commit/3cc1cf6f0611240e32c911dc36732f7e3b7b25b1))
+* viz review approval UI (v2.1.0) ([#151](https://github.com/AgentEnsemble/agentensemble/issues/151)) ([01f3514](https://github.com/AgentEnsemble/agentensemble/commit/01f3514a23640713964738d5358d5f8001ca12ee))
+* **viz:** live mode WebSocket client + live timeline/flow ([#133](https://github.com/AgentEnsemble/agentensemble/issues/133), [#134](https://github.com/AgentEnsemble/agentensemble/issues/134)) ([#144](https://github.com/AgentEnsemble/agentensemble/issues/144)) ([cd014a5](https://github.com/AgentEnsemble/agentensemble/commit/cd014a55036c92eb900e4e698859c8edbfddfdcb))
+
+
+### Bug Fixes
+
+* address Copilot review comments on ToolPipeline (PR [#140](https://github.com/AgentEnsemble/agentensemble/issues/140)) ([#141](https://github.com/AgentEnsemble/agentensemble/issues/141)) ([624857c](https://github.com/AgentEnsemble/agentensemble/commit/624857cc0ddda70a6d1fe9705e3d353fea81d499))
+* **core:** hard runtime deps, context identity remap, and null-safe agent role ([#147](https://github.com/AgentEnsemble/agentensemble/issues/147) [#148](https://github.com/AgentEnsemble/agentensemble/issues/148) [#149](https://github.com/AgentEnsemble/agentensemble/issues/149)) ([#150](https://github.com/AgentEnsemble/agentensemble/issues/150)) ([f099b20](https://github.com/AgentEnsemble/agentensemble/commit/f099b2032a7ebf050bfd8cfb649eb2611a4cf2ee))
+* **viz:** embed dist assets into compiled binary so Homebrew binary serves UI correctly ([#145](https://github.com/AgentEnsemble/agentensemble/issues/145)) ([366bf88](https://github.com/AgentEnsemble/agentensemble/commit/366bf8844c7d07dd5da3c846bc64337c9679c9c4))
+
 ## [2.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.5.0...v2.0.0) (2026-03-06)
 
 
