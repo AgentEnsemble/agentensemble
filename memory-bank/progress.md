@@ -1,5 +1,20 @@
 # Progress
 
+## What Works (as of Issue #74 -- Tool Pipeline / Chaining)
+
+**ToolPipeline (Issue #74):**
+- `ToolPipeline.of(AgentTool...)` -- zero-config factory with auto-generated name and description
+- `ToolPipeline.of(String, String, AgentTool...)` -- named factory
+- `ToolPipeline.builder()` -- full builder with `.step()`, `.adapter()`, `.errorStrategy()`
+- `PipelineErrorStrategy.FAIL_FAST` (default) -- stops on first failed step
+- `PipelineErrorStrategy.CONTINUE_ON_FAILURE` -- forwards error message as next step's input
+- Step adapters (`Function<ToolResult, String>`) -- reshape output between steps; access to `structuredOutput`
+- `ToolContext` propagation -- metrics, logging, executor, and review handler forwarded to all nested `AbstractAgentTool` steps
+- `getSteps()` and `getErrorStrategy()` public accessors
+- Empty pipeline pass-through (returns input unchanged)
+- Pipelines nest -- a pipeline can be a step inside another pipeline
+- 49 unit tests + 7 integration tests; all pass; branch `feature/tool-pipeline-74`
+
 ## What Works (as of Issue #130 -- agentensemble-web Live Execution Dashboard)
 
 **agentensemble-web module (Issue #130):**
