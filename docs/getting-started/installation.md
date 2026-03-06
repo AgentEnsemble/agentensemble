@@ -44,6 +44,12 @@ dependencies {
     // Other tools: agentensemble-tools-json-parser, agentensemble-tools-file-read,
     // agentensemble-tools-file-write, agentensemble-tools-process, agentensemble-tools-http
 
+    // Optional: live execution dashboard -- embedded WebSocket server that streams
+    // real-time task/tool events to a browser and supports browser-based review gates.
+    // Add agentensemble-review above if you also want browser-based review approval.
+    // NOTE: use the same version for all net.agentensemble:* modules to avoid conflicts.
+    implementation("net.agentensemble:agentensemble-web:2.1.0")
+
     // Optional: Micrometer metrics integration
     implementation("net.agentensemble:agentensemble-metrics-micrometer")
 
@@ -151,6 +157,7 @@ dependencies {
 | `agentensemble-tools-bom` | Version alignment BOM |
 | `agentensemble-memory` | Memory subsystem: task-scoped cross-execution memory with MemoryStore SPI; also includes legacy short-term, long-term, and entity memory |
 | `agentensemble-review` | Human-in-the-loop review gates: ReviewHandler SPI, ConsoleReviewHandler, and HumanInputTool |
+| `agentensemble-web` | Live execution dashboard: embedded WebSocket server that streams real-time task/tool/delegation events to a browser and supports browser-based review gates |
 | `agentensemble-metrics-micrometer` | Micrometer metrics integration |
 | `agentensemble-bom` | Top-level BOM -- aligns all module versions in one import |
 

@@ -83,6 +83,7 @@ nav:
     - Visualization: guides/visualization.md
     - Memory: guides/memory.md
     - Review: guides/review.md
+    - Live Dashboard: guides/live-dashboard.md
     - Delegation: guides/delegation.md
     - Error Handling: guides/error-handling.md
     - Callbacks: guides/callbacks.md
@@ -109,6 +110,7 @@ nav:
     - CaptureMode: examples/capture-mode.md
     - Visualization: examples/visualization.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
+    - Live Dashboard: examples/live-dashboard.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
   - Design:
