@@ -32,14 +32,20 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 **Gradle (Kotlin DSL):**
 ```kotlin
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:1.0.0")
+    // Import the BOM -- aligns all AgentEnsemble module versions
+    implementation(platform("net.agentensemble:agentensemble-bom:2.0.0"))
 
-    // Optional: import the tools BOM to manage built-in tool versions, then add
-    // only the individual tool modules you need.
-    implementation(platform("net.agentensemble:agentensemble-tools-bom:1.0.0"))
-    implementation("net.agentensemble:agentensemble-tools-calculator")    // optional
-    implementation("net.agentensemble:agentensemble-tools-datetime")      // optional
-    // Other modules: agentensemble-tools-json-parser, agentensemble-tools-file-read,
+    // Core framework -- always required
+    implementation("net.agentensemble:agentensemble-core")
+
+    // Optional modules -- no version needed, resolved from BOM
+    implementation("net.agentensemble:agentensemble-memory")   // task-scoped memory
+    implementation("net.agentensemble:agentensemble-review")   // human-in-the-loop gates
+
+    // Optional: add only the built-in tools you need
+    implementation("net.agentensemble:agentensemble-tools-calculator")
+    implementation("net.agentensemble:agentensemble-tools-datetime")
+    // Other tools: agentensemble-tools-json-parser, agentensemble-tools-file-read,
     // agentensemble-tools-file-write, agentensemble-tools-web-search,
     // agentensemble-tools-web-scraper, agentensemble-tools-process, agentensemble-tools-http
 
@@ -48,7 +54,10 @@ dependencies {
 }
 ```
 
-### 2. Define agents
+### 2. Define tasks
+
+In v2.0.0, agents are optional. The framework synthesizes them from task descriptions.
+Declare the LLM once at the ensemble level:
 
 ```java
 var model = OpenAiChatModel.builder()
@@ -56,47 +65,26 @@ var model = OpenAiChatModel.builder()
     .modelName("gpt-4o-mini")
     .build();
 
-var researcher = Agent.builder()
-    .role("Senior Research Analyst")
-    .goal("Find accurate, well-structured information on any given topic")
-    .background("You are a veteran researcher with expertise in technology.")
-    .llm(model)
-    .build();
-
-var writer = Agent.builder()
-    .role("Content Writer")
-    .goal("Write engaging, well-structured blog posts")
-    .llm(model)
-    .responseFormat("Use markdown with clear headings and sections.")
-    .build();
-```
-
-### 3. Define tasks
-
-```java
 var researchTask = Task.builder()
     .description("Research the latest developments in {topic}")
     .expectedOutput("A 400-word summary covering current state, key players, and future outlook")
-    .agent(researcher)
     .build();
 
 var writeTask = Task.builder()
     .description("Write a blog post about {topic} based on the provided research")
     .expectedOutput("A 600-800 word blog post in markdown format, ready to publish")
-    .agent(writer)
-    .context(List.of(researchTask))  // The writer receives the researcher's output as context
+    .context(List.of(researchTask))  // writer receives researcher's output as context
     .build();
 ```
 
-### 4. Run the ensemble
+### 3. Run the ensemble
 
 ```java
 EnsembleOutput output = Ensemble.builder()
-    .agent(researcher)
-    .agent(writer)
+    .chatLanguageModel(model)   // default LLM for all synthesized agents
     .task(researchTask)
     .task(writeTask)
-    .workflow(Workflow.SEQUENTIAL)
+    // workflow inferred automatically from context declarations
     .build()
     .run(Map.of("topic", "AI agents"));
 
@@ -111,6 +99,14 @@ for (TaskOutput taskOutput : output.getTaskOutputs()) {
 // Execution metadata
 System.out.printf("Completed in %s, %d tool calls%n",
     output.getTotalDuration(), output.getTotalToolCalls());
+```
+
+**Zero-ceremony shorthand** for the simplest cases:
+
+```java
+EnsembleOutput output = Ensemble.run(model,
+    Task.of("Research the latest developments in AI agents"),
+    Task.of("Write a 600-word blog post from the research"));
 ```
 
 ---

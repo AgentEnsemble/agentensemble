@@ -2,12 +2,10 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.List;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.task.TaskOutput;
-import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,8 +17,11 @@ import org.slf4j.LoggerFactory;
  *   Java record. Access fields via getParsedOutput(ResearchReport.class).
  *
  * Part 2 -- Formatted Markdown output:
- *   A researcher and writer work sequentially. The writer uses responseFormat
- *   to produce a well-structured Markdown blog post without any JSON parsing.
+ *   Two tasks run sequentially. The writer task's expectedOutput specifies
+ *   the required Markdown structure, guiding the auto-synthesised agent without
+ *   needing an explicit Agent declaration.
+ *
+ * Agents are auto-synthesised from each task's description and expectedOutput.
  *
  * Usage:
  *   Set OPENAI_API_KEY environment variable, then run:
@@ -59,22 +60,18 @@ public class StructuredOutputExample {
         System.out.println("PART 1: TYPED JSON OUTPUT");
         System.out.println("=".repeat(60));
 
-        var researcher = Agent.builder()
-                .role("Senior Research Analyst")
-                .goal("Find accurate, well-structured information on any given topic")
-                .llm(model)
-                .build();
-
         var researchTask = Task.builder()
                 .description("Research the most important developments in " + topic)
                 .expectedOutput("A structured report with a title, a list of key findings, and a conclusion")
-                .agent(researcher)
                 .outputType(ResearchReport.class)
                 .maxOutputRetries(3)
                 .build();
 
-        EnsembleOutput structuredOutput =
-                Ensemble.builder().task(researchTask).build().run();
+        EnsembleOutput structuredOutput = Ensemble.builder()
+                .task(researchTask)
+                .chatLanguageModel(model)
+                .build()
+                .run();
 
         TaskOutput structuredTaskOutput = structuredOutput.getTaskOutputs().get(0);
 
@@ -98,39 +95,24 @@ public class StructuredOutputExample {
         System.out.println("PART 2: FORMATTED MARKDOWN OUTPUT");
         System.out.println("=".repeat(60));
 
-        var plainResearcher = Agent.builder()
-                .role("Senior Research Analyst")
-                .goal("Find accurate, well-sourced information on any given topic")
-                .llm(model)
-                .build();
-
-        var writer = Agent.builder()
-                .role("Content Writer")
-                .goal("Write engaging, well-structured blog posts from research notes")
-                .responseFormat("Always format your response in Markdown. "
-                        + "Include a title (# heading), an introduction paragraph, "
-                        + "three sections with subheadings (## heading), and a conclusion.")
-                .llm(model)
-                .build();
-
         var plainResearchTask = Task.builder()
                 .description("Research the latest developments in {topic}")
                 .expectedOutput("A factual summary of key developments, major players, and future outlook")
-                .agent(plainResearcher)
                 .build();
 
         var writeTask = Task.builder()
                 .description("Write a 700-word blog post about {topic} based on the research provided")
-                .expectedOutput("A 700-word blog post in Markdown format with: "
-                        + "an engaging title, introduction, three sections with subheadings, and a conclusion")
-                .agent(writer)
+                .expectedOutput("A 700-word blog post in Markdown format. "
+                        + "Always format in Markdown. "
+                        + "Include a title (# heading), an introduction paragraph, "
+                        + "three sections with subheadings (## heading), and a conclusion.")
                 .context(List.of(plainResearchTask))
                 .build();
 
         EnsembleOutput markdownOutput = Ensemble.builder()
                 .task(plainResearchTask)
                 .task(writeTask)
-                .workflow(Workflow.SEQUENTIAL)
+                .chatLanguageModel(model)
                 .input("topic", topic)
                 .build()
                 .run();
