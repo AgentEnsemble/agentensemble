@@ -417,6 +417,15 @@ class ParallelTaskCoordinator {
         }
     }
 
+    /**
+     * Returns the agent role for a task, falling back to {@code "(synthesized)"} when the
+     * task's agent is null. Defensive guard for direct callers of the executor and for
+     * error-handling paths (issue #148).
+     */
+    private static String agentRole(Task task) {
+        return task.getAgent() != null ? task.getAgent().getRole() : "(synthesized)";
+    }
+
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";
         return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
