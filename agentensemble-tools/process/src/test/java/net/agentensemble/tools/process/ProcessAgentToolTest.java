@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Executors;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.tool.NoOpToolMetrics;
@@ -14,6 +18,7 @@ import net.agentensemble.tool.ToolContext;
 import net.agentensemble.tool.ToolContextInjector;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests for ProcessAgentTool: builder validation, subprocess execution,
@@ -337,15 +342,16 @@ class ProcessAgentToolTest {
     }
 
     @Test
-    void requireApproval_enabled_handlerEdit_revisedInputSentToProcess() {
+    void requireApproval_enabled_handlerEdit_revisedInputSentToProcess(@TempDir Path tempDir) throws IOException {
         assumeTrue(shellAvailable, "Shell not available");
-        // The tool echoes input via stdin; reviewer edits the input
-        // We verify the edit decision was returned (process uses revised input)
-        var handler = (ReviewHandler) request -> ReviewDecision.edit("revised-input");
+        // Use a subprocess that writes its stdin to a temp file so we can verify
+        // the revised input (not the original) was actually sent via stdin.
+        Path captureFile = tempDir.resolve("stdin_capture.txt");
+        var handler = (ReviewHandler) request -> ReviewDecision.edit("revised-input-value");
         var tool = ProcessAgentTool.builder()
-                .name("edit_process_tool")
-                .description("Process tool for edit test")
-                .command("sh", "-c", "echo '{\"output\":\"ran\",\"success\":true}'")
+                .name("stdin_capture_tool")
+                .description("Captures stdin to a file")
+                .command("sh", "-c", "cat > " + captureFile + " && echo '{\"output\":\"ok\",\"success\":true}'")
                 .requireApproval(true)
                 .build();
         var ctx = ToolContext.of(
@@ -354,12 +360,15 @@ class ProcessAgentToolTest {
 
         var result = tool.execute("original-input");
 
-        // Process still runs successfully with revised input
         assertThat(result.isSuccess()).isTrue();
+        // The subprocess received the REVISED input (not the original)
+        String captured = Files.readString(captureFile);
+        assertThat(captured).contains("revised-input-value");
+        assertThat(captured).doesNotContain("original-input");
     }
 
     @Test
-    void requireApproval_enabled_noHandlerConfigured_throwsIllegalStateException() {
+    void requireApproval_enabled_noHandlerConfigured_throwsToolConfigurationException() {
         var tool = ProcessAgentTool.builder()
                 .name("no_handler_tool")
                 .description("Requires approval but no handler")
@@ -369,7 +378,8 @@ class ProcessAgentToolTest {
         // No ToolContext injected -- rawReviewHandler() returns null
 
         assertThatThrownBy(() -> tool.execute("input"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(ToolConfigurationException.class)
+                .isInstanceOf(IllegalStateException.class) // ToolConfigurationException extends ISE
                 .hasMessageContaining("requires approval")
                 .hasMessageContaining("ReviewHandler");
     }

@@ -19,6 +19,7 @@ import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.ensemble.ExitReason;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewTiming;
@@ -69,7 +70,7 @@ class ToolApprovalIntegrationTest {
         protected ToolResult doExecute(String input) {
             executeCallCount.incrementAndGet();
             if (rawReviewHandler() == null) {
-                throw new IllegalStateException(
+                throw new ToolConfigurationException(
                         "Tool '" + name() + "' requires approval but no ReviewHandler is configured.");
             }
             approvalCallCount.incrementAndGet();

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Executors;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.tool.NoOpToolMetrics;
@@ -306,12 +307,13 @@ class FileWriteToolTest {
     }
 
     @Test
-    void requireApproval_enabled_noHandlerConfigured_throwsIllegalStateException() {
+    void requireApproval_enabled_noHandlerConfigured_throwsToolConfigurationException() {
         var builtTool = FileWriteTool.builder(tempDir).requireApproval(true).build();
         // No ToolContext injected -- rawReviewHandler() returns null
 
         assertThatThrownBy(() -> builtTool.execute("{\"path\": \"file.txt\", \"content\": \"x\"}"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(ToolConfigurationException.class)
+                .isInstanceOf(IllegalStateException.class) // ToolConfigurationException extends ISE
                 .hasMessageContaining("requires approval")
                 .hasMessageContaining("ReviewHandler");
     }

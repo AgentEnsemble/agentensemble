@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.ToolResult;
@@ -145,7 +146,7 @@ public final class FileWriteTool extends AbstractAgentTool {
 
         if (requireApproval) {
             if (rawReviewHandler() == null) {
-                throw new IllegalStateException("Tool '"
+                throw new ToolConfigurationException("Tool '"
                         + name()
                         + "' requires approval but no ReviewHandler is configured on the ensemble. "
                         + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");

@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.ToolResult;
@@ -127,7 +128,7 @@ public final class ProcessAgentTool extends AbstractAgentTool {
 
         if (requireApproval) {
             if (rawReviewHandler() == null) {
-                throw new IllegalStateException("Tool '"
+                throw new ToolConfigurationException("Tool '"
                         + name()
                         + "' requires approval but no ReviewHandler is configured on the ensemble. "
                         + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");

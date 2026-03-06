@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
 import net.agentensemble.exception.ExitEarlyException;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.Review;
 import net.agentensemble.review.ReviewDecision;
@@ -294,17 +295,48 @@ class AbstractAgentToolApprovalTest {
     }
 
     // ========================
-    // IllegalStateException propagation through execute()
+    // ToolConfigurationException propagates; plain ISE is converted to failure
     // ========================
 
     @Test
-    void illegalStateException_thrownFromDoExecute_propagatesThroughExecute() {
+    void toolConfigurationException_thrownFromDoExecute_propagatesThroughExecute() {
+        // ToolConfigurationException (subtype of ISE) must propagate so configuration
+        // errors surface to the caller rather than being silently absorbed.
+        var tool = new AbstractAgentTool() {
+            @Override
+            public String name() {
+                return "config_error_tool";
+            }
+
+            @Override
+            public String description() {
+                return "Throws ToolConfigurationException";
+            }
+
+            @Override
+            protected ToolResult doExecute(String input) {
+                throw new ToolConfigurationException("configuration error: " + input);
+            }
+        };
+
+        assertThatThrownBy(() -> tool.execute("test"))
+                .isInstanceOf(ToolConfigurationException.class)
+                .isInstanceOf(IllegalStateException.class) // ToolConfigurationException extends ISE
+                .hasMessageContaining("configuration error: test");
+    }
+
+    @Test
+    void illegalStateException_plainIseFromDoExecute_convertedToToolResultFailure() {
+        // Plain ISE (not ToolConfigurationException) is now caught and converted to
+        // ToolResult.failure() so the agent can adapt, rather than aborting the run.
         var tool = new ApprovalCaptureTool(false);
         tool.throwIseOnExecute = true;
 
-        assertThatThrownBy(() -> tool.execute("input"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("deliberate ISE");
+        ToolResult result = tool.execute("input");
+
+        // ISE is absorbed and returned as a failure result -- NOT re-thrown
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("deliberate ISE");
     }
 
     // ========================

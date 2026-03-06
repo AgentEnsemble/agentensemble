@@ -8,6 +8,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import java.util.List;
 import java.util.Map;
 import net.agentensemble.exception.ExitEarlyException;
+import net.agentensemble.exception.ToolConfigurationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -101,9 +102,10 @@ public final class LangChain4jToolAdapter {
             // Re-throw exit-early signals without converting to a tool failure.
             // The workflow executor catches this and assembles partial results.
             throw e;
-        } catch (IllegalStateException e) {
-            // Re-throw configuration errors (e.g., requireApproval=true with no ReviewHandler).
-            // These are programming errors and must not be silently converted to tool failures.
+        } catch (ToolConfigurationException e) {
+            // Re-throw tool configuration errors (e.g., requireApproval=true with no ReviewHandler,
+            // or missing agentensemble-review module). These are programmer errors that must surface
+            // clearly. Ordinary IllegalStateException from tool code is NOT re-thrown here.
             log.error("AgentTool '{}' configuration error: {}", tool.name(), e.getMessage());
             throw e;
         } catch (Exception e) {

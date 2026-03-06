@@ -6,6 +6,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
 import net.agentensemble.exception.ExitEarlyException;
+import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ConsoleReviewHandler;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.Review;
@@ -159,13 +160,16 @@ public abstract class AbstractAgentTool implements AgentTool {
      *
      * <ul>
      *   <li>{@link ExitEarlyException}: re-thrown to propagate reviewer exit decisions
-     *   <li>{@link IllegalStateException}: re-thrown to surface tool configuration errors
-     *       (e.g., {@code requireApproval(true)} with no ReviewHandler configured)
+     *   <li>{@link net.agentensemble.exception.ToolConfigurationException}: re-thrown to surface
+     *       tool configuration errors (e.g., {@code requireApproval(true)} with no
+     *       ReviewHandler, or missing {@code agentensemble-review} module). Ordinary
+     *       {@link IllegalStateException} from tool implementations is NOT re-thrown -- it
+     *       is converted to a {@link ToolResult#failure(String)} so the agent can adapt.
      * </ul>
      *
      * @param input the input string from the LLM tool call
      * @return a ToolResult -- never null, never throws (except ExitEarlyException
-     *         and IllegalStateException as documented above)
+     *         and ToolConfigurationException as documented above)
      */
     @Override
     public final ToolResult execute(String input) {
@@ -189,10 +193,10 @@ public abstract class AbstractAgentTool implements AgentTool {
             // Re-throw exit-early signals without converting to a tool failure.
             // The workflow executor catches this and assembles partial results.
             throw e;
-        } catch (IllegalStateException e) {
-            // Re-throw IllegalStateException to surface configuration errors (e.g., requireApproval
-            // with no ReviewHandler). These are programming errors, not runtime failures, and must
-            // not be silently swallowed.
+        } catch (ToolConfigurationException e) {
+            // Re-throw tool configuration errors (e.g., requireApproval=true with no ReviewHandler,
+            // or missing agentensemble-review module). These are programmer errors that must surface
+            // clearly rather than being silently absorbed as tool failures.
             throw e;
         } catch (Exception e) {
             Duration elapsed = Duration.between(start, Instant.now());
@@ -277,7 +281,7 @@ public abstract class AbstractAgentTool implements AgentTool {
         try {
             return doRequestApproval(description, timeout, onTimeout);
         } catch (NoClassDefFoundError e) {
-            throw new IllegalStateException(
+            throw new ToolConfigurationException(
                     "Tool '"
                             + name()
                             + "' requires the agentensemble-review module to be on the classpath. "
@@ -295,6 +299,15 @@ public abstract class AbstractAgentTool implements AgentTool {
             return ReviewDecision.continueExecution();
         }
 
+        if (!(rawHandler instanceof ReviewHandler)) {
+            throw new ToolConfigurationException("Tool '"
+                    + name()
+                    + "' is misconfigured: reviewHandler must be an instance of "
+                    + ReviewHandler.class.getName()
+                    + " but was "
+                    + rawHandler.getClass().getName()
+                    + ".");
+        }
         ReviewHandler handler = (ReviewHandler) rawHandler;
         ReviewRequest request =
                 ReviewRequest.of(description, "", ReviewTiming.DURING_EXECUTION, timeout, onTimeout, null);
