@@ -148,10 +148,10 @@ public final class ConsoleReviewHandler implements ReviewHandler {
 
     /** Block on stdin with a countdown timer and timeout. */
     private ReviewDecision timedReview(ReviewRequest request, Duration timeout) {
-        AtomicLong remainingSeconds = new AtomicLong(timeout.toSeconds());
+        AtomicLong remainingMillis = new AtomicLong(timeout.toMillis());
 
         // Print initial prompt line
-        printCountdownPrompt(remainingSeconds.get());
+        printCountdownPrompt(remainingMillis.get());
 
         // Schedule countdown updates every second
         ScheduledExecutorService countdown = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -160,7 +160,12 @@ public final class ConsoleReviewHandler implements ReviewHandler {
             return t;
         });
 
-        // Submit the entire user interaction (possibly multi-line for edit) to a reader thread
+        // Submit the entire user interaction (possibly multi-line for edit) to a reader thread.
+        // pollReadLine() is used instead of readLine() so that thread interruption is honoured:
+        // readLine() on streams backed by System.in (or similar blocking sources) does not
+        // respond to Thread.interrupt(), which causes threads to accumulate when a timeout fires
+        // and Future.cancel(true) is called. The polling loop checks the interrupt flag between
+        // read attempts and exits cleanly.
         ExecutorService readerService = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "review-input-reader");
             t.setDaemon(true);
@@ -169,14 +174,14 @@ public final class ConsoleReviewHandler implements ReviewHandler {
 
         Future<ReviewDecision> decisionFuture = readerService.submit(() -> {
             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-            String firstLine = reader.readLine();
+            String firstLine = pollReadLine(reader);
             return processInput(firstLine, reader, request);
         });
 
         @SuppressWarnings("FutureReturnValueIgnored")
         var unused = countdown.scheduleAtFixedRate(
                 () -> {
-                    long remaining = remainingSeconds.decrementAndGet();
+                    long remaining = remainingMillis.addAndGet(-1_000L);
                     if (remaining >= 0 && !decisionFuture.isDone()) {
                         printCountdownPrompt(remaining);
                     }
@@ -209,9 +214,36 @@ public final class ConsoleReviewHandler implements ReviewHandler {
         }
     }
 
-    private void printCountdownPrompt(long remainingSeconds) {
-        long mins = remainingSeconds / 60;
-        long secs = remainingSeconds % 60;
+    /**
+     * Read one line from the given reader using a polling loop.
+     *
+     * <p>Unlike {@link BufferedReader#readLine()}, this method exits promptly when the
+     * calling thread is interrupted. {@code readLine()} on streams backed by
+     * {@code System.in} (or similar blocking sources) does not respond to
+     * {@link Thread#interrupt()}, which causes threads to accumulate when a timeout fires
+     * and {@link Future#cancel(boolean)} is called. Polling with
+     * {@link BufferedReader#ready()} allows the interrupt to be observed between read
+     * attempts, enabling the reader thread to exit cleanly.
+     *
+     * @param reader the reader to poll; must not be null
+     * @return the line read, or {@code null} on EOF
+     * @throws IOException          if an I/O error occurs on the underlying stream
+     * @throws InterruptedException if the calling thread is interrupted while polling
+     */
+    private static String pollReadLine(BufferedReader reader) throws IOException, InterruptedException {
+        while (!Thread.currentThread().isInterrupted()) {
+            if (reader.ready()) {
+                return reader.readLine();
+            }
+            Thread.sleep(50);
+        }
+        throw new InterruptedException("input reader interrupted while polling for input");
+    }
+
+    private void printCountdownPrompt(long remainingMillis) {
+        long totalSecs = remainingMillis / 1_000L;
+        long mins = totalSecs / 60;
+        long secs = totalSecs % 60;
         // \r returns to the beginning of the line without scrolling
         outputStream.printf("\r[c] Continue  [e] Edit  [x] Exit early  (auto-x in %d:%02d) > ", mins, secs);
         outputStream.flush();

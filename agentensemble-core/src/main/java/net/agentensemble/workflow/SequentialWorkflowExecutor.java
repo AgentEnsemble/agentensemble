@@ -182,9 +182,9 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 // === After-execution review gate ===
                 if (shouldApplyAfterReview(task, taskIndex, totalTasks, executionContext)) {
                     Review review = task.getReview();
-                    Duration timeout = review != null ? review.getTimeout() : null;
+                    Duration timeout = review != null ? review.getTimeout() : Review.DEFAULT_TIMEOUT;
                     OnTimeoutAction onTimeout =
-                            review != null ? review.getOnTimeoutAction() : OnTimeoutAction.EXIT_EARLY;
+                            review != null ? review.getOnTimeoutAction() : Review.DEFAULT_ON_TIMEOUT;
                     String prompt = review != null ? review.getPrompt() : null;
 
                     ReviewRequest afterRequest = ReviewRequest.of(

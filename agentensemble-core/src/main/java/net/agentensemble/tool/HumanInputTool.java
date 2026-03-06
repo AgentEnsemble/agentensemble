@@ -40,8 +40,8 @@ import net.agentensemble.review.ReviewTiming;
  * {@link ExitEarlyException} is thrown, propagating through the agent loop and
  * caught by the workflow executor, which assembles partial results.
  *
- * <p>When the reviewer chooses {@link ReviewDecision.Continue}, an empty acknowledgement
- * string is returned to the agent. When the reviewer chooses
+ * <p>When the reviewer chooses {@link ReviewDecision.Continue}, a default acknowledgement
+ * string ({@code "Understood. Please continue."}) is returned to the agent. When the reviewer chooses
  * {@link ReviewDecision.Edit}, the revised text is returned to the agent as the
  * human's response.
  *
@@ -120,7 +120,7 @@ public final class HumanInputTool extends AbstractAgentTool {
 
         if (handler == null) {
             log().warn("HumanInputTool invoked but no ReviewHandler is configured on the ensemble. "
-                    + "Returning empty response and continuing. "
+                    + "Returning default response and continuing. "
                     + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");
             return ToolResult.success("No reviewer is available. Please proceed with your best judgment.");
         }

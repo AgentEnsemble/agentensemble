@@ -41,8 +41,11 @@ final class AutoApproveWithDelayReviewHandler implements ReviewHandler {
     public ReviewDecision review(ReviewRequest request) {
         if (!delay.isZero()) {
             try {
-                log.debug("AutoApproveWithDelayReviewHandler sleeping for {}ms", delay.toMillis());
-                Thread.sleep(delay.toMillis());
+                // Thread.sleep(Duration) is used instead of Thread.sleep(delay.toMillis()) to avoid
+                // ArithmeticException on overflow for very large Duration values (e.g., values
+                // exceeding Long.MAX_VALUE milliseconds, which toMillis() cannot represent).
+                log.debug("AutoApproveWithDelayReviewHandler sleeping for {}", delay);
+                Thread.sleep(delay);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.debug("AutoApproveWithDelayReviewHandler interrupted; returning Continue immediately");

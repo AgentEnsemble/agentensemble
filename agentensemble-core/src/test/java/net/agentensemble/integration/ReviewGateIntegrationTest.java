@@ -348,6 +348,41 @@ class ReviewGateIntegrationTest {
     }
 
     // ========================
+    // Policy-driven review uses default timeout when task has no explicit Review
+    // ========================
+
+    @Test
+    void policyDrivenReview_noTaskReview_requestHasDefaultTimeoutAndOnTimeout() {
+        // When a gate fires via ReviewPolicy (no task.review() set), the ReviewRequest
+        // must carry Review.DEFAULT_TIMEOUT and Review.DEFAULT_ON_TIMEOUT so that
+        // ConsoleReviewHandler does not block indefinitely on an infinite-wait path.
+        Agent agent = agentWithResponse("Agent", "Task output");
+
+        Task task = Task.builder()
+                .description("Do work")
+                .expectedOutput("Output")
+                .agent(agent)
+                .build(); // no review configured on task
+
+        net.agentensemble.review.ReviewRequest[] capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+
+        EnsembleOutput output = Ensemble.builder()
+                .task(task)
+                .reviewHandler(request -> {
+                    capturedRequest[0] = request;
+                    return ReviewDecision.continueExecution();
+                })
+                .reviewPolicy(ReviewPolicy.AFTER_EVERY_TASK)
+                .build()
+                .run();
+
+        assertThat(output.getExitReason()).isEqualTo(ExitReason.COMPLETED);
+        assertThat(capturedRequest[0]).isNotNull();
+        assertThat(capturedRequest[0].timeout()).isEqualTo(Review.DEFAULT_TIMEOUT);
+        assertThat(capturedRequest[0].onTimeoutAction()).isEqualTo(Review.DEFAULT_ON_TIMEOUT);
+    }
+
+    // ========================
     // No review handler -> no gates fire
     // ========================
 

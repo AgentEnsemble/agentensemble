@@ -80,6 +80,26 @@ class HumanInputToolTest {
     }
 
     @Test
+    void doExecute_handlerReturnsContinue_returnsExactAcknowledgementText() {
+        // Locks down the exact return value documented in the class Javadoc
+        HumanInputTool tool = HumanInputTool.of();
+        tool.injectReviewHandler(request -> ReviewDecision.continueExecution());
+
+        ToolResult result = tool.execute("Should I proceed?");
+        assertThat(result.getOutput()).isEqualTo("Understood. Please continue.");
+    }
+
+    @Test
+    void doExecute_noReviewHandler_returnsDefaultFallbackMessage() {
+        // Verifies the fallback message is non-empty (not an "empty" response)
+        HumanInputTool tool = HumanInputTool.of();
+
+        ToolResult result = tool.execute("Is the research direction correct?");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("No reviewer is available. Please proceed with your best judgment.");
+    }
+
+    @Test
     void doExecute_handlerReturnsContinue_requestHasDuringExecutionTiming() {
         HumanInputTool tool = HumanInputTool.of();
 
