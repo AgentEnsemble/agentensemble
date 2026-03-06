@@ -2,14 +2,44 @@
 
 ## Current Work Focus
 
-Issues #111 and #112 (v2.0.0 Partial Results and Workflow Inference) are complete on
-branch `feat/111-112-partial-results-workflow-inference`. Two commits pushed:
-- `562e09c` -- feat(111): EnsembleOutput partial results and graceful exit-early
-- `500cd91` -- feat(112): Workflow inference from task context declarations
-
-PR ready to open against main.
+Issue #113 (v2.0.0 MapReduce task-first refactor) is complete on branch
+`feat/113-mapreduce-task-first`. Implementation covers all acceptance criteria from the
+issue.
 
 ## Recent Changes
+
+### Issue #113: MapReduceEnsemble task-first refactor
+
+**MapReduceEnsemble.Builder -- new task-first API:**
+- `mapTask(Function<T, Task>)` -- task-first map factory (no agent required); overloads existing `mapTask(BiFunction<T, Agent, Task>)`
+- `reduceTask(Function<List<Task>, Task>)` -- task-first reduce factory; overloads existing `reduceTask(BiFunction<Agent, List<Task>, Task>)`
+- `directTask(Function<List<T>, Task>)` -- task-first short-circuit factory; overloads existing `directTask(BiFunction<Agent, List<T>, Task>)`
+- `chatLanguageModel(ChatModel)` -- default LLM for synthesised agents
+- `mapAgent` and `reduceAgent` -- retained as optional power-user fields (backward compatible)
+
+**Zero-ceremony factory:**
+- `MapReduceEnsemble.of(model, items, mapDescription, reduceDescription)` -- builds and runs in one call
+
+**Validation -- mutual exclusivity:**
+- Each phase (map/reduce/direct) must use either task-first OR agent-first, never both
+- Agent-first: both agent factory AND task factory must be set
+- Task-first: task factory alone is sufficient
+
+**Build logic:**
+- `buildStatic()` uses `createMapTask(item)` / `createReduceTask(chunkTasks)` helpers that dispatch to the correct factory style
+- Inner `Ensemble.builder().chatLanguageModel(chatLanguageModel)` set so `resolveAgents()` synthesises agents at run time
+- `MapReduceAdaptiveExecutor` updated with same factory dispatch logic + `chatLanguageModel` propagated to each inner Ensemble
+
+**Tests:**
+- `MapReduceEnsembleTaskFirstTest` (17 unit tests): DAG structure, no explicit agents, context wiring, factory counts, chatLanguageModel passthrough, tools on task
+- `MapReduceEnsembleTaskFirstValidationTest` (15 validation tests): mutual exclusivity, zero-ceremony factory validation
+- `MapReduceEnsembleTaskFirstIntegrationTest` (12 integration tests): static/adaptive end-to-end, tools, per-task LLM, zero-ceremony, agent-first regression
+
+**Documentation:**
+- `docs/guides/map-reduce.md`: new "Task-first API (v2.0.0)" section, updated builder reference with task-first / agent-first tables
+- `docs/examples/map-reduce.md`: new "Task-first examples (v2.0.0)" section with zero-ceremony and builder examples; existing agent-first examples moved under own heading
+- `agentensemble-examples/.../MapReduceTaskFirstKitchenExample.java`: runnable example with zero-ceremony and task-first builder approaches
+- `agentensemble-examples/build.gradle.kts`: `runMapReduceTaskFirstKitchen` Gradle task registered
 
 ### Issue #111: EnsembleOutput partial results and graceful exit-early
 
