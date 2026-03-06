@@ -753,7 +753,7 @@ class ToolPipelineTest {
                 throw new RuntimeException("boom from plain tool");
             }
         };
-        var step2Called = new java.util.concurrent.atomic.AtomicInteger(0);
+        var step2Called = new AtomicInteger(0);
         var pipeline = ToolPipeline.builder()
                 .name("p")
                 .description("d")
@@ -822,6 +822,74 @@ class ToolPipelineTest {
         assertThat(recording.receivedInputs.get(0)).contains("boom");
         // Final result is step 2's result
         assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    void execute_stepReturnsNull_treatedAsEmptySuccess() {
+        // Plain AgentTool returning null must not NPE; pipeline normalizes to success("")
+        var nullReturningTool = new AgentTool() {
+            @Override
+            public String name() {
+                return "null_returning";
+            }
+
+            @Override
+            public String description() {
+                return "";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                return null; // misbehaving tool
+            }
+        };
+        var recording = new RecordingTool("step_b", "_done");
+        var pipeline = ToolPipeline.builder()
+                .name("p")
+                .description("d")
+                .step(nullReturningTool)
+                .step(recording)
+                .build();
+
+        ToolResult result = pipeline.execute("x");
+
+        // Pipeline must not throw NPE; step 2 receives "" (normalized null output)
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(recording.receivedInputs).containsExactly("");
+    }
+
+    @Test
+    void execute_exceptionWithNullMessage_failureMessageUsesDefaulting() {
+        // Exception with null getMessage() must not produce literal "null" in error message
+        var nullMessageTool = new AgentTool() {
+            @Override
+            public String name() {
+                return "null_msg_step";
+            }
+
+            @Override
+            public String description() {
+                return "";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                throw new RuntimeException((String) null); // null message
+            }
+        };
+        var pipeline = ToolPipeline.builder()
+                .name("p")
+                .description("d")
+                .step(nullMessageTool)
+                .build();
+
+        ToolResult result = pipeline.execute("x");
+
+        // Pipeline must not crash; failure message must not be the literal string "null"
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).isNotNull().isNotEmpty();
+        // ToolResult.failure(null) uses a built-in default message
+        assertThat(result.getErrorMessage()).doesNotContain("threw: null");
     }
 
     @Test

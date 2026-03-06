@@ -162,6 +162,11 @@ public final class ToolPipeline extends AbstractAgentTool {
 
             try {
                 lastResult = step.tool().execute(currentInput);
+                // Normalize null result from misbehaving steps (consistent with
+                // AbstractAgentTool.execute() and LangChain4jToolAdapter behaviour).
+                if (lastResult == null) {
+                    lastResult = ToolResult.success("");
+                }
             } catch (Exception e) {
                 // Catch exceptions from plain AgentTool steps (AbstractAgentTool catches its own).
                 // Re-throw control-flow signals so the framework can handle them correctly.
@@ -169,13 +174,19 @@ public final class ToolPipeline extends AbstractAgentTool {
                         || e instanceof net.agentensemble.exception.ToolConfigurationException) {
                     throw e;
                 }
+                String exceptionMessage = e.getMessage();
                 log().warn(
                                 "Pipeline '{}': step '{}' threw exception: {}",
                                 name,
                                 step.tool().name(),
-                                e.getMessage(),
+                                exceptionMessage != null ? exceptionMessage : e.toString(),
                                 e);
-                lastResult = ToolResult.failure("Step '" + step.tool().name() + "' threw: " + e.getMessage());
+                // Pass null to ToolResult.failure() when the exception has no message; its
+                // built-in defaulting produces a meaningful error string.
+                String failureMessage = (exceptionMessage != null && !exceptionMessage.isEmpty())
+                        ? "Step '" + step.tool().name() + "' threw: " + exceptionMessage
+                        : null;
+                lastResult = ToolResult.failure(failureMessage);
             }
 
             if (!lastResult.isSuccess()) {
@@ -444,9 +455,11 @@ public final class ToolPipeline extends AbstractAgentTool {
          * Apply the adapter (if present) to transform the result, or return
          * {@link ToolResult#getOutput()} as-is when no adapter is configured.
          *
-         * <p>Guarantees a non-null {@code String} output: any {@code null} returned by the
-         * adapter (or by {@link ToolResult#getOutput()}) is normalized to {@code ""} so that
-         * downstream steps always receive a non-null input string.
+         * <p>Guarantees a non-null {@code String} output: any {@code null} produced by the
+         * adapter is normalized to {@code ""} so that downstream steps always receive a
+         * non-null input string. {@link ToolResult#getOutput()} itself is guaranteed non-null
+         * by the {@code ToolResult} contract; the null check here is retained for defensive
+         * purposes in case a misbehaving step produces a non-standard result.
          */
         String adaptOutput(ToolResult result) {
             String output;
