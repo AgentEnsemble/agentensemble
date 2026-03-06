@@ -1,31 +1,39 @@
 # Changelog
 
-## [Unreleased] - Issue #61: Token-by-token streaming via StreamingChatModel (v2.1.0) -- 2026-03-06
+## [Unreleased] - fix: agentensemble-viz compiled binary shows "Not Found" -- 2026-03-06
 
-### Added (Issue #61 -- streaming output via StreamingChatModel)
+### Fixed (branch: fix/viz-cli-binary-asset-embedding, commit 74f1b73)
 
-- `TokenEvent` record: `token` + `agentRole` fields; `EnsembleListener.onToken(TokenEvent)` default no-op
-- `Ensemble.builder().onToken(handler)` lambda convenience; `Agent.builder().streamingLlm(StreamingChatModel)`;
-  `Task.builder().streamingChatLanguageModel(StreamingChatModel)`;
-  `Ensemble.builder().streamingChatLanguageModel(StreamingChatModel)`
-- `ExecutionContext.streamingChatModel()` accessor + `fireToken()` + 11-arg `of()` factory
-- `AgentExecutor`: `resolveStreamingModel()` priority chain (agent > task > ensemble);
-  `executeStreaming()` via `StreamingChatResponseHandler` (LangChain4j 1.11.0: `dev.langchain4j.model.chat.response`);
-  `executeWithoutTools()` uses streaming when model resolved; tool-loop path remains sync
-- `TokenMessage` record (type=`token`, token, agentRole, sentAt); registered in `ServerMessage` sealed interface
-- `WebSocketStreamingListener.onToken()` calls `broadcastEphemeral()` -- NOT added to snapshot
-- `live.ts`: `TokenMessage` interface, `streamingOutput?: string` on `LiveTask`
-- `liveReducer`: `applyToken()` accumulates tokens; `applyTaskCompleted()` clears `streamingOutput`
-- `TimelineView.LiveTaskDetailPanel`: Live Output section with pulsing cursor; `selectedTaskIndex` replaces stale snapshot
+**Root cause:** Bun's `--compile` bundler does not recursively discover and embed files from
+directories referenced only via `new URL('./dist/', import.meta.url)`. Every `readFileSync`
+call against a dynamically-composed path like `join(distDir, relPath)` fails silently at
+runtime because the file does not exist in the compiled binary's virtual filesystem.
 
-**Tests:** TokenEventTest (6), AgentExecutorStreamingTest (7), ProtocolSerializationTest (+2),
-  WebSocketStreamingListenerTest (+4), liveReducer.test.ts (+7) = 26 new tests; viz total: 173
+**Fix -- `agentensemble-viz` package:**
+- `scripts/embed-dist.mjs` (new): reads all non-source-map files from `dist/`, encodes
+  each as base64, and generates `dist-assets.js` -- a static ES module exporting a
+  `Map<urlPath, {content: string, mimeType: string}>`
+- `dist-assets.js` (new placeholder): committed as an empty Map; overwritten in-place by
+  `npm run embed`; the populated version is NOT committed
+- `cli.js`: added `import { distAssets } from './dist-assets.js'`; decodes base64 to
+  Buffers once at startup; `useEmbedded=true` when map is non-empty (compiled binary mode)
+  and serves entirely from memory; `useEmbedded=false` for dev mode (filesystem fallback)
+- `NO_OPEN=1` env var suppresses automatic browser opening (for tests and CI)
+- `package.json`:
+  - Added `"embed": "node scripts/embed-dist.mjs"` script
+  - Compile scripts updated: `npm run build && npm run embed && bun build --compile ...`
+  - `prepublishOnly` updated: `npm run build && npm run embed`
+  - `dist-assets.js` and `scripts/` added to `"files"` array for npm publication
 
-**Docs:** `docs/guides/callbacks.md` (TokenEvent type + Streaming Output section);
-  `docs/design/16-live-dashboard.md` (token message type + Section 4.3);
-  `docs/examples/live-dashboard.md` (Streaming Output section)
-
----
+**Tests added (22 new -- 166 -> 188 total):**
+- `src/__tests__/embed.test.ts` (15 new): exit code 0 on success, creates output file,
+  exports `distAssets` Map, correct MIME types per file extension, source maps excluded,
+  base64 content correct, summary line and file list in stdout, generated file is valid
+  importable JS, base64 round-trip, exit code 1 + error message when dist dir missing
+- `src/__tests__/cli.test.ts` (7 new): HTTP server starts and serves root with 200/text-html,
+  root contains DOCTYPE, unknown routes return 200/text-html (SPA fallback), `/live` returns
+  index.html, `/api/files` returns 200/JSON with files array and directory fields,
+  path-traversal rejected with 400, OPTIONS returns 204
 
 ## [Unreleased] - Issues #133 + #134: Viz live mode + live timeline/flow updates (v2.1.0) -- 2026-03-06
 
