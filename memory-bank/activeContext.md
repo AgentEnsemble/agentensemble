@@ -2,12 +2,59 @@
 
 ## Current Work Focus
 
-Issue #126 (Tool-level approval gates via ReviewHandler) is complete on branch
-`feat/126-tool-level-approval-gates`. Implementation threads `ReviewHandler` through
-`ToolContext` so all `AbstractAgentTool` subclasses can call `requestApproval()` before
-executing dangerous or irreversible actions.
+Issues #114 (agentensemble-bom) and #115 (Migration guide + updated examples) are complete
+on branch `feat/bom-and-migration-guide`. The BOM module, migration guide, and all example
+classes have been converted to the v2 task-first API. Build passes clean.
 
 ## Recent Changes
+
+### Issues #114 + #115: agentensemble-bom + Migration Guide + v2 Examples
+
+**agentensemble-bom (Issue #114):**
+- New `agentensemble-bom/build.gradle.kts`: `java-platform` module with constraints for
+  all framework modules (core, memory, review, metrics-micrometer, devtools) and all 9
+  tool sub-modules + tools BOM. Published as `net.agentensemble:agentensemble-bom`.
+- `settings.gradle.kts`: added `include("agentensemble-bom")`.
+- `build.gradle.kts` (root): skip condition extended to `name == "agentensemble-bom"` so
+  the `java-platform` project is not incorrectly given the `java` plugin.
+- `docs/getting-started/installation.md`: BOM now the primary recommended dependency
+  approach with Gradle Kotlin DSL, Groovy DSL, and Maven examples.
+- `README.md`: quickstart step 1 updated to use `agentensemble-bom:2.0.0`; steps 2-3
+  show task-first API (no explicit agents, chatLanguageModel at ensemble level).
+
+**Migration Guide (Issue #115):**
+- `docs/migration/v1-to-v2.md`: comprehensive 10-section migration guide covering:
+  removing redundant agent declarations, moving tools/chatLanguageModel/maxIterations from
+  Agent to Task, memory API migration, EnsembleOutput API changes, workflow inference,
+  BOM usage, when to keep explicit agents, zero-ceremony static factory.
+
+**v2 Task-First Examples (Issue #115):**
+- All example classes converted to task-first API (agents auto-synthesised from task
+  descriptions). Removed all redundant `Agent.builder()` constructs and `.agent()` calls.
+  `chatLanguageModel(model)` moved to `Ensemble.builder()`. Tools and maxIterations moved
+  from Agent to Task where applicable. `workflow(SEQUENTIAL)` removed (inferred).
+- `ResearchWriterExample.java`: task-first conversion.
+- `ParallelCompetitiveIntelligenceExample.java`: task-first conversion.
+- `HierarchicalTeamExample.java`: removed worker agents; kept `workflow(HIERARCHICAL)`,
+  `chatLanguageModel(fastModel)`, `managerLlm(powerfulModel)`, `managerPromptStrategy`.
+- `MemoryAcrossRunsExample.java`: removed analyst/strategist agents; chatLanguageModel at
+  ensemble; workflow(SEQUENTIAL) removed (default inferred).
+- `CallbackExample.java`: removed researcher/writer agents; chatLanguageModel at ensemble;
+  workflow(SEQUENTIAL) removed.
+- `StructuredOutputExample.java`: Part 1 and Part 2 both converted; writer responseFormat
+  moved into writeTask.expectedOutput.
+- `MetricsExample.java`: removed analyst agent; tools + maxIterations on task.
+- `CaptureModeExample.java`: removed analyst agent in runEnsemble(); tools + maxIterations on task.
+- `RemoteToolExample.java`: removed text-analyst agent; tools + maxIterations on task.
+- `HumanInTheLoopExample.java` (NEW): demonstrates beforeReview, review, Review.skip(),
+  ReviewHandler.console(), OnTimeoutAction.CONTINUE/EXIT_EARLY, and v2 EnsembleOutput API
+  (isComplete, getExitReason, completedTasks, lastCompletedOutput, getOutput).
+- `agentensemble-examples/build.gradle.kts`: added `agentensemble-review` dependency;
+  added `runHumanInTheLoop` Gradle task.
+- Build: 183 tasks, BUILD SUCCESSFUL. All tests pass. Spotless clean.
+- Intentionally NOT converted: `DynamicAgentsExample` (explicit agents are the whole point),
+  `MapReduceKitchenExample`, `MapReduceAdaptiveKitchenExample`, `MapReduceTaskFirstKitchenExample`
+  (use .mapAgent() factory lambdas).
 
 ### Issue #126: Tool-Level Approval Gates
 
@@ -142,8 +189,8 @@ executing dangerous or irreversible actions.
 
 ## Next Steps
 
-- Open PR for feat/111-112-partial-results-workflow-inference -> main
-- Continue with remaining v2.0.0 issues in epic #103
+- Open PR for feat/bom-and-migration-guide -> main (Issues #114 + #115)
+- Continue with remaining open issues in the v2.0.0 epic (#103)
 - v2.1.0 Live Execution Dashboard: design complete (docs/design/16-live-dashboard.md), GitHub issues to be created
 
 ## Important Patterns and Preferences

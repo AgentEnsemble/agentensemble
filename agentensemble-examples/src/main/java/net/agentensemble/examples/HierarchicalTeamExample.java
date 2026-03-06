@@ -1,7 +1,6 @@
 package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -20,7 +19,8 @@ import org.slf4j.LoggerFactory;
  *   - Financial Analyst  -- reviews financial metrics and projections
  *   - Report Writer      -- synthesises findings into an executive report
  *
- * The Manager decides task assignment and ordering at run time based on agent roles and goals.
+ * Worker agents are auto-synthesised from each task's description and expectedOutput.
+ * The Manager decides task assignment and ordering at run time.
  *
  * Usage:
  *   Set OPENAI_API_KEY environment variable, then run:
@@ -44,7 +44,7 @@ public class HierarchicalTeamExample {
                     "OPENAI_API_KEY environment variable is not set. " + "Please set it to your OpenAI API key.");
         }
 
-        // Worker agents use a faster model; the manager uses a more capable model
+        // Worker tasks use a faster model; the manager uses a more capable model
         var fastModel = OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName("gpt-4o-mini")
@@ -54,50 +54,21 @@ public class HierarchicalTeamExample {
                 OpenAiChatModel.builder().apiKey(apiKey).modelName("gpt-4o").build();
 
         // ========================
-        // Define worker agents
-        // ========================
-
-        var marketResearcher = Agent.builder()
-                .role("Market Research Analyst")
-                .goal("Analyse market trends, competitive dynamics, and growth opportunities")
-                .background("You specialise in technology sector market research. "
-                        + "You provide concise, evidence-based insights.")
-                .llm(fastModel)
-                .build();
-
-        var financialAnalyst = Agent.builder()
-                .role("Financial Analyst")
-                .goal("Analyse financial performance, metrics, and investment implications")
-                .background("You are a CFA charter holder with 10 years of equity research experience. "
-                        + "You focus on publicly available financial data.")
-                .llm(fastModel)
-                .build();
-
-        var reportWriter = Agent.builder()
-                .role("Executive Report Writer")
-                .goal("Transform complex analysis into clear, compelling executive reports")
-                .background("You write board-level reports. You use clear language, structured sections, "
-                        + "and evidence-based conclusions.")
-                .llm(fastModel)
-                .build();
-
-        // ========================
         // Define tasks
         // ========================
-        // The manager decides which agent handles each task at run time.
+        // Agents are auto-synthesised from the task descriptions.
+        // The manager decides which synthesised agent handles each task at run time.
 
         var marketTask = Task.builder()
                 .description("Analyse {company}'s current market position and competitive landscape")
                 .expectedOutput("A market analysis covering: market share, top three competitors, "
                         + "key differentiators, and two to three growth opportunities")
-                .agent(marketResearcher)
                 .build();
 
         var financialTask = Task.builder()
                 .description("Review {company}'s financial health and key performance indicators")
                 .expectedOutput("A financial summary covering: revenue trend (last 3 years), "
                         + "profitability metrics, balance sheet strength, and investment thesis")
-                .agent(financialAnalyst)
                 .build();
 
         var reportTask = Task.builder()
@@ -105,7 +76,6 @@ public class HierarchicalTeamExample {
                         "Write an executive investment brief for {company} based on market " + "and financial analysis")
                 .expectedOutput("A 600-word executive brief with: company overview, market position, "
                         + "financial highlights, risks, and investment recommendation")
-                .agent(reportWriter)
                 .build();
 
         // ========================
@@ -135,6 +105,7 @@ public class HierarchicalTeamExample {
                 .task(financialTask)
                 .task(reportTask)
                 .workflow(Workflow.HIERARCHICAL)
+                .chatLanguageModel(fastModel)
                 .managerLlm(powerfulModel)
                 .managerMaxIterations(15)
                 .managerPromptStrategy(investmentStrategy)

@@ -1,5 +1,88 @@
 # Changelog
 
+## [Unreleased] - Issues #114 + #115: agentensemble-bom + Migration Guide + Updated Examples -- 2026-03-05
+
+### Added (Issue #114 -- agentensemble-bom Bill of Materials)
+
+**New Gradle module `agentensemble-bom`:**
+- `agentensemble-bom/build.gradle.kts`: `java-platform` plugin; Maven coordinates
+  `net.agentensemble:agentensemble-bom`; `javaPlatform { allowDependencies() }`;
+  `apiConstraints` for all published modules:
+  - `agentensemble-core`, `agentensemble-memory`, `agentensemble-review`
+  - `agentensemble-metrics-micrometer`, `agentensemble-devtools`
+  - All 9 tool modules under `agentensemble-tools-*`
+  - `agentensemble-tools-bom` (nested BOM for tools sub-project)
+- `settings.gradle.kts`: `include("agentensemble-bom")` added before `agentensemble-core`
+- `build.gradle.kts` (root): skip condition for java plugin extended from
+  `name == "bom"` to `name == "bom" || name == "agentensemble-bom"` so the
+  `java-platform` plugin and `java` plugin do not conflict on the BOM module
+
+**Documentation updated (Issue #114):**
+- `docs/getting-started/installation.md`: BOM promoted as primary installation approach;
+  Gradle Kotlin DSL, Gradle Groovy DSL, and Maven examples; individual module table retained
+  as secondary reference
+- `README.md`: quickstart updated to use `agentensemble-bom:2.0.0`; task-first API example
+  in quickstart replaces old agent-first example
+
+### Added (Issue #115 -- Migration guide v1.x to v2.0.0 + updated examples)
+
+**Migration guide (`docs/migration/v1-to-v2.md`):**
+- 10-section guide covering all v2.0.0 breaking changes:
+  1. Overview and quick checklist
+  2. Agent-first to task-first paradigm shift
+  3. Module split (agentensemble-memory, agentensemble-review, agentensemble-bom)
+  4. Memory API changes (EnsembleMemory -> MemoryStore, MemoryEntry restructured)
+  5. Review / human-in-the-loop system (new, no v1 equivalent)
+  6. EnsembleOutput changes (isComplete, completedTasks, lastCompletedOutput, getOutput)
+  7. Workflow inference (workflow field now nullable, inferred from context deps)
+  8. MapReduceEnsemble task-first API
+  9. Tool API changes (tools on Task, not Agent)
+  10. Exception changes (ExitEarlyException, GuardrailViolationException hierarchy)
+
+**Updated examples (Issue #115):**
+- `ResearchWriterExample.java`: removed explicit Agent.builder() blocks; tasks use
+  `.chatLanguageModel(model)` at ensemble level; task-first API throughout
+- `ParallelCompetitiveIntelligenceExample.java`: removed explicit agents; ensemble-level
+  chatLanguageModel; parallel workflow still inferred from context deps
+- `HierarchicalTeamExample.java`: removed 3 worker Agent.builder() blocks; kept
+  `workflow(HIERARCHICAL)`, `chatLanguageModel(fastModel)`, `managerLlm(powerfulModel)`,
+  `managerPromptStrategy`; tasks have no `.agent()` call
+- `MemoryAcrossRunsExample.java`: removed analyst/strategist agents; `.chatLanguageModel`
+  at ensemble; removed `workflow(SEQUENTIAL)` (now inferred)
+- `CallbackExample.java`: removed researcher/writer agents; ensemble-level chatLanguageModel;
+  removed explicit workflow declaration
+- `StructuredOutputExample.java`: both Part 1 and Part 2 converted; writer's
+  responseFormat instruction moved into writeTask's expectedOutput
+- `MetricsExample.java`: removed analyst Agent.builder(); tools and maxIterations moved
+  to task; ensemble-level chatLanguageModel
+- `CaptureModeExample.java`: removed analyst Agent.builder(); tools + maxIterations on task
+- `RemoteToolExample.java`: removed agent builder; tools on task; ensemble-level model
+
+**New example (`HumanInTheLoopExample.java`):**
+- Three tasks demonstrating all review gate timing points:
+  - `draftTask`: `beforeReview(Review.required())` with `onTimeout(OnTimeoutAction.CONTINUE)`
+  - `pressReleaseTask`: `review(Review.required())` with `onTimeout(OnTimeoutAction.EXIT_EARLY)`
+  - `socialTask`: `review(Review.skip())`
+- `Ensemble.builder().reviewHandler(ReviewHandler.console())`
+- Output handling: `output.isComplete()`, `output.getExitReason()`,
+  `output.completedTasks()`, `output.lastCompletedOutput().ifPresent(...)`,
+  `output.getOutput(draftTask).ifPresent(...)`
+- `agentensemble-examples/build.gradle.kts`: added `implementation(project(":agentensemble-review"))`;
+  added `"runHumanInTheLoop"` Gradle task mapping to `HumanInTheLoopExample`
+
+### Design Decisions (Issues #114 + #115)
+
+- `agentensemble-bom` uses the `java-platform` Gradle plugin (not `java-library`); the root
+  build's java plugin application must be skipped for this module to avoid a plugin conflict.
+  The existing skip condition for `name == "bom"` (the tools BOM) was extended with an OR
+  to cover `agentensemble-bom`.
+- The migration guide covers all six Group A-F workstreams in one document rather than per-issue
+  guides, giving users a single canonical reference for upgrading from v1.x.
+- `HumanInTheLoopExample` uses `OnTimeoutAction.EXIT_EARLY` (not `SKIP` -- that enum value
+  does not exist). `getOutput(Task)` returns `Optional<TaskOutput>` requiring `.ifPresent`.
+
+---
+
 ## [Unreleased] - Issue #126: Tool-Level Approval Gates -- 2026-03-05
 
 ### Added (Issue #126 -- Tool-level approval gates via ReviewHandler)

@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation(project(":agentensemble-core"))
     implementation(project(":agentensemble-memory"))
+    implementation(project(":agentensemble-review"))
 
     // Built-in tool modules used by examples
     implementation(project(":agentensemble-tools:calculator"))
@@ -49,6 +50,7 @@ application {
 //   ./gradlew :agentensemble-examples:runStructuredOutput --args="quantum computing"
 //   ./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
 //   ./gradlew :agentensemble-examples:runCaptureMode
+//   ./gradlew :agentensemble-examples:runHumanInTheLoop --args="AgentEnsemble v2"
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -64,6 +66,7 @@ mapOf(
     "runRemoteTool" to "net.agentensemble.examples.RemoteToolExample",
     "runMetrics" to "net.agentensemble.examples.MetricsExample",
     "runCaptureMode" to "net.agentensemble.examples.CaptureModeExample",
+    "runHumanInTheLoop" to "net.agentensemble.examples.HumanInTheLoopExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"
