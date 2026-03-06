@@ -3,11 +3,28 @@
 ## Current Focus
 
 Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
+Issue #132 (WebReviewHandler real implementation) is complete on `main`.
 
+- **#132** (WebReviewHandler -- real implementation replacing stub, v2.1.0): Done (merged to main)
 - **#133** (Viz live mode -- WebSocket client + incremental state machine): Done
 - **#134** (Viz live timeline and flow view updates): Done
 
 ## Key accomplishments
+
+### Issue #132 -- WebReviewHandler (merged to main)
+
+**Breaking change**: `ReviewHandler.web(URI)` factory removed from `agentensemble-review`;
+the stub `WebReviewHandler` in that module deleted. The real implementation has always been
+`net.agentensemble.web.WebReviewHandler` in `agentensemble-web`, obtained via
+`WebDashboard.reviewHandler()`.
+
+Key changes:
+- `ReviewHandler.web(URI)` factory and the URI-based `WebReviewHandler` stub removed from
+  `agentensemble-review`
+- `ConnectionManager.resolveReview()` now logs at DEBUG when an unknown reviewId is received
+- `WebReviewHandlerTest` extended with 2 new tests (concurrent reviews, unknown reviewId race)
+- `WebReviewGateIntegrationTest` created (4 tests, real embedded server + Java WS client):
+  CONTINUE, EDIT, EXIT_EARLY decision flows + timeout with `review_timed_out` broadcast
 
 ### Issue #133 -- WebSocket client + state machine
 - `src/types/live.ts`: Wire protocol types (ServerMessage discriminated union, ClientMessage, LiveState, LiveTask, ConnectionStatus, LiveAction)
@@ -17,7 +34,6 @@ Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
 - `src/pages/LivePage.tsx`: /live route page; auto-connects from ?server= query param; wraps content in LiveServerProvider
 - `src/pages/LoadTrace.tsx`: Added "Connect to live server" form that navigates to /live?server=<url>
 - `src/main.tsx`: BrowserRouter with /live -> LivePage and /* -> App; added react-router-dom dependency
-- `src/pages/LoadTrace.tsx`: useNavigate-based navigation to /live?server=<url>
 
 ### Issue #134 -- Live timeline and flow view updates
 - `src/pages/TimelineView.tsx`: Added isLive prop; LiveTimelineView renders from LiveServerContext; task bars appear on task_started; running bars grow via rAF; bars lock on task_completed; failed bars render red; tool markers positioned at receivedAt; "Follow latest" toggle with auto-scroll + re-engage at right edge; 19 unit tests pass
@@ -28,10 +44,66 @@ Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
 - `src/index.css`: ae-pulse and ae-node-pulse CSS keyframe animations; live node status classes
 
 ## Test Summary
-- 163 tests pass across 9 test files
-- Build: TypeScript + Vite build clean (exit 0)
+- agentensemble-viz: 163 tests pass across 9 test files; TypeScript + Vite build clean
+- agentensemble-web: All existing tests pass; 6 new tests for #132 (2 unit + 4 integration)
 
 ## Next Steps
 - Open PR for feat/133-134-viz-live-mode against main
-- Issue #135 (Review approval UI -- H2): depends on H1 (WebReviewHandler real implementation) and I1 (this branch)
-- Issue #129 epic notes: G1 (agentensemble-web module) done; G2 (WebSocketStreamingListener) done; I1 done; I2 done. Outstanding: H1 (WebReviewHandler real impl), H2 (review UI), J (docs/examples)
+- Issue #129 epic notes: G1 done; G2 done; H1 (#132) done; I1 (#133) done; I2 (#134) done. Outstanding: H2 (review approval UI), J (docs/examples)
+- H2 depends on H1 (done) and I1 (done) -- can now be started
+
+## Key Design Decisions (Issue #132)
+
+- Breaking change chosen over deprecation: `ReviewHandler.web(URI)` was always a stub
+  that threw UnsupportedOperationException, so callers had no working code to migrate;
+  removing it cleanly is better than emitting a deprecation warning for years
+- Real `WebReviewHandler` lives in `agentensemble-web` (not `agentensemble-review`) because
+  it depends on `ConnectionManager`, `MessageSerializer`, and the Javalin server
+- Canonical entry point is `WebDashboard.reviewHandler()`; it is the only way to obtain a
+  working `WebReviewHandler`
+- `ConnectionManager.resolveReview()` logs at DEBUG for unknown reviewId rather than WARN
+  because it is an expected race condition (late browser decision after timeout)
+
+## Important Patterns and Preferences
+
+### agentensemble-web module (v2.1.0)
+
+- `WebDashboard.onPort(port)` -- zero-config; `WebDashboard.builder()` for full config
+- `Ensemble.builder().webDashboard(dashboard)` -- single call wires listener + review
+  handler + lifecycle hooks
+- `EnsembleDashboard` interface: `streamingListener()`, `reviewHandler()`,
+  `start()`, `stop()`, `isRunning()`, `onEnsembleStarted(...)`, `onEnsembleCompleted(...)`
+- `WebSocketStreamingListener` broadcasts and appends to snapshot after each event
+- `ConnectionManager.noteEnsembleStarted(ensembleId, startedAt)` clears snapshot and
+  records metadata for the hello message
+- `ConnectionManager.appendToSnapshot(json)` adds each broadcast message to the late-join log
+- Late-join hello message: `HelloMessage(ensembleId, startedAt, snapshotTrace)` where
+  `snapshotTrace` is a `JsonNode` array of all past broadcast messages (or null if empty)
+- agentensemble-review is now `api` dependency in agentensemble-web (not compileOnly)
+
+### agentensemble-viz live mode (v2.1.0, Issues #133/#134)
+
+- `/live?server=ws://localhost:7329/ws` is the entry point for live mode
+- `LiveServerContext` manages WebSocket lifecycle with exponential backoff reconnect
+- `liveReducer` is a pure function -- all server messages reduce into `LiveState`
+- `buildSyntheticDagModel(liveState)` builds a disposable DagModel for the ReactFlow layout
+- `TaskNode.liveStatus` drives color/animation without modifying the existing agent color system
+- `ae-pulse` (opacity keyframe) and `ae-node-pulse` (box-shadow ring) are CSS-only animations
+
+### v2.0.0 EnsembleOutput API (Issue #111)
+- `output.isComplete()` -- true only when all tasks ran to completion
+- `output.getExitReason()` -- COMPLETED, USER_EXIT_EARLY, TIMEOUT, ERROR
+- `output.completedTasks()` -- same as getTaskOutputs(); always safe
+- `output.lastCompletedOutput()` -- Optional<TaskOutput> last completed
+- `output.getOutput(researchTask)` -- identity-based lookup; pass the same Task instance
+
+### v2.0.0 Review API (Issues #108/#109/#110)
+- ReviewHandler + ReviewPolicy is the v2.0.0 review API
+- Ensemble.builder().reviewHandler(ReviewHandler) + .reviewPolicy(ReviewPolicy)
+- Task.builder().review(Review) / .beforeReview(Review)
+- HumanInputTool.of() for mid-task clarification (DURING_EXECUTION gate)
+
+### v2 Task-First API (Issues #104/#105)
+- Task.of(description) -- zero-ceremony, default expectedOutput, no agent required
+- Ensemble.run(model, tasks...) -- static factory, single-line ensemble execution
+- Ensemble.builder().chatLanguageModel(model) -- ensemble-level LLM for synthesis

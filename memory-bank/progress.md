@@ -15,6 +15,22 @@
 - Pipelines nest -- a pipeline can be a step inside another pipeline
 - 49 unit tests + 7 integration tests; all pass; branch `feature/tool-pipeline-74`
 
+## What Works (as of Issue #132 -- WebReviewHandler real implementation v2.1.0)
+
+**Breaking change in agentensemble-review:**
+- `ReviewHandler.web(URI)` factory removed; URI-based `WebReviewHandler` stub deleted
+- `ReviewHandler` Javadoc updated to direct users to `WebDashboard.reviewHandler()`
+- `AutoApproveReviewHandlerTest` updated (4 web() stub tests removed)
+
+**WebReviewHandler tests (agentensemble-web):**
+- `WebReviewHandlerTest` extended with concurrent review test (3 parallel virtual threads)
+  resolved in reverse order and unknown reviewId test (late decision after timeout)
+- `WebReviewGateIntegrationTest` added (4 tests): CONTINUE, EDIT, EXIT_EARLY decision flows
+  plus timeout flow verifying `review_timed_out` broadcast with real embedded server + WS client
+- `ConnectionManager.resolveReview()` logs at DEBUG for unknown reviewId (expected race)
+
+**All tests pass; full build clean (agentensemble-review + agentensemble-web).**
+
 ## What Works (as of Issue #131 -- WebSocketStreamingListener v2.1.0)
 
 **agentensemble-web module (Issues #130 + #131):**
@@ -38,7 +54,7 @@
 - `MessageSerializer` serializes/deserializes with `type` discriminator; `FAIL_ON_UNKNOWN_PROPERTIES=false`
 - agentensemble-review promoted from `compileOnly` to `api` dependency in agentensemble-web
 - 155+ tests across 7 test classes (including new `WebDashboardIntegrationTest`); all pass; JaCoCo LINE >= 90% and BRANCH >= 75% both pass
-- Branch `feat/131-streaming-listener`; PR pending
+- Branch `feat/131-streaming-listener`; merged to main (PR #142)
 
 ## What Works (as of Issue #113 -- MapReduce task-first refactor)
 
@@ -273,14 +289,15 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 - Only for adaptive mode
 - Implemented in `agentensemble-core` and documented
 
-### v2.1.0 -- Live Execution Dashboard (Groups G + H1 complete)
+### v2.1.0 -- Live Execution Dashboard (Groups G + H complete)
 
 Design document: `docs/design/16-live-dashboard.md`
 
-**Complete (PR #138 open):**
+**Complete:**
 - Group G1: `agentensemble-web` module with embedded Javalin WebSocket server
 - Group G2: `WebSocketStreamingListener` -- all 7 `EnsembleListener` event types
-- Group H1: `WebReviewHandler` -- real browser-based review implementation (replaces stub)
+- Group H1: `WebReviewHandler` -- real browser-based review (Issues #130/#131, PR #142)
+- Group H2 (partial): `ReviewHandler.web(URI)` stub removed; backward compat clean (Issue #132)
 
 **Complete (feat/133-134-viz-live-mode -- Issues #133, #134):**
 - Group I1: agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine; 163 tests pass
