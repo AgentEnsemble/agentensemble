@@ -135,6 +135,9 @@ public final class WebSocketStreamingListener implements EnsembleListener {
         try {
             String json = serializer.toJson(message);
             connectionManager.broadcast(json);
+            // Append to the late-join snapshot so clients that connect mid-run receive
+            // all past events in the hello message and can reconstruct the current state.
+            connectionManager.appendToSnapshot(json);
         } catch (Exception e) {
             log.warn("Failed to serialize and broadcast protocol message: {}", e.getMessage(), e);
         }

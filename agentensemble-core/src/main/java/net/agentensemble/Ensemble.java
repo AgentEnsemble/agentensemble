@@ -311,6 +311,18 @@ public class Ensemble {
      */
     private final ReviewPolicy reviewPolicy;
 
+    /**
+     * Optional live execution dashboard registered via
+     * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}.
+     *
+     * <p>When non-null, {@link #runWithInputs} notifies the dashboard at the beginning
+     * and end of each run so it can broadcast {@code ensemble_started} and
+     * {@code ensemble_completed} wire-protocol messages.
+     *
+     * <p>Default: null.
+     */
+    private final EnsembleDashboard dashboard;
+
     // ========================
     // Static zero-ceremony factory
     // ========================
@@ -465,7 +477,18 @@ public class Ensemble {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
             }
 
-            // Step 7: Select and execute WorkflowExecutor
+            // Step 7: Notify dashboard that execution is about to begin.
+            // This fires ensemble_started before the first task runs.
+            if (dashboard != null) {
+                try {
+                    dashboard.onEnsembleStarted(
+                            ensembleId, runStartedAt, agentResolvedTasks.size(), effectiveWorkflow.name());
+                } catch (Exception e) {
+                    log.warn("Dashboard.onEnsembleStarted threw an exception: {}", e.getMessage(), e);
+                }
+            }
+
+            // Step 8: Select and execute WorkflowExecutor
             WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
             EnsembleOutput output = executor.execute(agentResolvedTasks, executionContext);
 
@@ -477,7 +500,29 @@ public class Ensemble {
                     output.getTaskOutputs().size(),
                     output.getTotalToolCalls());
 
-            // Step 8: Build ExecutionTrace
+            // Step 9: Notify dashboard that the run has completed.
+            if (dashboard != null) {
+                try {
+                    long durationMs = java.time.Duration.between(runStartedAt, runCompletedAt)
+                            .toMillis();
+                    long totalTokens =
+                            output.getMetrics() != null ? output.getMetrics().getTotalTokens() : -1L;
+                    String exitReason = output.getExitReason() != null
+                            ? output.getExitReason().name()
+                            : "COMPLETED";
+                    dashboard.onEnsembleCompleted(
+                            ensembleId,
+                            runCompletedAt,
+                            durationMs,
+                            exitReason,
+                            totalTokens,
+                            output.getTotalToolCalls());
+                } catch (Exception e) {
+                    log.warn("Dashboard.onEnsembleCompleted threw an exception: {}", e.getMessage(), e);
+                }
+            }
+
+            // Step 10: Build ExecutionTrace
             ExecutionTrace trace = buildExecutionTrace(
                     ensembleId,
                     runStartedAt,
@@ -488,7 +533,7 @@ public class Ensemble {
                     effectiveWorkflow,
                     derivedAgents);
 
-            // Step 9: Attach trace to EnsembleOutput, preserving exitReason.
+            // Step 11: Attach trace to EnsembleOutput, preserving exitReason.
             // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
@@ -518,7 +563,7 @@ public class Ensemble {
                     .taskOutputIndex(originalIndex)
                     .build();
 
-            // Step 10: Export trace
+            // Step 12: Export trace
             ExecutionTraceExporter effectiveExporter = traceExporter;
             if (effectiveExporter == null && effectiveCaptureMode == CaptureMode.FULL) {
                 effectiveExporter = new JsonTraceExporter(java.nio.file.Path.of("./traces/"));
@@ -901,6 +946,9 @@ public class Ensemble {
             if (!dashboard.isRunning()) {
                 dashboard.start();
             }
+            // Store the dashboard reference so Ensemble.runWithInputs() can call the
+            // onEnsembleStarted/onEnsembleCompleted lifecycle hooks.
+            this.dashboard(dashboard);
             return listener(dashboard.streamingListener()).reviewHandler(dashboard.reviewHandler());
         }
     }

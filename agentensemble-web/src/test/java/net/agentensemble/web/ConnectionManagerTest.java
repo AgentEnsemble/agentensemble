@@ -2,8 +2,12 @@ package net.agentensemble.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import net.agentensemble.web.protocol.MessageSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,16 +39,119 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void newConnectionReceivesCurrentSnapshotInHello() {
-        String snapshotJson = "{\"workflow\":\"SEQUENTIAL\",\"taskCount\":2}";
-        connectionManager.updateSnapshotJson(snapshotJson);
-
+    void newConnectionReceivesEmptySnapshotInHelloWhenNoEventsYet() {
         MockWsSession session = new MockWsSession("session-2");
         connectionManager.onConnect(session);
 
         String helloJson = session.sentMessages().get(0);
-        // The snapshot content is embedded in the hello message
-        assertThat(helloJson).contains("hello");
+        assertThat(helloJson).contains("\"type\":\"hello\"");
+        // No snapshotTrace field when snapshot is empty (NON_NULL omits it)
+        assertThat(helloJson).doesNotContain("snapshotTrace");
+    }
+
+    @Test
+    void lateJoinerReceivesSnapshotOfPastEvents() {
+        // Simulate a run that has already broadcast some events
+        connectionManager.noteEnsembleStarted("ens-abc", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-abc\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+
+        // Late-joining client
+        MockWsSession lateSession = new MockWsSession("late-joiner");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("\"type\":\"hello\"");
+        // Snapshot should contain the two past events as a JSON array
+        assertThat(helloJson).contains("snapshotTrace");
+        assertThat(helloJson).contains("ensemble_started");
+        assertThat(helloJson).contains("task_started");
+        // ensembleId and startedAt should be set from noteEnsembleStarted
+        assertThat(helloJson).contains("\"ensembleId\":\"ens-abc\"");
+    }
+
+    @Test
+    void noteEnsembleStarted_clearsOldSnapshotFromPreviousRun() {
+        // Run 1: accumulate events
+        connectionManager.noteEnsembleStarted("ens-run1", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run1\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+
+        // Run 2: new run clears old snapshot
+        connectionManager.noteEnsembleStarted("ens-run2", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run2\"}");
+
+        MockWsSession session = new MockWsSession("session-x");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // Only run-2 events should be present
+        assertThat(helloJson).contains("ens-run2");
+        assertThat(helloJson).doesNotContain("ens-run1");
+    }
+
+    @Test
+    void snapshotGrowsIncrementallyAsEventsArrive() {
+        connectionManager.noteEnsembleStarted("ens-123", Instant.now());
+
+        // Connect a client before any events -- gets empty snapshot
+        MockWsSession earlySession = new MockWsSession("early");
+        connectionManager.onConnect(earlySession);
+        assertThat(earlySession.sentMessages().get(0)).doesNotContain("snapshotTrace");
+
+        // Broadcast some events
+        String msg1 = "{\"type\":\"task_started\",\"taskIndex\":1}";
+        String msg2 = "{\"type\":\"task_completed\",\"taskIndex\":1}";
+        connectionManager.appendToSnapshot(msg1);
+        connectionManager.appendToSnapshot(msg2);
+
+        // Late-joining client gets both events in snapshot
+        MockWsSession lateSession = new MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("task_started");
+        assertThat(helloJson).contains("task_completed");
+    }
+
+    @Test
+    void concurrentSnapshotAppends_doNotCorruptSnapshot() throws InterruptedException {
+        connectionManager.noteEnsembleStarted("ens-concurrent", Instant.now());
+        int threadCount = 10;
+        int eventsPerThread = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        for (int t = 0; t < threadCount; t++) {
+            final int thread = t;
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < eventsPerThread; i++) {
+                        connectionManager.appendToSnapshot(
+                                "{\"type\":\"task_started\",\"thread\":" + thread + ",\"i\":" + i + "}");
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+
+        // Connect after all concurrent appends; snapshot must contain all events
+        MockWsSession session = new MockWsSession("after-concurrent");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+        // The snapshot JSON array must be well-formed (parseable) and contain all events
+        assertThat(helloJson).contains("snapshotTrace");
+        // Count occurrences of "task_started" -- should be threadCount * eventsPerThread
+        int count = 0;
+        int idx = 0;
+        while ((idx = helloJson.indexOf("task_started", idx)) != -1) {
+            count++;
+            idx++;
+        }
+        assertThat(count).isEqualTo(threadCount * eventsPerThread);
     }
 
     @Test
@@ -254,7 +361,10 @@ class ConnectionManagerTest {
 
     static final class MockWsSession implements WsSession {
         private final String id;
-        private final List<String> messages = new ArrayList<>();
+        // CopyOnWriteArrayList ensures send() is safe when called concurrently from
+        // multiple virtual threads (e.g. in the parallel workflow concurrent test).
+        private final java.util.concurrent.CopyOnWriteArrayList<String> messages =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
         private boolean open = true;
 
         MockWsSession(String id) {

@@ -3,7 +3,15 @@ package net.agentensemble.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import net.agentensemble.review.OnTimeoutAction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -211,5 +219,156 @@ class WebDashboardTest {
         assertThat(dashboard.getHost()).isEqualTo("0.0.0.0");
         assertThat(dashboard.getReviewTimeout()).isEqualTo(Duration.ofMinutes(10));
         assertThat(dashboard.getOnTimeout()).isEqualTo(OnTimeoutAction.EXIT_EARLY);
+    }
+
+    // ========================
+    // Ensemble lifecycle hooks
+    // ========================
+
+    @Test
+    void onEnsembleStarted_broadcastsToConnectedClients() throws Exception {
+        dashboard = WebDashboard.builder().port(0).host("0.0.0.0").build();
+        dashboard.start();
+        int port = dashboard.actualPort();
+
+        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch gotMessage = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("ensemble_started")) {
+                                gotMessage.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+        Thread.sleep(50); // allow hello to arrive
+
+        dashboard.onEnsembleStarted("test-ens-id", Instant.now(), 3, "SEQUENTIAL");
+
+        assertThat(gotMessage.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(received).anyMatch(m -> m.contains("\"type\":\"ensemble_started\""));
+        assertThat(received).anyMatch(m -> m.contains("\"totalTasks\":3"));
+        assertThat(received).anyMatch(m -> m.contains("\"workflow\":\"SEQUENTIAL\""));
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void onEnsembleCompleted_broadcastsToConnectedClients() throws Exception {
+        dashboard = WebDashboard.builder().port(0).host("0.0.0.0").build();
+        dashboard.start();
+        int port = dashboard.actualPort();
+
+        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch gotMessage = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("ensemble_completed")) {
+                                gotMessage.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+        Thread.sleep(50);
+
+        dashboard.onEnsembleCompleted("test-ens-id", Instant.now(), 5000L, "COMPLETED", 1200L, 7);
+
+        assertThat(gotMessage.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(received).anyMatch(m -> m.contains("\"type\":\"ensemble_completed\""));
+        assertThat(received).anyMatch(m -> m.contains("\"exitReason\":\"COMPLETED\""));
+        assertThat(received).anyMatch(m -> m.contains("\"totalToolCalls\":7"));
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void onEnsembleStarted_withNoConnectedClients_doesNotThrow() {
+        dashboard = WebDashboard.onPort(0);
+        // Not started: no clients, no server; should not throw
+        dashboard.onEnsembleStarted("ens-id", Instant.now(), 2, "SEQUENTIAL");
+    }
+
+    @Test
+    void onEnsembleStarted_populatesSnapshotForLateJoiners() throws Exception {
+        dashboard = WebDashboard.builder().port(0).host("0.0.0.0").build();
+        dashboard.start();
+
+        // Call lifecycle hook before any client connects
+        dashboard.onEnsembleStarted("ens-snap", Instant.now(), 1, "SEQUENTIAL");
+
+        int port = dashboard.actualPort();
+        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch gotHello = new CountDownLatch(1);
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("\"type\":\"hello\"")) {
+                                gotHello.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(gotHello.await(5, TimeUnit.SECONDS)).isTrue();
+        String helloJson = received.stream()
+                .filter(m -> m.contains("\"type\":\"hello\""))
+                .findFirst()
+                .orElseThrow();
+
+        // Late joiner receives ensembleId and snapshot containing ensemble_started
+        assertThat(helloJson).contains("\"ensembleId\":\"ens-snap\"");
+        assertThat(helloJson).contains("snapshotTrace");
+        assertThat(helloJson).contains("ensemble_started");
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
     }
 }
