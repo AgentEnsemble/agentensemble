@@ -298,6 +298,23 @@ Sent when `Ensemble.run()` returns normally.
 }
 ```
 
+#### `token`
+Sent for each token emitted by a `StreamingChatModel` during the final agent response.
+Only emitted when streaming is configured (see Section 4.3).
+
+Token messages are **not** added to the late-join snapshot. They are ephemeral: a client
+that joins mid-stream receives the task as `running` and accumulates new tokens from that
+point. The authoritative final output arrives in `task_completed`.
+
+```json
+{
+  "type": "token",
+  "token": "Hello ",
+  "agentRole": "Senior Research Analyst",
+  "sentAt": "2026-03-05T14:00:15.123Z"
+}
+```
+
 #### `heartbeat`
 Sent every 15 seconds to keep the connection alive.
 
@@ -307,6 +324,23 @@ Sent every 15 seconds to keep the connection alive.
   "serverTimeMs": 1741212300000
 }
 ```
+
+### 4.3 Streaming Output
+
+Token-by-token streaming of the final agent response is opt-in. When a
+`StreamingChatModel` is configured, `AgentExecutor` streams the final LLM call and fires
+`EnsembleListener.onToken(TokenEvent)` for each received token. The
+`WebSocketStreamingListener` translates each `TokenEvent` into a `TokenMessage` and
+broadcasts it over WebSocket.
+
+**Resolution order** (first non-null wins):
+1. `Agent.builder().streamingLlm(model)` -- agent-level
+2. `Task.builder().streamingChatLanguageModel(model)` -- task-level
+3. `Ensemble.builder().streamingChatLanguageModel(model)` -- ensemble-level
+
+**Scope**: streaming only applies to the direct LLM-to-answer path
+(`executeWithoutTools`). Tool-loop iterations remain synchronous because the full
+response must be inspected to detect tool-call requests.
 
 ### 4.2 Client -> Server messages
 

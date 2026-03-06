@@ -1,5 +1,6 @@
 package net.agentensemble.execution;
 
+import dev.langchain4j.model.chat.StreamingChatModel;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -10,6 +11,7 @@ import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
+import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
@@ -76,6 +78,7 @@ public final class ExecutionContext {
     private final MemoryStore memoryStore;
     private final ReviewHandler reviewHandler;
     private final ReviewPolicy reviewPolicy;
+    private final StreamingChatModel streamingChatModel;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -87,7 +90,8 @@ public final class ExecutionContext {
             CaptureMode captureMode,
             MemoryStore memoryStore,
             ReviewHandler reviewHandler,
-            ReviewPolicy reviewPolicy) {
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -98,6 +102,7 @@ public final class ExecutionContext {
         this.memoryStore = memoryStore;
         this.reviewHandler = reviewHandler;
         this.reviewPolicy = reviewPolicy != null ? reviewPolicy : ReviewPolicy.NEVER;
+        this.streamingChatModel = streamingChatModel;
     }
 
     // ========================
@@ -192,7 +197,67 @@ public final class ExecutionContext {
                 captureMode,
                 memoryStore,
                 reviewHandler,
-                reviewPolicy);
+                reviewPolicy,
+                null);
+    }
+
+    /**
+     * Create an ExecutionContext with all fields including review handler, policy, and an
+     * optional ensemble-level streaming chat model for token-by-token streaming.
+     *
+     * <p>This is the primary factory used by {@code Ensemble} when streaming is configured.
+     *
+     * @param memoryContext        runtime memory state for this run; must not be null
+     * @param verbose              when true, elevates execution logging to INFO level
+     * @param listeners            event listeners to notify; must not be null
+     * @param toolExecutor         executor for parallel tool calls; must not be null
+     * @param toolMetrics          metrics backend for tool execution; must not be null
+     * @param costConfiguration    optional per-token cost rates; may be {@code null}
+     * @param captureMode          depth of data collection; defaults to {@link CaptureMode#OFF}
+     * @param memoryStore          optional scoped memory store; may be {@code null}
+     * @param reviewHandler        optional review handler; may be {@code null}
+     * @param reviewPolicy         ensemble-level review policy; defaults to {@link ReviewPolicy#NEVER}
+     * @param streamingChatModel   optional streaming model for token-by-token final responses;
+     *                             may be {@code null} (disables streaming for agents that have no
+     *                             agent-level or task-level streaming model configured)
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel) {
+        if (memoryContext == null) {
+            throw new IllegalArgumentException("memoryContext must not be null");
+        }
+        if (listeners == null) {
+            throw new IllegalArgumentException("listeners must not be null");
+        }
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(
+                memoryContext,
+                verbose,
+                List.copyOf(listeners),
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel);
     }
 
     /**
@@ -302,6 +367,7 @@ public final class ExecutionContext {
                 CaptureMode.OFF,
                 null,
                 null,
+                null,
                 null);
     }
 
@@ -408,6 +474,19 @@ public final class ExecutionContext {
      */
     public ReviewPolicy reviewPolicy() {
         return reviewPolicy;
+    }
+
+    /**
+     * The optional ensemble-level streaming chat model for token-by-token final responses.
+     *
+     * <p>Used by {@link net.agentensemble.agent.AgentExecutor} as the lowest-priority fallback
+     * in the streaming model resolution chain:
+     * {@code Agent.streamingLlm} &gt; {@code Task.streamingChatLanguageModel} &gt; this value.
+     *
+     * @return the ensemble-level streaming model, or {@code null} when not configured
+     */
+    public StreamingChatModel streamingChatModel() {
+        return streamingChatModel;
     }
 
     // ========================
@@ -530,6 +609,24 @@ public final class ExecutionContext {
                 listener.onDelegationFailed(event);
             } catch (Exception e) {
                 log.warn("EnsembleListener threw exception in onDelegationFailed: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link TokenEvent} to all registered listeners.
+     *
+     * <p>Called once per token during streaming generation of the final agent response.
+     * Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the token event to fire; must not be null
+     */
+    public void fireToken(TokenEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onToken(event);
+            } catch (Exception e) {
+                log.warn("EnsembleListener threw exception in onToken: {}", e.getMessage(), e);
             }
         }
     }

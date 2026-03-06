@@ -21,6 +21,7 @@ package net.agentensemble.callback;
  *     .onTaskComplete(event -> metrics.record(event.duration()))
  *     .onTaskFailed(event -> alerts.notify(event.cause()))
  *     .onToolCall(event -> metrics.increment("tool." + event.toolName()))
+ *     .onToken(event -> uiBuffer.append(event.token()))
  *     .onDelegationStarted(event -> log.info("Delegating to {}", event.workerRole()))
  *     .onDelegationCompleted(event -> metrics.record(event.duration()))
  *     .onDelegationFailed(event -> alerts.notify(event.failureReason()))
@@ -100,4 +101,24 @@ public interface EnsembleListener {
      * @param event the delegation failed event
      */
     default void onDelegationFailed(DelegationFailedEvent event) {}
+
+    /**
+     * Called for each token received during streaming generation of the final agent response.
+     *
+     * <p>This method is only invoked when a {@code dev.langchain4j.model.chat.StreamingChatModel}
+     * is resolved for the agent. Resolution order (first non-null wins):
+     * {@code Agent.streamingLlm} &gt; {@code Task.streamingChatLanguageModel} &gt;
+     * {@code Ensemble.streamingChatLanguageModel}.
+     *
+     * <p>Token events are fired during the direct LLM-to-answer path only. Tool-loop
+     * iterations remain non-streaming because the full response must be inspected to
+     * detect tool-call requests.
+     *
+     * <p>Thread safety: in a parallel workflow, this method may be called concurrently
+     * from multiple virtual threads for different agents. Listener implementations must
+     * be thread-safe.
+     *
+     * @param event the token event
+     */
+    default void onToken(TokenEvent event) {}
 }

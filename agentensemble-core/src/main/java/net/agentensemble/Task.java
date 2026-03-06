@@ -1,6 +1,7 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -112,6 +113,20 @@ public class Task {
      * <p>Default: null (use the ensemble-level LLM).
      */
     ChatModel chatLanguageModel;
+
+    /**
+     * Per-task streaming LLM override for token-by-token generation of the final response.
+     *
+     * <p>When set and no explicit {@link #agent} is provided, the synthesized agent uses this
+     * model to stream the final response. If the task's explicit {@link #agent} has a
+     * {@link Agent#streamingLlm}, that takes precedence over this field.
+     *
+     * <p>Resolution order (first non-null wins):
+     * {@code Agent.streamingLlm} &gt; this field &gt; {@code Ensemble.streamingChatLanguageModel}.
+     *
+     * <p>Default: null (use ensemble-level streaming model, or non-streaming if not set).
+     */
+    StreamingChatModel streamingChatLanguageModel;
 
     /**
      * Tools available to this task's agent.
@@ -306,6 +321,7 @@ public class Task {
         // Default values
         private Agent agent = null;
         private ChatModel chatLanguageModel = null;
+        private StreamingChatModel streamingChatLanguageModel = null;
         private List<Object> tools = List.of();
         private Integer maxIterations = null;
         private List<Task> context = List.of();
@@ -392,6 +408,7 @@ public class Task {
                     expectedOutput,
                     agent,
                     chatLanguageModel,
+                    streamingChatLanguageModel,
                     tools,
                     maxIterations,
                     context,

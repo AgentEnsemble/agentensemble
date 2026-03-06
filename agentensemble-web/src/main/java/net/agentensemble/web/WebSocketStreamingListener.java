@@ -8,6 +8,7 @@ import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
+import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.web.protocol.DelegationCompletedMessage;
 import net.agentensemble.web.protocol.DelegationFailedMessage;
@@ -16,6 +17,7 @@ import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.TaskCompletedMessage;
 import net.agentensemble.web.protocol.TaskFailedMessage;
 import net.agentensemble.web.protocol.TaskStartedMessage;
+import net.agentensemble.web.protocol.TokenMessage;
 import net.agentensemble.web.protocol.ToolCalledMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -128,6 +130,23 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     }
 
     // ========================
+    // Streaming tokens
+    // ========================
+
+    /**
+     * Broadcasts a {@link TokenMessage} for each token received during streaming.
+     *
+     * <p>Token messages are broadcast to all connected clients but are <em>not</em> appended
+     * to the late-join snapshot. They are ephemeral: a late-joining client should reconstruct
+     * the final agent output from the {@link TaskCompletedMessage} rather than from replayed
+     * token stream.
+     */
+    @Override
+    public void onToken(TokenEvent event) {
+        broadcastEphemeral(new TokenMessage(event.token(), event.agentRole(), event.taskDescription(), Instant.now()));
+    }
+
+    // ========================
     // Private helpers
     // ========================
 
@@ -140,6 +159,22 @@ public final class WebSocketStreamingListener implements EnsembleListener {
             connectionManager.appendToSnapshot(json);
         } catch (Exception e) {
             log.warn("Failed to serialize and broadcast protocol message: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Broadcast a message to all connected clients without appending to the late-join snapshot.
+     *
+     * <p>Used for ephemeral messages (e.g. streaming tokens) that do not need to be replayed
+     * to clients that join mid-run.
+     */
+    private void broadcastEphemeral(Object message) {
+        try {
+            String json = serializer.toJson(message);
+            connectionManager.broadcast(json);
+            // Intentionally not calling appendToSnapshot -- tokens are ephemeral
+        } catch (Exception e) {
+            log.warn("Failed to serialize and broadcast ephemeral protocol message: {}", e.getMessage(), e);
         }
     }
 
