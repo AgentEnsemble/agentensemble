@@ -37,7 +37,7 @@ dependencies {
     // agentensemble-review is included transitively through agentensemble-web.
     // Declare it explicitly only if you reference review types (ReviewHandler,
     // ReviewDecision, etc.) directly in your own code.
-    implementation("net.agentensemble:agentensemble-review:2.1.0")
+    // implementation("net.agentensemble:agentensemble-review:2.1.0")
 }
 ```
 
@@ -278,9 +278,10 @@ The server validates the `Origin` header of each WebSocket upgrade request using
 hostname comparison (not substring matching) to prevent subdomain spoofing attacks.
 
 When the server is bound to a loopback address (`localhost`, `127.0.0.1`, `::1`, or
-`[::1]`), only origins whose hostname resolves to one of those loopback addresses are
-accepted. All other origins are rejected with WebSocket close code 1008. This protects
-against cross-site WebSocket hijacking (CSRF) from arbitrary web pages.
+`[::1]`), only origins whose hostname is exactly one of those loopback hostnames are
+accepted. DNS resolution is not performed, so custom hostnames that map to loopback
+addresses are not allowed. All other origins are rejected with WebSocket close code 1008.
+This protects against cross-site WebSocket hijacking (CSRF) from arbitrary web pages.
 
 When the server is bound to any other address (e.g., `0.0.0.0` for all interfaces), all
 origins are accepted. Security is delegated to the network layer (VPN, reverse proxy, etc.).

@@ -234,6 +234,7 @@ class WebDashboardTest {
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch gotHello = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket ws = client.newWebSocketBuilder()
@@ -249,6 +250,9 @@ class WebDashboardTest {
                         if (last) {
                             String msg = data.toString();
                             received.add(msg);
+                            if (msg.contains("\"type\":\"hello\"") && gotHello.getCount() > 0) {
+                                gotHello.countDown();
+                            }
                             if (msg.contains("ensemble_started")) {
                                 gotMessage.countDown();
                             }
@@ -260,7 +264,9 @@ class WebDashboardTest {
                 .get(10, TimeUnit.SECONDS);
 
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50); // allow hello to arrive
+        // Wait for the hello message to arrive before firing the lifecycle hook, so the
+        // subsequent ensemble_started is guaranteed to be delivered to this connection.
+        assertThat(gotHello.await(5, TimeUnit.SECONDS)).isTrue();
 
         dashboard.onEnsembleStarted("test-ens-id", Instant.now(), 3, "SEQUENTIAL");
 
@@ -280,6 +286,7 @@ class WebDashboardTest {
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch gotHello = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket ws = client.newWebSocketBuilder()
@@ -295,6 +302,9 @@ class WebDashboardTest {
                         if (last) {
                             String msg = data.toString();
                             received.add(msg);
+                            if (msg.contains("\"type\":\"hello\"") && gotHello.getCount() > 0) {
+                                gotHello.countDown();
+                            }
                             if (msg.contains("ensemble_completed")) {
                                 gotMessage.countDown();
                             }
@@ -306,7 +316,7 @@ class WebDashboardTest {
                 .get(10, TimeUnit.SECONDS);
 
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50);
+        assertThat(gotHello.await(5, TimeUnit.SECONDS)).isTrue();
 
         dashboard.onEnsembleCompleted("test-ens-id", Instant.now(), 5000L, "COMPLETED", 1200L, 7);
 

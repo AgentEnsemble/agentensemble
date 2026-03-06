@@ -64,12 +64,22 @@ class WebDashboardIntegrationTest {
     // Helpers
     // ========================
 
-    private WebSocket connectClient(CountDownLatch connectedLatch, CountDownLatch messageLatch, String messageFilter) {
-        return connectClientForCount(connectedLatch, messageLatch, messageFilter, 1);
-    }
-
+    /**
+     * Connects a WebSocket client that:
+     * <ul>
+     *   <li>Decrements {@code connectedLatch} on {@code onOpen}.</li>
+     *   <li>Decrements {@code helloLatch} when the first {@code hello} message arrives, so callers
+     *       can await deterministically instead of using a fixed sleep.</li>
+     *   <li>Decrements {@code messageLatch} (up to {@code countDown} times) when any message
+     *       matching {@code messageFilter} arrives.</li>
+     * </ul>
+     */
     private WebSocket connectClientForCount(
-            CountDownLatch connectedLatch, CountDownLatch messageLatch, String messageFilter, int countDown) {
+            CountDownLatch connectedLatch,
+            CountDownLatch helloLatch,
+            CountDownLatch messageLatch,
+            String messageFilter,
+            int countDown) {
         try {
             HttpClient client = HttpClient.newHttpClient();
             return client.newWebSocketBuilder()
@@ -87,6 +97,13 @@ class WebDashboardIntegrationTest {
                                     if (last) {
                                         String msg = data.toString();
                                         received.add(msg);
+                                        // Deterministic hello wait: decrement latch when server
+                                        // sends the hello message after connection is established.
+                                        if (helloLatch != null
+                                                && msg.contains("\"type\":\"hello\"")
+                                                && helloLatch.getCount() > 0) {
+                                            helloLatch.countDown();
+                                        }
                                         if (messageFilter == null || msg.contains(messageFilter)) {
                                             for (int i = 0; i < countDown; i++) {
                                                 if (messageLatch.getCount() > 0) messageLatch.countDown();
@@ -103,18 +120,27 @@ class WebDashboardIntegrationTest {
         }
     }
 
+    private WebSocket connectClient(
+            CountDownLatch connectedLatch,
+            CountDownLatch helloLatch,
+            CountDownLatch messageLatch,
+            String messageFilter) {
+        return connectClientForCount(connectedLatch, helloLatch, messageLatch, messageFilter, 1);
+    }
+
     // ========================
     // ensemble_started -> task events -> ensemble_completed flow
     // ========================
 
     @Test
     void allLifecycleMessageTypesArriveInOrder() throws Exception {
-        // Connect before run starts
+        // Connect before run starts; wait for hello before firing lifecycle events.
         CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch gotCompleted = new CountDownLatch(1);
-        ws = connectClientForCount(connected, gotCompleted, "ensemble_completed", 1);
+        ws = connectClientForCount(connected, helloLatch, gotCompleted, "ensemble_completed", 1);
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50); // let hello arrive
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Fire the full lifecycle sequence
         dashboard.onEnsembleStarted("ens-integ", Instant.now(), 2, "SEQUENTIAL");
@@ -145,10 +171,11 @@ class WebDashboardIntegrationTest {
     @Test
     void taskFailedEventArrivesAtClient() throws Exception {
         CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch gotFailed = new CountDownLatch(1);
-        ws = connectClient(connected, gotFailed, "task_failed");
+        ws = connectClient(connected, helloLatch, gotFailed, "task_failed");
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50);
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         dashboard.onEnsembleStarted("ens-fail", Instant.now(), 1, "SEQUENTIAL");
         net.agentensemble.callback.EnsembleListener listener = dashboard.streamingListener();
@@ -166,10 +193,11 @@ class WebDashboardIntegrationTest {
     @Test
     void delegationEventsArriveAtClient() throws Exception {
         CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch gotCompleted = new CountDownLatch(1);
-        ws = connectClient(connected, gotCompleted, "delegation_completed");
+        ws = connectClient(connected, helloLatch, gotCompleted, "delegation_completed");
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50);
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         net.agentensemble.callback.EnsembleListener listener = dashboard.streamingListener();
         listener.onDelegationStarted(new DelegationStartedEvent("del-1", "Manager", "Worker", "Do work", 1, null));
@@ -183,21 +211,20 @@ class WebDashboardIntegrationTest {
 
     @Test
     void lateJoinerReceivesSnapshotWithAllPastEvents() throws Exception {
-        // Fire events before any client connects
+        // Fire events before any client connects. All snapshot operations are synchronous
+        // in-memory writes so no sleep is needed before connecting the late-joining client.
         dashboard.onEnsembleStarted("ens-late", Instant.now(), 2, "SEQUENTIAL");
         net.agentensemble.callback.EnsembleListener listener = dashboard.streamingListener();
         listener.onTaskStart(new TaskStartEvent("Task 1", "Agent", 1, 2));
         listener.onTaskComplete(new TaskCompleteEvent("Task 1", "Agent", null, Duration.ofSeconds(1), 1, 2));
         listener.onTaskStart(new TaskStartEvent("Task 2", "Agent", 2, 2));
 
-        Thread.sleep(100); // let events settle
-
-        // Late-joining client: use separate latches for connection and for hello message receipt
+        // Late-joining client: use separate latches for connection and for hello message receipt.
         CountDownLatch connected = new CountDownLatch(1);
         CountDownLatch gotHello = new CountDownLatch(1);
-        ws = connectClientForCount(connected, gotHello, "hello", 1);
+        ws = connectClientForCount(connected, gotHello, gotHello, "hello", 1);
         assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
-        // Wait for the actual hello message to be received by the client
+        // Wait for the actual hello message to be received by the client.
         assertThat(gotHello.await(5, TimeUnit.SECONDS)).isTrue();
 
         String helloJson = received.stream()
@@ -216,10 +243,12 @@ class WebDashboardIntegrationTest {
 
     @Test
     void multipleClientsAllReceiveBroadcasts() throws Exception {
-        // Connect two clients, verify both receive the same events
+        // Connect two clients, verify both receive the same events.
         CopyOnWriteArrayList<String> received2 = new CopyOnWriteArrayList<>();
         CountDownLatch connected1 = new CountDownLatch(1);
         CountDownLatch connected2 = new CountDownLatch(1);
+        CountDownLatch hello1 = new CountDownLatch(1);
+        CountDownLatch hello2 = new CountDownLatch(1);
         CountDownLatch got1 = new CountDownLatch(1);
         CountDownLatch got2 = new CountDownLatch(1);
 
@@ -239,6 +268,7 @@ class WebDashboardIntegrationTest {
                         if (last) {
                             String msg = data.toString();
                             received.add(msg);
+                            if (msg.contains("\"type\":\"hello\"") && hello1.getCount() > 0) hello1.countDown();
                             if (msg.contains("ensemble_started")) got1.countDown();
                         }
                         webSocket.request(1);
@@ -261,6 +291,7 @@ class WebDashboardIntegrationTest {
                         if (last) {
                             String msg = data.toString();
                             received2.add(msg);
+                            if (msg.contains("\"type\":\"hello\"") && hello2.getCount() > 0) hello2.countDown();
                             if (msg.contains("ensemble_started")) got2.countDown();
                         }
                         webSocket.request(1);
@@ -271,7 +302,10 @@ class WebDashboardIntegrationTest {
 
         assertThat(connected1.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(connected2.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50);
+        // Wait for both hello messages before broadcasting, to avoid a race where
+        // ensemble_started is sent before the server processes both connections.
+        assertThat(hello1.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(hello2.await(5, TimeUnit.SECONDS)).isTrue();
 
         dashboard.onEnsembleStarted("ens-multi", Instant.now(), 1, "SEQUENTIAL");
 
