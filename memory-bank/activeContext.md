@@ -144,6 +144,7 @@ executing dangerous or irreversible actions.
 
 - Open PR for feat/111-112-partial-results-workflow-inference -> main
 - Continue with remaining v2.0.0 issues in epic #103
+- v2.1.0 Live Execution Dashboard: design complete (docs/design/16-live-dashboard.md), GitHub issues to be created
 
 ## Important Patterns and Preferences
 

@@ -30,6 +30,32 @@
 
 ---
 
+## [Planned] - v2.1.0 Live Execution Dashboard -- 2026-03-05
+
+### Design Decisions
+
+- Live Execution Dashboard chosen as v2.1.0 flagship feature (not v2.0.0 -- scope-creep risk; v2.0.0 Group F still pending)
+- New optional Gradle module `net.agentensemble:agentensemble-web` with embedded Javalin WebSocket server
+- `WebDashboard.builder()` is the single user-facing entry point: wires both `WebSocketStreamingListener` and `WebReviewHandler` in one call
+- Protocol: UTF-8 JSON messages with `type` discriminator; bidirectional WebSocket; 12 server->client message types + 2 client->server message types
+- `WebReviewHandler` (replacing existing stub in `agentensemble-review`) uses `CompletableFuture`-based blocking on virtual threads; per-reviewId map for concurrent gates
+- Viz gains `/live` route with `liveReducer` incremental state machine; existing `TimelineView` and `FlowView` adapted for live rendering
+- Review approval UI: modal/panel with Approve/Edit/Exit Early controls + countdown timer + review queue for concurrent parallel workflow reviews
+- Default port 7329 (same as existing viz CLI); localhost-only binding; origin validation against CSRF
+- G1 is critical path: G2/H1 tracks can run in parallel after G1 merges; I1 after G2; H2 after H1+I1
+
+### Documentation Added (v2.1.0 planning)
+
+- `docs/design/16-live-dashboard.md`: full design specification (12 sections: motivation, architecture, module design, wire protocol, server implementation, viz live mode, security, issue dependency graph, issue breakdown, doc updates, API decisions, migration from stub)
+- `docs/design/13-future-roadmap.md`: Phase 11 section (v2.1.0) with module overview, API extension example, issue breakdown table
+- `docs/guides/visualization.md`: "Live Mode (Coming in v2.1.0)" section with live streaming and browser review code examples
+- `docs/examples/human-in-the-loop.md`: "Browser-Based Approval (Coming in v2.1.0)" section with full example, UI ASCII diagram, reviewer action descriptions
+- `mkdocs.yml`: "Live Execution Dashboard" nav entry under Design section
+- `README.md`: v2.1.0 roadmap row updated from MapReduce short-circuit to Live Execution Dashboard
+- Memory bank: activeContext.md (next steps), progress.md (v2.1.0 section), systemPatterns.md (live dashboard component flow), productContext.md (UX goal #6)
+
+---
+
 ## [Unreleased] - Issue #113: MapReduceEnsemble Task-First Refactor -- 2026-03-05
 
 ### Added (Issue #113 -- Rework MapReduceEnsemble for task-first paradigm)
