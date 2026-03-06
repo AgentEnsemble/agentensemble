@@ -480,3 +480,69 @@ algorithm pseudocode, API reference, visualization layer changes, edge case tabl
 implementation class structure.
 
 Each phase should be backward-compatible with previous phases. The API is designed with future phases in mind -- builder methods can be added without breaking existing code.
+
+---
+
+## Phase 11: Live Execution Dashboard (v2.1.0)
+
+**Goal**: Stream ensemble execution events to a browser in real-time and use the browser as
+the interactive GUI for human-in-the-loop review approval.
+
+The current visualization toolchain is post-hoc: `agentensemble-devtools` writes a `.trace.json`
+file after execution and `agentensemble-viz` renders it statically. Phase 11 turns the browser
+into a live execution dashboard where:
+
+1. Every `EnsembleListener` event is pushed to the browser as it fires, giving the developer a
+   live timeline and flow graph that update as tasks start, complete, and fail.
+2. `WebReviewHandler` (currently a stub throwing `UnsupportedOperationException`) is fully
+   implemented. Review gates in `agentensemble-review` block the JVM thread while the browser
+   displays an approval UI. The developer clicks Approve, Edit, or Exit Early from the browser.
+
+### Design
+
+See `docs/design/16-live-dashboard.md` for the full specification.
+
+### New Module
+
+**`agentensemble-web`** (`net.agentensemble:agentensemble-web`):
+- Embedded Javalin WebSocket server
+- `WebDashboard` public API: `WebDashboard.builder().port(7329).build()`
+- `ConnectionManager` for multi-client session tracking and late-join snapshot delivery
+- `WebSocketStreamingListener` (implements `EnsembleListener`) bridges all 7 callback events to WebSocket messages
+- `WebReviewHandler` (implements `ReviewHandler`) blocks on `CompletableFuture` until browser sends decision
+
+### API Extension
+
+```java
+WebDashboard dashboard = WebDashboard.builder()
+    .port(7329)
+    .reviewTimeout(Duration.ofMinutes(5))
+    .onTimeout(OnTimeoutAction.CONTINUE)
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .chatLanguageModel(model)
+    .task(Task.builder()
+        .description("Research AI trends")
+        .expectedOutput("Research report")
+        .review(Review.required())   // pauses at this task for browser approval
+        .build())
+    .webDashboard(dashboard)         // wires streaming listener + web review handler
+    .build()
+    .run();
+```
+
+Opening `http://localhost:7329` shows the live dashboard. The timeline and flow graph update
+as events stream in. When a review gate fires, the browser shows an approval panel with a
+countdown timer.
+
+### Issue Breakdown (6 issues, 3 groups)
+
+| Issue | Title | Dependencies |
+|-------|-------|-------------|
+| G1 | `agentensemble-web` module: WebSocket server + protocol | None |
+| G2 | `WebSocketStreamingListener`: bridge callbacks to WebSocket | G1 |
+| H1 | `WebReviewHandler`: real implementation (replaces stub) | G1 |
+| H2 | Viz: review approval UI | H1, I1 |
+| I1 | Viz: live mode + WebSocket client + incremental state | G2 |
+| I2 | Viz: live timeline and flow view updates | I1 |

@@ -233,6 +233,24 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 - Only for adaptive mode
 - Implemented in `agentensemble-core` and documented
 
+### v2.1.0 -- Live Execution Dashboard (design complete, issues pending)
+
+Design document: `docs/design/16-live-dashboard.md`
+
+Architecture decision: 6 issues in 3 groups:
+- **Group G** (infrastructure): `agentensemble-web` module (G1) + `WebSocketStreamingListener` (G2)
+- **Group H** (review): `WebReviewHandler` real implementation (H1) + Viz review approval UI (H2)
+- **Group I** (live viz): Viz live mode + WebSocket client + incremental state (I1) + live timeline/flow updates (I2)
+
+Key technical decisions:
+- New module `net.agentensemble:agentensemble-web` with embedded Javalin WebSocket server
+- `WebDashboard.builder()` single entry point wires streaming listener + web review handler
+- `WebSocketStreamingListener` implements `EnsembleListener`: all 7 event types serialized to JSON
+- `WebReviewHandler` implements `ReviewHandler`: `CompletableFuture`-based blocking with timeout
+- Viz gains `/live` route with `liveReducer` state machine building `Partial<ExecutionTrace>` from events
+- Protocol: UTF-8 JSON messages with `type` discriminator; server->client events + client->server review decisions
+- Default port 7329 (same as existing viz CLI); localhost-only binding by default
+
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
 - GraalVM polyglot tool support

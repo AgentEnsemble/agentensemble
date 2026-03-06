@@ -127,3 +127,4 @@ nav:
     - Future Roadmap: design/13-future-roadmap.md
     - MapReduceEnsemble: design/14-map-reduce.md
     - v2.0.0 Architecture: design/15-v2-architecture.md
+    - Live Execution Dashboard: design/16-live-dashboard.md

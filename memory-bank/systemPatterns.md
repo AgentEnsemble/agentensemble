@@ -45,6 +45,20 @@ Ensemble.run(inputs)
   -> EnsembleOutput assembled
 ```
 
+### v2.1.0 Live Dashboard (planned)
+
+```
+Ensemble.run()
+  -> WebSocketStreamingListener (EnsembleListener)
+       -> broadcasts JSON events to browser clients via WebSocketServer
+  -> WorkflowExecutor.execute(tasks)
+    -> review gate fires -> WebReviewHandler.review(request)
+         -> sends review_requested JSON to browser
+         -> blocks CompletableFuture until browser sends review_decision
+         -> returns ReviewDecision to workflow executor
+  -> EnsembleOutput assembled
+```
+
 ## Critical Implementation Paths
 
 1. **Tool loop in AgentExecutor**: The ReAct-style loop where the LLM calls tools, gets results, and iterates until producing a final answer. Max iterations guard prevents infinite loops.

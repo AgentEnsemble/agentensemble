@@ -1159,7 +1159,7 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v1.0.0~~ | ~~Built-in tool library (agentensemble-tools module)~~ |
 | ~~v2.0.0~~ | ~~MapReduceEnsemble: static tree-reduction DAG with chunkSize~~ |
 | ~~v2.0.0~~ | ~~MapReduceEnsemble: adaptive reduction with targetTokenBudget~~ |
-| v2.1.0 | MapReduceEnsemble: short-circuit optimization for small inputs |
+| v2.1.0 | Live Execution Dashboard: real-time browser GUI, browser-based review approval |
 | Future | MCP (Model Context Protocol) integration, GraalVM polyglot tools |
 
 ---

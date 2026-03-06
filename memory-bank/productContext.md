@@ -26,3 +26,4 @@ Then call `ensemble.run()` (optionally with input variables) and receive structu
 3. **Clear errors**: When something goes wrong, the error message should tell the user exactly what to fix.
 4. **Observable**: SLF4J logging with MDC provides production-grade observability out of the box.
 5. **Testable**: Every component can be unit tested with mocked LLMs.
+6. **Live visibility (v2.1.0)**: Long-running agentic pipelines stream execution events to a browser in real-time; the browser is the primary GUI for watching progress and approving review gates.
