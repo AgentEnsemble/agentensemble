@@ -24,9 +24,9 @@ misleading error `Agent 'Agent' failed: Not implemented`.
   within the scan window.
 - This correctly handles common task-first patterns where the action verb follows a preposition,
   article, or persona prefix:
-  - `"Based on the analysis, write a summary"` -> "Writer" (position 4)
-  - `"Role: Analyst. Analyse the market data"` -> "Analyst" (position 2)
-  - `"Please research the topic"` -> "Researcher" (position 1)
+  - `"Based on the analysis, write a summary"` -> "Writer" (5th word)
+  - `"Role: Analyst. Analyse the market data"` -> "Analyst" (3rd word)
+  - `"Please research the topic"` -> "Researcher" (2nd word)
 
 **Fix C -- `PassthroughChatModel` (`agentensemble-core`, `net.agentensemble.mapreduce`):**
 - Changed override from `chat(ChatRequest)` to `doChat(ChatRequest)` to align with the

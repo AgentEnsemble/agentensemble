@@ -32,7 +32,7 @@ two interacting bugs in the task-first agent synthesis path:
   `chat(ChatRequest)` to align with the LangChain4j 1.11.0 API convention.
 
 **Tests added:**
-- 7 new tests in `TemplateAgentSynthesizerTest`: verb-after-preposition, role-prefixed
+- 6 new tests in `TemplateAgentSynthesizerTest`: verb-after-preposition, role-prefixed
   description, article-before-verb, preamble scan, beyond-scan-limit, second-word match
 - 2 new tests in `LlmBasedAgentSynthesizerTest`: `modelThrowsRuntimeException_propagatesException`,
   `modelThrowsNotImplemented_propagatesException`

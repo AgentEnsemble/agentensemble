@@ -13,10 +13,11 @@ import net.agentensemble.Task;
  * task description (lowercased, punctuation stripped) and looking each word up in a
  * built-in verb-to-role table. The first matching word wins. For example:
  * <ul>
- *   <li>"Research AI trends" -&gt; role "Researcher" (first word match)</li>
- *   <li>"Write a blog post" -&gt; role "Writer" (first word match)</li>
- *   <li>"Based on the analysis, write a summary" -&gt; role "Writer" (fifth word match)</li>
- *   <li>"Role: Analyst. Analyse the market" -&gt; role "Analyst" (third word match)</li>
+ *   <li>"Research AI trends" -&gt; role "Researcher" (1st word match)</li>
+ *   <li>"Write a blog post" -&gt; role "Writer" (1st word match)</li>
+ *   <li>"Based on the analysis, write a summary" -&gt; role "Writer" (5th word match)</li>
+ *   <li>"Role: Analyst. Analyse the market" -&gt; role "Analyst" (3rd word match)</li>
+ *   <li>"Please research the topic" -&gt; role "Researcher" (2nd word match)</li>
  * </ul>
  *
  * <p>If no recognized verb is found within the scan window, the role defaults to
@@ -96,9 +97,9 @@ class TemplateAgentSynthesizer implements AgentSynthesizer {
      * task-first patterns where the action verb appears after a preamble:
      *
      * <ul>
-     *   <li>{@code "Based on the analysis, write a summary"} -- "write" at position 4</li>
-     *   <li>{@code "Role: Analyst. Analyse the market"} -- "analyse" at position 2</li>
-     *   <li>{@code "Please research the topic"} -- "research" at position 1</li>
+     *   <li>{@code "Based on the analysis, write a summary"} -- "write" at the 5th word</li>
+     *   <li>{@code "Role: Analyst. Analyse the market"} -- "analyse" at the 3rd word</li>
+     *   <li>{@code "Please research the topic"} -- "research" at the 2nd word</li>
      * </ul>
      *
      * <p>The limit prevents over-scanning long descriptions where the first matching
