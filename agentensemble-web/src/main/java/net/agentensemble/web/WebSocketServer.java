@@ -128,16 +128,24 @@ class WebSocketServer {
         runningPort = app.port();
         running.set(true);
 
-        // Schedule heartbeat
-        @SuppressWarnings("unused")
-        var unused = heartbeatScheduler.scheduleAtFixedRate(
-                this::sendHeartbeat, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        // Schedule heartbeat; guard body with isRunning() so that tasks scheduled before
+        // stop() fire do not broadcast after the server is stopped or restarted.
+        heartbeatScheduler.scheduleAtFixedRate(
+                () -> {
+                    if (running.get()) {
+                        sendHeartbeat();
+                    }
+                },
+                HEARTBEAT_INTERVAL_SECONDS,
+                HEARTBEAT_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
 
+        String displayHost = host.equals("0.0.0.0") ? "localhost" : host;
         log.info(
-                "WebDashboard server started on {}:{} | Open http://{}:{} in your browser",
-                host,
+                "WebDashboard server started -- WebSocket: ws://{}:{}/ws | Status: http://{}:{}/api/status",
+                displayHost,
                 runningPort,
-                host.equals("0.0.0.0") ? "localhost" : host,
+                displayHost,
                 runningPort);
     }
 
@@ -201,9 +209,23 @@ class WebSocketServer {
         if (origin == null || origin.isEmpty() || "null".equals(origin)) {
             return false;
         }
-        // Strip scheme and port to get the hostname
-        String lc = origin.toLowerCase(java.util.Locale.ROOT);
-        return lc.contains("localhost") || lc.contains("127.0.0.1") || lc.contains("[::1]");
+        // Parse the origin as a URI and compare the hostname exactly to prevent subdomain
+        // bypass attacks such as http://localhost.evil.com or http://evil.com?q=localhost.
+        try {
+            String parsedHost = java.net.URI.create(origin).getHost();
+            if (parsedHost == null) {
+                return false;
+            }
+            String hostLc = parsedHost.toLowerCase(java.util.Locale.ROOT);
+            // Java's URI.getHost() preserves brackets for IPv6 literals (e.g. "[::1]");
+            // strip them before comparing so http://[::1]:3000 is correctly accepted.
+            if (hostLc.startsWith("[") && hostLc.endsWith("]")) {
+                hostLc = hostLc.substring(1, hostLc.length() - 1);
+            }
+            return "localhost".equals(hostLc) || "127.0.0.1".equals(hostLc) || "::1".equals(hostLc);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     // ========================

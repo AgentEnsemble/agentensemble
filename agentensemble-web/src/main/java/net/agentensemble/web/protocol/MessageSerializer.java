@@ -2,6 +2,7 @@ package net.agentensemble.web.protocol;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -39,6 +40,24 @@ public class MessageSerializer {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(
                     "Failed to serialize message: " + message.getClass().getSimpleName(), e);
+        }
+    }
+
+    /**
+     * Parses a raw JSON string into a {@link JsonNode} for use in snapshot fields.
+     * Returns {@code null} if {@code json} is {@code null}, blank, or not valid JSON.
+     *
+     * @param json the JSON string to parse; may be null
+     * @return the parsed {@link JsonNode}, or {@code null} on failure
+     */
+    public JsonNode toJsonNode(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readTree(json);
+        } catch (JsonProcessingException e) {
+            return null;
         }
     }
 

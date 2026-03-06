@@ -1,5 +1,6 @@
 package net.agentensemble.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.agentensemble.web.protocol.HelloMessage;
@@ -33,7 +34,8 @@ class ConnectionManager {
 
     /**
      * Called when a new WebSocket client connects. Adds the session and immediately sends a
-     * {@code hello} message containing the current execution snapshot (if any).
+     * {@code hello} message containing the current execution snapshot (if any), so that
+     * late-joining browsers can reconstruct the display without waiting for the next event.
      *
      * @param session the newly connected session
      */
@@ -41,16 +43,20 @@ class ConnectionManager {
         sessions.put(session.id(), session);
         log.debug("WebSocket client connected: {}", session.id());
 
-        // Send hello with current snapshot for late-joining browsers
-        HelloMessage hello = new HelloMessage(null, null, null);
+        // Include any stored snapshot so late-joining browsers can reconstruct the state
+        JsonNode snapshotNode = serializer.toJsonNode(currentSnapshotJson);
+        HelloMessage hello = new HelloMessage(null, null, snapshotNode);
         String helloJson = serializer.toJson(hello);
         session.send(helloJson);
     }
 
     /**
-     * Called when a WebSocket client disconnects. Removes the session and resolves any pending
-     * review futures with an empty string (the WebReviewHandler interprets this as a timeout
-     * action).
+     * Called when a WebSocket client disconnects. Removes the session and, if this was the
+     * <em>last</em> connected session, resolves any pending review futures with an empty string
+     * so that blocked JVM threads are not stuck indefinitely.
+     *
+     * <p>Reviews are only canceled when <em>all</em> browsers disconnect: while at least one
+     * browser remains connected it can still deliver a decision, so the review stays active.
      *
      * @param sessionId the ID of the disconnected session
      */
@@ -58,12 +64,11 @@ class ConnectionManager {
         sessions.remove(sessionId);
         log.debug("WebSocket client disconnected: {}", sessionId);
 
-        // Resolve any pending reviews so that blocked JVM threads are not stuck indefinitely.
-        // WebReviewHandler interprets an empty-string resolution as a disconnect signal and
-        // applies the configured onTimeout action.
-        if (!pendingReviews.isEmpty()) {
+        // Only cancel pending reviews when the last browser disconnects.
+        // While other clients remain connected they can still deliver a review decision.
+        if (sessions.isEmpty() && !pendingReviews.isEmpty()) {
             pendingReviews.forEach((reviewId, future) -> {
-                log.debug("Resolving pending review {} due to client disconnect", reviewId);
+                log.debug("Resolving pending review {} because all clients disconnected", reviewId);
                 future.complete("");
             });
             pendingReviews.clear();

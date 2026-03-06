@@ -209,11 +209,28 @@ class ConnectionManagerTest {
         connectionManager.registerPendingReview("review-3", future);
         assertThat(future.isDone()).isFalse();
 
-        // Disconnect should resolve all pending reviews with an empty string
+        // Disconnect the only session -- reviews should be resolved because no sessions remain
         connectionManager.onDisconnect("session-1");
 
         assertThat(future).isCompleted();
         assertThat(future.join()).isEmpty();
+    }
+
+    @Test
+    void onDisconnect_withPendingReview_andRemainingSession_doesNotResolveReview() {
+        MockWsSession session1 = new MockWsSession("session-1");
+        MockWsSession session2 = new MockWsSession("session-2");
+        connectionManager.onConnect(session1);
+        connectionManager.onConnect(session2);
+
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        connectionManager.registerPendingReview("review-x", future);
+        assertThat(future.isDone()).isFalse();
+
+        // Disconnect session-1, but session-2 is still connected -- review must stay active
+        connectionManager.onDisconnect("session-1");
+
+        assertThat(future.isDone()).isFalse();
     }
 
     @Test

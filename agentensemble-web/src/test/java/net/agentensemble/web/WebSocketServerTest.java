@@ -172,6 +172,17 @@ class WebSocketServerTest {
     }
 
     @Test
+    void subdomainBypassRejectedWhenBindingToLocalhost() {
+        // URI-based host comparison prevents subdomain spoofing attacks.
+        assertThat(WebSocketServer.isOriginAllowed("http://localhost.evil.com", "localhost"))
+                .isFalse();
+        assertThat(WebSocketServer.isOriginAllowed("http://notlocalhost.com", "localhost"))
+                .isFalse();
+        assertThat(WebSocketServer.isOriginAllowed("http://evil.com/path?host=localhost", "localhost"))
+                .isFalse();
+    }
+
+    @Test
     void nullOriginRejectedWhenBindingToLocalhost() {
         assertThat(WebSocketServer.isOriginAllowed(null, "localhost")).isFalse();
     }

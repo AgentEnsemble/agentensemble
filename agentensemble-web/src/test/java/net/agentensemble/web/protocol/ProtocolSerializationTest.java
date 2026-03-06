@@ -142,18 +142,25 @@ class ProtocolSerializationTest {
 
     @Test
     void toolCalledMessageRoundTrip() throws Exception {
-        ToolCalledMessage msg = new ToolCalledMessage("Senior Research Analyst", 1, "web_search", 1200L, "SUCCESS");
+        ToolCalledMessage msg = new ToolCalledMessage(
+                "Senior Research Analyst", 1, "web_search", 1200L, "SUCCESS", "{\"query\":\"AI\"}", "results", null);
         String json = serializer.toJson(msg);
 
         assertThat(typeOf(json)).isEqualTo("tool_called");
         assertThat(json).contains("web_search");
         assertThat(json).contains("\"outcome\":\"SUCCESS\"");
+        assertThat(json).contains("\"toolArguments\":\"{\\\"query\\\":\\\"AI\\\"}\"");
+        assertThat(json).contains("\"toolResult\":\"results\"");
 
         ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
         assertThat(deserialized).isInstanceOf(ToolCalledMessage.class);
         ToolCalledMessage rt = (ToolCalledMessage) deserialized;
         assertThat(rt.toolName()).isEqualTo("web_search");
         assertThat(rt.durationMs()).isEqualTo(1200L);
+        assertThat(rt.toolArguments()).isEqualTo("{\"query\":\"AI\"}");
+        assertThat(rt.toolResult()).isEqualTo("results");
+        // structuredResult was null; after round-trip it is null (field absent or explicit null)
+        assertThat(rt.structuredResult()).isNull();
     }
 
     @Test

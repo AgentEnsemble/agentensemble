@@ -223,6 +223,7 @@ Use `.webDashboard(WebDashboard)` instead of `.reviewHandler(...)`. This single 
 call registers both the streaming listener and the `WebReviewHandler`:
 
 ```java
+import java.time.Duration;
 import net.agentensemble.review.Review;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.web.WebDashboard;
@@ -244,8 +245,10 @@ EnsembleOutput output = Ensemble.builder()
     .run();
 ```
 
-Open `http://localhost:7329` in a browser. When the review gate fires, the browser shows
-the task output with **Approve**, **Edit**, and **Exit Early** controls.
+Connect to `ws://localhost:7329/ws` using the agentensemble-viz dashboard client
+(`npx @agentensemble/viz --live ws://localhost:7329/ws`) or any WebSocket-capable browser
+tool. When the review gate fires, connected clients receive a `review_requested` message and
+can send back a `review_decision` with **approve**, **edit**, or **exit_early**.
 
 ### Review timeout behavior
 

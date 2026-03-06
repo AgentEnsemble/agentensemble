@@ -96,6 +96,7 @@ This example adds a review gate after the first task. The ensemble pauses and al
 browsers display an approval panel.
 
 ```java
+import java.time.Duration;
 import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;

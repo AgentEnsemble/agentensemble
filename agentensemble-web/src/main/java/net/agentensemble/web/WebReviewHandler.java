@@ -130,6 +130,9 @@ public final class WebReviewHandler implements ReviewHandler {
             return ReviewDecision.exitEarly();
         } catch (ExecutionException e) {
             log.warn("Review gate {} future completed exceptionally; applying timeout action", reviewId, e);
+            // Remove the map entry to prevent a leak; resolveReview is idempotent if the
+            // entry was already removed by an earlier onDisconnect/resolveReview call.
+            connectionManager.resolveReview(reviewId, "");
             return applyTimeoutAction(reviewId, request);
         }
     }
