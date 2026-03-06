@@ -289,7 +289,7 @@ EnsembleOutput output = Ensemble.builder()
 ```
 
 Open `http://localhost:7329` in a browser before running the ensemble. When the review gate
-fires after the first task, a modal panel slides in over the live dashboard:
+fires after the first task, a modal panel appears as a modal overlay over the live dashboard:
 
 ```
 +------------------------------------------------------+

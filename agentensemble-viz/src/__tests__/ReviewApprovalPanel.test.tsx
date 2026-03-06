@@ -28,7 +28,10 @@ describe('ReviewApprovalPanel', () => {
   let sendDecision: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    sendDecision = vi.fn();
+    // Default return true so the panel closes after a decision (simulating an
+    // open WebSocket). Tests that check "panel stays open" when disconnected
+    // can override with sendDecision.mockReturnValue(false).
+    sendDecision = vi.fn().mockReturnValue(true);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
   });

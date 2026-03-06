@@ -44,14 +44,18 @@ export interface ReviewApprovalPanelProps {
    */
   additionalPendingCount: number;
   /**
-   * Sends a review decision to the server and optimistically removes the review
-   * from pendingReviews in the local LiveState.
+   * Sends a review decision to the server.
+   *
+   * Returns true when the decision was dispatched over an open WebSocket and
+   * the review was optimistically removed from pendingReviews. Returns false
+   * when the WebSocket is not open; the review stays pending so the user can
+   * retry once reconnected. The panel only closes on a true return value.
    */
   sendDecision: (
     reviewId: string,
     decision: 'CONTINUE' | 'EDIT' | 'EXIT_EARLY',
     revisedOutput?: string,
-  ) => void;
+  ) => boolean;
 }
 
 // ========================
@@ -112,6 +116,12 @@ export default function ReviewApprovalPanel({
   // cancel it on unmount and avoid the "state update on unmounted component" warning.
   const timedOutCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Capture elapsedMs once at mount so the CSS animation-delay stays stable
+  // across re-renders driven by the 1 s countdown tick. Recomputing it from
+  // Date.now() on every render would change animationDelay each second and
+  // restart the CSS animation, introducing visible jitter.
+  const elapsedMsRef = useRef(Math.max(0, Date.now() - review.receivedAt));
+
   // ========================
   // Countdown effect (runs once at mount)
   // ========================
@@ -156,18 +166,21 @@ export default function ReviewApprovalPanel({
   // ========================
 
   function handleApprove() {
-    sendDecision(review.reviewId, 'CONTINUE');
-    setIsVisible(false);
+    if (sendDecision(review.reviewId, 'CONTINUE')) {
+      setIsVisible(false);
+    }
   }
 
   function handleEditSubmit() {
-    sendDecision(review.reviewId, 'EDIT', editText);
-    setIsVisible(false);
+    if (sendDecision(review.reviewId, 'EDIT', editText)) {
+      setIsVisible(false);
+    }
   }
 
   function handleExitEarlyConfirm() {
-    sendDecision(review.reviewId, 'EXIT_EARLY');
-    setIsVisible(false);
+    if (sendDecision(review.reviewId, 'EXIT_EARLY')) {
+      setIsVisible(false);
+    }
   }
 
   // ========================
@@ -178,13 +191,30 @@ export default function ReviewApprovalPanel({
 
   const timingLabel = formatTiming(review.timing);
   const countdownText = formatCountdown(remainingMs);
-  const autoLabel =
-    review.onTimeout === 'CONTINUE'
-      ? `Auto-continue in ${countdownText}`
-      : `Auto-exit in ${countdownText}`;
 
-  // Negative animation-delay fast-forwards the CSS bar to the already-elapsed position.
-  const elapsedMs = Date.now() - review.receivedAt;
+  // Derive the auto-label from onTimeout. All three server values are handled
+  // explicitly; unknown values (e.g., future protocol additions) fall back to a
+  // neutral label so the UI is never silently wrong.
+  let autoLabel: string;
+  switch (review.onTimeout) {
+    case 'CONTINUE':
+      autoLabel = `Auto-continue in ${countdownText}`;
+      break;
+    case 'EXIT_EARLY':
+      autoLabel = `Auto-exit in ${countdownText}`;
+      break;
+    case 'FAIL':
+      autoLabel = `Auto-fail in ${countdownText}`;
+      break;
+    default:
+      autoLabel = `Auto action in ${countdownText}`;
+  }
+
+  // Use the elapsedMs captured at mount (elapsedMsRef) rather than Date.now()
+  // to keep the CSS animation-delay stable across re-renders. If it were
+  // recomputed here it would change every second (as remainingMs ticks),
+  // restarting the CSS animation and introducing visible jitter in the bar.
+  const elapsedMs = elapsedMsRef.current;
 
   return (
     <div
@@ -248,7 +278,18 @@ export default function ReviewApprovalPanel({
               className="rounded bg-gray-100 p-3 text-sm italic text-gray-600 dark:bg-gray-700/60 dark:text-gray-300"
               data-testid="timed-out-message"
             >
-              {review.onTimeout === 'CONTINUE' ? 'Timed out -- continuing' : 'Timed out -- exiting'}
+              {(() => {
+                switch (review.onTimeout) {
+                  case 'CONTINUE':
+                    return 'Timed out -- continuing';
+                  case 'EXIT_EARLY':
+                    return 'Timed out -- exiting';
+                  case 'FAIL':
+                    return 'Timed out -- failing';
+                  default:
+                    return 'Timed out';
+                }
+              })()}
             </p>
           ) : (
             <pre

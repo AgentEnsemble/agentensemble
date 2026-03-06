@@ -43,22 +43,25 @@ export interface LiveServerContextValue {
   disconnect: () => void;
   /**
    * Send a message to the server.
-   * No-ops if the WebSocket is not currently open.
+   * Returns true when the message was dispatched over an open WebSocket,
+   * false when the connection is not currently open (the message is dropped).
    */
-  sendMessage: (msg: ClientMessage) => void;
+  sendMessage: (msg: ClientMessage) => boolean;
   /**
-   * Send a review_decision message and optimistically remove the review from
-   * pendingReviews in the local state.
+   * Send a review_decision message to the server.
    *
-   * @param reviewId  - The id of the review being decided.
-   * @param decision  - The decision: CONTINUE, EDIT, or EXIT_EARLY.
-   * @param revisedOutput - Required when decision is EDIT; the user's edited output.
+   * Returns true when the message was successfully dispatched and the review
+   * has been optimistically removed from pendingReviews in the local state.
+   * Returns false when the WebSocket is not open; in that case the review
+   * stays in pendingReviews so the user can retry once reconnected.
+   *
+   * Overloads enforce that revisedOutput is required for EDIT decisions and
+   * must not be provided for CONTINUE or EXIT_EARLY.
    */
-  sendDecision: (
-    reviewId: string,
-    decision: ReviewDecisionMessage['decision'],
-    revisedOutput?: string,
-  ) => void;
+  sendDecision: {
+    (reviewId: string, decision: 'CONTINUE' | 'EXIT_EARLY'): boolean;
+    (reviewId: string, decision: 'EDIT', revisedOutput: string): boolean;
+  };
 }
 
 const LiveServerContext = createContext<LiveServerContextValue | null>(null);
@@ -170,11 +173,13 @@ export function LiveServerProvider({ children }: { children: React.ReactNode }) 
     dispatch({ type: 'DISCONNECTED' });
   }, [clearReconnectTimer, closeWs]);
 
-  const sendMessage = useCallback((msg: ClientMessage) => {
+  const sendMessage = useCallback((msg: ClientMessage): boolean => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+      return true;
     }
+    return false;
   }, []);
 
   const sendDecision = useCallback(
@@ -182,20 +187,24 @@ export function LiveServerProvider({ children }: { children: React.ReactNode }) 
       reviewId: string,
       decision: ReviewDecisionMessage['decision'],
       revisedOutput?: string,
-    ) => {
+    ): boolean => {
       const msg: ReviewDecisionMessage = {
         type: 'review_decision',
         reviewId,
         decision,
         ...(revisedOutput !== undefined ? { revisedOutput } : {}),
       };
-      sendMessage(msg);
-      // Optimistically remove the review from local state so the UI updates
-      // immediately without waiting for the server's acknowledgement.
-      dispatch({ type: 'RESOLVE_REVIEW', reviewId });
+      const sent = sendMessage(msg);
+      if (sent) {
+        // Optimistically remove the review from local state only when the decision
+        // was actually dispatched over an open WebSocket. When disconnected, the
+        // review stays in pendingReviews so the user can retry once reconnected.
+        dispatch({ type: 'RESOLVE_REVIEW', reviewId });
+      }
+      return sent;
     },
     [sendMessage],
-  );
+  ) as LiveServerContextValue['sendDecision'];
 
   // Cleanup on unmount
   useEffect(() => {

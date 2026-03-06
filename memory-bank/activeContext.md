@@ -15,7 +15,7 @@ Issue #135 implementation complete:
   - `key={review.reviewId}` in parent ensures clean remount for each new review
 - `LivePage.tsx` integrated: renders `ReviewApprovalPanel` when `pendingReviews.length > 0` (FIFO, oldest first)
 - `src/index.css`: `ae-countdown-bar` utility class + `ae-countdown-shrink` keyframe animation added
-- 237 tests pass (28 new: 25 `ReviewApprovalPanel` unit tests + 5 `RESOLVE_REVIEW` reducer tests)
+- 237 tests pass (30 new: 25 `ReviewApprovalPanel` unit tests + 5 `RESOLVE_REVIEW` reducer tests)
 - `docs/examples/human-in-the-loop.md` "Browser-Based Approval" section updated with accurate interaction description (panel ASCII diagram, Actions sections, Timeout Countdown, Concurrent Reviews)
 
 Previous branches:
