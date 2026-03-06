@@ -3,9 +3,20 @@ package net.agentensemble.tool;
 /**
  * Controls how a {@link ToolPipeline} behaves when an intermediate step fails.
  *
- * <p>A step is considered failed when its {@link ToolResult#isSuccess()} returns {@code false},
- * or when its {@link AgentTool#execute(String)} throws an exception (which
- * {@link AbstractAgentTool} automatically converts to a {@link ToolResult#failure(String)}).
+ * <p>A step is considered failed when its {@link ToolResult#isSuccess()} returns {@code false}.
+ * This includes:
+ * <ul>
+ *   <li>Steps that return {@link ToolResult#failure(String)} directly.</li>
+ *   <li>Steps extending {@link AbstractAgentTool}: exceptions thrown by
+ *       {@link AgentTool#execute(String)} are automatically converted to a
+ *       {@link ToolResult#failure(String)} by {@code AbstractAgentTool}.</li>
+ *   <li>Plain {@link AgentTool} steps (not extending {@code AbstractAgentTool}): exceptions
+ *       are caught by {@link ToolPipeline} and converted to a
+ *       {@link ToolResult#failure(String)} at the pipeline level, so
+ *       {@link #FAIL_FAST} and {@link #CONTINUE_ON_FAILURE} apply consistently to all
+ *       step types. Framework control-flow exceptions ({@code ExitEarlyException} and
+ *       {@code ToolConfigurationException}) are re-thrown and not converted.</li>
+ * </ul>
  *
  * @see ToolPipeline.Builder#errorStrategy(PipelineErrorStrategy)
  */
