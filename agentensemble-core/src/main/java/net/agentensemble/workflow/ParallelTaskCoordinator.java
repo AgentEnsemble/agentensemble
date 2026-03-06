@@ -74,6 +74,18 @@ class ParallelTaskCoordinator {
     private final ParallelErrorStrategy errorStrategy;
     private final AgentExecutor agentExecutor;
 
+    /**
+     * Mutex for the after-execution review gate.
+     *
+     * <p>In a parallel workflow multiple tasks may complete concurrently and each
+     * independently check whether a review gate should fire. Without synchronization,
+     * two threads can both observe {@code exitEarlyReasonRef == null} at the same time
+     * and both invoke the {@link ReviewHandler} -- producing duplicate prompts for
+     * interactive handlers such as {@code ConsoleReviewHandler}. Holding this lock
+     * for the duration of the check-and-invoke sequence eliminates the race.
+     */
+    private final Object reviewGateLock = new Object();
+
     ParallelTaskCoordinator(
             TaskDependencyGraph graph,
             Map<String, String> callerMdc,
@@ -164,54 +176,66 @@ class ParallelTaskCoordinator {
                 TaskOutput output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
 
                 // === After-execution review gate ===
+                // Outer check avoids acquiring the lock when no gate is needed.
                 if (exitEarlyReasonRef.get() == null && shouldApplyAfterReview(task, taskIndex)) {
-                    Review review = task.getReview();
-                    Duration timeout = review != null ? review.getTimeout() : Review.DEFAULT_TIMEOUT;
-                    OnTimeoutAction onTimeout =
-                            review != null ? review.getOnTimeoutAction() : Review.DEFAULT_ON_TIMEOUT;
-                    String prompt = review != null ? review.getPrompt() : null;
+                    // Serialize review gate invocations to prevent concurrent prompts
+                    // (TOCTOU: two threads can both pass the null-check above; the inner
+                    // re-check inside the lock ensures only one fires the ReviewHandler).
+                    synchronized (reviewGateLock) {
+                        // Re-check: another thread may have set exit-early while we waited
+                        if (exitEarlyReasonRef.get() == null) {
+                            Review review = task.getReview();
+                            Duration timeout = review != null ? review.getTimeout() : Review.DEFAULT_TIMEOUT;
+                            OnTimeoutAction onTimeout =
+                                    review != null ? review.getOnTimeoutAction() : Review.DEFAULT_ON_TIMEOUT;
+                            String prompt = review != null ? review.getPrompt() : null;
 
-                    ReviewRequest afterRequest = ReviewRequest.of(
-                            task.getDescription(),
-                            output.getRaw(),
-                            ReviewTiming.AFTER_EXECUTION,
-                            timeout,
-                            onTimeout,
-                            prompt);
+                            ReviewRequest afterRequest = ReviewRequest.of(
+                                    task.getDescription(),
+                                    output.getRaw(),
+                                    ReviewTiming.AFTER_EXECUTION,
+                                    timeout,
+                                    onTimeout,
+                                    prompt);
 
-                    ReviewDecision afterDecision = reviewHandler.review(afterRequest);
-                    log.info(
-                            "Task (parallel) after-review decision: {} | Task: {}",
-                            afterDecision.getClass().getSimpleName(),
-                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                            ReviewDecision afterDecision = reviewHandler.review(afterRequest);
+                            log.info(
+                                    "Task (parallel) after-review decision: {} | Task: {}",
+                                    afterDecision.getClass().getSimpleName(),
+                                    truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
-                    if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
-                        // Include this task output, then stop the pipeline
-                        ExitReason afterReason =
-                                afterExitEarlyDecision.timedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
-                        exitEarlyReasonRef.compareAndSet(null, afterReason);
-                        completedOutputs.put(task, output);
-                        completionOrder.add(output);
-                        log.info(
-                                "Parallel exit-early ({}) triggered after task: {}",
-                                afterReason,
-                                truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                            if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
+                                // Include this task output, then stop the pipeline
+                                ExitReason afterReason = afterExitEarlyDecision.timedOut()
+                                        ? ExitReason.TIMEOUT
+                                        : ExitReason.USER_EXIT_EARLY;
+                                exitEarlyReasonRef.compareAndSet(null, afterReason);
+                                completedOutputs.put(task, output);
+                                completionOrder.add(output);
+                                log.info(
+                                        "Parallel exit-early ({}) triggered after task: {}",
+                                        afterReason,
+                                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
-                        executionContext.fireTaskComplete(new TaskCompleteEvent(
-                                task.getDescription(),
-                                task.getAgent().getRole(),
-                                output,
-                                output.getDuration(),
-                                taskIndex,
-                                totalTasks));
-                        return;
-                    } else if (afterDecision instanceof ReviewDecision.Edit edit) {
-                        output = output.toBuilder().raw(edit.revisedOutput()).build();
-                        log.info(
-                                "Task (parallel) output replaced by reviewer | Task: {}",
-                                truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                                executionContext.fireTaskComplete(new TaskCompleteEvent(
+                                        task.getDescription(),
+                                        task.getAgent().getRole(),
+                                        output,
+                                        output.getDuration(),
+                                        taskIndex,
+                                        totalTasks));
+                                return;
+                            } else if (afterDecision instanceof ReviewDecision.Edit edit) {
+                                output = output.toBuilder()
+                                        .raw(edit.revisedOutput())
+                                        .build();
+                                log.info(
+                                        "Task (parallel) output replaced by reviewer | Task: {}",
+                                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                            }
+                            // Continue: proceed with output unchanged
+                        }
                     }
-                    // Continue: proceed with output unchanged
                 }
 
                 completedOutputs.put(task, output);
@@ -343,12 +367,15 @@ class ParallelTaskCoordinator {
     /**
      * Returns true when an after-execution review gate should fire for the given task.
      *
-     * <p>Mirrors the logic in {@code SequentialWorkflowExecutor}:
+     * <p>Evaluation order:
      * <ol>
      *   <li>No handler configured -- never fire.</li>
      *   <li>Task-level {@link Review#skip()} -- never fire.</li>
      *   <li>Task-level {@link Review#required()} -- always fire.</li>
-     *   <li>Ensemble {@link ReviewPolicy} -- NEVER / AFTER_EVERY_TASK / AFTER_LAST_TASK.</li>
+     *   <li>Ensemble {@link ReviewPolicy} -- NEVER / AFTER_EVERY_TASK.
+     *       {@link ReviewPolicy#AFTER_LAST_TASK} is not supported for parallel execution
+     *       (tasks complete in DAG order, not declaration order; the concept of "last task"
+     *       is ambiguous). Use {@link Review#required()} on the terminal task explicitly.</li>
      * </ol>
      */
     private boolean shouldApplyAfterReview(Task task, int taskIndex) {
@@ -371,7 +398,10 @@ class ParallelTaskCoordinator {
         return switch (policy) {
             case NEVER -> false;
             case AFTER_EVERY_TASK -> true;
-            case AFTER_LAST_TASK -> taskIndex == totalTasks;
+                // AFTER_LAST_TASK is undefined in parallel: tasks complete in DAG order,
+                // not declaration order. Always return false; use Review.required() on the
+                // intended terminal task instead.
+            case AFTER_LAST_TASK -> false;
         };
     }
 
