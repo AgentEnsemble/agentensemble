@@ -439,6 +439,7 @@ See [Built-in Tools guide](../guides/built-in-tools.md) for usage.
 | Phase 8 | v0.8.0 | Guardrails: pre/post execution validation (COMPLETE) |
 | Phase 9 | v1.0.0 | Streaming, built-in tools |
 | Phase 10 | v2.0.0 | MapReduceEnsemble (static + adaptive + short-circuit) |
+| Phase 11 | v2.1.0 | Live Execution Dashboard (COMPLETE) |
 
 ---
 
@@ -483,7 +484,7 @@ Each phase should be backward-compatible with previous phases. The API is design
 
 ---
 
-## Phase 11: Live Execution Dashboard (v2.1.0)
+## Phase 11: Live Execution Dashboard (COMPLETE -- v2.1.0)
 
 **Goal**: Stream ensemble execution events to a browser in real-time and use the browser as
 the interactive GUI for human-in-the-loop review approval.

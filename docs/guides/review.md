@@ -196,7 +196,7 @@ realistic human timing.
 
 ## Browser-Based Review with WebDashboard
 
-The `agentensemble-web` module (v2.1.0+) provides `WebDashboard`, which embeds a
+The `agentensemble-web` module provides `WebDashboard`, which embeds a
 Javalin WebSocket server directly in the JVM process. It replaces the console prompt
 with a browser-based review panel and simultaneously streams the live execution timeline
 to every connected browser client. The `WebReviewHandler` returned by
