@@ -44,13 +44,40 @@ Key changes:
 - `src/index.css`: ae-pulse and ae-node-pulse CSS keyframe animations; live node status classes
 
 ## Test Summary
-- agentensemble-viz: 163 tests pass across 9 test files; TypeScript + Vite build clean
+- agentensemble-viz: 166 tests pass across 9 test files; TypeScript + Vite build clean
 - agentensemble-web: All existing tests pass; 6 new tests for #132 (2 unit + 4 integration)
 
+## PR #144 Copilot Review Fixes (commit d1a7604)
+
+Six issues addressed after Copilot review of PR #144:
+
+1. **live.ts type alignment**: `HelloMessage.ensembleId`/`startedAt` made nullable (Java
+   uses `@JsonInclude(NON_NULL)`); `LiveTask.taskIndex` doc corrected to 1-based; added
+   missing `ToolCalledMessage` fields (`toolArguments`, `toolResult`, `structuredResult`,
+   `outcome: string | null`) to match Java wire protocol.
+
+2. **liveDag buildLiveStatusMap**: Removed `else` branch so completed tasks are truly
+   absent from the map (doc said "NOT included"; impl was setting key to undefined).
+
+3. **TimelineView LlmDetailPanel regression**: Restored `msg.toolCalls` and `msg.toolName`
+   rendering in message history, and the per-interaction "Tool Calls" section that were
+   lost during the live mode refactor.
+
+4. **live-dashboard.md**: Added BOM dependency context, Java import statements, and
+   imports to the configuration snippet so examples are copy/paste runnable.
+
+5. **snapshotTrace replay**: Rewrote `applyHello` to treat `snapshotTrace` as
+   `ServerMessage[]` and replay through `liveReducer` -- the Java `ConnectionManager`
+   sends an array of broadcast messages, not an ExecutionTrace-shaped object.
+
+6. **tool_called fallback**: Added agentRole-based fallback (then any running task) when
+   `taskIndex` is 0 -- Java `WebSocketStreamingListener.onToolCall()` always sends 0;
+   normalized null `outcome` to `'UNKNOWN'` at the boundary.
+
 ## Next Steps
-- Open PR for feat/133-134-viz-live-mode against main
 - Issue #129 epic notes: G1 done; G2 done; H1 (#132) done; I1 (#133) done; I2 (#134) done. Outstanding: H2 (review approval UI), J (docs/examples)
 - H2 depends on H1 (done) and I1 (done) -- can now be started
+- PR #144 updated with Copilot review fixes; ready for merge
 
 ## Key Design Decisions (Issue #132)
 

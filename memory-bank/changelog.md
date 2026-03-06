@@ -1753,6 +1753,27 @@ Key design decisions:
 
 ## [Unreleased]
 
+### Fixed (PR #144 Copilot review fixes -- commit d1a7604)
+- `live.ts`: Aligned `HelloMessage` fields with Java protocol (`ensembleId`/`startedAt`
+  now `string | null`); corrected `LiveTask.taskIndex` doc (1-based); added missing
+  `ToolCalledMessage` fields (`toolArguments`, `toolResult`, `structuredResult`,
+  `outcome: string | null`)
+- `liveReducer`: `applyHello` now replays `snapshotTrace` as `ServerMessage[]` through
+  `liveReducer` for deterministic late-join state restoration (was incorrectly parsing as
+  ExecutionTrace shape)
+- `liveReducer`: `applyToolCalled` falls back to most-recent running task by `agentRole`
+  (then any running task) when `taskIndex` is 0 -- Java always sends 0 for tool calls;
+  null `outcome` normalized to `'UNKNOWN'`
+- `liveDag`: `buildLiveStatusMap` no longer sets completed tasks as `undefined` key --
+  completed tasks are now truly absent from the map (doc/impl mismatch resolved)
+- `TimelineView`: Restored `LlmDetailPanel` `msg.toolCalls`, `msg.toolName` and per-
+  interaction Tool Calls section lost during live mode refactor
+- `docs/examples/live-dashboard.md`: Added BOM context, Java imports, configuration
+  snippet imports to make examples copy/paste runnable
+- `tests`: Updated liveReducer and liveDag tests; 3 new tests for tool_called fallback
+  and null outcome normalisation; total 166 tests
+
+
 ### Fixed (PR #66 -- fix/javadoc-link-error-add-to-ci)
 - `Ensemble.java`: three `{@link}` references pointing to Lombok `@Singular`-generated
   builder methods (`listener(EnsembleListener)`, `listeners(Collection)`) replaced with
