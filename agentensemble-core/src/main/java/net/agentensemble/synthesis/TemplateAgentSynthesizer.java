@@ -9,15 +9,18 @@ import net.agentensemble.Task;
  * Template-based {@link AgentSynthesizer} that derives an agent persona deterministically
  * from the task description without making any LLM calls.
  *
- * <p>The role is derived by extracting the first verb from the task description and
- * looking it up in a built-in verb-to-role table. For example:
+ * <p>The role is derived by scanning the first {@value #VERB_SCAN_LIMIT} words of the
+ * task description (lowercased, punctuation stripped) and looking each word up in a
+ * built-in verb-to-role table. The first matching word wins. For example:
  * <ul>
- *   <li>"Research AI trends" -&gt; role "Researcher"</li>
- *   <li>"Write a blog post" -&gt; role "Writer"</li>
- *   <li>"Analyse the data" -&gt; role "Analyst"</li>
+ *   <li>"Research AI trends" -&gt; role "Researcher" (first word match)</li>
+ *   <li>"Write a blog post" -&gt; role "Writer" (first word match)</li>
+ *   <li>"Based on the analysis, write a summary" -&gt; role "Writer" (fifth word match)</li>
+ *   <li>"Role: Analyst. Analyse the market" -&gt; role "Analyst" (third word match)</li>
  * </ul>
  *
- * <p>If the first word is not found in the table, the role defaults to {@code "Agent"}.
+ * <p>If no recognized verb is found within the scan window, the role defaults to
+ * {@code "Agent"}.
  *
  * <p>The goal is set directly from the task description. The backstory is a minimal
  * sentence derived from the role.
@@ -88,8 +91,29 @@ class TemplateAgentSynthesizer implements AgentSynthesizer {
     }
 
     /**
-     * Extract a role noun from the task description by looking up the first word
-     * (lowercased, letters only) in the verb-to-role table.
+     * Maximum number of words scanned from the start of the task description when
+     * looking for a recognized verb. Scanning beyond the first word handles common
+     * task-first patterns where the action verb appears after a preamble:
+     *
+     * <ul>
+     *   <li>{@code "Based on the analysis, write a summary"} -- "write" at position 4</li>
+     *   <li>{@code "Role: Analyst. Analyse the market"} -- "analyse" at position 2</li>
+     *   <li>{@code "Please research the topic"} -- "research" at position 1</li>
+     * </ul>
+     *
+     * <p>The limit prevents over-scanning long descriptions where the first matching
+     * verb might appear in a subordinate clause with unrelated semantics.
+     */
+    static final int VERB_SCAN_LIMIT = 8;
+
+    /**
+     * Extract a role noun from the task description by scanning the first
+     * {@value #VERB_SCAN_LIMIT} words (lowercased, letters only) for a match in the
+     * verb-to-role table. The first matching word wins.
+     *
+     * <p>Scanning beyond the first word handles task-first patterns where the action
+     * verb follows a preposition, article, or persona prefix (e.g. "Role: Analyst.").
+     * If no match is found within the scan window, the role defaults to {@code "Agent"}.
      *
      * @param description the task description; must not be null
      * @return the derived role noun, or {@code "Agent"} if no match is found
@@ -102,8 +126,17 @@ class TemplateAgentSynthesizer implements AgentSynthesizer {
         if (words.length == 0) {
             return "Agent";
         }
-        String firstWord = words[0].toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
-        return VERB_TO_ROLE.getOrDefault(firstWord, "Agent");
+        int limit = Math.min(words.length, VERB_SCAN_LIMIT);
+        for (int i = 0; i < limit; i++) {
+            String word = words[i].toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+            if (!word.isEmpty()) {
+                String role = VERB_TO_ROLE.get(word);
+                if (role != null) {
+                    return role;
+                }
+            }
+        }
+        return "Agent";
     }
 
     private static String buildBackstory(String role) {

@@ -1,5 +1,62 @@
 # Changelog
 
+## [Unreleased] - fix: task-first synthesis fallback and template role extraction -- 2026-03-06
+
+### Fixed (branch: fix/task-first-synthesis-fallback-and-template-role-extraction)
+
+**Root cause:** Two interacting bugs caused task-first sequential workflows configured with
+`AgentSynthesizer.llmBased()` and a test/deterministic `ChatModel` to fail with the
+misleading error `Agent 'Agent' failed: Not implemented`.
+
+**Fix A -- `LlmBasedAgentSynthesizer` (`agentensemble-core`):**
+- Narrowed the exception catch in `synthesize()` to only fall back to template synthesis for
+  JSON-parsing failures (`JsonProcessingException`) and field-validation failures
+  (`IllegalStateException`). Previously the blanket `catch (Exception e)` swallowed
+  `RuntimeException("Not implemented")` -- the LangChain4j 1.11.0 default `ChatModel.doChat()`
+  stub -- masking the real configuration error and producing a degraded agent that would fail
+  again later with a more confusing message.
+- ChatModel execution (`context.model().chat(request)`) is now called outside the try block so
+  any model-level failure propagates immediately to the caller.
+
+**Fix B -- `TemplateAgentSynthesizer` (`agentensemble-core`):**
+- `extractRole()` now scans the first `VERB_SCAN_LIMIT` (8) words instead of only the first
+  word. The first matching verb wins; `"Agent"` is the fallback only when no verb matches
+  within the scan window.
+- This correctly handles common task-first patterns where the action verb follows a preposition,
+  article, or persona prefix:
+  - `"Based on the analysis, write a summary"` -> "Writer" (position 4)
+  - `"Role: Analyst. Analyse the market data"` -> "Analyst" (position 2)
+  - `"Please research the topic"` -> "Researcher" (position 1)
+
+**Fix C -- `PassthroughChatModel` (`agentensemble-core`, `net.agentensemble.mapreduce`):**
+- Changed override from `chat(ChatRequest)` to `doChat(ChatRequest)` to align with the
+  LangChain4j 1.11.0 API where `doChat` is the intended override point. The default
+  `chat()` implementation handles listener notification and parameter merging before
+  delegating to `doChat`.
+
+### Tests Added
+
+**Unit (`agentensemble-core`):**
+- `TemplateAgentSynthesizerTest` (6 new tests):
+  - `extractRole_verbAfterPreposition_scansAheadAndMatchesVerb`
+  - `extractRole_rolePrefixedDescription_findsVerbBeyondFirstWord`
+  - `extractRole_articleBeforeVerb_scansAheadAndMatchesVerb`
+  - `extractRole_usingPreamble_findsVerbWithinScanLimit`
+  - `extractRole_verbBeyondScanLimit_returnsDefaultAgent`
+  - `extractRole_secondWordIsKnownVerb_matchesImmediately`
+- `LlmBasedAgentSynthesizerTest` (2 new tests, 1 test replaced):
+  - `synthesize_modelThrowsRuntimeException_propagatesException` (new)
+  - `synthesize_modelThrowsNotImplemented_propagatesException` (new)
+  - `synthesize_llmThrowsException_fallsBackToTemplate` replaced by the two above
+
+### Opportunistic Coverage
+- `extractRole_verbBeyondScanLimit_returnsDefaultAgent` locks down the scan-window boundary
+  contract (verbs beyond position 8 do not accidentally match)
+- `modelThrowsNotImplemented_propagatesException` specifically covers the LangChain4j 1.11.0
+  `doChat()` default stub scenario that triggered the original bug report
+
+---
+
 ## [Unreleased] - Issue #135: Viz review approval UI (v2.1.0) -- 2026-03-06
 
 ### Added (Issue #135 -- ReviewApprovalPanel component, branch feat/135-viz-review-approval-ui)

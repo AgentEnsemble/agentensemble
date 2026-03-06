@@ -20,8 +20,20 @@ import org.slf4j.LoggerFactory;
  * same task description may produce different agents on successive runs -- but
  * typically produces higher-quality agent descriptions than the template-based approach.
  *
- * <p>On LLM or JSON parsing failure, falls back to {@link TemplateAgentSynthesizer}
- * to ensure an agent is always produced.
+ * <p>Fallback behaviour on failure:
+ * <ul>
+ *   <li><strong>JSON parsing and validation failures</strong>
+ *       ({@link com.fasterxml.jackson.core.JsonProcessingException}, blank/missing fields)
+ *       fall back silently to {@link TemplateAgentSynthesizer}. The LLM responded but
+ *       the content was not usable -- a template agent is a safe recovery.</li>
+ *   <li><strong>ChatModel execution failures</strong> ({@link RuntimeException} and
+ *       its subclasses thrown by {@code context.model().chat(...)}) propagate
+ *       immediately. These indicate that the model itself is broken or not properly
+ *       wired (e.g., the LangChain4j default {@code doChat()} throwing
+ *       {@code "Not implemented"}). Silently degrading to a template agent in this
+ *       case would mask the configuration error and cause a second, more confusing
+ *       failure later during actual task execution.</li>
+ * </ul>
  *
  * <p>This synthesizer is stateless and thread-safe.
  */
@@ -45,13 +57,21 @@ class LlmBasedAgentSynthesizer implements AgentSynthesizer {
 
     @Override
     public Agent synthesize(Task task, SynthesisContext context) {
-        try {
-            String prompt = String.format(SYNTHESIS_PROMPT_TEMPLATE, task.getDescription());
-            ChatRequest request = ChatRequest.builder()
-                    .messages(List.of(new UserMessage(prompt)))
-                    .build();
+        // ChatModel execution failures propagate: they indicate the model itself is broken
+        // or not properly wired (e.g. RuntimeException("Not implemented") from the default
+        // ChatModel.doChat() stub). Silently falling back to template synthesis in that case
+        // would mask the configuration error and produce a misleading failure later.
+        String prompt = String.format(SYNTHESIS_PROMPT_TEMPLATE, task.getDescription());
+        ChatRequest request =
+                ChatRequest.builder().messages(List.of(new UserMessage(prompt))).build();
+        ChatResponse response = context.model().chat(request);
 
-            ChatResponse response = context.model().chat(request);
+        // JSON parsing and field-validation failures fall back to template synthesis.
+        // The model responded but the content was not usable; a template agent is a safe recovery.
+        try {
+            if (response == null) {
+                throw new IllegalStateException("ChatModel returned a null response");
+            }
             String json = response.aiMessage().text();
 
             JsonNode node = MAPPER.readTree(json);
@@ -70,7 +90,7 @@ class LlmBasedAgentSynthesizer implements AgentSynthesizer {
                     .llm(context.model())
                     .build();
 
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalStateException e) {
             log.warn(
                     "LLM-based agent synthesis failed for task '{}', falling back to template synthesizer: {}",
                     truncate(task.getDescription(), 80),
