@@ -192,19 +192,17 @@ realistic human timing.
 .reviewHandler(ReviewHandler.autoApproveWithDelay(Duration.ofMillis(100)))
 ```
 
-### `ReviewHandler.web(URI)` (stub)
-
-Design placeholder for webhook-based review. Not yet implemented; always throws
-`UnsupportedOperationException`.
-
 ---
 
 ## Browser-Based Review with WebDashboard
 
 The `agentensemble-web` module (v2.1.0+) provides `WebDashboard`, which embeds a
 Javalin WebSocket server directly in the JVM process. It replaces the console prompt
-with a browser-based approval panel and simultaneously streams the live execution timeline
-to every connected browser client.
+with a browser-based review panel and simultaneously streams the live execution timeline
+to every connected browser client. The `WebReviewHandler` returned by
+`WebDashboard.reviewHandler()` broadcasts a `review_requested` message over WebSocket when
+a gate fires, blocks the calling virtual thread, and resumes when the browser sends a
+`review_decision` (or the configured timeout expires).
 
 ### Dependency
 
