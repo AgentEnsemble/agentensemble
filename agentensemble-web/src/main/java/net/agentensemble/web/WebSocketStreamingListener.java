@@ -143,7 +143,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
      */
     @Override
     public void onToken(TokenEvent event) {
-        broadcastEphemeral(new TokenMessage(event.token(), event.agentRole(), Instant.now()));
+        broadcastEphemeral(new TokenMessage(event.token(), event.agentRole(), event.taskDescription(), Instant.now()));
     }
 
     // ========================

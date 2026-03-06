@@ -56,11 +56,13 @@ export interface LiveTask {
   /** Failure reason from task_failed message. Null unless task failed. */
   reason: string | null;
   /**
-   * Accumulated streaming output from token messages.
+   * Accumulated streaming token chunks from token messages.
+   * Stored as an array of chunks (not a concatenated string) to keep appending O(1).
+   * Join with {@code .join('')} for display.
    * Present while the task is running and a StreamingChatModel is configured.
    * Cleared to undefined when task_completed arrives (the final output is authoritative).
    */
-  streamingOutput?: string;
+  streamingOutput?: string[];
 }
 
 // ========================
@@ -288,6 +290,12 @@ export interface TokenMessage {
   token: string;
   /** The role of the agent that produced this token. */
   agentRole: string;
+  /**
+   * The description of the task being executed.
+   * Together with agentRole, uniquely identifies the task in parallel workflows
+   * where multiple tasks may share the same agent role.
+   */
+  taskDescription: string;
   /** ISO-8601 server-side timestamp when this message was sent. */
   sentAt: string;
 }

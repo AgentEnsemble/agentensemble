@@ -233,7 +233,8 @@ public class AgentExecutor {
                             accumulator,
                             captureMode,
                             streamingModel,
-                            executionContext);
+                            executionContext,
+                            task.getDescription());
                     log.debug("Agent '{}' completed (no tools)", agent.getRole());
                 }
             } catch (AgentExecutionException | MaxIterationsExceededException | ExitEarlyException e) {
@@ -410,12 +411,16 @@ public class AgentExecutor {
      * @throws AgentExecutionException if the streaming future is interrupted or fails
      */
     private static ChatResponse executeStreaming(
-            StreamingChatModel streamingModel, ChatRequest request, ExecutionContext ctx, String agentRole) {
+            StreamingChatModel streamingModel,
+            ChatRequest request,
+            ExecutionContext ctx,
+            String agentRole,
+            String taskDescription) {
         CompletableFuture<ChatResponse> future = new CompletableFuture<>();
         streamingModel.chat(request, new StreamingChatResponseHandler() {
             @Override
             public void onPartialResponse(String partialResponse) {
-                ctx.fireToken(new TokenEvent(partialResponse, agentRole));
+                ctx.fireToken(new TokenEvent(partialResponse, agentRole, taskDescription));
             }
 
             @Override
@@ -455,7 +460,8 @@ public class AgentExecutor {
             TaskTraceAccumulator accumulator,
             CaptureMode captureMode,
             StreamingChatModel streamingModel,
-            ExecutionContext executionContext) {
+            ExecutionContext executionContext,
+            String taskDescription) {
         List<ChatMessage> messages = List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt));
         ChatRequest request = ChatRequest.builder().messages(messages).build();
         Instant llmStart = Instant.now();
@@ -463,7 +469,7 @@ public class AgentExecutor {
         ChatResponse response;
         if (streamingModel != null) {
             log.debug("Agent '{}' using streaming model for final response", agent.getRole());
-            response = executeStreaming(streamingModel, request, executionContext, agent.getRole());
+            response = executeStreaming(streamingModel, request, executionContext, agent.getRole(), taskDescription);
         } else {
             response = agent.getLlm().chat(request);
         }

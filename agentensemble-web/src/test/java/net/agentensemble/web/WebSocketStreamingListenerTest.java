@@ -326,7 +326,7 @@ class WebSocketStreamingListenerTest {
 
     @Test
     void onToken_broadcastsTokenMessage() {
-        TokenEvent event = new TokenEvent("Hello ", "Senior Research Analyst");
+        TokenEvent event = new TokenEvent("Hello ", "Senior Research Analyst", "Research AI trends");
         listener.onToken(event);
 
         assertThat(session.sentMessages()).hasSize(1);
@@ -334,6 +334,7 @@ class WebSocketStreamingListenerTest {
         assertThat(json).contains("\"type\":\"token\"");
         assertThat(json).contains("\"token\":\"Hello \"");
         assertThat(json).contains("Senior Research Analyst");
+        assertThat(json).contains("Research AI trends");
     }
 
     @Test
@@ -341,7 +342,7 @@ class WebSocketStreamingListenerTest {
         // Token messages are ephemeral -- they must NOT be stored in the snapshot.
         // A late-joining client should rely on task_completed for the authoritative output,
         // not on a replayed token stream.
-        TokenEvent event = new TokenEvent("tok", "Writer");
+        TokenEvent event = new TokenEvent("tok", "Writer", "Write a report");
         listener.onToken(event);
 
         // Message was broadcast to the live session
@@ -360,7 +361,7 @@ class WebSocketStreamingListenerTest {
     @Test
     void onToken_multipleTokens_allBroadcast() {
         for (int i = 0; i < 5; i++) {
-            listener.onToken(new TokenEvent("tok" + i, "Agent"));
+            listener.onToken(new TokenEvent("tok" + i, "Agent", "Write something"));
         }
         assertThat(session.sentMessages()).hasSize(5);
         assertThat(session.sentMessages()).allMatch(m -> m.contains("\"type\":\"token\""));
@@ -374,7 +375,7 @@ class WebSocketStreamingListenerTest {
                 new WebSocketStreamingListener(connectionManager, failingSerializer);
 
         // Should not throw
-        faultyListener.onToken(new TokenEvent("tok", "Agent"));
+        faultyListener.onToken(new TokenEvent("tok", "Agent", "Some task"));
         assertThat(session.sentMessages()).isEmpty();
     }
 

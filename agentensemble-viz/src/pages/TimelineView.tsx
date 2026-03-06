@@ -664,13 +664,13 @@ function LiveTaskDetailPanel({ task, onClose }: { task: LiveTask; onClose: () =>
           </Section>
         )}
 
-        {task.status === 'running' && task.streamingOutput !== undefined && task.streamingOutput.length > 0 && (
+        {task.status === 'running' && task.streamingOutput !== undefined && (
           <Section title="Live Output">
             <p
               className="whitespace-pre-wrap font-mono text-xs text-gray-700 dark:text-gray-300"
               data-testid="streaming-output"
             >
-              {task.streamingOutput}
+              {task.streamingOutput.join('')}
               <span className="inline-block w-1.5 h-3 ml-0.5 bg-blue-500 ae-pulse align-text-bottom" />
             </p>
           </Section>

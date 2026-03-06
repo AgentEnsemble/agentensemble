@@ -161,21 +161,43 @@ function applyTaskCompleted(state: LiveState, msg: TaskCompletedMessage): LiveSt
 }
 
 /**
- * Append a streaming token to the most recent running task for the given agentRole.
+ * Append a streaming token to the matching running task.
  *
- * Falls back to the most recent running task (regardless of role) when no exact match
- * exists, so parallel-workflow scenarios with reassigned roles still receive tokens.
+ * Matching priority:
+ * 1. Most recent running task with matching agentRole AND taskDescription (most precise;
+ *    handles parallel workflows where the same role name is shared across tasks).
+ * 2. Most recent running task with matching agentRole only.
+ * 3. Most recent running task regardless of role (last-resort fallback).
+ *
+ * Tokens are stored as an array of chunks to keep appending O(1) and avoid the
+ * quadratic cost of repeated string concatenation for long streamed outputs.
  */
 function applyToken(state: LiveState, msg: TokenMessage): LiveState {
-  // Find the most recent running task for this agentRole
   let idx = -1;
+
+  // Priority 1: match by both agentRole and taskDescription
   for (let i = state.tasks.length - 1; i >= 0; i--) {
-    if (state.tasks[i].status === 'running' && state.tasks[i].agentRole === msg.agentRole) {
+    if (
+      state.tasks[i].status === 'running' &&
+      state.tasks[i].agentRole === msg.agentRole &&
+      state.tasks[i].taskDescription === msg.taskDescription
+    ) {
       idx = i;
       break;
     }
   }
-  // Fallback: most recent running task regardless of role
+
+  // Priority 2: match by agentRole only
+  if (idx === -1) {
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running' && state.tasks[i].agentRole === msg.agentRole) {
+        idx = i;
+        break;
+      }
+    }
+  }
+
+  // Priority 3: most recent running task regardless of role
   if (idx === -1) {
     for (let i = state.tasks.length - 1; i >= 0; i--) {
       if (state.tasks[i].status === 'running') {
@@ -184,12 +206,13 @@ function applyToken(state: LiveState, msg: TokenMessage): LiveState {
       }
     }
   }
+
   if (idx === -1) return state;
 
-  const existing = state.tasks[idx].streamingOutput ?? '';
+  const existing = state.tasks[idx].streamingOutput ?? [];
   const updated: LiveTask = {
     ...state.tasks[idx],
-    streamingOutput: existing + msg.token,
+    streamingOutput: [...existing, msg.token],
   };
   const tasks = [...state.tasks];
   tasks[idx] = updated;

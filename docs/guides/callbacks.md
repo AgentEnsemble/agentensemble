@@ -381,13 +381,13 @@ In a parallel workflow, `onToken` may be called concurrently from multiple virtu
 (one per running agent). Use thread-safe accumulators when collecting tokens across tasks:
 
 ```java
-ConcurrentHashMap<String, StringBuilder> tokenBuffers = new ConcurrentHashMap<>();
+ConcurrentHashMap<String, StringBuffer> tokenBuffers = new ConcurrentHashMap<>();
 
 Ensemble.builder()
     .workflow(Workflow.PARALLEL)
     .streamingChatLanguageModel(streamingModel)
     .onToken(event -> tokenBuffers
-        .computeIfAbsent(event.agentRole(), k -> new StringBuilder())
+        .computeIfAbsent(event.agentRole(), k -> new StringBuffer())
         .append(event.token()))
     .tasks(List.of(task1, task2))
     .build()

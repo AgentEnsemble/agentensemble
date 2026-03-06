@@ -919,6 +919,23 @@ public class Ensemble {
         }
 
         /**
+         * Register a lambda that is called for each token emitted during streaming
+         * generation of the final agent response.
+         *
+         * <p>Only invoked when a {@code StreamingChatModel} is resolved for the agent
+         * (see {@link Ensemble#streamingChatLanguageModel}).
+         */
+        public EnsembleBuilder onToken(Consumer<TokenEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onToken(TokenEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
          * Register a {@link EnsembleDashboard} (e.g. {@code WebDashboard}) as the live execution
          * dashboard for this ensemble run.
          *
@@ -956,25 +973,8 @@ public class Ensemble {
          *
          * @param dashboard the live dashboard to register; must not be null
          * @return this builder
-         * @throws IllegalArgumentException when {@code dashboard} is null
+         * @throws NullPointerException when {@code dashboard} is null
          */
-        /**
-         * Register a lambda that is called for each token emitted during streaming
-         * generation of the final agent response.
-         *
-         * <p>Only invoked when a {@code StreamingChatModel} is resolved for the agent
-         * (see {@link Ensemble#streamingChatLanguageModel}).
-         */
-        public EnsembleBuilder onToken(Consumer<TokenEvent> handler) {
-            Objects.requireNonNull(handler, "handler");
-            return listener(new EnsembleListener() {
-                @Override
-                public void onToken(TokenEvent event) {
-                    handler.accept(event);
-                }
-            });
-        }
-
         public EnsembleBuilder webDashboard(EnsembleDashboard dashboard) {
             Objects.requireNonNull(dashboard, "dashboard must not be null");
             if (!dashboard.isRunning()) {

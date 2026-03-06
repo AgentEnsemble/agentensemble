@@ -12,9 +12,15 @@ import java.time.Instant;
  * late-join snapshot because they are ephemeral; the {@link TaskCompletedMessage} carries
  * the authoritative final output.
  *
- * @param token     the text fragment emitted by the streaming model
- * @param agentRole the role of the agent generating the response
- * @param sentAt    server-side timestamp when this message was sent
+ * <p>The combination of {@link #agentRole()} and {@link #taskDescription()} uniquely
+ * identifies the task in parallel workflows, where multiple tasks may share the same
+ * agent role.
+ *
+ * @param token           the text fragment emitted by the streaming model
+ * @param agentRole       the role of the agent generating the response
+ * @param taskDescription the description of the task being executed
+ * @param sentAt          server-side timestamp when this message was sent
  */
 @JsonTypeName("token")
-public record TokenMessage(String token, String agentRole, Instant sentAt) implements ServerMessage {}
+public record TokenMessage(String token, String agentRole, String taskDescription, Instant sentAt)
+        implements ServerMessage {}

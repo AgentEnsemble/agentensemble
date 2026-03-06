@@ -18,7 +18,12 @@ package net.agentensemble.callback;
  * <p>Thread safety: in a parallel workflow, token events for different agents may be fired
  * concurrently from different virtual threads. Listener implementations must be thread-safe.
  *
- * @param token     the text fragment emitted by the streaming model
- * @param agentRole the role of the agent generating the response
+ * <p>The combination of {@link #agentRole()} and {@link #taskDescription()} uniquely identifies
+ * the task in parallel workflows, where multiple tasks may share the same agent role.
+ *
+ * @param token           the text fragment emitted by the streaming model
+ * @param agentRole       the role of the agent generating the response
+ * @param taskDescription the description of the task being executed; combined with
+ *                        {@code agentRole} this uniquely identifies the task in parallel workflows
  */
-public record TokenEvent(String token, String agentRole) {}
+public record TokenEvent(String token, String agentRole, String taskDescription) {}

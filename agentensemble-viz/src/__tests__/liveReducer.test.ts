@@ -613,21 +613,36 @@ describe('liveReducer', () => {
         type: 'token',
         token: 'Hello ',
         agentRole: 'Agent A',
+        taskDescription: 'Task 1',
         sentAt: '2026-03-05T14:00:10Z',
       };
       const next = liveReducer(state, msg);
-      expect(next.tasks[0].streamingOutput).toBe('Hello ');
+      expect(next.tasks[0].streamingOutput).toEqual(['Hello ']);
     });
 
-    it('accumulates multiple tokens in order', () => {
+    it('accumulates multiple tokens in order as chunks array', () => {
       const state = stateWithTask(1, 'running');
-      const tok1: ServerMessage = { type: 'token', token: 'Hel', agentRole: 'Agent A', sentAt: '2026-03-05T14:00:10Z' };
-      const tok2: ServerMessage = { type: 'token', token: 'lo ', agentRole: 'Agent A', sentAt: '2026-03-05T14:00:10Z' };
-      const tok3: ServerMessage = { type: 'token', token: 'world', agentRole: 'Agent A', sentAt: '2026-03-05T14:00:10Z' };
+      const tok1: ServerMessage = { type: 'token', token: 'Hel', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const tok2: ServerMessage = { type: 'token', token: 'lo ', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const tok3: ServerMessage = { type: 'token', token: 'world', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
       const s1 = liveReducer(state, tok1);
       const s2 = liveReducer(s1, tok2);
       const s3 = liveReducer(s2, tok3);
-      expect(s3.tasks[0].streamingOutput).toBe('Hello world');
+      expect(s3.tasks[0].streamingOutput).toEqual(['Hel', 'lo ', 'world']);
+      expect(s3.tasks[0].streamingOutput?.join('')).toBe('Hello world');
+    });
+
+    it('matches by agentRole + taskDescription for precise attribution in parallel workflows', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Agent A',
+        taskDescription: 'Task 1',  // matches the running task exactly
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].streamingOutput).toEqual(['tok']);
     });
 
     it('falls back to most recent running task when no role match', () => {
@@ -636,11 +651,12 @@ describe('liveReducer', () => {
         type: 'token',
         token: 'tok',
         agentRole: 'Unknown Agent',  // no match by role
+        taskDescription: 'Unknown task',
         sentAt: '2026-03-05T14:00:10Z',
       };
       const next = liveReducer(state, msg);
       // Falls back to the only running task
-      expect(next.tasks[0].streamingOutput).toBe('tok');
+      expect(next.tasks[0].streamingOutput).toEqual(['tok']);
     });
 
     it('returns same state when no running tasks exist', () => {
@@ -649,6 +665,7 @@ describe('liveReducer', () => {
         type: 'token',
         token: 'tok',
         agentRole: 'Agent A',
+        taskDescription: 'Task 1',
         sentAt: '2026-03-05T14:00:10Z',
       };
       const next = liveReducer(state, msg);
@@ -662,6 +679,7 @@ describe('liveReducer', () => {
         type: 'token',
         token: 'tok',
         agentRole: 'Agent A',
+        taskDescription: 'Task 1',
         sentAt: '2026-03-05T14:00:10Z',
       };
       liveReducer(state, msg);
@@ -671,9 +689,9 @@ describe('liveReducer', () => {
     it('task_completed clears streamingOutput', () => {
       // Accumulate some streaming output
       const state = stateWithTask(1, 'running');
-      const tok: ServerMessage = { type: 'token', token: 'Hello world', agentRole: 'Agent A', sentAt: '2026-03-05T14:00:10Z' };
+      const tok: ServerMessage = { type: 'token', token: 'Hello world', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
       const withStreaming = liveReducer(state, tok);
-      expect(withStreaming.tasks[0].streamingOutput).toBe('Hello world');
+      expect(withStreaming.tasks[0].streamingOutput).toEqual(['Hello world']);
 
       // Now complete the task -- streamingOutput must be cleared
       const completed: ServerMessage = {
@@ -697,6 +715,7 @@ describe('liveReducer', () => {
         type: 'token',
         token: 'tok',
         agentRole: 'Agent A',
+        taskDescription: 'Some task',
         sentAt: '2026-03-05T14:00:10Z',
       };
       const next = liveReducer(BASE_STATE, msg);
