@@ -6,12 +6,10 @@
 
 **New Gradle module `agentensemble-bom`:**
 - `agentensemble-bom/build.gradle.kts`: `java-platform` plugin; Maven coordinates
-  `net.agentensemble:agentensemble-bom`; `javaPlatform { allowDependencies() }`;
-  `apiConstraints` for all published modules:
+  `net.agentensemble:agentensemble-bom`; `apiConstraints` for all published modules:
   - `agentensemble-core`, `agentensemble-memory`, `agentensemble-review`
   - `agentensemble-metrics-micrometer`, `agentensemble-devtools`
-  - All 9 tool modules under `agentensemble-tools-*`
-  - `agentensemble-tools-bom` (nested BOM for tools sub-project)
+  - All 9 individual tool modules listed explicitly
 - `settings.gradle.kts`: `include("agentensemble-bom")` added before `agentensemble-core`
 - `build.gradle.kts` (root): skip condition for java plugin extended from
   `name == "bom"` to `name == "bom" || name == "agentensemble-bom"` so the
@@ -27,17 +25,18 @@
 ### Added (Issue #115 -- Migration guide v1.x to v2.0.0 + updated examples)
 
 **Migration guide (`docs/migration/v1-to-v2.md`):**
-- 10-section guide covering all v2.0.0 breaking changes:
-  1. Overview and quick checklist
-  2. Agent-first to task-first paradigm shift
-  3. Module split (agentensemble-memory, agentensemble-review, agentensemble-bom)
-  4. Memory API changes (EnsembleMemory -> MemoryStore, MemoryEntry restructured)
-  5. Review / human-in-the-loop system (new, no v1 equivalent)
-  6. EnsembleOutput changes (isComplete, completedTasks, lastCompletedOutput, getOutput)
-  7. Workflow inference (workflow field now nullable, inferred from context deps)
-  8. MapReduceEnsemble task-first API
-  9. Tool API changes (tools on Task, not Agent)
-  10. Exception changes (ExitEarlyException, GuardrailViolationException hierarchy)
+- 11-section guide covering all v2.0.0 breaking changes:
+  1. Removing Redundant Agent Declarations
+  2. Moving Tools from Agents to Tasks
+  3. Moving chatLanguageModel to the Ensemble or Task
+  4. Moving maxIterations from Agent to Task
+  5. Migrating Memory Configuration
+  6. Updated EnsembleOutput API
+  7. Workflow Inference
+  8. New Module Dependencies
+  9. When to Keep Explicit Agent Declarations
+  10. Zero-Ceremony Static Factory (New in v2.0.0)
+  11. MapReduceEnsemble Task-First API
 
 **Updated examples (Issue #115):**
 - `ResearchWriterExample.java`: removed explicit Agent.builder() blocks; tasks use

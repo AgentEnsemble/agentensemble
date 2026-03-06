@@ -3,8 +3,8 @@ package net.agentensemble.examples;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.Map;
 import net.agentensemble.Ensemble;
-import net.agentensemble.EnsembleOutput;
 import net.agentensemble.Task;
+import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.memory.MemoryStore;
 
 /**

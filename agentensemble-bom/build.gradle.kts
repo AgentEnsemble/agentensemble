@@ -14,9 +14,6 @@ dependencies {
         api(project(":agentensemble-metrics-micrometer"))
         api(project(":agentensemble-devtools"))
 
-        // Tools BOM (aligns all individual tool module versions)
-        api(project(":agentensemble-tools:bom"))
-
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
         api(project(":agentensemble-tools:datetime"))

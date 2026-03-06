@@ -18,7 +18,7 @@ side-by-side before/after examples.
 | Tools | Declared on `Agent` | Declared on `Task` (preferred) |
 | `chatLanguageModel` / `llm` | Declared on `Agent` | Declared on `Task` or `Ensemble` (default) |
 | Memory | `Ensemble.memory(EnsembleMemory)` | `Task.memory(scope)` + `Ensemble.memoryStore(...)` |
-| `EnsembleOutput` | Assumes full completion | `isComplete()`, `exitReason()`, `completedTasks()` |
+| `EnsembleOutput` | Assumes full completion | `isComplete()`, `getExitReason()`, `completedTasks()` |
 | Workflow declaration | Required | Optional; inferred from context declarations |
 | Module structure | Everything in `agentensemble-core` | Split: core + memory + review |
 
@@ -513,6 +513,71 @@ System.out.println(output.getRaw());
 
 `Task.of(description)` uses a sensible default `expectedOutput`. Use
 `Task.of(description, expectedOutput)` to specify both.
+
+---
+
+## 11. MapReduceEnsemble Task-First API
+
+`MapReduceEnsemble` follows the same task-first pattern as `Ensemble`. Agent declarations
+are optional; the framework synthesizes agents from task descriptions.
+
+### Before (v1.x): Agent-first map-reduce
+
+```java
+MapReduceEnsemble<String> mapReduce = MapReduceEnsemble.<String>builder()
+    .items(dishes)
+    .mapAgent(() -> Agent.builder()
+        .role("Chef")
+        .goal("Prepare a single dish")
+        .llm(model)
+        .build())
+    .mapTask((agent, item) -> Task.builder()
+        .description("Prepare: " + item)
+        .expectedOutput("Recipe and instructions")
+        .agent(agent)
+        .build())
+    .reduceAgent(() -> Agent.builder()
+        .role("Head Chef")
+        .goal("Compile the full menu")
+        .llm(model)
+        .build())
+    .reduceTask((agent, chunkTasks) -> Task.builder()
+        .description("Compile the dishes into a menu")
+        .expectedOutput("A formatted multi-course menu")
+        .agent(agent)
+        .context(chunkTasks)
+        .build())
+    .build();
+```
+
+### After (v2.0.0): Task-first map-reduce
+
+```java
+// Option A: task-first builder -- no agents required
+MapReduceEnsemble<String> mapReduce = MapReduceEnsemble.<String>builder()
+    .items(dishes)
+    .chatLanguageModel(model)       // default LLM for all synthesized agents
+    .mapTask(item -> Task.builder()
+        .description("Prepare: " + item)
+        .expectedOutput("Recipe and instructions")
+        .build())
+    .reduceTask(chunkTasks -> Task.builder()
+        .description("Compile the dishes into a menu")
+        .expectedOutput("A formatted multi-course menu")
+        .context(chunkTasks)
+        .build())
+    .build();
+
+// Option B: zero-ceremony factory -- one line for simple cases
+MapReduceEnsemble<String> mapReduce = MapReduceEnsemble.of(
+    model,
+    dishes,
+    "Prepare a recipe for: {item}",
+    "Compile all recipes into a complete menu");
+```
+
+For detailed `MapReduceEnsemble` migration guidance including adaptive mode and
+short-circuit optimization, see the [Map-Reduce guide](../guides/map-reduce.md).
 
 ---
 

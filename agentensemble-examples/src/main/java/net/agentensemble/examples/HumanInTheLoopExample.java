@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
  *      non-blocking when run unattended.
  *
  *   2. review (post-execution gate) -- the reviewer reads the completed output and
- *      approves or rejects it. A 60-second timeout stops the ensemble (SKIP) if
+ *      approves or rejects it. A 60-second timeout stops the ensemble (EXIT_EARLY) if
  *      no response is received.
  *
  *   3. Review.skip() -- explicitly bypasses the review gate on the final task,
