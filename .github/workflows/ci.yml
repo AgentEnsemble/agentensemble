@@ -74,6 +74,62 @@ jobs:
         run: npm test
         working-directory: agentensemble-viz
 
+  e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    # Run after unit tests pass -- no point running E2E if the build is broken.
+    needs: [build, build-viz]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            agentensemble-viz/package-lock.json
+            agentensemble-e2e/package-lock.json
+
+      - name: Install viz dependencies
+        run: npm ci
+        working-directory: agentensemble-viz
+
+      - name: Install E2E dependencies
+        run: npm ci
+        working-directory: agentensemble-e2e
+
+      - name: Install Playwright Chromium browser
+        run: npx playwright install --with-deps chromium
+        working-directory: agentensemble-e2e
+
+      - name: Pre-build Java E2E module
+        # Compile the Java test server ahead of time so the Playwright webServer
+        # timeout is not consumed by Gradle compilation during test startup.
+        run: ./gradlew :agentensemble-e2e:classes
+
+      - name: Run Playwright E2E tests
+        run: npm test
+        working-directory: agentensemble-e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: agentensemble-e2e/playwright-report/
+          retention-days: 7
+
   dependency-submission:
     name: Submit Dependency Graph
     runs-on: ubuntu-latest
@@ -96,7 +152,7 @@ jobs:
   dependabot-automerge:
     name: Dependabot Auto-Merge
     runs-on: ubuntu-latest
-    needs: [build, build-viz]
+    needs: [build, build-viz, e2e]
     # Guard against 'skipped' in addition to 'failure'/'cancelled'. Without this guard,
     # a skipped build (where tests never ran) would still satisfy the condition and could
     # allow auto-merge to proceed without any CI validation.
