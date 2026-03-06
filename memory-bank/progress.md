@@ -274,6 +274,7 @@ v2.0.0 implementation status:
 - Group D (partial results, workflow inference): COMPLETE (#111, #112)
 - Group E (MapReduce refactor): COMPLETE (#113, branch feat/113-mapreduce-task-first)
 - Group F (BOM, migration guide, examples): PENDING
+- Issue #126 (Tool-level approval gates): COMPLETE (branch feat/126-tool-level-approval-gates)
 
 ## Known Issues
 

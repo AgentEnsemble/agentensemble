@@ -197,9 +197,12 @@ public class AgentExecutor {
                     effectiveTools.size(),
                     agent.isAllowDelegation());
 
-            // Resolve tools, injecting ToolContext into AbstractAgentTool instances
+            // Resolve tools, injecting ToolContext (including reviewHandler) into AbstractAgentTool instances
             ToolResolver.ResolvedTools resolvedTools = ToolResolver.resolve(
-                    effectiveTools, executionContext.toolMetrics(), executionContext.toolExecutor());
+                    effectiveTools,
+                    executionContext.toolMetrics(),
+                    executionContext.toolExecutor(),
+                    executionContext.reviewHandler());
             AtomicInteger toolCallCounter = new AtomicInteger(0);
 
             String finalResponse;

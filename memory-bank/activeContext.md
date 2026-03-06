@@ -2,9 +2,42 @@
 
 ## Current Work Focus
 
-Issue #113 (v2.0.0 MapReduce task-first refactor) is complete on branch
-`feat/113-mapreduce-task-first`. Implementation covers all acceptance criteria from the
-issue.
+Issue #126 (Tool-level approval gates via ReviewHandler) is complete on branch
+`feat/126-tool-level-approval-gates`. Implementation threads `ReviewHandler` through
+`ToolContext` so all `AbstractAgentTool` subclasses can call `requestApproval()` before
+executing dangerous or irreversible actions.
+
+## Recent Changes
+
+### Issue #126: Tool-Level Approval Gates
+
+**Infrastructure (agentensemble-core):**
+- `ToolContext`: added `Object reviewHandler` field and 4-arg `of()` factory. Stored as `Object` to avoid class loading issues when `agentensemble-review` is absent from runtime classpath.
+- `ToolResolver.resolve()`: extended to accept a `reviewHandler` parameter (4-arg overload); threads it into `ToolContext.of()` for each resolved `AbstractAgentTool`.
+- `AgentExecutor`: passes `executionContext.reviewHandler()` to `ToolResolver.resolve()`.
+- `AbstractAgentTool`: added `protected ReviewDecision requestApproval(String)`, `protected ReviewDecision requestApproval(String, Duration, OnTimeoutAction)`, `protected Object rawReviewHandler()`, `IllegalStateException` re-throw in `execute()`, and `static final ReentrantLock CONSOLE_APPROVAL_LOCK` to serialize concurrent console reviews.
+- `LangChain4jToolAdapter.executeForResult()`: added `IllegalStateException` re-throw (configuration errors must not be silently converted to `ToolResult.failure()`).
+
+**Built-in tool updates (agentensemble-tools):**
+- `ProcessAgentTool`: added `requireApproval(boolean)` builder option. Requests approval before `ProcessBuilder.start()`. Edit replaces stdin input; ExitEarly returns failure without starting process.
+- `FileWriteTool`: added `Builder` pattern with `requireApproval(boolean)`. Requests approval before `Files.writeString()`. Edit replaces file content; ExitEarly returns failure without writing.
+- `HttpAgentTool`: added `requireApproval(boolean)` builder option. Requests approval before `httpClient.send()`. Edit replaces request body; ExitEarly returns failure without sending.
+- All three tool modules: added `compileOnly(":agentensemble-review")` and `testImplementation(":agentensemble-review")` to build files.
+
+**Tests:**
+- `ToolContextTest` (new, 10 tests): factory with/without reviewHandler, accessor, null validation
+- `AbstractAgentToolApprovalTest` (new, 18 tests): Continue/Edit/ExitEarly decisions, null handler auto-approves, custom timeout, ISE propagation, CONSOLE_APPROVAL_LOCK
+- `ToolResolverTest` (extended, +5 tests): reviewHandler threaded from resolve() into ToolContext
+- `ProcessAgentToolTest` (extended, +7 tests): approval enabled Continue/Edit/ExitEarly/disabled/no-handler matrix
+- `FileWriteToolTest` (extended, +10 tests): same matrix + builder factory tests + content truncation
+- `HttpAgentToolTest` (extended, +8 tests): same matrix + verify no HTTP send on ExitEarly
+- `ToolApprovalIntegrationTest` (new, 6 tests): end-to-end with mock LLM + programmatic ReviewHandler; parallel approval
+
+**Documentation:**
+- `docs/guides/review.md`: new "Tool-Level Approval Gates" section
+- `docs/guides/built-in-tools.md`: "Approval Gate" subsections for ProcessAgentTool, FileWriteTool, HttpAgentTool
+- `docs/examples/human-in-the-loop.md`: "Tool-Level Approval" example section
+- `docs/design/06-tool-system.md`: new "Tool-Level Approval Gates" architecture section
 
 ## Recent Changes
 

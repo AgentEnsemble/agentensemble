@@ -93,6 +93,13 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.22.0")
     testImplementation("org.slf4j:slf4j-simple:2.0.17")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
+
+    // AbstractAgentTool now references ReviewDecision in its method signatures
+    // (requestApproval() return type). All tool subclasses need agentensemble-review
+    // on the test classpath so the JVM verifier can resolve ReviewDecision when
+    // loading AbstractAgentTool during tests. This does not add review to the
+    // production runtime classpath -- agentensemble-core keeps it as compileOnly.
+    testImplementation(project(":agentensemble-review"))
 }
 
 // Common Maven publishing configuration.

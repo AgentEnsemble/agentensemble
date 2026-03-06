@@ -9,7 +9,11 @@ import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import java.util.List;
+import java.util.concurrent.Executors;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.AgentTool;
+import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
 
@@ -171,5 +175,89 @@ class ToolResolverTest {
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEqualTo("Found 42 results");
         assertThat(result.getStructuredOutput(SearchResults.class)).isEqualTo(structured);
+    }
+
+    // ========================
+    // ReviewHandler threading into ToolContext
+    // ========================
+
+    /** Minimal AbstractAgentTool subclass that exposes rawReviewHandler() for testing. */
+    static class InspectableTool extends AbstractAgentTool {
+        @Override
+        public String name() {
+            return "inspectable";
+        }
+
+        @Override
+        public String description() {
+            return "For testing context injection";
+        }
+
+        @Override
+        protected ToolResult doExecute(String input) {
+            return ToolResult.success(input);
+        }
+
+        Object capturedReviewHandler() {
+            return rawReviewHandler();
+        }
+    }
+
+    @Test
+    void resolve_withReviewHandler_injectsHandlerIntoAbstractAgentToolContext() {
+        ReviewHandler handler = ReviewHandler.autoApprove();
+        var tool = new InspectableTool();
+
+        ToolResolver.resolve(
+                List.of(tool), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+
+        assertThat(tool.capturedReviewHandler()).isSameAs(handler);
+    }
+
+    @Test
+    void resolve_withNullReviewHandler_injectsNullHandlerIntoAbstractAgentToolContext() {
+        var tool = new InspectableTool();
+
+        ToolResolver.resolve(
+                List.of(tool), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), null);
+
+        assertThat(tool.capturedReviewHandler()).isNull();
+    }
+
+    @Test
+    void resolve_threeArgOverload_injectsNullHandler() {
+        var tool = new InspectableTool();
+
+        ToolResolver.resolve(List.of(tool), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor());
+
+        assertThat(tool.capturedReviewHandler()).isNull();
+    }
+
+    @Test
+    void resolve_reviewHandler_notInjectedIntoAnnotatedObjects() {
+        // @Tool-annotated objects don't go through AbstractAgentTool -- no injection path
+        ReviewHandler handler = ReviewHandler.autoApprove();
+        var annotatedTool = new SearchTool();
+
+        // Should not throw -- just resolves normally without injection
+        ToolResolver.ResolvedTools resolved = ToolResolver.resolve(
+                List.of(annotatedTool), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+
+        assertThat(resolved.hasTools()).isTrue();
+    }
+
+    @Test
+    void resolve_withReviewHandler_toolContextContainsHandler() {
+        // Verify the ToolContext created during resolution carries the handler
+        ReviewHandler handler = ReviewHandler.autoApprove();
+        var tool = new InspectableTool();
+
+        ToolResolver.resolve(
+                List.of(tool), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+
+        // The ToolContext is accessible via rawReviewHandler() on the tool
+        Object stored = tool.capturedReviewHandler();
+        assertThat(stored).isInstanceOf(ReviewHandler.class);
+        assertThat((ReviewHandler) stored).isSameAs(handler);
     }
 }

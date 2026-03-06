@@ -188,6 +188,23 @@ var fileWrite = FileWriteTool.of(Path.of("/workspace/output"));
 {"path": "reports/analysis.md", "content": "# Analysis\n\nThe results show..."}
 ```
 
+#### Approval Gate
+
+Require human approval before any file write:
+
+```java
+FileWriteTool writeTool = FileWriteTool.builder(Path.of("/workspace/output"))
+    .requireApproval(true)
+    .build();
+```
+
+The reviewer sees the target path and a preview of the content (up to 200 characters).
+On `Edit`, the reviewer's text replaces the original file content. On `ExitEarly`, no
+file is written and the tool returns a failure result.
+
+Requires `agentensemble-review` on the runtime classpath and a `ReviewHandler` configured
+on the ensemble (see [Tool-Level Approval Gates](review.md#tool-level-approval-gates)).
+
 ---
 
 ### WebSearchTool
@@ -263,6 +280,26 @@ var sentiment = ProcessAgentTool.builder()
     .build();
 ```
 
+#### Approval Gate
+
+Require human approval before the subprocess is started:
+
+```java
+ProcessAgentTool shellTool = ProcessAgentTool.builder()
+    .name("shell")
+    .description("Executes shell commands")
+    .command("sh", "-c")
+    .requireApproval(true)   // reviewer must approve before the process starts
+    .build();
+```
+
+The reviewer sees the command and a preview of the input being sent to the process.
+On `Edit`, the reviewer's text replaces the original input (sent to the subprocess's stdin).
+On `ExitEarly`, the process is never started and the tool returns a failure result.
+
+Requires `agentensemble-review` on the runtime classpath and a `ReviewHandler` configured
+on the ensemble (see [Tool-Level Approval Gates](review.md#tool-level-approval-gates)).
+
 ---
 
 ### HttpAgentTool
@@ -281,6 +318,28 @@ var classifier = HttpAgentTool.post(
     "Classifies text into categories",
     "https://ml.example.com/classify");
 ```
+
+#### Approval Gate
+
+Require human approval before any HTTP request is sent. Useful for destructive operations
+(DELETE, PUT) or calls to production APIs:
+
+```java
+HttpAgentTool deleteApi = HttpAgentTool.builder()
+    .name("delete_records")
+    .description("Permanently deletes records from the production database")
+    .url("https://api.production.example.com/records")
+    .method("DELETE")
+    .requireApproval(true)   // reviewer must approve before the request is sent
+    .build();
+```
+
+The reviewer sees the HTTP method, URL, and a preview of the request body.
+On `Edit`, the reviewer's text replaces the original request body.
+On `ExitEarly`, no request is sent and the tool returns a failure result.
+
+Requires `agentensemble-review` on the runtime classpath and a `ReviewHandler` configured
+on the ensemble (see [Tool-Level Approval Gates](review.md#tool-level-approval-gates)).
 
 ---
 

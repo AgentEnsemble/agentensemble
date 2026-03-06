@@ -248,11 +248,104 @@ hasToolAnnotatedMethods(Object obj) -> boolean:
 | Tool object has no @Tool methods and is not AgentTool | `ValidationException` with clear message |
 | Tool input from LLM is empty or malformed JSON | Tool receives input as-is; implementation handles it. Errors caught and fed back. |
 
+## Tool-Level Approval Gates
+
+`AbstractAgentTool` subclasses can pause execution to request human approval before
+performing a dangerous or irreversible action. This mechanism threads a `ReviewHandler`
+from `ExecutionContext` through `ToolContext` into the tool.
+
+### ReviewHandler Injection Path
+
+```
+ExecutionContext.reviewHandler()
+  -> ToolResolver.resolve(tools, metrics, executor, reviewHandler)
+      -> ToolContext.of(name, metrics, executor, reviewHandler)
+          -> AbstractAgentTool.setContext(toolContext)
+              -> AbstractAgentTool.rawReviewHandler()  (at execution time)
+```
+
+`ToolContext` stores the handler as `Object` (not `ReviewHandler`) to avoid forcing a class
+load of `net.agentensemble.review.ReviewHandler` when the `agentensemble-review` module is
+absent from the runtime classpath. The cast happens inside `requestApproval()` with a
+`NoClassDefFoundError` guard.
+
+This path is distinct from `HumanInputTool`, which receives its handler via
+`SequentialWorkflowExecutor.injectReviewHandlerIntoTools()`. Both injection paths coexist:
+
+| Path | Used by | How ReviewHandler arrives |
+|------|---------|--------------------------|
+| `ToolContext.reviewHandler` | All `AbstractAgentTool` subclasses | `ToolResolver` reads from `ExecutionContext` |
+| `HumanInputTool.injectReviewHandler()` | `HumanInputTool` only | `SequentialWorkflowExecutor.injectReviewHandlerIntoTools()` |
+
+### requestApproval() Contract
+
+```
+AbstractAgentTool.requestApproval(description) -> ReviewDecision:
+
+  rawHandler = ToolContext.reviewHandler()  // Object, may be null
+
+  IF rawHandler == null:
+    RETURN ReviewDecision.continueExecution()  // auto-approve
+
+  handler = (ReviewHandler) rawHandler       // cast; CompileOnly guard applied
+
+  isConsole = handler instanceof ConsoleReviewHandler
+  IF isConsole:
+    CONSOLE_APPROVAL_LOCK.lock()             // serialize concurrent console reviews
+
+  TRY:
+    request = ReviewRequest.of(
+      description, "", DURING_EXECUTION,
+      Review.DEFAULT_TIMEOUT, Review.DEFAULT_ON_TIMEOUT, null)
+    RETURN handler.review(request)
+  FINALLY:
+    IF isConsole: CONSOLE_APPROVAL_LOCK.unlock()
+```
+
+The `CONSOLE_APPROVAL_LOCK` is a `static final ReentrantLock` on `AbstractAgentTool`,
+shared across all tool instances. It prevents interleaved console output when the agent
+executor runs multiple tools concurrently in the same ReAct turn.
+
+Non-console handlers (auto-approve, webhook) are not serialized.
+
+### Exception Propagation
+
+`AbstractAgentTool.execute()` re-throws both `ExitEarlyException` and `IllegalStateException`
+instead of converting them to `ToolResult.failure()`:
+
+- `ExitEarlyException`: reviewer stopped the pipeline (existing behaviour)
+- `IllegalStateException`: configuration error (e.g., `requireApproval=true` with no handler)
+
+`LangChain4jToolAdapter.executeForResult()` similarly re-throws `IllegalStateException`
+so configuration errors propagate all the way up to the caller (wrapped in
+`AgentExecutionException` -> `TaskExecutionException`).
+
+### Built-in Tool Pattern
+
+```
+doExecute(String input):
+  IF requireApproval:
+    IF rawReviewHandler() == null:
+      THROW IllegalStateException(
+        "Tool '<name>' requires approval but no ReviewHandler is configured. ...")
+    decision = requestApproval("<description>: " + input)
+    IF decision instanceof ExitEarly:
+      RETURN ToolResult.failure("Rejected by reviewer: " + input)
+    IF decision instanceof Edit:
+      input = edit.revisedOutput()   // use reviewer's replacement
+    // Continue: proceed with original or revised input
+
+  // ... actual tool work
+```
+
+---
+
 ## Logging
 
 | Level | What |
 |---|---|
 | INFO | Tool call: `"{toolName}({truncatedInput}) -> {truncatedOutput}"` with duration |
 | WARN | Tool error: `"{toolName}({truncatedInput}) -> Error: {message}"` |
+| ERROR | Tool configuration error (e.g., `IllegalStateException` from `requireApproval`) |
 | DEBUG | Full tool input and output (untruncated) |
 | TRACE | Tool specification JSON sent to LLM |

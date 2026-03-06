@@ -23,8 +23,9 @@ import net.agentensemble.tool.ToolResult;
  * dispatch tool execution requests.
  *
  * <p>During resolution, {@link AbstractAgentTool} instances receive an injected
- * {@link ToolContext} containing the configured {@link ToolMetrics} and {@link Executor}.
- * This happens once per execution before any tool calls begin.
+ * {@link ToolContext} containing the configured {@link ToolMetrics}, {@link Executor},
+ * and optional ReviewHandler (for tool-level approval gates). This happens once per
+ * execution before any tool calls begin.
  *
  * <p>This class is package-private -- it is an implementation detail of AgentExecutor.
  */
@@ -39,14 +40,17 @@ final class ToolResolver {
      * plus the complete list of LangChain4j ToolSpecifications.
      *
      * <p>{@link AbstractAgentTool} instances in the list are automatically injected with
-     * a {@link ToolContext} built from the supplied {@code metrics} and {@code executor}.
+     * a {@link ToolContext} built from the supplied {@code metrics}, {@code executor},
+     * and {@code reviewHandler}.
      *
-     * @param tools    list of AgentTool instances and/or @Tool-annotated objects
-     * @param metrics  the ToolMetrics backend to inject into AbstractAgentTool instances
-     * @param executor the Executor to inject into AbstractAgentTool instances
+     * @param tools         list of AgentTool instances and/or @Tool-annotated objects
+     * @param metrics       the ToolMetrics backend to inject into AbstractAgentTool instances
+     * @param executor      the Executor to inject into AbstractAgentTool instances
+     * @param reviewHandler the ReviewHandler for tool-level approval gates (stored as Object
+     *                      to avoid runtime class loading); may be null
      * @return a ResolvedTools value encapsulating all resolution results
      */
-    static ResolvedTools resolve(List<Object> tools, ToolMetrics metrics, Executor executor) {
+    static ResolvedTools resolve(List<Object> tools, ToolMetrics metrics, Executor executor, Object reviewHandler) {
         Map<String, AgentTool> agentToolMap = new HashMap<>();
         Map<String, Object> annotatedObjectMap = new HashMap<>();
         List<ToolSpecification> allSpecs = new ArrayList<>();
@@ -58,7 +62,7 @@ final class ToolResolver {
 
                 // Inject ToolContext into AbstractAgentTool instances
                 if (agentTool instanceof AbstractAgentTool abstractTool) {
-                    ToolContext ctx = ToolContext.of(agentTool.name(), metrics, executor);
+                    ToolContext ctx = ToolContext.of(agentTool.name(), metrics, executor, reviewHandler);
                     ToolContextInjector.injectContext(abstractTool, ctx);
                 }
             } else {
@@ -75,15 +79,32 @@ final class ToolResolver {
     }
 
     /**
-     * Resolve using the default no-op metrics and virtual-thread executor.
-     * Convenience overload for call sites where metrics and executor are not configured.
+     * Resolve a mixed list of tools using the supplied metrics and executor, with no
+     * ReviewHandler. Convenience overload for call sites where review is not configured.
+     *
+     * @param tools    list of AgentTool instances and/or @Tool-annotated objects
+     * @param metrics  the ToolMetrics backend to inject into AbstractAgentTool instances
+     * @param executor the Executor to inject into AbstractAgentTool instances
+     * @return a ResolvedTools value
+     */
+    static ResolvedTools resolve(List<Object> tools, ToolMetrics metrics, Executor executor) {
+        return resolve(tools, metrics, executor, null);
+    }
+
+    /**
+     * Resolve using the default no-op metrics and virtual-thread executor, with no
+     * ReviewHandler. Convenience overload for call sites where metrics, executor, and
+     * review are not configured.
      *
      * @param tools list of AgentTool instances and/or @Tool-annotated objects
      * @return a ResolvedTools value
      */
     static ResolvedTools resolve(List<Object> tools) {
         return resolve(
-                tools, NoOpToolMetrics.INSTANCE, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                tools,
+                NoOpToolMetrics.INSTANCE,
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                null);
     }
 
     /**
