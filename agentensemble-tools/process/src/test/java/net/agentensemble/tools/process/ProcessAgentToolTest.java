@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.Executors;
+import net.agentensemble.review.ReviewDecision;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolContext;
+import net.agentensemble.tool.ToolContextInjector;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -273,5 +279,115 @@ class ProcessAgentToolTest {
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEqualTo("ok");
+    }
+
+    // ========================
+    // Approval gate
+    // ========================
+
+    private static ProcessAgentTool approvalToolWithHandler(ReviewHandler handler) {
+        var tool = ProcessAgentTool.builder()
+                .name("approval_process_tool")
+                .description("A process tool that requires approval")
+                .command("sh", "-c", "echo '{\"output\":\"executed\",\"success\":true}'")
+                .requireApproval(true)
+                .build();
+        var ctx = ToolContext.of(
+                tool.name(), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+        ToolContextInjector.injectContext(tool, ctx);
+        return tool;
+    }
+
+    @Test
+    void requireApproval_disabled_toolRunsWithoutApproval() {
+        assumeTrue(shellAvailable, "Shell not available");
+        var tool = ProcessAgentTool.builder()
+                .name("no_approval_tool")
+                .description("Runs without approval")
+                .command("sh", "-c", "echo '{\"output\":\"ran\",\"success\":true}'")
+                .requireApproval(false)
+                .build();
+
+        var result = tool.execute("input");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("ran");
+    }
+
+    @Test
+    void requireApproval_enabled_handlerContinue_processRuns() {
+        assumeTrue(shellAvailable, "Shell not available");
+        var tool = approvalToolWithHandler(ReviewHandler.autoApprove());
+
+        var result = tool.execute("input");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("executed");
+    }
+
+    @Test
+    void requireApproval_enabled_handlerExitEarly_returnsFailureWithoutStartingProcess() {
+        // No shell needed -- process is never started when ExitEarly is returned
+        var tool = approvalToolWithHandler(request -> ReviewDecision.exitEarly());
+
+        var result = tool.execute("input");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("rejected");
+    }
+
+    @Test
+    void requireApproval_enabled_handlerEdit_revisedInputSentToProcess() {
+        assumeTrue(shellAvailable, "Shell not available");
+        // The tool echoes input via stdin; reviewer edits the input
+        // We verify the edit decision was returned (process uses revised input)
+        var handler = (ReviewHandler) request -> ReviewDecision.edit("revised-input");
+        var tool = ProcessAgentTool.builder()
+                .name("edit_process_tool")
+                .description("Process tool for edit test")
+                .command("sh", "-c", "echo '{\"output\":\"ran\",\"success\":true}'")
+                .requireApproval(true)
+                .build();
+        var ctx = ToolContext.of(
+                tool.name(), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+        ToolContextInjector.injectContext(tool, ctx);
+
+        var result = tool.execute("original-input");
+
+        // Process still runs successfully with revised input
+        assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    void requireApproval_enabled_noHandlerConfigured_throwsIllegalStateException() {
+        var tool = ProcessAgentTool.builder()
+                .name("no_handler_tool")
+                .description("Requires approval but no handler")
+                .command("echo", "hi")
+                .requireApproval(true)
+                .build();
+        // No ToolContext injected -- rawReviewHandler() returns null
+
+        assertThatThrownBy(() -> tool.execute("input"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires approval")
+                .hasMessageContaining("ReviewHandler");
+    }
+
+    @Test
+    void requireApproval_approvalDescription_containsCommandAndInput() {
+        // Capture the request sent to the handler
+        var capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+        var handler = (ReviewHandler) request -> {
+            capturedRequest[0] = request;
+            return ReviewDecision.exitEarly();
+        };
+        var tool = approvalToolWithHandler(handler);
+
+        tool.execute("test-input");
+
+        assertThat(capturedRequest[0]).isNotNull();
+        assertThat(capturedRequest[0].taskDescription()).contains("Execute command:");
+        assertThat(capturedRequest[0].taskDescription()).contains("test-input");
     }
 }

@@ -174,3 +174,73 @@ Ensemble.builder()
     .reviewPolicy(ReviewPolicy.AFTER_LAST_TASK)
     ...
 ```
+
+---
+
+## Tool-Level Approval
+
+Beyond task-level gates, individual tools can request human approval before executing a
+dangerous or irreversible action. This fires inside the ReAct loop, before the tool's
+actual operation.
+
+```java
+import net.agentensemble.tools.process.ProcessAgentTool;
+import net.agentensemble.tools.io.FileWriteTool;
+import net.agentensemble.review.ReviewHandler;
+
+// Require approval before executing any subprocess
+ProcessAgentTool shell = ProcessAgentTool.builder()
+    .name("shell")
+    .description("Executes shell commands on the host system")
+    .command("sh", "-c")
+    .requireApproval(true)
+    .build();
+
+// Require approval before writing any file
+FileWriteTool writer = FileWriteTool.builder(Path.of("/workspace"))
+    .requireApproval(true)
+    .build();
+
+var agent = Agent.builder()
+    .role("Operator")
+    .goal("Perform system maintenance tasks")
+    .llm(model)
+    .tools(List.of(shell, writer))
+    .build();
+
+var task = Task.builder()
+    .description("Clean up temporary files and write a summary")
+    .expectedOutput("Maintenance report")
+    .agent(agent)
+    .build();
+
+// The SAME ReviewHandler handles both task-level and tool-level gates
+EnsembleOutput output = Ensemble.builder()
+    .task(task)
+    .reviewHandler(ReviewHandler.console())
+    .build()
+    .run();
+```
+
+When the agent calls `shell` with `rm -rf /tmp/cache`, the console will prompt:
+
+```
+== Review Required =============================================
+Task:   Execute command: sh -c
+Input:  rm -rf /tmp/cache
+---
+[c] Continue  [e] Edit  [x] Exit early  (auto-x in 4:59) >
+```
+
+**Decisions:**
+
+- `c` or Enter -- execute the command as-is
+- `e` -- type a replacement input (e.g. `rm -rf /tmp/cache/old-only`) to run instead
+- `x` -- reject the action; the tool returns a failure result and the agent adapts
+
+No handler configured with `requireApproval(true)` raises `IllegalStateException` at
+execution time -- a deliberate fail-fast to prevent accidental unreviewed execution. Add
+`.reviewHandler(ReviewHandler.console())` to the ensemble builder to resolve it.
+
+See [Tool-Level Approval Gates](../guides/review.md#tool-level-approval-gates) in the review
+guide for full documentation including custom tool implementation and parallel execution notes.

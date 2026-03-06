@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.ToolResult;
 
@@ -20,11 +21,32 @@ import net.agentensemble.tool.ToolResult;
  *
  * <p>Parent directories are created automatically if they do not exist.
  *
- * <p>Create an instance using the factory method:
+ * <p>Create an instance using the factory method or builder:
  *
  * <pre>
+ * // Simple factory
  * FileWriteTool tool = FileWriteTool.of(Path.of("/workspace/output"));
+ *
+ * // Builder with approval gate
+ * FileWriteTool tool = FileWriteTool.builder(Path.of("/workspace/output"))
+ *     .requireApproval(true)
+ *     .build();
  * </pre>
+ *
+ * <h2>Approval Gate</h2>
+ *
+ * <p>When {@link Builder#requireApproval(boolean) requireApproval(true)} is set, a human
+ * reviewer must approve the file write before execution. The reviewer sees the target path and
+ * a preview of the content, and may:
+ * <ul>
+ *   <li>Continue -- write the original content</li>
+ *   <li>Edit -- write the reviewer's revised content instead</li>
+ *   <li>Exit early -- return failure without writing</li>
+ * </ul>
+ *
+ * <p>A {@link net.agentensemble.review.ReviewHandler} must be configured on the ensemble
+ * when {@code requireApproval(true)} is set; otherwise an {@link IllegalStateException}
+ * is thrown at execution time.
  *
  * <p>Input: a JSON object with {@code path} and {@code content} fields:
  *
@@ -35,19 +57,22 @@ import net.agentensemble.tool.ToolResult;
 public final class FileWriteTool extends AbstractAgentTool {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int APPROVAL_CONTENT_PREVIEW_LENGTH = 200;
 
     private final Path baseDir;
+    private final boolean requireApproval;
 
-    private FileWriteTool(Path baseDir) {
+    private FileWriteTool(Path baseDir, boolean requireApproval) {
         this.baseDir = baseDir.toAbsolutePath().normalize();
+        this.requireApproval = requireApproval;
     }
 
     /**
-     * Creates a FileWriteTool sandboxed to the given base directory.
+     * Creates a FileWriteTool sandboxed to the given base directory, without an approval gate.
      *
      * @param baseDir the directory to sandbox file writes within; must be an existing directory
      * @return a new FileWriteTool
-     * @throws NullPointerException if baseDir is null
+     * @throws NullPointerException     if baseDir is null
      * @throws IllegalArgumentException if baseDir does not exist or is not a directory
      */
     public static FileWriteTool of(Path baseDir) {
@@ -55,7 +80,24 @@ public final class FileWriteTool extends AbstractAgentTool {
         if (!Files.isDirectory(baseDir)) {
             throw new IllegalArgumentException("baseDir must be an existing directory: " + baseDir);
         }
-        return new FileWriteTool(baseDir);
+        return new FileWriteTool(baseDir, false);
+    }
+
+    /**
+     * Returns a new builder for configuring a {@code FileWriteTool} sandboxed to the given
+     * base directory.
+     *
+     * @param baseDir the directory to sandbox file writes within; must be an existing directory
+     * @return a new Builder
+     * @throws NullPointerException     if baseDir is null
+     * @throws IllegalArgumentException if baseDir does not exist or is not a directory
+     */
+    public static Builder builder(Path baseDir) {
+        Objects.requireNonNull(baseDir, "baseDir must not be null");
+        if (!Files.isDirectory(baseDir)) {
+            throw new IllegalArgumentException("baseDir must be an existing directory: " + baseDir);
+        }
+        return new Builder(baseDir);
     }
 
     @Override
@@ -101,6 +143,27 @@ public final class FileWriteTool extends AbstractAgentTool {
             return ToolResult.failure("Access denied: path is outside the sandbox directory");
         }
 
+        if (requireApproval) {
+            if (rawReviewHandler() == null) {
+                throw new IllegalStateException("Tool '"
+                        + name()
+                        + "' requires approval but no ReviewHandler is configured on the ensemble. "
+                        + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");
+            }
+            String preview = content.length() > APPROVAL_CONTENT_PREVIEW_LENGTH
+                    ? content.substring(0, APPROVAL_CONTENT_PREVIEW_LENGTH) + "..."
+                    : content;
+            ReviewDecision decision =
+                    requestApproval("Write to file: " + relativePath + "\nContent preview: " + preview);
+            if (decision instanceof ReviewDecision.ExitEarly) {
+                return ToolResult.failure("File write rejected by reviewer: " + relativePath);
+            }
+            if (decision instanceof ReviewDecision.Edit edit) {
+                log().debug("Reviewer edited content for file '{}': replacing with revised content", relativePath);
+                content = edit.revisedOutput();
+            }
+        }
+
         try {
             if (resolved.getParent() != null) {
                 Files.createDirectories(resolved.getParent());
@@ -134,6 +197,54 @@ public final class FileWriteTool extends AbstractAgentTool {
             return resolved;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    // ========================
+    // Builder
+    // ========================
+
+    /**
+     * Builder for {@link FileWriteTool}.
+     */
+    public static final class Builder {
+
+        private final Path baseDir;
+        private boolean requireApproval = false;
+
+        private Builder(Path baseDir) {
+            this.baseDir = baseDir;
+        }
+
+        /**
+         * Require human approval before writing the file.
+         *
+         * <p>When {@code true}, the ensemble's configured
+         * {@link net.agentensemble.review.ReviewHandler} is invoked before
+         * {@code Files.writeString()} is called. The reviewer sees the target path and a
+         * content preview, and may approve, edit the content, or reject the write.
+         *
+         * <p>If {@code requireApproval(true)} is set but no {@code ReviewHandler} is
+         * configured on the ensemble, an {@link IllegalStateException} is thrown at
+         * execution time (fail-fast).
+         *
+         * <p>Default: {@code false}.
+         *
+         * @param requireApproval {@code true} to require approval before writing
+         * @return this builder
+         */
+        public Builder requireApproval(boolean requireApproval) {
+            this.requireApproval = requireApproval;
+            return this;
+        }
+
+        /**
+         * Build the {@link FileWriteTool}.
+         *
+         * @return a new FileWriteTool
+         */
+        public FileWriteTool build() {
+            return new FileWriteTool(baseDir, requireApproval);
         }
     }
 }

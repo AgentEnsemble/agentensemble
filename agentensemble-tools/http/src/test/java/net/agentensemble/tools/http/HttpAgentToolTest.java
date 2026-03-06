@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
@@ -11,6 +13,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.concurrent.Executors;
+import net.agentensemble.review.ReviewDecision;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolContext;
+import net.agentensemble.tool.ToolContextInjector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -288,5 +296,120 @@ class HttpAgentToolTest {
         var result = tool.execute("input");
 
         assertThat(result.isSuccess()).isTrue();
+    }
+
+    // ========================
+    // Approval gate
+    // ========================
+
+    private HttpAgentTool approvalToolWithHandler(ReviewHandler handler) {
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("approval_http_tool")
+                        .description("Requires approval")
+                        .url("https://example.com/api")
+                        .method("POST")
+                        .requireApproval(true),
+                mockClient);
+        var ctx = ToolContext.of(
+                tool.name(), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+        ToolContextInjector.injectContext(tool, ctx);
+        return tool;
+    }
+
+    @Test
+    void requireApproval_disabled_sendsRequestWithoutApproval() throws Exception {
+        stubHttpResponse(200, "result");
+        var tool = buildPostTool(); // requireApproval=false (default)
+
+        var result = tool.execute("input");
+
+        assertThat(result.isSuccess()).isTrue();
+        verify(mockClient).send(any(HttpRequest.class), any());
+    }
+
+    @Test
+    void requireApproval_enabled_handlerContinue_sendsOriginalRequest() throws Exception {
+        stubHttpResponse(200, "approved response");
+        var tool = approvalToolWithHandler(ReviewHandler.autoApprove());
+
+        var result = tool.execute("original body");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("approved response");
+        // HTTP request was actually sent
+        verify(mockClient).send(any(HttpRequest.class), any());
+    }
+
+    @Test
+    void requireApproval_enabled_handlerExitEarly_returnsFailureWithoutSendingRequest() throws Exception {
+        var tool = approvalToolWithHandler(request -> ReviewDecision.exitEarly());
+
+        var result = tool.execute("body");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("rejected");
+        // HTTP request was never sent
+        verify(mockClient, never()).send(any(HttpRequest.class), any());
+    }
+
+    @Test
+    void requireApproval_enabled_handlerEdit_sendsRevisedBody() throws Exception {
+        stubHttpResponse(200, "edit response");
+        var tool = approvalToolWithHandler(request -> ReviewDecision.edit("revised body"));
+
+        var result = tool.execute("original body");
+
+        // Request was sent (with the revised body)
+        assertThat(result.isSuccess()).isTrue();
+        verify(mockClient).send(any(HttpRequest.class), any());
+    }
+
+    @Test
+    void requireApproval_enabled_noHandlerConfigured_throwsIllegalStateException() {
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("no_handler_tool")
+                        .description("Requires approval but no handler")
+                        .url("https://example.com/api")
+                        .requireApproval(true),
+                mockClient);
+        // No ToolContext injected -- rawReviewHandler() returns null
+
+        assertThatThrownBy(() -> tool.execute("input"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires approval")
+                .hasMessageContaining("ReviewHandler");
+    }
+
+    @Test
+    void requireApproval_approvalDescription_containsMethodUrlAndBodyPreview() {
+        var capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+        var tool = approvalToolWithHandler(request -> {
+            capturedRequest[0] = request;
+            return ReviewDecision.exitEarly();
+        });
+
+        tool.execute("test-body");
+
+        assertThat(capturedRequest[0]).isNotNull();
+        assertThat(capturedRequest[0].taskDescription()).contains("HTTP POST");
+        assertThat(capturedRequest[0].taskDescription()).contains("https://example.com/api");
+        assertThat(capturedRequest[0].taskDescription()).contains("test-body");
+    }
+
+    @Test
+    void requireApproval_longBody_previewTruncatedTo200Chars() {
+        var capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+        var tool = approvalToolWithHandler(request -> {
+            capturedRequest[0] = request;
+            return ReviewDecision.exitEarly();
+        });
+        String longBody = "x".repeat(400);
+
+        tool.execute(longBody);
+
+        assertThat(capturedRequest[0]).isNotNull();
+        assertThat(capturedRequest[0].taskDescription()).contains("...");
     }
 }

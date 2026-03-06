@@ -7,6 +7,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import net.agentensemble.review.ReviewDecision;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.tool.NoOpToolMetrics;
+import net.agentensemble.tool.ToolContext;
+import net.agentensemble.tool.ToolContextInjector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -220,5 +226,125 @@ class FileWriteToolTest {
             Files.deleteIfExists(symlinkPath);
             Files.deleteIfExists(outsideDir);
         }
+    }
+
+    // --- builder factory ---
+
+    @Test
+    void builder_nullBaseDir_throwsNullPointerException() {
+        assertThatThrownBy(() -> FileWriteTool.builder(null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void builder_nonExistentDirectory_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> FileWriteTool.builder(tempDir.resolve("does-not-exist")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_requireApprovalFalse_buildSucceeds() {
+        var builtTool = FileWriteTool.builder(tempDir).requireApproval(false).build();
+        assertThat(builtTool).isNotNull();
+        assertThat(builtTool.name()).isEqualTo("file_write");
+    }
+
+    @Test
+    void builder_requireApprovalTrue_buildSucceeds() {
+        var builtTool = FileWriteTool.builder(tempDir).requireApproval(true).build();
+        assertThat(builtTool).isNotNull();
+    }
+
+    // --- approval gate ---
+
+    private FileWriteTool approvalToolWithHandler(ReviewHandler handler) {
+        var builtTool = FileWriteTool.builder(tempDir).requireApproval(true).build();
+        var ctx = ToolContext.of(
+                builtTool.name(), NoOpToolMetrics.INSTANCE, Executors.newVirtualThreadPerTaskExecutor(), handler);
+        ToolContextInjector.injectContext(builtTool, ctx);
+        return builtTool;
+    }
+
+    @Test
+    void requireApproval_disabled_writesFileWithoutApproval() throws IOException {
+        var builtTool = FileWriteTool.builder(tempDir).requireApproval(false).build();
+
+        var result = builtTool.execute("{\"path\": \"no-approval.txt\", \"content\": \"written\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(Files.readString(tempDir.resolve("no-approval.txt"))).isEqualTo("written");
+    }
+
+    @Test
+    void requireApproval_enabled_handlerContinue_writesOriginalContent() throws IOException {
+        var approvalTool = approvalToolWithHandler(ReviewHandler.autoApprove());
+
+        var result = approvalTool.execute("{\"path\": \"approved.txt\", \"content\": \"original content\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(Files.readString(tempDir.resolve("approved.txt"))).isEqualTo("original content");
+    }
+
+    @Test
+    void requireApproval_enabled_handlerExitEarly_returnsFailureWithoutWriting() {
+        var approvalTool = approvalToolWithHandler(request -> ReviewDecision.exitEarly());
+
+        var result = approvalTool.execute("{\"path\": \"never-written.txt\", \"content\": \"should not appear\"}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("rejected");
+        assertThat(Files.exists(tempDir.resolve("never-written.txt"))).isFalse();
+    }
+
+    @Test
+    void requireApproval_enabled_handlerEdit_writesRevisedContent() throws IOException {
+        var approvalTool = approvalToolWithHandler(request -> ReviewDecision.edit("reviewer-revised content"));
+
+        var result = approvalTool.execute("{\"path\": \"edited.txt\", \"content\": \"original\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(Files.readString(tempDir.resolve("edited.txt"))).isEqualTo("reviewer-revised content");
+    }
+
+    @Test
+    void requireApproval_enabled_noHandlerConfigured_throwsIllegalStateException() {
+        var builtTool = FileWriteTool.builder(tempDir).requireApproval(true).build();
+        // No ToolContext injected -- rawReviewHandler() returns null
+
+        assertThatThrownBy(() -> builtTool.execute("{\"path\": \"file.txt\", \"content\": \"x\"}"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires approval")
+                .hasMessageContaining("ReviewHandler");
+    }
+
+    @Test
+    void requireApproval_approvalDescription_containsPathAndContentPreview() {
+        var capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+        var approvalTool = approvalToolWithHandler(request -> {
+            capturedRequest[0] = request;
+            return ReviewDecision.exitEarly();
+        });
+
+        approvalTool.execute("{\"path\": \"test-file.txt\", \"content\": \"the content\"}");
+
+        assertThat(capturedRequest[0]).isNotNull();
+        assertThat(capturedRequest[0].taskDescription()).contains("Write to file:");
+        assertThat(capturedRequest[0].taskDescription()).contains("test-file.txt");
+        assertThat(capturedRequest[0].taskDescription()).contains("the content");
+    }
+
+    @Test
+    void requireApproval_longContent_previewTruncatedTo200Chars() {
+        var capturedRequest = new net.agentensemble.review.ReviewRequest[1];
+        var approvalTool = approvalToolWithHandler(request -> {
+            capturedRequest[0] = request;
+            return ReviewDecision.exitEarly();
+        });
+        String longContent = "x".repeat(400);
+
+        approvalTool.execute("{\"path\": \"big.txt\", \"content\": \"" + longContent + "\"}");
+
+        assertThat(capturedRequest[0]).isNotNull();
+        // Description should be truncated, not containing the full 400 chars of content
+        assertThat(capturedRequest[0].taskDescription()).contains("...");
     }
 }

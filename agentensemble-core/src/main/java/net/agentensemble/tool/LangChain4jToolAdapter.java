@@ -101,6 +101,11 @@ public final class LangChain4jToolAdapter {
             // Re-throw exit-early signals without converting to a tool failure.
             // The workflow executor catches this and assembles partial results.
             throw e;
+        } catch (IllegalStateException e) {
+            // Re-throw configuration errors (e.g., requireApproval=true with no ReviewHandler).
+            // These are programming errors and must not be silently converted to tool failures.
+            log.error("AgentTool '{}' configuration error: {}", tool.name(), e.getMessage());
+            throw e;
         } catch (Exception e) {
             log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
             return ToolResult.failure(e.getMessage());

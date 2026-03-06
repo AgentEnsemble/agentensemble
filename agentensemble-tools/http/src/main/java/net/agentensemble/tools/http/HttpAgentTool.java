@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.ToolResult;
 
@@ -37,6 +38,32 @@ import net.agentensemble.tool.ToolResult;
  *
  * <p>The response body is returned as the tool's plain-text output to the agent.
  * HTTP 4xx/5xx responses are treated as failures.
+ *
+ * <h2>Approval Gate</h2>
+ *
+ * <p>When {@link Builder#requireApproval(boolean) requireApproval(true)} is set, a human
+ * reviewer must approve the HTTP request before it is sent:
+ *
+ * <pre>
+ * var tool = HttpAgentTool.builder()
+ *     .name("delete_api")
+ *     .description("Deletes a resource via the management API")
+ *     .url("https://api.example.com/resources")
+ *     .method("DELETE")
+ *     .requireApproval(true)
+ *     .build();
+ * </pre>
+ *
+ * <p>The reviewer sees the method, URL, and a body preview, and may:
+ * <ul>
+ *   <li>Continue -- send the original request</li>
+ *   <li>Edit -- send the revised body instead</li>
+ *   <li>Exit early -- return failure without sending</li>
+ * </ul>
+ *
+ * <p>A {@link net.agentensemble.review.ReviewHandler} must be configured on the ensemble
+ * when {@code requireApproval(true)} is set; otherwise an {@link IllegalStateException}
+ * is thrown at execution time.
  *
  * <h2>Usage</h2>
  *
@@ -63,6 +90,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
     private static final String INPUT_QUERY_PARAM = "input";
+    private static final int APPROVAL_BODY_PREVIEW_LENGTH = 200;
 
     private final String toolName;
     private final String toolDescription;
@@ -71,6 +99,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
     private final Map<String, String> headers;
     private final Duration timeout;
     private final HttpClient httpClient;
+    private final boolean requireApproval;
 
     private HttpAgentTool(Builder builder, HttpClient httpClient) {
         this.toolName = builder.name;
@@ -80,6 +109,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
         this.headers = Collections.unmodifiableMap(new LinkedHashMap<>(builder.headers));
         this.timeout = builder.timeout;
         this.httpClient = httpClient;
+        this.requireApproval = builder.requireApproval;
     }
 
     // ========================
@@ -145,8 +175,30 @@ public final class HttpAgentTool extends AbstractAgentTool {
 
     @Override
     protected ToolResult doExecute(String input) {
+        String effectiveInput = input != null ? input : "";
+
+        if (requireApproval) {
+            if (rawReviewHandler() == null) {
+                throw new IllegalStateException("Tool '"
+                        + name()
+                        + "' requires approval but no ReviewHandler is configured on the ensemble. "
+                        + "Add .reviewHandler(ReviewHandler.console()) to the ensemble builder.");
+            }
+            String preview = effectiveInput.length() > APPROVAL_BODY_PREVIEW_LENGTH
+                    ? effectiveInput.substring(0, APPROVAL_BODY_PREVIEW_LENGTH) + "..."
+                    : effectiveInput;
+            ReviewDecision decision = requestApproval("HTTP " + method + " " + url + "\nBody: " + preview);
+            if (decision instanceof ReviewDecision.ExitEarly) {
+                return ToolResult.failure("HTTP request rejected by reviewer: " + method + " " + url);
+            }
+            if (decision instanceof ReviewDecision.Edit edit) {
+                log().debug("Reviewer edited body for HTTP {} {}: replacing with revised content", method, url);
+                effectiveInput = edit.revisedOutput();
+            }
+        }
+
         try {
-            return executeRequest(input != null ? input : "");
+            return executeRequest(effectiveInput);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.failure("HTTP request was interrupted");
@@ -235,6 +287,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
         private String method = "POST";
         private final Map<String, String> headers = new LinkedHashMap<>();
         private Duration timeout = DEFAULT_TIMEOUT;
+        private boolean requireApproval = false;
 
         private Builder() {}
 
@@ -308,6 +361,28 @@ public final class HttpAgentTool extends AbstractAgentTool {
                 throw new IllegalArgumentException("timeout must be positive");
             }
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Require human approval before sending the HTTP request.
+         *
+         * <p>When {@code true}, the ensemble's configured
+         * {@link net.agentensemble.review.ReviewHandler} is invoked before
+         * {@code httpClient.send()} is called. The reviewer sees the method, URL, and a
+         * body preview, and may approve, edit the request body, or reject the request.
+         *
+         * <p>If {@code requireApproval(true)} is set but no {@code ReviewHandler} is
+         * configured on the ensemble, an {@link IllegalStateException} is thrown at
+         * execution time (fail-fast).
+         *
+         * <p>Default: {@code false}.
+         *
+         * @param requireApproval {@code true} to require approval before sending
+         * @return this builder
+         */
+        public Builder requireApproval(boolean requireApproval) {
+            this.requireApproval = requireApproval;
             return this;
         }
 
