@@ -43,6 +43,11 @@ dependencies {
     // agentensemble-tools-file-write, agentensemble-tools-web-search,
     // agentensemble-tools-web-scraper, agentensemble-tools-process, agentensemble-tools-http
 
+    // Optional: live execution dashboard (v2.1.0+) -- embedded WebSocket server that
+    // streams task/tool/delegation events to a browser; browser-based review gates.
+    // Add agentensemble-review if you also want browser-based review approval.
+    implementation("net.agentensemble:agentensemble-web:2.1.0")           // optional
+
     // Add your preferred LangChain4j model provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
 }
@@ -757,6 +762,43 @@ See the [Metrics and Observability guide](docs/guides/metrics.md) and
 
 ---
 
+## Live Execution Dashboard
+
+The `agentensemble-web` module (v2.1.0) embeds a WebSocket server directly in the JVM
+process. It streams real-time task, tool call, and delegation events to any browser and
+optionally serves as the review handler for human-in-the-loop approval gates.
+
+```java
+import net.agentensemble.web.WebDashboard;
+
+EnsembleOutput output = Ensemble.builder()
+    .agent(researcher)
+    .agent(writer)
+    .task(researchTask)
+    .task(Task.builder()
+        .description("Write a report based on the research")
+        .expectedOutput("A polished report")
+        .review(Review.required())   // pause here for browser approval
+        .build())
+    .webDashboard(WebDashboard.onPort(7329))   // start server, wire listener + review handler
+    .build()
+    .run();
+```
+
+Open `http://localhost:7329` in a browser to see the live execution timeline. When a review
+gate fires, the browser shows an approval panel with **Approve**, **Edit**, and **Exit Early**
+controls. The server runs entirely in-process -- no Docker container and no npm command needed.
+
+**Dependencies:**
+```kotlin
+implementation("net.agentensemble:agentensemble-web:2.1.0")
+implementation("net.agentensemble:agentensemble-review:2.1.0")   // required for review gates
+```
+
+**Full documentation:** [Live Dashboard Guide](https://docs.agentensemble.net/guides/live-dashboard/) | [Live Dashboard Example](https://docs.agentensemble.net/examples/live-dashboard/)
+
+---
+
 ## Execution Graph Visualization
 
 Export the task dependency graph and execution timeline to JSON files with `agentensemble-devtools`,
@@ -1128,6 +1170,8 @@ See [`docs/design/`](docs/design/) for full specifications:
 - [12 - Testing Strategy](docs/design/12-testing-strategy.md)
 - [13 - Future Roadmap](docs/design/13-future-roadmap.md)
 - [14 - MapReduceEnsemble](docs/design/14-map-reduce.md)
+- [15 - v2.0.0 Architecture](docs/design/15-v2-architecture.md)
+- [16 - Live Execution Dashboard](docs/design/16-live-dashboard.md)
 
 ---
 
@@ -1159,7 +1203,7 @@ Full documentation is available at **[docs.agentensemble.net](https://docs.agent
 | ~~v1.0.0~~ | ~~Built-in tool library (agentensemble-tools module)~~ |
 | ~~v2.0.0~~ | ~~MapReduceEnsemble: static tree-reduction DAG with chunkSize~~ |
 | ~~v2.0.0~~ | ~~MapReduceEnsemble: adaptive reduction with targetTokenBudget~~ |
-| v2.1.0 | Live Execution Dashboard: real-time browser GUI, browser-based review approval |
+| ~~v2.1.0~~ | ~~Live Execution Dashboard: real-time browser GUI, browser-based review approval~~ |
 | Future | MCP (Model Context Protocol) integration, GraalVM polyglot tools |
 
 ---

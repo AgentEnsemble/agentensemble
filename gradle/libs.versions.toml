@@ -14,6 +14,7 @@ spotless         = "8.3.0"
 errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
 micrometer       = "1.16.3"
+javalin          = "6.3.0"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -32,6 +33,7 @@ mockito-core              = { group = "org.mockito",                    name = "
 logback-classic           = { group = "ch.qos.logback",                 name = "logback-classic",          version.ref = "logback"  }
 errorprone-core           = { group = "com.google.errorprone",          name = "error_prone_core",         version.ref = "errorprone-core" }
 micrometer-core           = { group = "io.micrometer",                  name = "micrometer-core",          version.ref = "micrometer"      }
+javalin                   = { group = "io.javalin",                     name = "javalin",                  version.ref = "javalin"         }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

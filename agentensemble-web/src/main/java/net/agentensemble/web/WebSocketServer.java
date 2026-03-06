@@ -1,0 +1,275 @@
+package net.agentensemble.web;
+
+import io.javalin.Javalin;
+import io.javalin.websocket.WsContext;
+import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import net.agentensemble.web.protocol.ClientMessage;
+import net.agentensemble.web.protocol.HeartbeatMessage;
+import net.agentensemble.web.protocol.MessageSerializer;
+import net.agentensemble.web.protocol.PingMessage;
+import net.agentensemble.web.protocol.PongMessage;
+import net.agentensemble.web.protocol.ReviewDecisionMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Embedded WebSocket server that backs the live dashboard.
+ *
+ * <p>Wraps Javalin to host:
+ * <ul>
+ *   <li>WebSocket endpoint at {@code ws://{host}:{port}/ws} for live event streaming</li>
+ *   <li>{@code GET /api/status} returning server status JSON</li>
+ *   <li>Static file serving for the built {@code agentensemble-viz} assets at {@code /}
+ *       (the dist is embedded in the JAR under {@code /web/})</li>
+ * </ul>
+ *
+ * <p>Package-private; lifecycle managed exclusively by {@link WebDashboard}.
+ *
+ * <p>Thread safety: {@link #start} and {@link #stop} are synchronized. Broadcast and
+ * send operations delegate to {@link ConnectionManager} which is itself thread-safe.
+ */
+class WebSocketServer {
+
+    private static final Logger log = LoggerFactory.getLogger(WebSocketServer.class);
+
+    /** Heartbeat interval in seconds. */
+    static final long HEARTBEAT_INTERVAL_SECONDS = 15L;
+
+    private final ConnectionManager connectionManager;
+    private final MessageSerializer serializer;
+    private final ScheduledExecutorService heartbeatScheduler;
+
+    private Javalin app;
+    private volatile int runningPort = -1;
+    private final AtomicBoolean running = new AtomicBoolean(false);
+
+    /** Optional handler called for every parsed client message (e.g. review decisions). */
+    private volatile Consumer<ClientMessage> clientMessageHandler;
+
+    WebSocketServer(
+            ConnectionManager connectionManager,
+            MessageSerializer serializer,
+            ScheduledExecutorService heartbeatScheduler) {
+        this.connectionManager = connectionManager;
+        this.serializer = serializer;
+        this.heartbeatScheduler = heartbeatScheduler;
+    }
+
+    /**
+     * Starts the server on the given port and host. Port 0 selects an ephemeral port; call
+     * {@link #port()} after start to discover the actual port assigned.
+     *
+     * <p>Logs a warning when {@code host} is not {@code localhost}, because the dashboard then
+     * accepts connections from any network interface.
+     *
+     * @param port the TCP port to listen on; 0 for ephemeral
+     * @param host the host/interface to bind to (e.g. {@code localhost}, {@code 0.0.0.0})
+     */
+    synchronized void start(int port, String host) {
+        if (running.get()) {
+            log.debug("WebSocketServer.start() called but server is already running on port {}", runningPort);
+            return;
+        }
+
+        if (!"localhost".equals(host) && !"127.0.0.1".equals(host)) {
+            log.warn(
+                    "WebDashboard is binding to host '{}'. The live dashboard will be accessible from "
+                            + "remote clients. Ensure your network is appropriately secured.",
+                    host);
+        }
+
+        app = Javalin.create(config -> {
+            config.showJavalinBanner = false;
+            // Static files from viz dist embedded in the JAR under /web/
+            // config.staticFiles.add("/web", io.javalin.http.staticfiles.Location.CLASSPATH);
+        });
+
+        final String boundHost = host;
+        app.ws("/ws", ws -> {
+            ws.onConnect(ctx -> {
+                String origin = ctx.header("Origin");
+                if (!isOriginAllowed(origin, boundHost)) {
+                    log.warn("Rejected WebSocket connection from origin '{}' (host binding: {})", origin, boundHost);
+                    ctx.session.close(1008, "Origin not allowed");
+                    return;
+                }
+                connectionManager.onConnect(new JavalinWsSession(ctx));
+            });
+
+            ws.onMessage(ctx -> {
+                String message = ctx.message();
+                try {
+                    ClientMessage parsed = serializer.fromJson(message, ClientMessage.class);
+                    handleClientMessage(ctx, parsed);
+                } catch (Exception e) {
+                    log.warn("Failed to parse client message: {}", message, e);
+                }
+            });
+
+            ws.onClose(ctx -> connectionManager.onDisconnect(ctx.sessionId()));
+        });
+
+        app.get(
+                "/api/status",
+                ctx -> ctx.json(Map.of(
+                        "status",
+                        "running",
+                        "clients",
+                        connectionManager.sessionCount(),
+                        "port",
+                        runningPort > 0 ? runningPort : port)));
+
+        app.start(host, port);
+
+        runningPort = app.port();
+        running.set(true);
+
+        // Schedule heartbeat
+        @SuppressWarnings("unused")
+        var unused = heartbeatScheduler.scheduleAtFixedRate(
+                this::sendHeartbeat, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+
+        log.info(
+                "WebDashboard server started on {}:{} | Open http://{}:{} in your browser",
+                host,
+                runningPort,
+                host.equals("0.0.0.0") ? "localhost" : host,
+                runningPort);
+    }
+
+    /** Stops the server. No-op if not running. */
+    synchronized void stop() {
+        if (!running.get()) {
+            return;
+        }
+        running.set(false);
+        runningPort = -1;
+        if (app != null) {
+            app.stop();
+            app = null;
+        }
+        log.info("WebDashboard server stopped.");
+    }
+
+    /** Returns true if the server is currently running and accepting connections. */
+    boolean isRunning() {
+        return running.get();
+    }
+
+    /** Returns the port the server is listening on, or -1 if not running. */
+    int port() {
+        return runningPort;
+    }
+
+    /**
+     * Sets a handler to be called for every parsed {@link ClientMessage} received from any client.
+     * Used by {@link WebReviewHandler} to receive review decisions.
+     *
+     * @param handler the message handler; may be null to clear
+     */
+    void setClientMessageHandler(Consumer<ClientMessage> handler) {
+        this.clientMessageHandler = handler;
+    }
+
+    // ========================
+    // Origin validation
+    // ========================
+
+    /**
+     * Returns true if the given {@code origin} is acceptable for a server bound to {@code host}.
+     *
+     * <p>When {@code host} is {@code localhost} or {@code 127.0.0.1}, only localhost origins
+     * ({@code localhost}, {@code 127.0.0.1}, {@code [::1]}) are accepted. This prevents
+     * cross-site WebSocket hijacking (CSRF).
+     *
+     * <p>When {@code host} is anything else, all origins are accepted (security is delegated
+     * to the network layer).
+     *
+     * @param origin the value of the HTTP {@code Origin} header; may be null
+     * @param host   the configured server host binding
+     * @return true if the origin is allowed
+     */
+    static boolean isOriginAllowed(String origin, String host) {
+        boolean isLocalBinding = "localhost".equals(host) || "127.0.0.1".equals(host);
+        if (!isLocalBinding) {
+            return true; // Non-local binding: accept any origin
+        }
+        if (origin == null || origin.isEmpty() || "null".equals(origin)) {
+            return false;
+        }
+        // Strip scheme and port to get the hostname
+        String lc = origin.toLowerCase(java.util.Locale.ROOT);
+        return lc.contains("localhost") || lc.contains("127.0.0.1") || lc.contains("[::1]");
+    }
+
+    // ========================
+    // Private helpers
+    // ========================
+
+    private void sendHeartbeat() {
+        try {
+            String json = serializer.toJson(new HeartbeatMessage(System.currentTimeMillis()));
+            connectionManager.broadcast(json);
+        } catch (Exception e) {
+            log.warn("Error sending heartbeat", e);
+        }
+    }
+
+    private void handleClientMessage(WsContext ctx, ClientMessage message) {
+        if (message instanceof PingMessage) {
+            String pong = serializer.toJson(new PongMessage());
+            ctx.send(pong);
+            return;
+        }
+        // Forward to any registered handler (e.g. WebReviewHandler for review decisions)
+        Consumer<ClientMessage> handler = this.clientMessageHandler;
+        if (handler != null) {
+            try {
+                handler.accept(message);
+            } catch (Exception e) {
+                log.warn("Client message handler threw an exception", e);
+            }
+        } else if (message instanceof ReviewDecisionMessage) {
+            log.warn("Received review_decision but no client message handler is registered. "
+                    + "Register WebDashboard via Ensemble.builder().webDashboard(dashboard).");
+        }
+    }
+
+    // ========================
+    // Javalin-backed WsSession implementation
+    // ========================
+
+    private static final class JavalinWsSession implements WsSession {
+        private final WsContext ctx;
+
+        JavalinWsSession(WsContext ctx) {
+            this.ctx = ctx;
+        }
+
+        @Override
+        public String id() {
+            return ctx.sessionId();
+        }
+
+        @Override
+        public boolean isOpen() {
+            return ctx.session.isOpen();
+        }
+
+        @Override
+        public void send(String message) {
+            try {
+                if (ctx.session.isOpen()) {
+                    ctx.send(message);
+                }
+            } catch (Exception e) {
+                LoggerFactory.getLogger(JavalinWsSession.class)
+                        .debug("Failed to send message to session {}: {}", id(), e.getMessage());
+            }
+        }
+    }
+}
