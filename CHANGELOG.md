@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.0...v2.2.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* add agentensemble-web to the BOM constraints ([e3bf756](https://github.com/AgentEnsemble/agentensemble/commit/e3bf756508eee0ae70ff9dc4f2af12019680141e))
+
 ## [2.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.1.0...v2.2.0) (2026-03-06)
 
 
