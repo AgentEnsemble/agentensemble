@@ -199,6 +199,84 @@ Design placeholder for webhook-based review. Not yet implemented; always throws
 
 ---
 
+## Browser-Based Review with WebDashboard
+
+The `agentensemble-web` module (v2.1.0+) provides `WebDashboard`, which embeds a
+Javalin WebSocket server directly in the JVM process. It replaces the console prompt
+with a browser-based approval panel and simultaneously streams the live execution timeline
+to every connected browser client.
+
+### Dependency
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("net.agentensemble:agentensemble-core:2.1.0")
+    implementation("net.agentensemble:agentensemble-web:2.1.0")
+    implementation("net.agentensemble:agentensemble-review:2.1.0")
+}
+```
+
+### Wiring
+
+Use `.webDashboard(WebDashboard)` instead of `.reviewHandler(...)`. This single builder
+call registers both the streaming listener and the `WebReviewHandler`:
+
+```java
+import java.time.Duration;
+import net.agentensemble.review.Review;
+import net.agentensemble.review.OnTimeoutAction;
+import net.agentensemble.web.WebDashboard;
+
+EnsembleOutput output = Ensemble.builder()
+    .chatLanguageModel(model)
+    .task(Task.builder()
+        .description("Draft a press release")
+        .expectedOutput("A polished press release")
+        .review(Review.required())      // gate fires after this task
+        .build())
+    .task(Task.of("Translate to Spanish"))
+    .webDashboard(WebDashboard.builder()
+        .port(7329)
+        .reviewTimeout(Duration.ofMinutes(5))
+        .onTimeout(OnTimeoutAction.CONTINUE)
+        .build())
+    .build()
+    .run();
+```
+
+Connect to `ws://localhost:7329/ws` using the agentensemble-viz dashboard client
+(`npx @agentensemble/viz --live ws://localhost:7329/ws`) or any WebSocket-capable browser
+tool. When the review gate fires, connected clients receive a `review_requested` message and
+can send back a `review_decision` with **approve**, **edit**, or **exit_early**.
+
+### Review timeout behavior
+
+The `onTimeout` option on `WebDashboard.builder()` maps to the same `OnTimeoutAction`
+enum used by `Review.builder()`:
+
+| `onTimeout` | Effect |
+|-------------|--------|
+| `CONTINUE` | Continue as if the human approved (default) |
+| `EXIT_EARLY` | Stop the pipeline; `output.getExitReason()` is `USER_EXIT_EARLY` |
+| `FAIL` | Throw `ReviewTimeoutException` |
+
+### Combining with `ReviewPolicy`
+
+`.webDashboard()` sets the `ReviewHandler` on the ensemble. All existing `ReviewPolicy`
+and per-task `Review` configuration still applies:
+
+```java
+Ensemble.builder()
+    .reviewPolicy(ReviewPolicy.AFTER_EVERY_TASK)
+    .webDashboard(WebDashboard.onPort(7329))   // handles all review gates in the browser
+    ...
+```
+
+**Full documentation:** [Live Dashboard Guide](live-dashboard.md) | [Live Dashboard Example](../examples/live-dashboard.md)
+
+---
+
 ## Handling Partial Results
 
 When a reviewer chooses ExitEarly, the pipeline stops and `EnsembleOutput` contains

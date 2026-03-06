@@ -1,5 +1,25 @@
 # Progress
 
+## What Works (as of Issue #130 -- agentensemble-web Live Execution Dashboard)
+
+**agentensemble-web module (Issue #130):**
+- `WebDashboard.onPort(port)` -- zero-config factory; `WebDashboard.builder()` for full config
+- `WebDashboard.start()` / `WebDashboard.stop()` -- lifecycle management; idempotent
+- `WebDashboard.streamingListener()` -- returns `EnsembleListener` to wire into Ensemble
+- `WebDashboard.reviewHandler()` -- returns `ReviewHandler` to wire into Ensemble
+- `WebDashboard.builder().webDashboard(dashboard)` on `Ensemble.builder()` -- one-line wiring
+- Embedded Javalin 6.3.0 WebSocket server at `ws://{host}:{port}/ws`
+- HTTP endpoint `GET /api/status` returning `{"status":"running","clients":N,"port":P}`
+- 15-second heartbeat broadcast to all connected sessions
+- Origin validation: localhost-only connections accepted when server bound to `localhost`/`127.0.0.1` (CSRF protection); non-local binding accepts any origin
+- `WebSocketStreamingListener` broadcasts JSON messages for all 7 `EnsembleListener` event types
+- `WebReviewHandler` gates execution via `CompletableFuture`; supports `CONTINUE`, `EXIT_EARLY`, and `FAIL` on timeout; interrupt-safe via virtual threads
+- `ConnectionManager` tracks sessions, routes review decisions, resolves pending futures on disconnect
+- Wire protocol: 15+ `ServerMessage` subtypes + 2 `ClientMessage` subtypes with Jackson polymorphic dispatch
+- `MessageSerializer` serializes/deserializes with `type` discriminator; `FAIL_ON_UNKNOWN_PROPERTIES=false`
+- 119 tests across 6 test classes; JaCoCo LINE >= 90% and BRANCH >= 75% both pass
+- PR #138 open against main
+
 ## What Works (as of Issue #113 -- MapReduce task-first refactor)
 
 **MapReduceEnsemble task-first API (Issue #113):**
@@ -233,23 +253,19 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 - Only for adaptive mode
 - Implemented in `agentensemble-core` and documented
 
-### v2.1.0 -- Live Execution Dashboard (design complete, issues pending)
+### v2.1.0 -- Live Execution Dashboard (Groups G + H1 complete)
 
 Design document: `docs/design/16-live-dashboard.md`
 
-Architecture decision: 6 issues in 3 groups:
-- **Group G** (infrastructure): `agentensemble-web` module (G1) + `WebSocketStreamingListener` (G2)
-- **Group H** (review): `WebReviewHandler` real implementation (H1) + Viz review approval UI (H2)
-- **Group I** (live viz): Viz live mode + WebSocket client + incremental state (I1) + live timeline/flow updates (I2)
+**Complete (PR #138 open):**
+- Group G1: `agentensemble-web` module with embedded Javalin WebSocket server
+- Group G2: `WebSocketStreamingListener` -- all 7 `EnsembleListener` event types
+- Group H1: `WebReviewHandler` -- real browser-based review implementation (replaces stub)
 
-Key technical decisions:
-- New module `net.agentensemble:agentensemble-web` with embedded Javalin WebSocket server
-- `WebDashboard.builder()` single entry point wires streaming listener + web review handler
-- `WebSocketStreamingListener` implements `EnsembleListener`: all 7 event types serialized to JSON
-- `WebReviewHandler` implements `ReviewHandler`: `CompletableFuture`-based blocking with timeout
-- Viz gains `/live` route with `liveReducer` state machine building `Partial<ExecutionTrace>` from events
-- Protocol: UTF-8 JSON messages with `type` discriminator; server->client events + client->server review decisions
-- Default port 7329 (same as existing viz CLI); localhost-only binding by default
+**Remaining:**
+- Group H2: Viz review approval UI (modal with Approve/Edit/Exit Early + countdown timer)
+- Group I1: agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine
+- Group I2: Live timeline/flow updates
 
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)

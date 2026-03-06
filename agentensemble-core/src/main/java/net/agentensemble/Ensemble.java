@@ -27,6 +27,7 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
+import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
@@ -853,6 +854,54 @@ public class Ensemble {
                     handler.accept(event);
                 }
             });
+        }
+
+        /**
+         * Register a {@link EnsembleDashboard} (e.g. {@code WebDashboard}) as the live execution
+         * dashboard for this ensemble run.
+         *
+         * <p>This convenience method performs three operations in one call:
+         * <ol>
+         *   <li><strong>Auto-start</strong> -- calls {@link EnsembleDashboard#start()} if the
+         *       dashboard is not already running.</li>
+         *   <li><strong>Streaming</strong> -- registers {@link EnsembleDashboard#streamingListener()}
+         *       as an ensemble listener so execution events are broadcast over WebSocket.</li>
+         *   <li><strong>Review gates</strong> -- sets {@link EnsembleDashboard#reviewHandler()}
+         *       as the ensemble's review handler so that human-in-the-loop decisions are routed
+         *       through the browser dashboard.</li>
+         * </ol>
+         *
+         * <p>Usage:
+         * <pre>
+         * WebDashboard dashboard = WebDashboard.onPort(7329);
+         *
+         * Ensemble.builder()
+         *     .chatLanguageModel(model)
+         *     .webDashboard(dashboard)
+         *     .reviewPolicy(ReviewPolicy.AFTER_EVERY_TASK)
+         *     .task(Task.of("Research AI trends"))
+         *     .build()
+         *     .run();
+         * </pre>
+         *
+         * <p>To use live streaming <em>without</em> review gates, register the listener
+         * directly instead:
+         * <pre>
+         * Ensemble.builder()
+         *     .listener(dashboard.streamingListener())
+         *     .task(...)
+         * </pre>
+         *
+         * @param dashboard the live dashboard to register; must not be null
+         * @return this builder
+         * @throws IllegalArgumentException when {@code dashboard} is null
+         */
+        public EnsembleBuilder webDashboard(EnsembleDashboard dashboard) {
+            Objects.requireNonNull(dashboard, "dashboard must not be null");
+            if (!dashboard.isRunning()) {
+                dashboard.start();
+            }
+            return listener(dashboard.streamingListener()).reviewHandler(dashboard.reviewHandler());
         }
     }
 }

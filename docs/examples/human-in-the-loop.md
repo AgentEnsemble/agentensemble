@@ -244,14 +244,30 @@ See [Tool-Level Approval Gates](../guides/review.md#tool-level-approval-gates) i
 guide for full documentation including custom tool implementation and parallel execution notes.
 ---
 
-## Browser-Based Approval (Coming in v2.1.0)
+## Browser-Based Approval
 
-v2.1.0 will introduce a browser-based review handler via the new `agentensemble-web` module.
-Instead of blocking on the console, review gates display an interactive approval panel in the
-browser alongside the live execution timeline.
+v2.1.0 introduces a browser-based review handler via the `agentensemble-web` module.
+Instead of blocking on the console, review gates display an interactive approval panel
+in the browser alongside the live execution timeline.
+
+Add the dependency:
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("net.agentensemble:agentensemble-core:2.1.0")
+    implementation("net.agentensemble:agentensemble-web:2.1.0")
+    implementation("net.agentensemble:agentensemble-review:2.1.0")
+}
+```
+
+Use `.webDashboard()` instead of `.reviewHandler()`:
 
 ```java
-// v2.1.0+: add agentensemble-web as a dependency
+import net.agentensemble.review.OnTimeoutAction;
+import net.agentensemble.review.Review;
+import net.agentensemble.web.WebDashboard;
+
 EnsembleOutput output = Ensemble.builder()
     .chatLanguageModel(model)
     .task(Task.builder()
@@ -272,8 +288,8 @@ EnsembleOutput output = Ensemble.builder()
     .run();
 ```
 
-Opening `http://localhost:7329` shows the live execution timeline. When the review gate fires
-after the first task, the browser displays:
+Open `http://localhost:7329` in a browser before running the ensemble. When the review gate
+fires after the first task, the browser displays an approval panel:
 
 ```
 +------------------------------------------------------+
@@ -296,8 +312,8 @@ The reviewer can:
 - **Edit** -- inline editing in the browser; the revised text is used downstream
 - **Exit Early** -- the pipeline stops; `output.getExitReason()` returns `USER_EXIT_EARLY`
 
-The `.webDashboard()` call wires both the streaming listener (live timeline) and the
+The `.webDashboard()` call wires both the streaming listener (live task timeline) and the
 `WebReviewHandler` (browser approval) in a single builder call. No separate process or npm
 command is needed -- the server is embedded in the JVM.
 
-See [docs/design/16-live-dashboard.md](../design/16-live-dashboard.md) for the full design.
+**Full documentation:** [Live Dashboard Guide](../guides/live-dashboard.md) | [Live Dashboard Example](live-dashboard.md)
