@@ -55,13 +55,14 @@ export interface LiveServerContextValue {
    * Returns false when the WebSocket is not open; in that case the review
    * stays in pendingReviews so the user can retry once reconnected.
    *
-   * Overloads enforce that revisedOutput is required for EDIT decisions and
-   * must not be provided for CONTINUE or EXIT_EARLY.
+   * Note: revisedOutput is required when decision is 'EDIT' and must be
+   * omitted for 'CONTINUE' and 'EXIT_EARLY'.
    */
-  sendDecision: {
-    (reviewId: string, decision: 'CONTINUE' | 'EXIT_EARLY'): boolean;
-    (reviewId: string, decision: 'EDIT', revisedOutput: string): boolean;
-  };
+  sendDecision: (
+    reviewId: string,
+    decision: ReviewDecisionMessage['decision'],
+    revisedOutput?: string,
+  ) => boolean;
 }
 
 const LiveServerContext = createContext<LiveServerContextValue | null>(null);
@@ -204,7 +205,7 @@ export function LiveServerProvider({ children }: { children: React.ReactNode }) 
       return sent;
     },
     [sendMessage],
-  ) as LiveServerContextValue['sendDecision'];
+  );
 
   // Cleanup on unmount
   useEffect(() => {

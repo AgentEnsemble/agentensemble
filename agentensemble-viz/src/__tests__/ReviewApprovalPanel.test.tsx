@@ -25,13 +25,18 @@ const baseReview: LiveReviewRequest = {
 // ========================
 
 describe('ReviewApprovalPanel', () => {
-  let sendDecision: ReturnType<typeof vi.fn>;
+  // Typed as a plain function returning boolean so TypeScript accepts it as
+  // the ReviewApprovalPanelProps['sendDecision'] prop. vi.fn(() => true)
+  // infers return type boolean and is still a full Vitest mock (call tracking,
+  // mockReturnValue, etc. all work at runtime; TypeScript sees a boolean-returning fn).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let sendDecision: (...args: any[]) => boolean;
 
   beforeEach(() => {
     // Default return true so the panel closes after a decision (simulating an
     // open WebSocket). Tests that check "panel stays open" when disconnected
-    // can override with sendDecision.mockReturnValue(false).
-    sendDecision = vi.fn().mockReturnValue(true);
+    // can override with (sendDecision as ReturnType<typeof vi.fn>).mockReturnValue(false).
+    sendDecision = vi.fn(() => true);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
   });
