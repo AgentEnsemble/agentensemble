@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import net.agentensemble.exception.ExitEarlyException;
 import org.slf4j.Logger;
 
 /**
@@ -117,6 +118,10 @@ public abstract class AbstractAgentTool implements AgentTool {
             }
             metrics().recordDuration(name(), agentRole, elapsed);
             return result;
+        } catch (ExitEarlyException e) {
+            // Re-throw exit-early signals without converting to a tool failure.
+            // The workflow executor catches this and assembles partial results.
+            throw e;
         } catch (Exception e) {
             Duration elapsed = Duration.between(start, Instant.now());
             metrics().incrementError(name(), agentRole);

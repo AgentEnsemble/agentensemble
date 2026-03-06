@@ -10,6 +10,7 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryScope;
+import net.agentensemble.review.Review;
 import net.agentensemble.tool.AgentTool;
 
 /**
@@ -222,6 +223,34 @@ public class Task {
      */
     List<MemoryScope> memoryScopes;
 
+    /**
+     * After-execution review gate configuration.
+     *
+     * <p>When set, a review gate fires after the agent completes this task and before
+     * the output is passed to the next task. The reviewer may continue, edit the output,
+     * or stop the pipeline early.
+     *
+     * <p>Overrides the ensemble-level {@link net.agentensemble.review.ReviewPolicy}:
+     * {@link Review#required()} always fires regardless of policy;
+     * {@link Review#skip()} never fires regardless of policy.
+     *
+     * <p>Default: null (use ensemble-level ReviewPolicy).
+     */
+    Review review;
+
+    /**
+     * Before-execution review gate configuration.
+     *
+     * <p>When set, a review gate fires before the agent begins executing this task.
+     * The reviewer may approve execution or stop the pipeline early.
+     * {@link net.agentensemble.review.ReviewDecision.Edit} is treated as
+     * {@link net.agentensemble.review.ReviewDecision.Continue} because no output
+     * exists yet.
+     *
+     * <p>Default: null (no before-execution gate).
+     */
+    Review beforeReview;
+
     // ========================
     // Static convenience factories
     // ========================
@@ -285,6 +314,8 @@ public class Task {
         private List<InputGuardrail> inputGuardrails = List.of();
         private List<OutputGuardrail> outputGuardrails = List.of();
         private List<MemoryScope> memoryScopes = new ArrayList<>();
+        private Review review = null;
+        private Review beforeReview = null;
 
         /**
          * Declare a single named memory scope for this task.
@@ -368,7 +399,9 @@ public class Task {
                     maxOutputRetries,
                     inputGuardrails,
                     outputGuardrails,
-                    List.copyOf(effectiveMemoryScopes));
+                    List.copyOf(effectiveMemoryScopes),
+                    review,
+                    beforeReview);
         }
 
         private void validateDescription() {

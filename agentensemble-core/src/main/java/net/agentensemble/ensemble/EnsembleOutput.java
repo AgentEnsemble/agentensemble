@@ -8,10 +8,21 @@ import net.agentensemble.task.TaskOutput;
 import net.agentensemble.trace.ExecutionTrace;
 
 /**
- * The result of a complete ensemble execution.
+ * The result of a complete (or partial) ensemble execution.
  *
- * <p>Contains the final output (from the last task), all individual task outputs
- * in execution order, timing information, and a count of total tool calls.
+ * <p>Contains the final output (from the last completed task), all individual task outputs
+ * in execution order, timing information, a count of total tool calls, and the reason
+ * the run terminated.
+ *
+ * <p>Use {@code getExitReason()} to determine whether the pipeline ran to completion
+ * or was stopped early by a human reviewer:
+ * <pre>
+ * EnsembleOutput output = ensemble.run();
+ * if (output.getExitReason() == ExitReason.USER_EXIT_EARLY) {
+ *     System.out.println("Pipeline stopped at user request after "
+ *             + output.getTaskOutputs().size() + " task(s)");
+ * }
+ * </pre>
  *
  * <p>Execution metrics (aggregated token counts, latency, cost, etc.) are available
  * via {@code getMetrics()}. The full execution trace (every LLM call, every tool
@@ -21,7 +32,7 @@ import net.agentensemble.trace.ExecutionTrace;
 @Value
 public class EnsembleOutput {
 
-    /** The raw text output from the final task. Convenience accessor. */
+    /** The raw text output from the final completed task. Convenience accessor. */
     String raw;
 
     /** All task outputs in execution order. */
@@ -52,8 +63,24 @@ public class EnsembleOutput {
     ExecutionTrace trace;
 
     /**
+     * Why the ensemble run terminated.
+     *
+     * <p>{@link ExitReason#COMPLETED} for a normal full run.
+     * {@link ExitReason#USER_EXIT_EARLY} when a review gate returned
+     * {@code ReviewDecision.ExitEarly} and the pipeline
+     * was stopped before all tasks completed.
+     *
+     * <p>When exit reason is {@link ExitReason#USER_EXIT_EARLY}, {@code taskOutputs}
+     * contains only the tasks that completed before the exit signal. The {@code raw}
+     * field is the output from the last completed task.
+     */
+    ExitReason exitReason;
+
+    /**
      * Convenience factory method used by workflow executors to build an {@code EnsembleOutput}
      * with an immutable task output list and automatically computed metrics.
+     *
+     * <p>Sets {@link ExitReason#COMPLETED} as the exit reason.
      *
      * @param raw            the final raw text output
      * @param taskOutputs    all task outputs (copied to an immutable list)
@@ -65,7 +92,7 @@ public class EnsembleOutput {
             String raw, List<TaskOutput> taskOutputs, Duration totalDuration, int totalToolCalls) {
         List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
         ExecutionMetrics metrics = ExecutionMetrics.from(immutable);
-        return new EnsembleOutput(raw, immutable, totalDuration, totalToolCalls, metrics, null);
+        return new EnsembleOutput(raw, immutable, totalDuration, totalToolCalls, metrics, null, ExitReason.COMPLETED);
     }
 
     /**
@@ -84,6 +111,7 @@ public class EnsembleOutput {
         private int totalToolCalls;
         private ExecutionMetrics metrics;
         private ExecutionTrace trace;
+        private ExitReason exitReason;
 
         public Builder raw(String raw) {
             this.raw = raw;
@@ -115,10 +143,23 @@ public class EnsembleOutput {
             return this;
         }
 
+        /**
+         * Set the reason the run terminated.
+         *
+         * @param exitReason the exit reason; defaults to {@link ExitReason#COMPLETED} when null
+         * @return this builder
+         */
+        public Builder exitReason(ExitReason exitReason) {
+            this.exitReason = exitReason;
+            return this;
+        }
+
         public EnsembleOutput build() {
             List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
             ExecutionMetrics resolvedMetrics = metrics != null ? metrics : ExecutionMetrics.from(immutable);
-            return new EnsembleOutput(raw, immutable, totalDuration, totalToolCalls, resolvedMetrics, trace);
+            ExitReason resolvedExitReason = exitReason != null ? exitReason : ExitReason.COMPLETED;
+            return new EnsembleOutput(
+                    raw, immutable, totalDuration, totalToolCalls, resolvedMetrics, trace, resolvedExitReason);
         }
     }
 }

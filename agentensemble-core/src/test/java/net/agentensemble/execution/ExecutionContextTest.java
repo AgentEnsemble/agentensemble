@@ -14,6 +14,8 @@ import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
+import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.Test;
 
@@ -290,5 +292,99 @@ class ExecutionContextTest {
 
         // Must not throw
         ctx.fireToolCall(new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(100)));
+    }
+
+    // ========================
+    // Review handler and policy (v2.0.0)
+    // ========================
+
+    @Test
+    void reviewHandler_defaultsToNull() {
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of());
+        assertThat(ctx.reviewHandler()).isNull();
+    }
+
+    @Test
+    void reviewPolicy_defaultsToNever() {
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of());
+        assertThat(ctx.reviewPolicy()).isEqualTo(ReviewPolicy.NEVER);
+    }
+
+    @Test
+    void of10arg_withReviewHandler_storesHandler() {
+        ReviewHandler autoApprove = ReviewHandler.autoApprove();
+        ExecutionContext ctx = ExecutionContext.of(
+                MemoryContext.disabled(),
+                false,
+                List.of(),
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                null,
+                net.agentensemble.trace.CaptureMode.OFF,
+                null,
+                autoApprove,
+                ReviewPolicy.AFTER_EVERY_TASK);
+
+        assertThat(ctx.reviewHandler()).isSameAs(autoApprove);
+        assertThat(ctx.reviewPolicy()).isEqualTo(ReviewPolicy.AFTER_EVERY_TASK);
+    }
+
+    @Test
+    void of10arg_nullPolicy_defaultsToNever() {
+        ExecutionContext ctx = ExecutionContext.of(
+                MemoryContext.disabled(),
+                false,
+                List.of(),
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                null,
+                net.agentensemble.trace.CaptureMode.OFF,
+                null,
+                null,
+                null); // null policy -> defaults to NEVER
+
+        assertThat(ctx.reviewPolicy()).isEqualTo(ReviewPolicy.NEVER);
+        assertThat(ctx.reviewHandler()).isNull();
+    }
+
+    @Test
+    void of10arg_nullToolExecutor_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        MemoryContext.disabled(),
+                        false,
+                        List.of(),
+                        null, // toolExecutor is null
+                        net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolExecutor");
+    }
+
+    @Test
+    void of10arg_nullToolMetrics_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        MemoryContext.disabled(),
+                        false,
+                        List.of(),
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                        null, // toolMetrics is null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolMetrics");
+    }
+
+    @Test
+    void disabled_reviewHandlerIsNull() {
+        ExecutionContext ctx = ExecutionContext.disabled();
+        assertThat(ctx.reviewHandler()).isNull();
+        assertThat(ctx.reviewPolicy()).isEqualTo(ReviewPolicy.NEVER);
     }
 }

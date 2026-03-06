@@ -6,16 +6,15 @@ plugins {
 }
 
 // Coverage verification -- wired into check so CI fails if coverage drops below thresholds.
-// Thresholds are set conservatively below the current measured levels.
-// Updated after adding agentensemble-review integration (#108-#110):
-//   LINE:   measured 89%  -> minimum 87%
-//   BRANCH: measured 78%  -> minimum 75%
+// Thresholds are set conservatively below the current measured levels:
+//   LINE:   minimum 90%
+//   BRANCH: minimum 75%
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     violationRules {
         rule {
             limit {
                 counter = "LINE"
-                minimum = "0.87".toBigDecimal()
+                minimum = "0.90".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
@@ -31,40 +30,14 @@ tasks.named("check") {
 }
 
 dependencies {
-    // Memory module - compileOnly so it is not shipped transitively; users who want
-    // memory add agentensemble-memory explicitly. Available at test runtime via
-    // testImplementation below.
-    compileOnly(project(":agentensemble-memory"))
-    testImplementation(project(":agentensemble-memory"))
-
-    // Review module - compileOnly so it is not shipped transitively; users who want
-    // human-in-the-loop review add agentensemble-review explicitly. Available at
-    // test runtime via testImplementation below.
-    compileOnly(project(":agentensemble-review"))
-    testImplementation(project(":agentensemble-review"))
-
-    // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
-    api(libs.langchain4j.core)
-
-    // JSON serialization for tool I/O and execution trace export
-    implementation(libs.jackson.databind)
-    implementation(libs.jackson.datatype.jsr310)
-
     // Logging facade - no implementation, users bring their own
     implementation(libs.slf4j.api)
-
-    // Lombok - compile-time only, not shipped in the jar
-    compileOnly(libs.lombok)
-    annotationProcessor(libs.lombok)
 
     // Test dependencies
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testImplementation(libs.mockito.core)
     testImplementation(libs.slf4j.simple)
-
-    testCompileOnly(libs.lombok)
-    testAnnotationProcessor(libs.lombok)
 
     testRuntimeOnly(libs.junit.platform.launcher)
 }
@@ -74,8 +47,8 @@ mavenPublishing {
     signAllPublications()
 
     pom {
-        name = "AgentEnsemble Core"
-        description = "Multi-agent workflow orchestration for Java, powered by LangChain4j"
+        name = "AgentEnsemble Review"
+        description = "Human-in-the-loop review gate SPI and built-in handlers for AgentEnsemble"
         url = "https://github.com/AgentEnsemble/agentensemble"
 
         licenses {

@@ -16,12 +16,15 @@ import java.util.List;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.exception.AgentExecutionException;
+import net.agentensemble.exception.ExitEarlyException;
 import net.agentensemble.exception.MaxIterationsExceededException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.guardrail.GuardrailResult;
 import net.agentensemble.guardrail.GuardrailViolationException;
+import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.AgentTool;
+import net.agentensemble.tool.HumanInputTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
 
@@ -87,6 +90,71 @@ class AgentExecutorTest {
         executor.execute(task, List.of(), ExecutionContext.disabled());
 
         verify(mockLlm).chat(any(ChatRequest.class));
+    }
+
+    // ========================
+    // HumanInputTool / ExitEarlyException propagation
+    // ========================
+
+    @Test
+    void testExecute_humanInputTool_exitEarly_propagatesExitEarlyException() {
+        // This test covers the ExitEarlyException catch-rethrow path in:
+        //   AbstractAgentTool.execute(), LangChain4jToolAdapter.executeForResult(),
+        //   and AgentExecutor.execute() (catch | ExitEarlyException block).
+        var mockLlm = mock(ChatModel.class);
+        // LLM returns a tool call request for "human_input"
+        when(mockLlm.chat(any(ChatRequest.class)))
+                .thenReturn(toolCallResponse("human_input", "{\"input\": \"Is the research direction correct?\"}"));
+
+        // HumanInputTool configured to exit early when invoked
+        var humanInputTool = HumanInputTool.of();
+        humanInputTool.injectReviewHandler(request -> ReviewDecision.exitEarly());
+
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Research and clarify")
+                .tools(List.of(humanInputTool))
+                .llm(mockLlm)
+                .build();
+        var task = Task.builder()
+                .description("Research AI trends and ask for direction")
+                .expectedOutput("A report")
+                .agent(agent)
+                .build();
+
+        // ExitEarlyException must propagate all the way up through AgentExecutor
+        assertThatThrownBy(() -> executor.execute(task, List.of(), ExecutionContext.disabled()))
+                .isInstanceOf(ExitEarlyException.class);
+    }
+
+    @Test
+    void testExecute_humanInputTool_continue_resumesReactLoop() {
+        var mockLlm = mock(ChatModel.class);
+        // LLM first calls human_input, then produces a final answer after getting the response
+        when(mockLlm.chat(any(ChatRequest.class)))
+                .thenReturn(toolCallResponse("human_input", "{\"input\": \"Should I proceed with topic X?\"}"))
+                .thenReturn(textResponse("Research complete after human input."));
+
+        // HumanInputTool returns Continue
+        var humanInputTool = HumanInputTool.of();
+        humanInputTool.injectReviewHandler(request -> ReviewDecision.continueExecution());
+
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Research and clarify")
+                .tools(List.of(humanInputTool))
+                .llm(mockLlm)
+                .build();
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A report")
+                .agent(agent)
+                .build();
+
+        TaskOutput output = executor.execute(task, List.of(), ExecutionContext.disabled());
+
+        assertThat(output.getRaw()).isEqualTo("Research complete after human input.");
+        assertThat(output.getToolCallCount()).isEqualTo(1);
     }
 
     // ========================

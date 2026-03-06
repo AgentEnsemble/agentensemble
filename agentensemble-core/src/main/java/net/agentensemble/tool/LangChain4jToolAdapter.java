@@ -7,6 +7,7 @@ import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import java.util.List;
 import java.util.Map;
+import net.agentensemble.exception.ExitEarlyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +97,10 @@ public final class LangChain4jToolAdapter {
                 return ToolResult.success("");
             }
             return result;
+        } catch (ExitEarlyException e) {
+            // Re-throw exit-early signals without converting to a tool failure.
+            // The workflow executor catches this and assembles partial results.
+            throw e;
         } catch (Exception e) {
             log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
             return ToolResult.failure(e.getMessage());
