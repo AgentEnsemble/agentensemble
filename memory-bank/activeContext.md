@@ -2,70 +2,103 @@
 
 ## Current Work Focus
 
-Issues #108, #109, and #110 (v2.0.0 Human-in-the-Loop Review System) are complete on
-branch `feat/108-109-110-review-module`. PR #125 is open and Copilot review comments have
-been addressed (commit `2e7798e`).
+Issues #111 and #112 (v2.0.0 Partial Results and Workflow Inference) are complete on
+branch `feat/111-112-partial-results-workflow-inference`. Two commits pushed:
+- `562e09c` -- feat(111): EnsembleOutput partial results and graceful exit-early
+- `500cd91` -- feat(112): Workflow inference from task context declarations
+
+PR ready to open against main.
 
 ## Recent Changes
 
-### Issues #108, #109, #110: Human-in-the-Loop Review System
+### Issue #111: EnsembleOutput partial results and graceful exit-early
 
-Delivered the complete human-in-the-loop review gate system in a single branch.
+**ExitReason (extended):**
+- TIMEOUT -- review gate timeout expired with onTimeout(EXIT_EARLY)
+- ERROR -- unrecoverable exception terminated the pipeline
+- (existing: COMPLETED, USER_EXIT_EARLY)
 
-**New module: `agentensemble-review`**
+**ReviewDecision.ExitEarly (breaking change):**
+- Changed from no-arg record to `ExitEarly(boolean timedOut)` record
+- Factory `exitEarly()` returns `new ExitEarly(false)` (unchanged behavior)
+- New factory `exitEarlyTimeout()` returns `new ExitEarly(true)`
+- `ConsoleReviewHandler.handleTimeout()` with EXIT_EARLY now returns `exitEarlyTimeout()`
 
-- `ReviewHandler` -- SPI functional interface with static factories (console, autoApprove,
-  autoApproveWithDelay, web stub)
-- `ReviewRequest` -- record carrying taskDescription, taskOutput, timing, timeout,
-  onTimeoutAction, prompt
-- `ReviewTiming` enum -- BEFORE_EXECUTION, DURING_EXECUTION, AFTER_EXECUTION
-- `ReviewDecision` sealed interface -- Continue, Edit(revisedOutput), ExitEarly
-- `Review` factory -- required(), required(String), skip(), builder()
-- `OnTimeoutAction` enum -- CONTINUE, EXIT_EARLY, FAIL
-- `ReviewPolicy` enum -- NEVER, AFTER_EVERY_TASK, AFTER_LAST_TASK
-- `ConsoleReviewHandler` -- stdin/stdout CLI with in-place countdown timer
-- `AutoApproveReviewHandler` -- singleton, always returns Continue
-- `AutoApproveWithDelayReviewHandler` -- Continue after delay
-- `WebReviewHandler` -- stub/placeholder (always throws UnsupportedOperationException)
-- `ReviewTimeoutException` -- thrown when OnTimeoutAction.FAIL and timeout expires
+**ExitEarlyException (extended):**
+- Added `boolean timedOut` field with `isTimedOut()` accessor
+- 2-arg constructor `(message, timedOut)` + 1-arg defaults to false
+- HumanInputTool propagates `exitEarly.timedOut()` when creating exception
 
-**Changes to `agentensemble-core`:**
+**EnsembleOutput (new convenience API):**
+- `isComplete()` -- true only when exitReason == COMPLETED
+- `completedTasks()` -- alias for getTaskOutputs(); always safe to call
+- `lastCompletedOutput()` -- Optional<TaskOutput> last element
+- `getOutput(Task task)` -- identity-based Optional<TaskOutput> lookup
+- `taskOutputIndex` internal field (Map<Task,TaskOutput>, excluded from equals/hashCode)
+- All workflow executors now populate taskOutputIndex
 
-- `ExitReason` enum (net.agentensemble.ensemble) -- COMPLETED, USER_EXIT_EARLY
-- `ExitEarlyException` (net.agentensemble.exception) -- unchecked, propagates through stack
-- `HumanInputTool` (net.agentensemble.tool) -- built-in AgentTool for mid-task clarification
-- `Task` -- added `review` (after-execution gate) and `beforeReview` (before-execution gate)
-- `Ensemble` -- added `reviewHandler`, `reviewPolicy` builder fields
-- `ExecutionContext` -- added `reviewHandler()`, `reviewPolicy()` accessors; new 10-arg factory
-- `EnsembleOutput` -- added `exitReason` field (defaults to COMPLETED)
-- `AbstractAgentTool.execute()` -- re-throws ExitEarlyException before general catch
-- `LangChain4jToolAdapter.executeForResult()` -- re-throws ExitEarlyException
-- `AgentExecutor.execute()` -- re-throws ExitEarlyException; parallel path unwraps
-  CompletionException wrapping ExitEarlyException
-- `SequentialWorkflowExecutor` -- wires all three gate timing points; injects ReviewHandler
-  into HumanInputTool instances before execution; builds partial EnsembleOutput on
-  early exit
+**Ensemble.runWithInputs() fix:**
+- After execution, remaps executor's agentResolved-keyed taskOutputIndex back to
+  original task instances using positional correspondence:
+  `tasks.get(i)` -> `agentResolvedTasks.get(i)` -> lookup in executor index
 
-**Key design decisions:**
-- `agentensemble-review` is a separate optional module (compileOnly in core)
-- `reviewPolicy` is NOT `@Builder.Default` in Ensemble to avoid eager class loading when
-  review module is not on the classpath (null -> NEVER handled by ExecutionContext)
-- ExitEarlyException propagates through the full tool/agent/workflow stack as an unchecked
-  exception with re-throw guards at each layer
-- Task-level Review.required() overrides ensemble NEVER policy; Review.skip() overrides
-  ensemble AFTER_EVERY_TASK policy
-- After-execution ExitEarly includes the completed task output; before-execution ExitEarly
-  does not include the task (task never ran)
-- Edit (revised output) replaces TaskOutput.raw and is re-stored in memory scopes
-- agentensemble-core coverage threshold updated: LINE 90% -> 87% reflecting new optional
-  module code in low-coverage packages (agent, tool)
+**Executor changes:**
+- SequentialWorkflowExecutor: TIMEOUT vs USER_EXIT_EARLY distinction in all 3 gate paths
+- ParallelWorkflowExecutor: full exit-early support via AtomicReference<ExitReason>
+- ParallelTaskCoordinator: after-execution review gate, ExitEarlyException handling,
+  HumanInputTool injection, shouldSkip() respects exit-early signal
+
+### Issue #112: Workflow inference from task context declarations
+
+**Ensemble.workflow (changed):**
+- Field is now nullable (removed @Builder.Default); default is null
+- When null, `resolveWorkflow(List<Task>)` infers PARALLEL if any task has context dep
+  on another ensemble task, else SEQUENTIAL
+- `selectExecutor(Workflow, List<Agent>)` takes explicit workflow
+- Logs "Workflow inferred: X" when inference fires
+
+**EnsembleValidator (updated):**
+- Added `resolveWorkflow()` with same inference logic
+- All workflow-specific validations take effective workflow as parameter
+- `validateContextOrdering(effective)` skips for both inferred and explicit PARALLEL
+
+**Tests updated:**
+- EnsembleTest: `testDefaultWorkflow_isNullWhenNotSet`
+- EnsembleValidationTest: forward-reference and ordering tests use explicit SEQUENTIAL
+
+## Key Design Decisions (Issues #111/#112)
+
+- `ReviewDecision.ExitEarly(boolean timedOut)` breaking change to record signature;
+  code using `exitEarly()` factory is unaffected; direct `new ExitEarly()` needs the arg
+- Identity-based task index: remapped in runWithInputs() using positional correspondence
+  because resolveTasks() always creates new Task instances even for tasks without templates
+- Workflow null default (not SEQUENTIAL) makes inference explicit; existing code with
+  `.workflow(Workflow.SEQUENTIAL)` is unaffected
+- Context ordering validation skipped for inferred PARALLEL (same as explicit PARALLEL):
+  context deps with out-of-order declaration are valid in DAG-based execution
 
 ## Next Steps
 
-- Open PR for feat/108-109-110-review-module -> main
-- Issues #111+ (next batch in epic #103 or post-v2.0.0 work)
+- Open PR for feat/111-112-partial-results-workflow-inference -> main
+- Continue with remaining v2.0.0 issues in epic #103
 
 ## Important Patterns and Preferences
+
+### v2.0.0 EnsembleOutput API (Issue #111)
+- `output.isComplete()` -- true only when all tasks ran to completion
+- `output.getExitReason()` -- COMPLETED, USER_EXIT_EARLY, TIMEOUT, ERROR
+- `output.completedTasks()` -- same as getTaskOutputs(); always safe
+- `output.lastCompletedOutput()` -- Optional<TaskOutput> last completed
+- `output.getOutput(researchTask)` -- identity-based lookup; pass the same Task instance
+- taskOutputIndex is excluded from equals/hashCode/toString (implementation detail)
+
+### v2.0.0 Workflow Inference (Issue #112)
+- No `.workflow(...)` call -> framework infers at run time
+- Tasks with no context deps -> SEQUENTIAL inferred
+- Any task with context dep on another ensemble task -> PARALLEL inferred
+- Explicit `.workflow(Workflow.X)` always wins over inference
+- Context ordering validation only fires for explicit or inferred SEQUENTIAL
+- `EnsembleValidator.resolveWorkflow()` and `Ensemble.resolveWorkflow()` share same logic
 
 ### v2.0.0 Review API (Issues #108/#109/#110)
 - ReviewHandler + ReviewPolicy is the v2.0.0 review API
@@ -104,7 +137,8 @@ Delivered the complete human-in-the-loop review gate system in a single branch.
 
 ## Previous Issues (complete)
 
-### Issues #108, #109, #110: Human-in-the-loop review system (complete, branch committed)
+### Issues #111, #112: Partial results and workflow inference (complete, branch committed)
+### Issues #108, #109, #110: Human-in-the-loop review system (complete, PR #125)
 ### Issues #106, #107: agentensemble-memory module + task-scoped memory (complete, main)
 ### Issues #104, #105: Task-First Core + AgentSynthesizer SPI (complete, main)
 ### Issue #100: MapReduceEnsemble Short-Circuit Optimization (complete)

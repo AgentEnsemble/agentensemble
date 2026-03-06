@@ -15,6 +15,7 @@ package net.agentensemble.review;
  * ReviewDecision.continueExecution();
  * ReviewDecision.edit("Revised output text");
  * ReviewDecision.exitEarly();
+ * ReviewDecision.exitEarlyTimeout();  // when a review gate timeout caused the exit
  * </pre>
  */
 public sealed interface ReviewDecision permits ReviewDecision.Continue, ReviewDecision.Edit, ReviewDecision.ExitEarly {
@@ -57,8 +58,15 @@ public sealed interface ReviewDecision permits ReviewDecision.Continue, ReviewDe
      * pipeline stops.
      * During-execution (via {@code HumanInputTool}): the agent loop is aborted
      * and the pipeline stops with completed tasks so far.
+     *
+     * <p>When {@code timedOut} is {@code true}, the exit was caused by a review gate
+     * timeout expiring with {@link OnTimeoutAction#EXIT_EARLY}, and the ensemble will
+     * record {@code ExitReason.TIMEOUT} instead of {@code ExitReason.USER_EXIT_EARLY}.
+     *
+     * @param timedOut {@code true} when the exit was triggered by a timeout rather
+     *                 than an explicit human choice
      */
-    record ExitEarly() implements ReviewDecision {}
+    record ExitEarly(boolean timedOut) implements ReviewDecision {}
 
     // ========================
     // Singleton instances (avoids allocating new records every time)
@@ -67,8 +75,11 @@ public sealed interface ReviewDecision permits ReviewDecision.Continue, ReviewDe
     /** Reusable singleton Continue instance. */
     Continue CONTINUE_INSTANCE = new Continue();
 
-    /** Reusable singleton ExitEarly instance. */
-    ExitEarly EXIT_EARLY_INSTANCE = new ExitEarly();
+    /** Reusable singleton user-initiated ExitEarly instance (timedOut = false). */
+    ExitEarly EXIT_EARLY_INSTANCE = new ExitEarly(false);
+
+    /** Reusable singleton timeout-triggered ExitEarly instance (timedOut = true). */
+    ExitEarly EXIT_EARLY_TIMEOUT_INSTANCE = new ExitEarly(true);
 
     // ========================
     // Static factory methods
@@ -94,11 +105,26 @@ public sealed interface ReviewDecision permits ReviewDecision.Continue, ReviewDe
     }
 
     /**
-     * Return the singleton {@link ExitEarly} instance.
+     * Return the singleton user-initiated {@link ExitEarly} instance ({@code timedOut = false}).
      *
-     * @return an ExitEarly decision
+     * <p>Use this when a human reviewer explicitly chooses to stop the pipeline.
+     * The ensemble will record {@code ExitReason.USER_EXIT_EARLY}.
+     *
+     * @return an ExitEarly decision with timedOut = false
      */
     static ExitEarly exitEarly() {
         return EXIT_EARLY_INSTANCE;
+    }
+
+    /**
+     * Return the singleton timeout-triggered {@link ExitEarly} instance ({@code timedOut = true}).
+     *
+     * <p>Use this when a review gate timeout expires with
+     * {@link OnTimeoutAction#EXIT_EARLY}. The ensemble will record {@code ExitReason.TIMEOUT}.
+     *
+     * @return an ExitEarly decision with timedOut = true
+     */
+    static ExitEarly exitEarlyTimeout() {
+        return EXIT_EARLY_TIMEOUT_INSTANCE;
     }
 }

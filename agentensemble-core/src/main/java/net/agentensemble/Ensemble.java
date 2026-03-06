@@ -142,9 +142,23 @@ public class Ensemble {
     @Builder.Default
     private final AgentSynthesizer agentSynthesizer = AgentSynthesizer.template();
 
-    /** How tasks are executed. Default: SEQUENTIAL. */
-    @Builder.Default
-    private final Workflow workflow = Workflow.SEQUENTIAL;
+    /**
+     * How tasks are executed.
+     *
+     * <p>When {@code null} (not set on the builder), the framework infers the workflow
+     * from task context declarations:
+     * <ul>
+     *   <li>If any task declares a {@code context} dependency on another task in this
+     *       ensemble, DAG-based parallel execution ({@link Workflow#PARALLEL}) is inferred.</li>
+     *   <li>If no task has context dependencies, sequential execution
+     *       ({@link Workflow#SEQUENTIAL}) is used as the default.</li>
+     * </ul>
+     *
+     * <p>Setting an explicit value always takes precedence over inference.
+     *
+     * <p>Default: {@code null} (inferred at run time).
+     */
+    private final Workflow workflow;
 
     /**
      * Optional LLM for the Manager agent in hierarchical workflow.
@@ -397,7 +411,7 @@ public class Ensemble {
         }
 
         try {
-            log.info("Ensemble run initializing | Workflow: {} | Tasks: {}", workflow, tasks.size());
+            log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
             log.debug("Input variables: {}", resolvedInputs);
 
             // Step 1: Validate configuration
@@ -405,6 +419,13 @@ public class Ensemble {
 
             // Step 2: Resolve template variables in task descriptions and expected outputs
             List<Task> templateResolvedTasks = resolveTasks(resolvedInputs);
+
+            // Step 2b: Resolve the effective workflow (inference happens after template resolution
+            // so that context dependencies reference the correct identity-mapped task instances)
+            Workflow effectiveWorkflow = resolveWorkflow(templateResolvedTasks);
+            if (workflow == null) {
+                log.info("Workflow inferred: {} (from task context declarations)", effectiveWorkflow);
+            }
 
             // Step 3: Resolve agents -- synthesize for tasks without an explicit agent
             List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks);
@@ -414,7 +435,7 @@ public class Ensemble {
 
             log.info(
                     "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
-                    workflow,
+                    effectiveWorkflow,
                     agentResolvedTasks.size(),
                     derivedAgents.size());
 
@@ -444,7 +465,7 @@ public class Ensemble {
             }
 
             // Step 7: Select and execute WorkflowExecutor
-            WorkflowExecutor executor = selectExecutor(derivedAgents);
+            WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
             EnsembleOutput output = executor.execute(agentResolvedTasks, executionContext);
 
             Instant runCompletedAt = Instant.now();
@@ -463,9 +484,28 @@ public class Ensemble {
                     resolvedInputs,
                     output,
                     effectiveCaptureMode,
+                    effectiveWorkflow,
                     derivedAgents);
 
-            // Step 9: Attach trace to EnsembleOutput, preserving exitReason from workflow
+            // Step 9: Attach trace to EnsembleOutput, preserving exitReason.
+            // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
+            // back to the original task instances the caller holds, using the positional
+            // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
+            java.util.Map<Task, net.agentensemble.task.TaskOutput> executorIndex = output.getTaskOutputIndex();
+            java.util.Map<Task, net.agentensemble.task.TaskOutput> originalIndex = null;
+            if (executorIndex != null) {
+                IdentityHashMap<Task, net.agentensemble.task.TaskOutput> idx = new IdentityHashMap<>();
+                for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
+                    Task original = tasks.get(i);
+                    Task agentResolved = agentResolvedTasks.get(i);
+                    net.agentensemble.task.TaskOutput taskOut = executorIndex.get(agentResolved);
+                    if (taskOut != null) {
+                        idx.put(original, taskOut);
+                    }
+                }
+                originalIndex = idx;
+            }
+
             EnsembleOutput outputWithTrace = EnsembleOutput.builder()
                     .raw(output.getRaw())
                     .taskOutputs(output.getTaskOutputs())
@@ -474,6 +514,7 @@ public class Ensemble {
                     .metrics(output.getMetrics())
                     .trace(trace)
                     .exitReason(output.getExitReason())
+                    .taskOutputIndex(originalIndex)
                     .build();
 
             // Step 10: Export trace
@@ -572,6 +613,7 @@ public class Ensemble {
             Map<String, String> resolvedInputs,
             EnsembleOutput output,
             CaptureMode effectiveCaptureMode,
+            Workflow effectiveWorkflow,
             List<Agent> derivedAgents) {
 
         List<AgentSummary> agentSummaries = derivedAgents.stream()
@@ -596,7 +638,7 @@ public class Ensemble {
 
         ExecutionTrace.ExecutionTraceBuilder builder = ExecutionTrace.builder()
                 .ensembleId(ensembleId)
-                .workflow(workflow.name())
+                .workflow(effectiveWorkflow.name())
                 .captureMode(effectiveCaptureMode)
                 .startedAt(startedAt)
                 .completedAt(completedAt)
@@ -652,9 +694,39 @@ public class Ensemble {
         return result;
     }
 
-    private WorkflowExecutor selectExecutor(List<Agent> derivedAgents) {
+    /**
+     * Infer the effective {@link Workflow} from the template-resolved task list.
+     *
+     * <p>When {@link #workflow} is explicitly set, returns it unchanged. Otherwise:
+     * <ul>
+     *   <li>If any task declares a {@code context} dependency on another task in this
+     *       ensemble, {@link Workflow#PARALLEL} (DAG-based execution) is returned.</li>
+     *   <li>Otherwise {@link Workflow#SEQUENTIAL} is returned as the default.</li>
+     * </ul>
+     *
+     * @param resolvedTasks the template-resolved task list; used to check context deps
+     * @return the effective workflow to use for this run
+     */
+    private Workflow resolveWorkflow(List<Task> resolvedTasks) {
+        if (workflow != null) {
+            return workflow;
+        }
+        // Build an identity-based set of all tasks to detect in-ensemble context deps
+        java.util.Set<Task> taskSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        taskSet.addAll(resolvedTasks);
+        for (Task task : resolvedTasks) {
+            for (Task dep : task.getContext()) {
+                if (taskSet.contains(dep)) {
+                    return Workflow.PARALLEL;
+                }
+            }
+        }
+        return Workflow.SEQUENTIAL;
+    }
+
+    private WorkflowExecutor selectExecutor(Workflow effectiveWorkflow, List<Agent> derivedAgents) {
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
-        return switch (workflow) {
+        return switch (effectiveWorkflow) {
             case SEQUENTIAL -> new SequentialWorkflowExecutor(derivedAgents, maxDelegationDepth, policies);
             case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
                     resolveManagerLlm(derivedAgents),

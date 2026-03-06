@@ -18,7 +18,7 @@ All fields available on `Ensemble.builder()`.
 | `chatLanguageModel` | `ChatModel` | No | `null` | Default LLM for all tasks without an explicit agent or task-level LLM. Required when any task lacks an explicit agent and does not set its own `chatLanguageModel`. Also used as the Manager LLM in hierarchical workflow if `managerLlm` is not set. |
 | `agentSynthesizer` | `AgentSynthesizer` | No | `AgentSynthesizer.template()` | Strategy for synthesizing agents for agentless tasks. `AgentSynthesizer.template()` (default) derives role, goal, and backstory from the task description deterministically. `AgentSynthesizer.llmBased()` invokes the LLM once per agentless task for a higher-quality persona. |
 | `inputs` | `Map<String, String>` | No | `{}` | Template variable values applied to all task descriptions and expected outputs at run time. Add individual entries with `.input("key", "value")` or a batch with `.inputs(map)`. Run-time values passed to `run(Map)` are merged on top; run-time values win on conflicts. See [Template Variables guide](../guides/template-variables.md). |
-| `workflow` | `Workflow` | No | `SEQUENTIAL` | Execution strategy. `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL`. |
+| `workflow` | `Workflow` | No | `null` (inferred) | Execution strategy. `SEQUENTIAL`, `HIERARCHICAL`, or `PARALLEL`. When `null` (not set), the framework infers: if any task declares a `context` dependency on another ensemble task, `PARALLEL` is inferred; otherwise `SEQUENTIAL`. An explicit value always overrides inference. See [Workflows guide](../guides/workflows.md#workflow-inference). |
 | `managerLlm` | `ChatModel` | No | First agent's LLM | LLM for the auto-created Manager agent (hierarchical workflow only). |
 | `managerMaxIterations` | `int` | No | `20` | Maximum tool-call iterations for the Manager agent. Must be greater than zero (hierarchical only). |
 | `managerPromptStrategy` | `ManagerPromptStrategy` | No | `DefaultManagerPromptStrategy.DEFAULT` | Strategy that builds the Manager agent's system and user prompts. Implement `ManagerPromptStrategy` to inject domain-specific context without forking internals. Only exercised for hierarchical workflow. See [Workflows guide](../guides/workflows.md#customizing-the-manager-prompt). |
@@ -60,7 +60,11 @@ At `Ensemble.run()` time:
 | `getTotalToolCalls()` | `int` | Total number of tool calls across all agents |
 | `getMetrics()` | `ExecutionMetrics` | Aggregated metrics: total token counts, LLM latency, tool execution time, cost estimate, etc. |
 | `getTrace()` | `ExecutionTrace` | Complete execution trace with every LLM interaction, tool call, prompt text, and delegation record. Serializes to JSON via `getTrace().toJson()`. |
-| `getExitReason()` | `ExitReason` | Why the run terminated. `COMPLETED` for a full run; `USER_EXIT_EARLY` when a reviewer chose ExitEarly. When `USER_EXIT_EARLY`, `getTaskOutputs()` contains only the tasks that completed before the exit signal. |
+| `getExitReason()` | `ExitReason` | Why the run terminated: `COMPLETED` (full run), `USER_EXIT_EARLY` (reviewer chose ExitEarly), `TIMEOUT` (review gate expired with EXIT_EARLY action), or `ERROR` (unrecoverable exception). When not `COMPLETED`, `getTaskOutputs()` contains only the tasks that finished before the termination signal. |
+| `isComplete()` | `boolean` | `true` when all tasks finished with `ExitReason.COMPLETED`. Convenience shorthand for `getExitReason() == ExitReason.COMPLETED`. |
+| `completedTasks()` | `List<TaskOutput>` | All task outputs that finished before (or caused) the termination signal. Always safe to call regardless of exit reason. Alias for `getTaskOutputs()`. |
+| `lastCompletedOutput()` | `Optional<TaskOutput>` | The last `TaskOutput` in the completed list, or empty if no tasks completed. |
+| `getOutput(Task task)` | `Optional<TaskOutput>` | Output for a specific task, using object identity for the lookup. Pass the same `Task` instance given to `.task(...)` on the builder. Returns empty if the task did not complete or was never started. |
 
 Each `TaskOutput` contains:
 

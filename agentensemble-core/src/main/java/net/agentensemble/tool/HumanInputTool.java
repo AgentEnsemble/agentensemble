@@ -135,8 +135,9 @@ public final class HumanInputTool extends AbstractAgentTool {
 
         ReviewDecision decision = handler.review(request);
 
-        if (decision instanceof ReviewDecision.ExitEarly) {
-            throw new ExitEarlyException("Human reviewer requested early exit via HumanInputTool");
+        if (decision instanceof ReviewDecision.ExitEarly exitEarly) {
+            throw new ExitEarlyException(
+                    "Human reviewer requested early exit via HumanInputTool", exitEarly.timedOut());
         } else if (decision instanceof ReviewDecision.Edit edit) {
             return ToolResult.success(edit.revisedOutput());
         } else {

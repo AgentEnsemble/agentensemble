@@ -151,7 +151,76 @@ try {
 
 ---
 
-## Partial Results on Failure
+## Exit Reasons
+
+`EnsembleOutput.getExitReason()` (and the convenience method `isComplete()`) describe how the pipeline terminated:
+
+| `ExitReason` | Meaning |
+|---|---|
+| `COMPLETED` | All tasks ran to completion normally. `isComplete()` returns `true`. |
+| `USER_EXIT_EARLY` | A human reviewer explicitly chose to stop the pipeline at a review gate, or a `HumanInputTool` returned ExitEarly. |
+| `TIMEOUT` | A review gate timeout expired and the configured `onTimeout` action was `EXIT_EARLY`. Distinct from a user-initiated exit. |
+| `ERROR` | An unrecoverable exception terminated the pipeline. Partial results are available in the `TaskExecutionException`. |
+
+```java
+EnsembleOutput output = ensemble.run();
+
+switch (output.getExitReason()) {
+    case COMPLETED:
+        System.out.println("All done: " + output.getRaw());
+        break;
+    case USER_EXIT_EARLY:
+        System.out.println("User stopped the pipeline after "
+            + output.completedTasks().size() + " task(s)");
+        System.out.println("Last output: " + output.getRaw());
+        break;
+    case TIMEOUT:
+        System.out.println("Review gate timed out after "
+            + output.completedTasks().size() + " task(s)");
+        break;
+    case ERROR:
+        // This case is typically handled via exception -- see TaskExecutionException
+        break;
+}
+```
+
+---
+
+## Partial Results
+
+When the pipeline stops early -- whether due to a user exit-early, a timeout, or an error --
+the tasks that completed before the stop are always preserved in the `EnsembleOutput`.
+
+### Checking completion
+
+```java
+EnsembleOutput output = ensemble.run();
+if (!output.isComplete()) {
+    System.out.println("Pipeline stopped early: " + output.getExitReason());
+    System.out.println("Completed: " + output.completedTasks().size() + " task(s)");
+}
+```
+
+### Accessing completed task outputs
+
+```java
+// All completed task outputs in execution order
+List<TaskOutput> done = output.completedTasks();
+
+// The last completed output
+output.lastCompletedOutput().ifPresent(o ->
+    System.out.println("Last: " + o.getRaw()));
+
+// A specific task's output (identity-based lookup)
+output.getOutput(researchTask).ifPresent(o ->
+    System.out.println("Research: " + o.getRaw()));
+```
+
+`getOutput(Task task)` uses object identity for the lookup: pass the same `Task` instance that
+was given to `Ensemble.builder().task(...)`. If the task completed, its output is returned; if it
+was skipped or never started, `Optional.empty()` is returned.
+
+### Partial results on exception
 
 When a `TaskExecutionException` is thrown, the partial results from successfully completed tasks are available via `e.getCompletedTaskOutputs()`. This allows you to save or display intermediate work even when the ensemble fails partway through.
 

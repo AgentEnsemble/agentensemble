@@ -144,13 +144,16 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             totalTasks,
                             beforeDecision.getClass().getSimpleName());
 
-                    if (beforeDecision instanceof ReviewDecision.ExitEarly) {
+                    if (beforeDecision instanceof ReviewDecision.ExitEarly exitEarlyDecision) {
                         // Task does not execute; return what's been done so far
+                        ExitReason beforeExitReason =
+                                exitEarlyDecision.timedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
                         log.info(
-                                "Before-review gate: user requested exit early before task {}/{}",
+                                "Before-review gate: exit early ({}) before task {}/{}",
+                                beforeExitReason,
                                 taskIndex,
                                 totalTasks);
-                        return buildPartialOutput(completedOutputs, ensembleStartTime, ExitReason.USER_EXIT_EARLY);
+                        return buildPartialOutput(completedOutputs, ensembleStartTime, beforeExitReason);
                     }
                     // Continue or Edit (Edit before execution is treated as Continue)
                 }
@@ -206,12 +209,17 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         // Replace task output with revised text and update memory
                         taskOutput = applyEdit(taskOutput, edit.revisedOutput(), task, executionContext);
                         log.info("Task {}/{} output replaced by reviewer", taskIndex, totalTasks);
-                    } else if (afterDecision instanceof ReviewDecision.ExitEarly) {
+                    } else if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
                         // Include this task in output, then stop
                         completedOutputs.put(task, taskOutput);
+                        ExitReason afterExitReason =
+                                afterExitEarlyDecision.timedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
                         log.info(
-                                "After-review gate: user requested exit early after task {}/{}", taskIndex, totalTasks);
-                        return buildPartialOutput(completedOutputs, ensembleStartTime, ExitReason.USER_EXIT_EARLY);
+                                "After-review gate: exit early ({}) after task {}/{}",
+                                afterExitReason,
+                                taskIndex,
+                                totalTasks);
+                        return buildPartialOutput(completedOutputs, ensembleStartTime, afterExitReason);
                     }
                     // Continue: pass output forward unchanged
                 }
@@ -245,11 +253,13 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             } catch (ExitEarlyException e) {
                 // HumanInputTool requested exit-early during agent execution.
                 // completedOutputs does NOT include the current task (it did not complete normally).
+                ExitReason toolExitReason = e.isTimedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
                 log.info(
-                        "HumanInputTool exit-early: pipeline stopping after {}/{} tasks completed",
+                        "HumanInputTool exit-early ({}): pipeline stopping after {}/{} tasks completed",
+                        toolExitReason,
                         completedOutputs.size(),
                         totalTasks);
-                return buildPartialOutput(completedOutputs, ensembleStartTime, ExitReason.USER_EXIT_EARLY);
+                return buildPartialOutput(completedOutputs, ensembleStartTime, toolExitReason);
 
             } catch (AgentExecutionException | MaxIterationsExceededException | GuardrailViolationException e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
@@ -283,6 +293,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 .taskOutputs(allOutputs)
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
+                .taskOutputIndex(completedOutputs) // identity-based Task -> TaskOutput index
                 .build(); // exitReason defaults to COMPLETED
     }
 
@@ -433,6 +444,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
                 .exitReason(exitReason)
+                .taskOutputIndex(completedOutputs) // identity-based Task -> TaskOutput index
                 .build();
     }
 

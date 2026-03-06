@@ -2,9 +2,88 @@
 
 A workflow defines how tasks are executed. AgentEnsemble supports three strategies: `SEQUENTIAL`, `HIERARCHICAL`, and `PARALLEL`.
 
+As of v2.0.0, **declaring a workflow is optional**. When you omit `.workflow(...)`, the framework infers the appropriate strategy from your task context declarations. See [Workflow Inference](#workflow-inference) below.
+
 ---
 
-## SEQUENTIAL (Default)
+## Workflow Inference
+
+When no `.workflow(...)` call is made on the builder, the framework automatically infers the best execution strategy at run time, before any tasks execute:
+
+| Condition | Inferred workflow |
+|---|---|
+| No task has a `context` dependency on another task in the ensemble | `SEQUENTIAL` |
+| At least one task declares a `context(...)` dependency on another ensemble task | `PARALLEL` (DAG-based) |
+
+This means the simplest use case requires no workflow configuration at all:
+
+```java
+// No .workflow() call -- sequential is inferred (no context deps)
+EnsembleOutput output = Ensemble.builder()
+    .chatLanguageModel(model)
+    .task(researchTask)
+    .task(writeTask)
+    .build()
+    .run();
+```
+
+And once you introduce context dependencies, parallelism is inferred automatically:
+
+```java
+var taskA = Task.builder()
+    .description("Research AI trends").expectedOutput("Report").agent(researcher).build();
+var taskB = Task.builder()
+    .description("Gather market data").expectedOutput("Data").agent(analyst).build();
+var taskC = Task.builder()
+    .description("Synthesize findings")
+    .expectedOutput("Combined report")
+    .agent(writer)
+    .context(List.of(taskA, taskB)) // declares deps -> PARALLEL inferred
+    .build();
+
+// No .workflow() -- PARALLEL is inferred because taskC declares context deps
+EnsembleOutput output = Ensemble.builder()
+    .task(taskA)
+    .task(taskB)
+    .task(taskC)
+    .build()
+    .run();
+```
+
+### Explicit Override
+
+An explicit `.workflow(...)` call always takes precedence over inference:
+
+```java
+// Force sequential even if context deps exist
+Ensemble.builder()
+    .task(taskA)
+    .task(taskB)
+    .workflow(Workflow.SEQUENTIAL) // explicit override
+    .build()
+    .run();
+```
+
+### Context Ordering Validation
+
+When workflow is inferred as `PARALLEL`, context ordering validation is skipped -- the DAG handles
+execution order regardless of task list position. When `SEQUENTIAL` is either inferred (no context
+deps) or explicitly set, context tasks must appear before their dependents in the list:
+
+```java
+// This would fail SEQUENTIAL ordering validation
+// (secondTask declared before firstTask, but secondTask depends on firstTask)
+Ensemble.builder()
+    .task(secondTask) // violation: appears before firstTask
+    .task(firstTask)
+    .workflow(Workflow.SEQUENTIAL) // explicit SEQUENTIAL triggers ordering check
+    .build()
+    .run(); // throws ValidationException
+```
+
+---
+
+## SEQUENTIAL
 
 Tasks execute one after another in the order they are declared. Each task that declares `context` dependencies receives those prior outputs injected into its agent's prompt.
 
@@ -19,9 +98,12 @@ Ensemble.builder()
     .run();
 ```
 
+> **Note:** `SEQUENTIAL` is the effective default when no context dependencies are declared
+> between tasks. You can omit `.workflow(Workflow.SEQUENTIAL)` and the framework will infer it.
+
 ### Execution Order
 
-Tasks run in list order. The ensemble validates, when `run()` is called, that context tasks always appear before the tasks that reference them. This validation happens before any task execution or LLM calls. If this ordering is violated, a `ValidationException` is thrown at run time during `run()`.
+Tasks run in list order. When `.workflow(Workflow.SEQUENTIAL)` is set explicitly, the ensemble validates that context tasks always appear before the tasks that reference them. This validation happens before any task execution or LLM calls. If this ordering is violated, a `ValidationException` is thrown at run time during `run()`.
 
 ### Context Injection
 
