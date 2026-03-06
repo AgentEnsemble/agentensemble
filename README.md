@@ -1037,7 +1037,7 @@ var task = Task.builder()
     .build();
 ```
 
-**Full documentation:** [Tool Pipeline Guide](https://docs.agentensemble.net/guides/tool-pipeline/) | [Tool Pipeline Example](https://docs.agentensemble.net/examples/tool-pipeline/)
+**Full documentation:** [Tool Pipeline Guide](https://docs.agentensemble.net/guides/tool-pipeline/) | [Tool Pipeline Example](https://docs.agentensemble.net/examples/tool-pipeline/) | [Tools Guide](https://docs.agentensemble.net/guides/tools/)
 
 ---
 
