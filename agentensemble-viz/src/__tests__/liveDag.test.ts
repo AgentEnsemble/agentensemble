@@ -196,16 +196,18 @@ describe('buildLiveStatusMap', () => {
     expect(map.get('live-task-0')).toBe('failed');
   });
 
-  it('maps completed task to undefined (uses agent color in rendering)', () => {
+  it('does not include completed tasks in the map (key absent, not present-as-undefined)', () => {
     const state: LiveState = {
       ...initialLiveState,
       tasks: [makeCompletedTask(0, 'Agent A', 'Task 0')],
     };
     const map = buildLiveStatusMap(state);
-    // completed tasks are stored as undefined so TaskNode uses normal agent color
+    // Completed tasks are absent from the map entirely so TaskNode uses normal agent color.
+    // Key absence (not key-with-undefined) is the contract -- callers use map.get() which
+    // returns undefined either way, but the size/has check validates the intent.
     expect(map.get('live-task-0')).toBeUndefined();
-    // but the key IS in the map (set to undefined explicitly)
-    expect(map.has('live-task-0')).toBe(true);
+    expect(map.has('live-task-0')).toBe(false);
+    expect(map.size).toBe(0);
   });
 
   it('handles mixed statuses for multiple tasks', () => {
@@ -218,8 +220,11 @@ describe('buildLiveStatusMap', () => {
       ],
     };
     const map = buildLiveStatusMap(state);
-    expect(map.get('live-task-0')).toBeUndefined(); // completed -> agent color
+    // Completed tasks are absent (not present as undefined)
+    expect(map.has('live-task-0')).toBe(false);
+    expect(map.get('live-task-0')).toBeUndefined();
     expect(map.get('live-task-1')).toBe('running');
     expect(map.get('live-task-2')).toBe('failed');
+    expect(map.size).toBe(2); // only running and failed entries
   });
 });

@@ -4,10 +4,12 @@ Real-time visualization and browser-based monitoring for ensemble runs.
 
 ## Prerequisites
 
-The live dashboard requires the `agentensemble-web` module:
+The live dashboard requires the `agentensemble-web` module. Add it alongside the BOM
+(see [Installation](../getting-started/installation.md) for BOM setup):
 
 ```gradle
 dependencies {
+    implementation(platform("net.agentensemble:agentensemble-bom:<version>"))
     implementation("net.agentensemble:agentensemble-web")
 }
 ```
@@ -17,7 +19,14 @@ dependencies {
 ### Java side
 
 ```java
+import net.agentensemble.core.Ensemble;
+import net.agentensemble.core.EnsembleOutput;
+import net.agentensemble.core.Task;
 import net.agentensemble.web.WebDashboard;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+
+// model is any LangChain4j ChatLanguageModel; see installation docs for setup.
+ChatLanguageModel model = /* your model */;
 
 WebDashboard dashboard = WebDashboard.onPort(7329);
 
@@ -83,6 +92,10 @@ If the connection drops, the client automatically reconnects with exponential ba
 ## Configuration
 
 ```java
+import java.time.Duration;
+import net.agentensemble.web.WebDashboard;
+import net.agentensemble.web.OnTimeoutAction;
+
 WebDashboard dashboard = WebDashboard.builder()
     .port(7329)                          // default: 7329
     .host("localhost")                   // default: localhost (local-only)

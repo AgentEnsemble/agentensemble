@@ -89,18 +89,18 @@ export function buildSyntheticDagModel(liveState: LiveState): DagModel {
  * Used to set the `liveStatus` field on ReactFlow node data, which drives the
  * node's visual appearance (running = blue pulse, failed = red).
  *
- * Completed tasks are NOT included in the map: when `liveStatus` is undefined,
- * the TaskNode renders in its normal agent color (the same as historical mode).
+ * Completed tasks are NOT included in the map: when `liveStatus` is undefined
+ * (key absent), the TaskNode renders in its normal agent color (the same as
+ * historical mode).
  */
 export function buildLiveStatusMap(liveState: LiveState): Map<string, LiveTaskStatus | undefined> {
   const map = new Map<string, LiveTaskStatus | undefined>();
   for (const task of liveState.tasks) {
     const nodeId = liveTaskNodeId(task.taskIndex);
-    // Only include running and failed -- completed nodes use the default (undefined) rendering
+    // Only include running and failed -- completed nodes are absent from the map
+    // so that TaskNode falls back to default agent-color rendering.
     if (task.status === 'running' || task.status === 'failed') {
       map.set(nodeId, task.status);
-    } else {
-      map.set(nodeId, undefined);
     }
   }
   return map;

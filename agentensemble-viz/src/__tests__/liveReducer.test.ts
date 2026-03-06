@@ -101,27 +101,49 @@ describe('liveReducer', () => {
       expect(initialLiveState).toEqual(before);
     });
 
-    it('rebuilds tasks from snapshotTrace for late joiners', () => {
+    it('rebuilds tasks by replaying snapshotTrace ServerMessage array for late joiners', () => {
+      // snapshotTrace is a JSON array of all ServerMessages broadcast since run started.
+      // The reducer replays them through liveReducer to restore state deterministically.
       const msg: ServerMessage = {
         type: 'hello',
         ensembleId: 'ens-abc',
         startedAt: '2026-03-05T14:00:00Z',
-        snapshotTrace: {
-          taskTraces: [
-            {
-              taskDescription: 'Research trends',
-              agentRole: 'Researcher',
-              startedAt: '2026-03-05T14:00:01Z',
-              completedAt: '2026-03-05T14:00:45Z',
-            },
-            {
-              taskDescription: 'Write report',
-              agentRole: 'Writer',
-              startedAt: '2026-03-05T14:00:46Z',
-              completedAt: '2026-03-05T14:01:30Z',
-            },
-          ],
-        },
+        snapshotTrace: [
+          {
+            type: 'ensemble_started',
+            ensembleId: 'ens-abc',
+            startedAt: '2026-03-05T14:00:00Z',
+            totalTasks: 2,
+            workflow: 'SEQUENTIAL',
+          },
+          {
+            type: 'task_started',
+            taskIndex: 1,
+            totalTasks: 2,
+            taskDescription: 'Research trends',
+            agentRole: 'Researcher',
+            startedAt: '2026-03-05T14:00:01Z',
+          },
+          {
+            type: 'task_completed',
+            taskIndex: 1,
+            totalTasks: 2,
+            taskDescription: 'Research trends',
+            agentRole: 'Researcher',
+            completedAt: '2026-03-05T14:00:45Z',
+            durationMs: 44000,
+            tokenCount: 1842,
+            toolCallCount: 3,
+          },
+          {
+            type: 'task_started',
+            taskIndex: 2,
+            totalTasks: 2,
+            taskDescription: 'Write report',
+            agentRole: 'Writer',
+            startedAt: '2026-03-05T14:00:46Z',
+          },
+        ],
       };
       const next = liveReducer(initialLiveState, msg);
       expect(next.tasks).toHaveLength(2);
@@ -129,19 +151,21 @@ describe('liveReducer', () => {
       expect(next.tasks[0].agentRole).toBe('Researcher');
       expect(next.tasks[0].status).toBe('completed');
       expect(next.tasks[1].taskDescription).toBe('Write report');
+      expect(next.tasks[1].status).toBe('running');
       expect(next.totalTasks).toBe(2);
+      expect(next.workflow).toBe('SEQUENTIAL');
     });
 
-    it('handles snapshotTrace with empty taskTraces array', () => {
+    it('handles snapshotTrace as empty array (no messages yet)', () => {
       const msg: ServerMessage = {
         type: 'hello',
         ensembleId: 'ens-abc',
         startedAt: '2026-03-05T14:00:00Z',
-        snapshotTrace: { taskTraces: [] },
+        snapshotTrace: [],
       };
       const next = liveReducer(initialLiveState, msg);
       expect(next.tasks).toHaveLength(0);
-      expect(next.totalTasks).toBe(0);
+      expect(next.connectionStatus).toBe('connected');
     });
   });
 
@@ -329,14 +353,17 @@ describe('liveReducer', () => {
     it('appends a tool call to the matching task', () => {
       const now = Date.now();
       vi.setSystemTime(now);
-      const state = stateWithTask(0, 'running');
+      const state = stateWithTask(1, 'running');
       const msg: ServerMessage = {
         type: 'tool_called',
         agentRole: 'Agent A',
-        taskIndex: 0,
+        taskIndex: 1,
         toolName: 'web_search',
         durationMs: 1200,
         outcome: 'SUCCESS',
+        toolArguments: '{"query":"AI trends"}',
+        toolResult: 'Top 10 AI trends...',
+        structuredResult: null,
       };
       const next = liveReducer(state, msg);
       expect(next.tasks[0].toolCalls).toHaveLength(1);
@@ -347,22 +374,28 @@ describe('liveReducer', () => {
     });
 
     it('appends multiple tool calls in order', () => {
-      const state = stateWithTask(0, 'running');
+      const state = stateWithTask(1, 'running');
       const tool1: ServerMessage = {
         type: 'tool_called',
         agentRole: 'Agent A',
-        taskIndex: 0,
+        taskIndex: 1,
         toolName: 'web_search',
         durationMs: 1200,
         outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
       };
       const tool2: ServerMessage = {
         type: 'tool_called',
         agentRole: 'Agent A',
-        taskIndex: 0,
+        taskIndex: 1,
         toolName: 'calculator',
         durationMs: 50,
         outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
       };
       const s1 = liveReducer(state, tool1);
       const s2 = liveReducer(s1, tool2);
@@ -371,7 +404,7 @@ describe('liveReducer', () => {
       expect(s2.tasks[0].toolCalls[1].toolName).toBe('calculator');
     });
 
-    it('returns same state when task not found', () => {
+    it('returns same state when task not found and no running tasks available', () => {
       const msg: ServerMessage = {
         type: 'tool_called',
         agentRole: 'Agent X',
@@ -379,9 +412,69 @@ describe('liveReducer', () => {
         toolName: 'web_search',
         durationMs: 100,
         outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
       };
+      // BASE_STATE has no tasks, so fallback also finds nothing
       const next = liveReducer(BASE_STATE, msg);
       expect(next).toBe(BASE_STATE);
+    });
+
+    it('falls back to most recent running task by agentRole when taskIndex is 0', () => {
+      // Java WebSocketStreamingListener sends taskIndex=0 for all tool calls.
+      // The reducer should fall back to the most recent running task for the same role.
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'tool_called',
+        agentRole: 'Agent A', // matches the running task's agentRole
+        taskIndex: 0,         // 0 = unknown, as sent by the Java server
+        toolName: 'web_search',
+        durationMs: 800,
+        outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].toolCalls).toHaveLength(1);
+      expect(next.tasks[0].toolCalls[0].toolName).toBe('web_search');
+    });
+
+    it('falls back to any running task when taskIndex is 0 and no role match', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'tool_called',
+        agentRole: 'Different Agent', // no match by role
+        taskIndex: 0,
+        toolName: 'calculator',
+        durationMs: 50,
+        outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
+      };
+      const next = liveReducer(state, msg);
+      // Falls back to the only running task
+      expect(next.tasks[0].toolCalls).toHaveLength(1);
+      expect(next.tasks[0].toolCalls[0].toolName).toBe('calculator');
+    });
+
+    it('normalizes null outcome to UNKNOWN', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'tool_called',
+        agentRole: 'Agent A',
+        taskIndex: 1,
+        toolName: 'web_search',
+        durationMs: 500,
+        outcome: null, // null = server could not determine outcome
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].toolCalls[0].outcome).toBe('UNKNOWN');
     });
   });
 

@@ -37,7 +37,7 @@ export interface LiveToolCall {
  * task_failed / tool_called messages.
  */
 export interface LiveTask {
-  /** Zero-based index within the ensemble run. */
+  /** 1-based task index as sent by the server (matches Java TaskStartedMessage.taskIndex). */
   taskIndex: number;
   taskDescription: string;
   agentRole: string;
@@ -109,13 +109,25 @@ export interface LiveState {
 
 /**
  * Sent when a client connects. Provides current execution state for late joiners.
+ *
+ * If the ensemble has not started yet, ensembleId, startedAt, and snapshotTrace may
+ * all be null (the Java record uses @JsonInclude(NON_NULL) so absent fields are omitted
+ * from the JSON and arrive as undefined, which is safely treated as null here).
+ *
+ * snapshotTrace is a JSON array of all ServerMessages broadcast since the run started.
+ * The browser replays this array through liveReducer to restore state for late joiners.
  */
 export interface HelloMessage {
   type: 'hello';
-  ensembleId: string;
-  startedAt: string;
-  /** Partial ExecutionTrace for late joiners. May be null if execution has not started. */
-  snapshotTrace: unknown | null;
+  /** Null if no ensemble run has started yet. */
+  ensembleId: string | null;
+  /** ISO-8601 timestamp when the run started. Null if no run has started yet. */
+  startedAt: string | null;
+  /**
+   * JSON array of all ServerMessages broadcast since the run started, for late-join replay.
+   * Null if no messages have been broadcast yet (empty snapshot).
+   */
+  snapshotTrace: unknown[] | null;
 }
 
 /** Sent when Ensemble.run() begins. */
@@ -160,14 +172,32 @@ export interface TaskFailedMessage {
   reason: string;
 }
 
-/** Mirrors ToolCallEvent. */
+/**
+ * Mirrors ToolCallEvent. Sent after each tool execution within an agent's ReAct loop.
+ *
+ * Note: taskIndex is 0 when the task index is unavailable from the event (the Java
+ * WebSocketStreamingListener sends 0 because ToolCallEvent does not expose a task index).
+ * The reducer uses agentRole to infer the target task when taskIndex is 0.
+ *
+ * Note: outcome is null when the tool outcome is unknown (e.g. the tool threw before
+ * producing a result). toolArguments, toolResult, and structuredResult are null when
+ * not applicable.
+ */
 export interface ToolCalledMessage {
   type: 'tool_called';
   agentRole: string;
+  /** 1-based task index, or 0 when unknown. */
   taskIndex: number;
   toolName: string;
   durationMs: number;
-  outcome: string;
+  /** Execution outcome: "SUCCESS", "FAILURE", or null when unknown. */
+  outcome: string | null;
+  /** Arguments passed to the tool as a JSON string. Null when unavailable. */
+  toolArguments: string | null;
+  /** Text result returned by the tool. Null when unavailable. */
+  toolResult: string | null;
+  /** Structured output from the tool. Null when not applicable. */
+  structuredResult: unknown | null;
 }
 
 /** Mirrors DelegationStartedEvent. */

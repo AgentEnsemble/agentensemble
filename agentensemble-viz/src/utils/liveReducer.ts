@@ -80,39 +80,24 @@ function makeRunningTask(msg: TaskStartedMessage): LiveTask {
 // ========================
 
 function applyHello(state: LiveState, msg: HelloMessage): LiveState {
-  // If a snapshot trace is provided (late-join), rebuild tasks from it
-  if (msg.snapshotTrace && typeof msg.snapshotTrace === 'object') {
-    const snap = msg.snapshotTrace as Record<string, unknown>;
-    const taskTraces = Array.isArray(snap['taskTraces'])
-      ? (snap['taskTraces'] as unknown[])
-      : [];
-
-    const tasks: LiveTask[] = taskTraces.map((tt, i) => {
-      const t = tt as Record<string, unknown>;
-      return {
-        taskIndex: i,
-        taskDescription: typeof t['taskDescription'] === 'string' ? t['taskDescription'] : '',
-        agentRole: typeof t['agentRole'] === 'string' ? t['agentRole'] : '',
-        status: 'completed' as const,
-        startedAt: typeof t['startedAt'] === 'string' ? t['startedAt'] : new Date().toISOString(),
-        completedAt: typeof t['completedAt'] === 'string' ? t['completedAt'] : null,
-        failedAt: null,
-        durationMs: null,
-        tokenCount: null,
-        toolCallCount: null,
-        toolCalls: [],
-        reason: null,
-      };
-    });
-
-    return {
-      ...state,
+  // If a snapshot trace is provided (late-join), replay all past ServerMessages
+  // through liveReducer to rebuild state deterministically.
+  // The snapshot is a JSON array of all messages broadcast since the run started.
+  if (Array.isArray(msg.snapshotTrace) && msg.snapshotTrace.length > 0) {
+    // Start from a clean live state, preserving connection metadata for this session.
+    const snapshotBase: LiveState = {
+      ...initialLiveState,
       connectionStatus: 'connected',
+      serverUrl: state.serverUrl,
       ensembleId: msg.ensembleId,
       startedAt: msg.startedAt,
-      tasks,
-      totalTasks: tasks.length,
     };
+
+    return msg.snapshotTrace.reduce<LiveState>((acc, rawMsg) => {
+      // Trust the server to send well-formed messages; cast at the boundary.
+      const serverMsg = rawMsg as ServerMessage;
+      return liveReducer(acc, serverMsg);
+    }, snapshotBase);
   }
 
   return {
@@ -188,13 +173,39 @@ function applyTaskFailed(state: LiveState, msg: TaskFailedMessage): LiveState {
 }
 
 function applyToolCalled(state: LiveState, msg: ToolCalledMessage): LiveState {
-  const idx = findTaskArrayIndex(state.tasks, msg.taskIndex);
+  // Try to find the task by taskIndex first (1-based from server).
+  // When taskIndex is 0 (unknown -- the Java WebSocketStreamingListener sends 0 because
+  // ToolCallEvent does not expose a task index), fall back to the most recently started
+  // running task matching the same agentRole, then to any running task.
+  let idx = msg.taskIndex !== 0 ? findTaskArrayIndex(state.tasks, msg.taskIndex) : -1;
+
+  if (idx === -1) {
+    // Fallback 1: most recent running task for this agentRole
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running' && state.tasks[i].agentRole === msg.agentRole) {
+        idx = i;
+        break;
+      }
+    }
+  }
+
+  if (idx === -1) {
+    // Fallback 2: most recent running task regardless of role
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running') {
+        idx = i;
+        break;
+      }
+    }
+  }
+
   if (idx === -1) return state;
 
   const tool = {
     toolName: msg.toolName,
     durationMs: msg.durationMs,
-    outcome: msg.outcome,
+    // outcome is null when the server could not determine it; normalize to 'UNKNOWN'
+    outcome: msg.outcome ?? 'UNKNOWN',
     receivedAt: Date.now(),
   };
 

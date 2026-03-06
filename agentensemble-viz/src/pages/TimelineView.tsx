@@ -793,6 +793,17 @@ function LlmDetailPanel({ task, interaction, onClose }: { task: TaskTrace; inter
                 <div key={i} className={['rounded p-2 text-xs', msg.role === 'system' ? 'bg-gray-100 dark:bg-gray-800' : msg.role === 'user' ? 'bg-blue-50 dark:bg-blue-900/20' : msg.role === 'assistant' ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-emerald-50 dark:bg-emerald-900/20'].join(' ')}>
                   <p className="mb-1 font-semibold uppercase tracking-wider text-gray-400" style={{ fontSize: 9 }}>{msg.role}</p>
                   {msg.content && <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{msg.content}</p>}
+                  {msg.toolCalls.length > 0 && (
+                    <div className="space-y-1">
+                      {msg.toolCalls.map((tc, j) => (
+                        <div key={j} className="rounded bg-white/60 p-1 dark:bg-gray-900/60">
+                          <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">{tc.name}</span>
+                          <pre className="mt-0.5 overflow-auto text-gray-600 dark:text-gray-400">{tc.arguments}</pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {msg.toolName && <p className="font-mono text-emerald-600 dark:text-emerald-400">Tool: {msg.toolName}</p>}
                 </div>
               ))}
             </div>
@@ -801,6 +812,22 @@ function LlmDetailPanel({ task, interaction, onClose }: { task: TaskTrace; inter
         {interaction.responseText && (
           <Section title="Response">
             <p className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">{interaction.responseText}</p>
+          </Section>
+        )}
+        {interaction.toolCalls.length > 0 && (
+          <Section title={`Tool Calls (${interaction.toolCalls.length})`}>
+            <div className="space-y-2">
+              {interaction.toolCalls.map((tool, i) => (
+                <div key={i} className="rounded border border-gray-200 p-2 text-xs dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{tool.toolName}</span>
+                    <span className={['rounded px-1 py-0.5 text-xs', tool.outcome === 'SUCCESS' ? 'bg-green-100 text-green-700' : tool.outcome === 'ERROR' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'].join(' ')}>{tool.outcome}</span>
+                  </div>
+                  <pre className="mt-1 overflow-auto text-gray-600 dark:text-gray-400">{tool.arguments}</pre>
+                  {tool.result && <p className="mt-1 border-t border-gray-100 pt-1 text-gray-600 dark:text-gray-400">{tool.result}</p>}
+                </div>
+              ))}
+            </div>
           </Section>
         )}
       </div>
