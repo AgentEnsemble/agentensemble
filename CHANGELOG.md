@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.1...v2.2.2) (2026-03-06)
+
+
+### Bug Fixes
+
+* resolve port conflict between agentensemble-viz CLI and WebDashboard ([de9e5f4](https://github.com/AgentEnsemble/agentensemble/commit/de9e5f4ea00cc4afaf7b2bac0f2d0fd33a5906a0))
+
 ## [2.2.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.0...v2.2.1) (2026-03-06)
 
 
