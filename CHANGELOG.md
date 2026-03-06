@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.1.0...v2.2.0) (2026-03-06)
+
+
+### Features
+
+* Playwright E2E tests for live dashboard and review gate ([#160](https://github.com/AgentEnsemble/agentensemble/issues/160)) ([f2610e8](https://github.com/AgentEnsemble/agentensemble/commit/f2610e8fb0214000b9654febc9bb2a573733bb76))
+
+
+### Bug Fixes
+
+* task-first synthesis fallback and template role extraction ([#162](https://github.com/AgentEnsemble/agentensemble/issues/162)) ([437856a](https://github.com/AgentEnsemble/agentensemble/commit/437856a4f8727cb286be117c872ab17b151d2c2f))
+
 ## [2.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.0.0...v2.1.0) (2026-03-06)
 
 
