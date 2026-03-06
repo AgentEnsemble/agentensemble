@@ -1,5 +1,20 @@
 # Progress
 
+## What Works (as of Issues #111 + #112)
+
+- **EnsembleOutput partial results and workflow inference** (Issues #111, #112):
+  - `ExitReason` enum: COMPLETED, USER_EXIT_EARLY, TIMEOUT, ERROR
+  - `ReviewDecision.ExitEarly(boolean timedOut)` record -- `exitEarlyTimeout()` factory
+  - `ExitEarlyException.isTimedOut()` -- TIMEOUT vs USER_EXIT_EARLY in all gate paths
+  - `EnsembleOutput.isComplete()` -- true only when COMPLETED
+  - `EnsembleOutput.completedTasks()` -- safe alias for getTaskOutputs()
+  - `EnsembleOutput.lastCompletedOutput()` -- Optional<TaskOutput> last element
+  - `EnsembleOutput.getOutput(Task task)` -- identity-based lookup; populated by executors
+  - `Ensemble.workflow` nullable -- infers PARALLEL (context deps) or SEQUENTIAL (default)
+  - `EnsembleValidator.resolveWorkflow()` -- same inference logic for validation
+  - `ParallelWorkflowExecutor` + `ParallelTaskCoordinator` -- full exit-early support
+  - `Ensemble.runWithInputs()` -- remaps agentResolved-keyed index back to original tasks
+
 ## What Works (as of Issues #106 + #107)
 
 - **agentensemble-memory module** (Issue #106): all memory classes extracted from core
@@ -213,10 +228,19 @@ Implementation workstreams (can run in parallel once SPI contracts are agreed):
 
 ## Current Status
 
-**Issue #100** implementation complete:
-- `agentensemble-core` -- 9+16+7=32 new short-circuit tests pass; all existing tests pass
-- `agentensemble-devtools` -- 5 new short-circuit DagExporter tests pass; all existing pass
-- Full Gradle build: 159 actionable tasks, BUILD SUCCESSFUL, javadoc clean, spotless clean
+**Issues #111 + #112** implementation complete on branch `feat/111-112-partial-results-workflow-inference`:
+- `agentensemble-core` -- 1162+ tests pass; 0 failures; full Gradle build successful
+- `agentensemble-review` -- all tests pass; javadoc clean; spotless clean
+- New test files: `PartialResultsIntegrationTest` (8 tests), `WorkflowInferenceIntegrationTest` (7 tests)
+- Updated: `EnsembleOutputTest` (expanded), `EnsembleTest` (workflow null default), `EnsembleValidationTest`
+
+v2.0.0 implementation status:
+- Group A (Task-First, AgentSynthesizer): COMPLETE (#104, #105)
+- Group B (agentensemble-memory, scoped memory): COMPLETE (#106, #107)
+- Group C (agentensemble-review, review gates): COMPLETE (#108, #109, #110)
+- Group D (partial results, workflow inference): COMPLETE (#111, #112)
+- Group E (MapReduce refactor): PENDING
+- Group F (BOM, migration guide, examples): PENDING
 
 ## Known Issues
 
