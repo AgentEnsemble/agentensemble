@@ -11,6 +11,7 @@ dependencies {
         // Optional feature modules
         api(project(":agentensemble-memory"))
         api(project(":agentensemble-review"))
+        api(project(":agentensemble-web"))
         api(project(":agentensemble-metrics-micrometer"))
         api(project(":agentensemble-devtools"))
 
