@@ -340,6 +340,47 @@ doExecute(String input):
 
 ---
 
+## Tool Pipeline
+
+`ToolPipeline` chains multiple `AgentTool` instances together into a single compound tool that
+the LLM calls once. All steps execute sequentially inside a single `execute(String)` call with
+no LLM round-trips between them. Full specification: [Design: Tool Pipeline](17-tool-pipeline.md).
+
+### Class Structure
+
+```
+AbstractAgentTool
+  ToolPipeline              -- chains List<PipelineStep> sequentially
+  
+PipelineErrorStrategy       -- FAIL_FAST | CONTINUE_ON_FAILURE
+```
+
+### Registration
+
+`ToolPipeline implements AgentTool`. No changes to `ToolResolver`, `LangChain4jToolAdapter`,
+or agent/task registration are needed. It is registered and adapted exactly like any other tool.
+
+### Context Propagation
+
+`ToolPipeline` overrides the package-private `setContext(ToolContext)` to propagate the injected
+context to all nested steps that are `AbstractAgentTool` instances. Plain `AgentTool` steps
+receive no injection.
+
+### Error Strategies
+
+| Strategy | On step failure |
+|---|---|
+| `FAIL_FAST` (default) | Return the failed step's `ToolResult` immediately; skip remaining steps |
+| `CONTINUE_ON_FAILURE` | Forward the error message as the next step's input; run to completion |
+
+### Step Adapters
+
+An optional `Function<ToolResult, String>` adapter can be attached to any step via
+`Builder.adapter()`. The adapter transforms that step's output before it is passed to the next
+step. Adapters are only called when the step **succeeds** and only when there is a next step.
+
+---
+
 ## Logging
 
 | Level | What |

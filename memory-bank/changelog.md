@@ -1,5 +1,83 @@
 # Changelog
 
+## [Unreleased] - Issue #74: Explicit Tool Pipeline / Chaining -- 2026-03-06
+
+### Added (Issue #74 -- Unix-pipe-style tool composition)
+
+**New types in `agentensemble-core` (`net.agentensemble.tool`):**
+- `PipelineErrorStrategy` enum: `FAIL_FAST` (default), `CONTINUE_ON_FAILURE`
+- `ToolPipeline` (`AbstractAgentTool` subclass): linear chain of `AgentTool` steps executed sequentially inside a single `execute(String)` call with no LLM round-trips between steps
+
+**`ToolPipeline` API:**
+- `ToolPipeline.of(AgentTool first, AgentTool... rest)` -- factory; auto-generates name (step names joined with `_then_`) and description
+- `ToolPipeline.of(String name, String description, AgentTool first, AgentTool... rest)` -- named factory
+- `ToolPipeline.builder()` -- full builder with `name()`, `description()`, `step(AgentTool)`, `adapter(Function<ToolResult,String>)`, `errorStrategy(PipelineErrorStrategy)`
+- `ToolPipeline.getSteps()` -- unmodifiable list of step tools in execution order
+- `ToolPipeline.getErrorStrategy()` -- configured error strategy
+
+**Data handoff:**
+- Default: `ToolResult.getOutput()` (String) passed verbatim from step N to step N+1
+- Adapter: optional `Function<ToolResult, String>` attached to any step via `Builder.adapter()`; transforms the preceding step's result; called only when the step succeeds and there is a next step; receives full `ToolResult` including `getStructuredOutput()`
+
+**Error strategy:**
+- `FAIL_FAST`: returns the first failed step's `ToolResult` immediately; subsequent steps skipped
+- `CONTINUE_ON_FAILURE`: forwards `ToolResult.getErrorMessage()` (or empty string) as the next step's input; runs to completion; final result is the last step's result
+
+**`ToolContext` propagation:**
+- `ToolPipeline.setContext(ToolContext)` (package-private override) propagates the injected context to all nested steps that are `AbstractAgentTool` instances; plain `AgentTool` steps receive no injection
+
+**Registration:**
+- `ToolPipeline implements AgentTool` -- registered on tasks and agents exactly like any other tool; adapted by `LangChain4jToolAdapter` with no special handling; single `ToolSpecification` exposed to LLM
+
+### Tests Added (Issue #74)
+
+**Unit tests -- `ToolPipelineTest` (49 tests):**
+- Happy path: single step, two steps, three steps, empty pipeline, null input
+- FAIL_FAST: first step fails (second never called), middle step fails (remaining skipped), last step fails, default strategy is FAIL_FAST
+- CONTINUE_ON_FAILURE: error message forwarded, all steps run, null error message handled, final result is last step's result
+- Adapters: transforms output before next input, adapter on last step not called, structured output accessible in adapter
+- ToolContext propagation: injected into AbstractAgentTool steps, plain AgentTool steps unaffected
+- Factory methods: auto-name/description, explicit name/description, null first step, null in rest
+- Builder validation: blank name, null name, blank description, null step, adapter before step, null adapter, null errorStrategy
+- Interface compliance: implements AgentTool, extends AbstractAgentTool
+- Opportunistic: adapter not called when preceding step failed (CONTINUE_ON_FAILURE)
+
+**Integration tests -- `ToolPipelineIntegrationTest` (7 tests):**
+- `pipeline_appearsAsSingleToolToLlm_allStepsExecutedWithinOneLlmTurn` -- both steps ran exactly once; LLM made 1 tool call
+- `pipeline_returnsChainedOutputToLlm_singleToolCallResult` -- chained output received by LLM
+- `pipeline_failFast_failedMiddleStep_llmReceivesErrorMessage` -- step 3 never called
+- `pipeline_continueOnFailure_allStepsRun_llmReceivesFinalResult` -- step 3 ran despite step 2 failure
+- `pipeline_toolContextPropagated_metricsRecordedForNestedAbstractAgentToolSteps` -- no exceptions on context injection
+- `pipeline_withAdapter_transformsBetweenSteps_ensembleCompletesSuccessfully` -- step 2 received adapter's output
+- `pipeline_registeredOnTask_autoSynthesizedAgent_executes` -- v2 task-first API works with pipeline
+
+### Example Added (Issue #74)
+
+- `ToolPipelineExample.java`: two pipelines demonstrating `JsonParserTool` + `CalculatorTool` with adapter (10% markup), and chained `JsonParserTool` instances for nested JSON extraction; prints pipeline structure via `getSteps()` and `getErrorStrategy()`
+- `runToolPipeline` Gradle task registered in `agentensemble-examples/build.gradle.kts`
+
+### Documentation Added/Updated (Issue #74)
+
+- `docs/design/17-tool-pipeline.md` -- NEW: full design spec (motivation, classes, data handoff, error strategy, ToolContext propagation, metrics, LLM integration, execution flow diagram, builder API, design decisions)
+- `docs/guides/tool-pipeline.md` -- NEW: user guide (quick start, data flow, error strategies, full builder reference, factory methods, inspecting a pipeline, metrics, approval gates, common patterns, nesting, when to use vs separate tools)
+- `docs/examples/tool-pipeline.md` -- NEW: example page (run command, what it demonstrates, code walk-through, sample output, key concepts)
+- `docs/design/06-tool-system.md` -- "Tool Pipeline" section added (class structure, registration, context propagation, error strategies, step adapters)
+- `docs/guides/built-in-tools.md` -- "Pipelining Built-in Tools" section added at bottom
+- `README.md` -- Tool Pipeline added to Core Concepts table; "Option 3: Chain tools with ToolPipeline" section in Creating Tools; `runToolPipeline` in Running Examples; design/17 in Design Documentation list
+- `mkdocs.yml` -- `Tool Pipeline: guides/tool-pipeline.md` added to Guides nav (after Built-in Tools); `Tool Pipeline: examples/tool-pipeline.md` added to Examples nav; `Tool Pipeline: design/17-tool-pipeline.md` added to Design nav
+
+### Design Decisions (Issue #74)
+
+- `ToolPipeline extends AbstractAgentTool` (not just `implements AgentTool`): gets automatic metrics, exception safety, structured logging, and approval-gate capability for free without additional code
+- Package placement in `net.agentensemble.tool`: same package as `AbstractAgentTool` gives access to the package-private `setContext()` override needed for context propagation; keeps user API consistent with existing tool classes
+- String-based data handoff by default (not typed): consistent with the `AgentTool` interface which uses `String input`; adapters provide the typed escape hatch when needed
+- Adapter attached to preceding step (not following step): semantically the adapter is "how this step's output becomes the next step's input", which reads more naturally in the builder chain: `.step(A).adapter(fn).step(B)` = "A's output is transformed by fn before entering B"
+- Adapter not called on failure or on last step: avoids surprising behavior; on failure the error message is forwarded directly (no transformation); on last step there is no next step to receive the adapted output
+- Empty pipeline returns input as pass-through: safe no-op default; matches Unix pipe behavior of `cat file | cat` = `cat file`
+- Parallel branches (fan-out/fan-in) deferred: the linear model covers the common deterministic transformation case; parallel branches can be added later by composing pipelines with the existing parallel execution infrastructure
+
+---
+
 ## [Unreleased] - Issue #130: agentensemble-web module -- WebSocket server + protocol (v2.1.0) -- 2026-03-05
 
 ### Added (Issue #130 -- agentensemble-web Live Execution Dashboard)
