@@ -7,7 +7,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -193,8 +192,12 @@ public final class MapReduceEnsemble<T> {
      */
     public static <T> EnsembleOutput of(
             ChatModel model, List<T> items, String mapDescription, String reduceDescription) {
-        Objects.requireNonNull(model, "model must not be null");
-        Objects.requireNonNull(items, "items must not be null");
+        if (model == null) {
+            throw new ValidationException("model must not be null");
+        }
+        if (items == null) {
+            throw new ValidationException("items must not be null");
+        }
         if (items.isEmpty()) {
             throw new ValidationException("items must not be empty");
         }
@@ -207,7 +210,7 @@ public final class MapReduceEnsemble<T> {
         return MapReduceEnsemble.<T>builder()
                 .chatLanguageModel(model)
                 .items(items)
-                .mapTask(item -> Task.of(mapDescription + ": " + item.toString()))
+                .mapTask(item -> Task.of(mapDescription + ": " + String.valueOf(item)))
                 .reduceTask(chunkTasks -> Task.builder()
                         .description(reduceDescription)
                         .expectedOutput(Task.DEFAULT_EXPECTED_OUTPUT)
@@ -381,11 +384,15 @@ public final class MapReduceEnsemble<T> {
         /**
          * Default LLM used to synthesise agents for tasks that have no explicit agent.
          *
-         * <p>Required when using the task-first {@link #mapTask(Function)} or
-         * {@link #reduceTask(Function)} APIs, unless each produced task carries its own
-         * {@code chatLanguageModel}. Has no effect when all tasks carry explicit agents.
+         * <p>Optional. When set, this model is passed to each inner {@code Ensemble} so
+         * that {@code AgentSynthesizer} can resolve agents for agentless tasks. If not set,
+         * each task produced by the task-first factories must carry its own
+         * {@code chatLanguageModel}; otherwise synthesis will fail with a
+         * {@code ValidationException} at {@code run()} time.
          *
-         * @param model the LLM for agent synthesis; must not be null
+         * <p>Has no effect when all tasks carry explicit agents (agent-first API).
+         *
+         * @param model the LLM for agent synthesis; may be {@code null} (deferred to per-task LLMs)
          * @return this builder
          */
         public Builder<T> chatLanguageModel(ChatModel model) {

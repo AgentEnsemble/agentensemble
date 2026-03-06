@@ -318,15 +318,29 @@ class MapReduceEnsembleTaskFirstIntegrationTest {
     }
 
     // ========================
-    // Mixed: task-first map + agent-first reduce NOT supported (covered by validation tests)
-    // Both phases must use the same style.
-    // This test confirms a valid mixed: task-first map + task-first reduce with different models.
+    // Mixed configuration: task-first map + task-first reduce with different per-task models.
+    // Validation is per phase (map and reduce independently), so this configuration is valid.
+    // This test confirms that using task-first in both phases with different underlying
+    // ChatModels completes successfully.
     // ========================
 
     @Test
     void taskFirst_bothPhasesWithDifferentPerTaskModels_completesSuccessfully() {
-        ChatModel mapModel = mockModelWithResponse("map output");
-        ChatModel reduceModel = mockModelWithResponse("reduce output");
+        AtomicInteger mapModelCalls = new AtomicInteger(0);
+        AtomicInteger reduceModelCalls = new AtomicInteger(0);
+
+        ChatModel mapModel = mock(ChatModel.class);
+        when(mapModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
+            mapModelCalls.incrementAndGet();
+            return ChatResponse.builder().aiMessage(new AiMessage("map output")).build();
+        });
+        ChatModel reduceModel = mock(ChatModel.class);
+        when(reduceModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
+            reduceModelCalls.incrementAndGet();
+            return ChatResponse.builder()
+                    .aiMessage(new AiMessage("reduce output"))
+                    .build();
+        });
 
         EnsembleOutput output = MapReduceEnsemble.<String>builder()
                 .items(List.of("A", "B"))
@@ -345,7 +359,13 @@ class MapReduceEnsembleTaskFirstIntegrationTest {
                 .run();
 
         assertThat(output).isNotNull();
-        assertThat(output.getRaw()).isEqualTo("reduce output");
+        // 2 map tasks + 1 reduce task
+        assertThat(output.getTaskOutputs()).hasSize(3);
+        // Both per-task models were called, confirming per-task LLM resolution
+        assertThat(mapModelCalls.get()).isGreaterThanOrEqualTo(1);
+        assertThat(reduceModelCalls.get()).isGreaterThanOrEqualTo(1);
+        // All task outputs contain expected values
+        assertThat(output.getTaskOutputs()).extracting(TaskOutput::getRaw).contains("map output", "reduce output");
     }
 
     // ========================

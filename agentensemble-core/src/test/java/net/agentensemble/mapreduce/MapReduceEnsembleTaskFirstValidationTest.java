@@ -298,15 +298,17 @@ class MapReduceEnsembleTaskFirstValidationTest {
     // ========================
 
     @Test
-    void zeroCeremony_nullModel_throwsIllegalArgumentException() {
+    void zeroCeremony_nullModel_throwsValidationException() {
         assertThatThrownBy(() -> MapReduceEnsemble.of(null, List.of("A"), "Analyse", "Combine"))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("model");
     }
 
     @Test
-    void zeroCeremony_nullItems_throwsNullPointerException() {
+    void zeroCeremony_nullItems_throwsValidationException() {
         assertThatThrownBy(() -> MapReduceEnsemble.of(STUB, null, "Analyse", "Combine"))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("items");
     }
 
     @Test
