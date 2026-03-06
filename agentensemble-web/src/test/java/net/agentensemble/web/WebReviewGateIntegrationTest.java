@@ -30,6 +30,11 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The timeout test verifies that when no decision arrives, the configured
  * {@link OnTimeoutAction} is applied and a {@code review_timed_out} message is broadcast.
+ *
+ * <p>All dashboards are bound to {@code localhost} to exercise the default origin policy.
+ * The test clients supply an {@code Origin: http://localhost} header because Java's
+ * {@link HttpClient} does not send an Origin header by default, which the server's
+ * loopback-origin validation would otherwise reject.
  */
 class WebReviewGateIntegrationTest {
 
@@ -40,10 +45,11 @@ class WebReviewGateIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         serializer = new MessageSerializer();
-        // 5-second review timeout keeps tests safe against hangs while allowing normal flow
+        // localhost binding exercises the default origin policy; the test client supplies
+        // an Origin header so the server's loopback-origin check accepts the connection.
         dashboard = WebDashboard.builder()
                 .port(0)
-                .host("0.0.0.0")
+                .host("localhost")
                 .reviewTimeout(Duration.ofSeconds(5))
                 .build();
         dashboard.start();
@@ -89,6 +95,9 @@ class WebReviewGateIntegrationTest {
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket webSocket = client.newWebSocketBuilder()
+                // Origin header required: the server enforces loopback-origin validation
+                // when bound to localhost, and Java's HttpClient does not send Origin by default.
+                .header("Origin", "http://localhost")
                 .buildAsync(URI.create("ws://localhost:" + dashboard.actualPort() + "/ws"), new WebSocket.Listener() {
                     @Override
                     public void onOpen(WebSocket webSocket) {
@@ -210,7 +219,7 @@ class WebReviewGateIntegrationTest {
         // Create a separate dashboard with a very short timeout to trigger the timeout path quickly
         WebDashboard shortTimeoutDashboard = WebDashboard.builder()
                 .port(0)
-                .host("0.0.0.0")
+                .host("localhost")
                 .reviewTimeout(Duration.ofMillis(50))
                 .onTimeout(OnTimeoutAction.CONTINUE)
                 .build();
@@ -221,6 +230,7 @@ class WebReviewGateIntegrationTest {
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket shortWs = client.newWebSocketBuilder()
+                .header("Origin", "http://localhost")
                 .buildAsync(
                         URI.create("ws://localhost:" + shortTimeoutDashboard.actualPort() + "/ws"),
                         new WebSocket.Listener() {

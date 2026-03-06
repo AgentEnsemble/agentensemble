@@ -23,8 +23,8 @@
 - `AutoApproveReviewHandlerTest` updated (4 web() stub tests removed)
 
 **WebReviewHandler tests (agentensemble-web):**
-- `WebReviewHandlerTest` extended with concurrent review test (3 parallel virtual threads
-  resolved in reverse order) and unknown reviewId test (late decision after timeout)
+- `WebReviewHandlerTest` extended with concurrent review test (3 parallel virtual threads)
+  resolved in reverse order and unknown reviewId test (late decision after timeout)
 - `WebReviewGateIntegrationTest` added (4 tests): CONTINUE, EDIT, EXIT_EARLY decision flows
   plus timeout flow verifying `review_timed_out` broadcast with real embedded server + WS client
 - `ConnectionManager.resolveReview()` logs at DEBUG for unknown reviewId (expected race)
