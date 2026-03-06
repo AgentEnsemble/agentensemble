@@ -452,6 +452,15 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     // Context / utility helpers
     // ========================
 
+    /**
+     * Returns the agent role for a task, falling back to {@code "(synthesized)"} when the
+     * task's agent is null. This guards against NPEs at call sites that run before or during
+     * error-handling where a task might not yet have a resolved agent (issue #148).
+     */
+    private static String agentRole(Task task) {
+        return task.getAgent() != null ? task.getAgent().getRole() : "(synthesized)";
+    }
+
     private List<TaskOutput> gatherContextOutputs(Task task, Map<Task, TaskOutput> completedOutputs) {
         List<TaskOutput> contextOutputs = new ArrayList<>();
         for (Task contextTask : task.getContext()) {
@@ -460,7 +469,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 throw new TaskExecutionException(
                         "Context task not yet completed: " + contextTask.getDescription(),
                         contextTask.getDescription(),
-                        contextTask.getAgent().getRole(),
+                        agentRole(contextTask),
                         List.copyOf(completedOutputs.values()));
             }
             contextOutputs.add(output);
