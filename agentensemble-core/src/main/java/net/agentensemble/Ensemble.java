@@ -628,7 +628,7 @@ public class Ensemble {
      */
     private List<Task> resolveAgents(List<Task> templateResolvedTasks) {
         // Pass 1: synthesize agents; build old-identity -> new-identity map.
-        java.util.IdentityHashMap<Task, Task> oldToNew = new java.util.IdentityHashMap<>();
+        IdentityHashMap<Task, Task> oldToNew = new IdentityHashMap<>();
         List<Task> firstPass = new ArrayList<>(templateResolvedTasks.size());
         for (Task task : templateResolvedTasks) {
             Task agentResolved;

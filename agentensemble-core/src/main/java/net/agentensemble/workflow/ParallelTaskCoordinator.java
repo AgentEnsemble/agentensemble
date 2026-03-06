@@ -143,18 +143,18 @@ class ParallelTaskCoordinator {
         var unused = executor.submit(() -> {
             Map<String, String> prevMdc = MDC.getCopyOfContextMap();
             MDC.setContextMap(callerMdc);
-            MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
+            MDC.put(MDC_AGENT_ROLE, agentRole(task));
 
             int taskIndex = taskIndexMap.getOrDefault(task, 0);
             Instant taskStart = Instant.now();
             try {
                 log.info(
                         "Task starting (parallel) | Agent: {} | Description: {}",
-                        task.getAgent().getRole(),
+                        agentRole(task),
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
-                executionContext.fireTaskStart(new TaskStartEvent(
-                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
+                executionContext.fireTaskStart(
+                        new TaskStartEvent(task.getDescription(), agentRole(task), taskIndex, totalTasks));
 
                 // Inject ReviewHandler into HumanInputTool instances before execution
                 ReviewHandler reviewHandler = executionContext.reviewHandler();
@@ -219,7 +219,7 @@ class ParallelTaskCoordinator {
 
                                 executionContext.fireTaskComplete(new TaskCompleteEvent(
                                         task.getDescription(),
-                                        task.getAgent().getRole(),
+                                        agentRole(task),
                                         output,
                                         output.getDuration(),
                                         taskIndex,
@@ -243,17 +243,12 @@ class ParallelTaskCoordinator {
 
                 log.info(
                         "Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
-                        task.getAgent().getRole(),
+                        agentRole(task),
                         output.getDuration(),
                         output.getToolCallCount());
 
                 executionContext.fireTaskComplete(new TaskCompleteEvent(
-                        task.getDescription(),
-                        task.getAgent().getRole(),
-                        output,
-                        output.getDuration(),
-                        taskIndex,
-                        totalTasks));
+                        task.getDescription(), agentRole(task), output, output.getDuration(), taskIndex, totalTasks));
 
             } catch (ExitEarlyException e) {
                 // HumanInputTool requested exit-early during task execution.
@@ -269,14 +264,14 @@ class ParallelTaskCoordinator {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
                 log.error(
                         "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
-                        task.getAgent().getRole(),
+                        agentRole(task),
                         truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
                         e.getMessage());
 
                 failedTaskCauses.put(task, e);
 
                 executionContext.fireTaskFailed(new TaskFailedEvent(
-                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, taskIndex, totalTasks));
+                        task.getDescription(), agentRole(task), e, taskDuration, taskIndex, totalTasks));
 
                 if (errorStrategy == ParallelErrorStrategy.FAIL_FAST) {
                     firstFailureRef.compareAndSet(
@@ -284,7 +279,7 @@ class ParallelTaskCoordinator {
                             new TaskExecutionException(
                                     "Task failed: " + task.getDescription(),
                                     task.getDescription(),
-                                    task.getAgent().getRole(),
+                                    agentRole(task),
                                     List.copyOf(completedOutputs.values()),
                                     e));
                 }
@@ -321,7 +316,7 @@ class ParallelTaskCoordinator {
             if (shouldSkip) {
                 log.debug(
                         "Task skipped (parallel) | Agent: {} | Description: {}",
-                        dependent.getAgent().getRole(),
+                        agentRole(dependent),
                         truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
 
                 skippedTasks.add(dependent);
