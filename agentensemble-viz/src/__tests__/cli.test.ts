@@ -111,21 +111,28 @@ describe('agentensemble-viz CLI', () => {
   });
 
   describe('HTTP server', () => {
-    // Use a non-default port so the test server never clashes with a running
-    // development instance on port 7329.
-    const TEST_PORT = 17329;
+    // PORT=0 lets the OS assign an ephemeral port so the test never clashes
+    // with a running development instance or another parallel CI job.
+    // The actual bound port is parsed from the startup banner and stored here.
+    let actualPort: number;
     let serverProcess: ReturnType<typeof spawn>;
 
     beforeAll(async () => {
       await new Promise<void>((resolvePromise, rejectPromise) => {
         serverProcess = spawn(process.execPath, [CLI_PATH], {
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...cleanEnv(), PORT: String(TEST_PORT), NO_OPEN: '1' },
+          env: { ...cleanEnv(), PORT: '0', NO_OPEN: '1' },
         });
 
-        // Resolve as soon as the startup banner appears in stdout
+        // Parse the actual bound port from the startup banner, e.g.:
+        //   Local:   http://localhost:54321
         serverProcess.stdout?.on('data', (chunk: Buffer) => {
-          if (chunk.toString().includes('Local:')) resolvePromise();
+          const text = chunk.toString();
+          const match = text.match(/Local:\s+http:\/\/localhost:(\d+)/);
+          if (match) {
+            actualPort = parseInt(match[1], 10);
+            resolvePromise();
+          }
         });
 
         serverProcess.on('error', rejectPromise);
@@ -140,30 +147,30 @@ describe('agentensemble-viz CLI', () => {
     });
 
     it('serves the root path with 200 and text/html content type', async () => {
-      const res = await httpGet(`http://localhost:${TEST_PORT}/`);
+      const res = await httpGet(`http://localhost:${actualPort}/`);
       expect(res.statusCode).toBe(200);
       expect(res.contentType).toContain('text/html');
     });
 
     it('serves the root page with an HTML doctype', async () => {
-      const res = await httpGet(`http://localhost:${TEST_PORT}/`);
+      const res = await httpGet(`http://localhost:${actualPort}/`);
       expect(res.body.toLowerCase()).toContain('<!doctype html');
     });
 
     it('returns 200 for an unrecognised route (SPA fallback)', async () => {
-      const res = await httpGet(`http://localhost:${TEST_PORT}/some-react-route`);
+      const res = await httpGet(`http://localhost:${actualPort}/some-react-route`);
       expect(res.statusCode).toBe(200);
       expect(res.contentType).toContain('text/html');
     });
 
     it('returns the index.html for the /live React Router path (SPA fallback)', async () => {
-      const res = await httpGet(`http://localhost:${TEST_PORT}/live`);
+      const res = await httpGet(`http://localhost:${actualPort}/live`);
       expect(res.statusCode).toBe(200);
       expect(res.body.toLowerCase()).toContain('<!doctype html');
     });
 
     it('returns 200 and JSON from /api/files', async () => {
-      const res = await httpGet(`http://localhost:${TEST_PORT}/api/files`);
+      const res = await httpGet(`http://localhost:${actualPort}/api/files`);
       expect(res.statusCode).toBe(200);
       expect(res.contentType).toContain('application/json');
       const data = JSON.parse(res.body) as { files: unknown[]; directory: string };
@@ -173,7 +180,7 @@ describe('agentensemble-viz CLI', () => {
 
     it('rejects path-traversal attempts on /api/file with 400', async () => {
       const res = await httpGet(
-        `http://localhost:${TEST_PORT}/api/file?name=..%2F..%2Fetc%2Fpasswd`,
+        `http://localhost:${actualPort}/api/file?name=..%2F..%2Fetc%2Fpasswd`,
       );
       expect(res.statusCode).toBe(400);
     });
@@ -181,7 +188,7 @@ describe('agentensemble-viz CLI', () => {
     it('responds to CORS preflight OPTIONS with 204', async () => {
       const response = await new Promise<{ statusCode: number | undefined }>((resolve, reject) => {
         const req = http.request(
-          { hostname: 'localhost', port: TEST_PORT, path: '/', method: 'OPTIONS' },
+          { hostname: 'localhost', port: actualPort, path: '/', method: 'OPTIONS' },
           (res) => {
             res.resume();
             res.on('end', () => resolve({ statusCode: res.statusCode }));

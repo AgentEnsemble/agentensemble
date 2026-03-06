@@ -18,6 +18,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "embed": "node scripts/embed-dist.mjs",
+    "check:assets": "node scripts/check-assets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

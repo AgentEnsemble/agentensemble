@@ -202,7 +202,8 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  const url = `http://localhost:${PORT}`;
+  const boundPort = server.address()?.port ?? PORT;
+  const url = `http://localhost:${boundPort}`;
 
   console.log('');
   console.log('  AgentEnsemble Trace Viewer');

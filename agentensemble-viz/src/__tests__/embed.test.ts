@@ -145,6 +145,11 @@ describe('embed-dist.mjs', () => {
       expect(result.stdout).toContain('Embedded 4 dist assets');
     });
 
+    it('includes the actual output path in the summary log', () => {
+      const result = runEmbed(distDir, outputPath);
+      expect(result.stdout).toContain(`into ${outputPath}`);
+    });
+
     it('lists each embedded file path in stdout', () => {
       const result = runEmbed(distDir, outputPath);
       expect(result.stdout).toContain('/index.html');
@@ -173,6 +178,14 @@ describe('embed-dist.mjs', () => {
       const decoded = Buffer.from(b64, 'base64').toString('utf8');
       expect(decoded).toBe('<html><body>hello</body></html>');
     });
+
+    it('generates file entries in stable sorted urlPath order', async () => {
+      runEmbed(distDir, outputPath);
+      const mod = await import(outputPath + `?t=${Date.now() + 2}`);
+      const keys = [...(mod.distAssets as Map<string, unknown>).keys()] as string[];
+      const sorted = [...keys].sort((a, b) => a.localeCompare(b));
+      expect(keys).toEqual(sorted);
+    });
   });
 
   describe('error handling', () => {
@@ -184,6 +197,72 @@ describe('embed-dist.mjs', () => {
     it('prints an error message to stderr when dist directory is missing', () => {
       const result = runEmbed('/nonexistent/path/dist', outputPath);
       expect(result.stderr).toContain('Error:');
+    });
+  });
+
+  describe('check-assets.mjs', () => {
+    const CHECK_SCRIPT = join(__dirname, '../../scripts/check-assets.mjs');
+    let checkTmpDir: string;
+
+    function runCheckAssets(assetsFile: string): ReturnType<typeof spawnSync> {
+      return spawnSync(process.execPath, [CHECK_SCRIPT], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...cleanEnv(), ASSETS_FILE: assetsFile },
+      });
+    }
+
+    beforeAll(() => {
+      checkTmpDir = mkdtempSync(join(tmpdir(), 'agentensemble-check-assets-'));
+    });
+
+    afterAll(() => {
+      rmSync(checkTmpDir, { recursive: true, force: true });
+    });
+
+    it('exits with code 0 when the file contains the empty placeholder Map', () => {
+      const file = join(checkTmpDir, 'placeholder.js');
+      writeFileSync(file, 'export const distAssets = new Map();\n', 'utf8');
+      const result = runCheckAssets(file);
+      expect(result.status).toBe(0);
+    });
+
+    it('prints an OK message to stdout for a clean placeholder', () => {
+      const file = join(checkTmpDir, 'placeholder-ok.js');
+      writeFileSync(file, 'export const distAssets = new Map();\n', 'utf8');
+      const result = runCheckAssets(file);
+      expect(result.stdout).toContain('OK');
+    });
+
+    it('exits with code 1 when the file contains generated content', () => {
+      const file = join(checkTmpDir, 'generated.js');
+      writeFileSync(
+        file,
+        'export const distAssets = new Map([\n' +
+          '  ["/index.html", { content: "abc", mimeType: "text/html" }],\n' +
+          ']);\n',
+        'utf8',
+      );
+      const result = runCheckAssets(file);
+      expect(result.status).toBe(1);
+    });
+
+    it('prints an instructive error to stderr when generated content is present', () => {
+      const file = join(checkTmpDir, 'generated-err.js');
+      writeFileSync(
+        file,
+        'export const distAssets = new Map([\n' +
+          '  ["/index.html", { content: "abc", mimeType: "text/html" }],\n' +
+          ']);\n',
+        'utf8',
+      );
+      const result = runCheckAssets(file);
+      expect(result.stderr).toContain('git checkout dist-assets.js');
+    });
+
+    it('exits with code 1 when the assets file does not exist', () => {
+      const result = runCheckAssets(join(checkTmpDir, 'nonexistent.js'));
+      expect(result.status).toBe(1);
     });
   });
 });
