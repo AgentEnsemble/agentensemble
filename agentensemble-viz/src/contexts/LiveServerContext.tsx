@@ -22,7 +22,7 @@ import React, {
   useRef,
 } from 'react';
 import { liveActionReducer, initialLiveState } from '../utils/liveReducer.js';
-import type { LiveState, ClientMessage, ServerMessage } from '../types/live.js';
+import type { LiveState, ClientMessage, ServerMessage, ReviewDecisionMessage } from '../types/live.js';
 
 // Exponential backoff delays in ms: 1s, 2s, 4s, 8s, 16s, then cap at 30s
 const BACKOFF_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
@@ -46,6 +46,19 @@ export interface LiveServerContextValue {
    * No-ops if the WebSocket is not currently open.
    */
   sendMessage: (msg: ClientMessage) => void;
+  /**
+   * Send a review_decision message and optimistically remove the review from
+   * pendingReviews in the local state.
+   *
+   * @param reviewId  - The id of the review being decided.
+   * @param decision  - The decision: CONTINUE, EDIT, or EXIT_EARLY.
+   * @param revisedOutput - Required when decision is EDIT; the user's edited output.
+   */
+  sendDecision: (
+    reviewId: string,
+    decision: ReviewDecisionMessage['decision'],
+    revisedOutput?: string,
+  ) => void;
 }
 
 const LiveServerContext = createContext<LiveServerContextValue | null>(null);
@@ -164,6 +177,26 @@ export function LiveServerProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  const sendDecision = useCallback(
+    (
+      reviewId: string,
+      decision: ReviewDecisionMessage['decision'],
+      revisedOutput?: string,
+    ) => {
+      const msg: ReviewDecisionMessage = {
+        type: 'review_decision',
+        reviewId,
+        decision,
+        ...(revisedOutput !== undefined ? { revisedOutput } : {}),
+      };
+      sendMessage(msg);
+      // Optimistically remove the review from local state so the UI updates
+      // immediately without waiting for the server's acknowledgement.
+      dispatch({ type: 'RESOLVE_REVIEW', reviewId });
+    },
+    [sendMessage],
+  );
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -174,7 +207,7 @@ export function LiveServerProvider({ children }: { children: React.ReactNode }) 
   }, [clearReconnectTimer, closeWs]);
 
   return (
-    <LiveServerContext.Provider value={{ liveState, connect, disconnect, sendMessage }}>
+    <LiveServerContext.Provider value={{ liveState, connect, disconnect, sendMessage, sendDecision }}>
       {children}
     </LiveServerContext.Provider>
   );

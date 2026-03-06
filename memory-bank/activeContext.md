@@ -2,7 +2,24 @@
 
 ## Current Focus
 
-Branch `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
+Branch `feat/135-viz-review-approval-ui` is open for Issue #135: Viz review approval UI (v2.1.0).
+
+Issue #135 implementation complete:
+- `RESOLVE_REVIEW` action added to `LiveAction` union in `live.ts`; handled in `liveActionReducer` in `liveReducer.ts`
+- `sendDecision(reviewId, decision, revisedOutput?)` added to `LiveServerContext` (builds `ReviewDecisionMessage`, calls `sendMessage`, dispatches `RESOLVE_REVIEW` for optimistic removal)
+- `ReviewApprovalPanel` component created at `src/components/live/ReviewApprovalPanel.tsx`:
+  - Modal overlay with header (timing badge), task description, custom prompt, scrollable output
+  - Three modes: view (Approve/Edit/Exit Early) / edit (textarea pre-filled with output) / exit-confirm (confirmation step) / timed-out (message for 2s then closes)
+  - CSS-animated countdown bar (`ae-countdown-bar` class + `animation-duration`/`animation-delay` inline) + 1s JS interval for text label
+  - "+N pending" badge when `additionalPendingCount > 0`
+  - `key={review.reviewId}` in parent ensures clean remount for each new review
+- `LivePage.tsx` integrated: renders `ReviewApprovalPanel` when `pendingReviews.length > 0` (FIFO, oldest first)
+- `src/index.css`: `ae-countdown-bar` utility class + `ae-countdown-shrink` keyframe animation added
+- 237 tests pass (28 new: 25 `ReviewApprovalPanel` unit tests + 5 `RESOLVE_REVIEW` reducer tests)
+- `docs/examples/human-in-the-loop.md` "Browser-Based Approval" section updated with accurate interaction description (panel ASCII diagram, Actions sections, Timeout Countdown, Concurrent Reviews)
+
+Previous branches:
+- `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
 
 The Homebrew-installed `agentensemble-viz` binary showed "Not Found" on every request.
 Root cause: Bun's `--compile` bundler does not recursively embed entire directories

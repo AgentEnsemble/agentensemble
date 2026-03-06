@@ -289,31 +289,91 @@ EnsembleOutput output = Ensemble.builder()
 ```
 
 Open `http://localhost:7329` in a browser before running the ensemble. When the review gate
-fires after the first task, the browser displays an approval panel:
+fires after the first task, a modal panel slides in over the live dashboard:
 
 ```
 +------------------------------------------------------+
-| Review Required                                       |
+| Review Required                              [AFTER] |
 +------------------------------------------------------+
-| Task: Draft a press release for the product launch    |
+| Task                                                  |
+| Draft a press release for the product launch          |
 |                                                       |
-| Output:                                               |
+| Output                                                |
 | FOR IMMEDIATE RELEASE                                 |
 | [Company] Announces Major Product Launch...           |
+| (scrollable if long)                                  |
 |                                                       |
-| [Approve]  [Edit]  [Exit Early]                       |
+|======================================================| <- countdown bar (amber)
 |                                                       |
-| Auto-continue in 4:58 ...                             |
+| Auto-continue in 4:58                                 |
+|                                                       |
+| [   Approve   ]  [   Edit   ]  [  Exit Early  ]      |
 +------------------------------------------------------+
 ```
 
-The reviewer can:
-- **Approve** -- the press release is passed to the translation task unchanged
-- **Edit** -- inline editing in the browser; the revised text is used downstream
-- **Exit Early** -- the pipeline stops; `output.getExitReason()` returns `USER_EXIT_EARLY`
+The **[AFTER]** badge in the header reflects the review timing
+(`BEFORE`, `AFTER`, or `DURING` execution). If a custom prompt was set on the
+`Review` object, it appears between the task description and the output.
 
-The `.webDashboard()` call wires both the streaming listener (live task timeline) and the
-`WebReviewHandler` (browser approval) in a single builder call. No separate process or npm
-command is needed -- the server is embedded in the JVM.
+### Actions
+
+**Approve**
+
+Clicking Approve sends a `CONTINUE` decision to the server over WebSocket. The panel
+closes immediately and the pipeline resumes. The press release is passed to the
+translation task unchanged.
+
+**Edit**
+
+Clicking Edit replaces the read-only output display with a pre-filled `<textarea>`.
+The reviewer edits the text and clicks Submit. An `EDIT` decision is sent with the
+revised text, which replaces the original task output for all downstream tasks.
+Clicking Cancel returns to the read-only view without sending anything.
+
+**Exit Early**
+
+Clicking Exit Early shows a confirmation step:
+`"Are you sure? This will stop the pipeline."`
+Clicking Confirm Exit sends an `EXIT_EARLY` decision. The pipeline stops and
+`output.getExitReason()` returns `USER_EXIT_EARLY`. Clicking Cancel returns to
+the main view.
+
+### Timeout Countdown
+
+A smooth amber progress bar counts down from the configured `reviewTimeout`. The
+label below the bar reads either `"Auto-continue in X:XX"` or `"Auto-exit in X:XX"`
+depending on the configured `onTimeout` action. The bar uses a CSS animation for
+smooth visual feedback without per-frame JavaScript.
+
+When the timeout expires on the server, the panel shows a brief message:
+- `"Timed out -- continuing"` (when `onTimeout` is `CONTINUE`)
+- `"Timed out -- exiting"` (when `onTimeout` is `EXIT_EARLY`)
+
+The panel then closes after 2 seconds. The server applies the timeout action
+independently of the client display; the countdown is advisory only.
+
+### Concurrent Reviews (Parallel Workflows)
+
+In parallel workflows, multiple review gates can fire simultaneously. The panel
+always shows the oldest pending review first (FIFO). When additional reviews are
+waiting, a badge below the panel shows how many are queued:
+
+```
++------------------------------------------------------+
+| Review Required                              [AFTER] |
++------------------------------------------------------+
+| Task: Analyze market segment A                        |
+| ...                                                   |
++------------------------------------------------------+
+            +2 pending
+```
+
+After the current review is resolved, the next review is shown automatically.
+
+### Wiring
+
+The `.webDashboard()` call wires both the streaming listener (live task timeline) and
+the `WebReviewHandler` (browser approval) in a single builder call. No separate
+process or npm command is needed -- the server is embedded in the JVM.
 
 **Full documentation:** [Live Dashboard Guide](../guides/live-dashboard.md) | [Live Dashboard Example](live-dashboard.md)
