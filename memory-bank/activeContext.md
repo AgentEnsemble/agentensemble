@@ -2,7 +2,47 @@
 
 ## Current Focus
 
-Branch `feat/135-viz-review-approval-ui` is open for Issue #135: Viz review approval UI (v2.1.0).
+Branch `fix/task-first-synthesis-fallback-and-template-role-extraction` is open to address
+two interacting bugs in the task-first agent synthesis path:
+
+**Problem A -- `LlmBasedAgentSynthesizer` silently swallowed ChatModel execution failures**
+- The `catch (Exception e)` block in `LlmBasedAgentSynthesizer.synthesize()` caught
+  `RuntimeException("Not implemented")` (the LangChain4j 1.11.0 default `doChat()` stub)
+  and silently fell back to `TemplateAgentSynthesizer`, masking the real configuration error.
+
+**Problem B -- `TemplateAgentSynthesizer` only scanned the first word of the task description**
+- Task-first patterns like `"Role: Analyst. Analyse the market data"` or
+  `"Based on the research, write a report"` started with words not in the verb-to-role table,
+  so the role always degraded to the generic `"Agent"` fallback.
+
+**Combined failure chain:**
+1. `AgentSynthesizer.llmBased()` configured, test/deterministic model returns non-JSON or throws
+2. Synthesis fails silently; fallback to template
+3. Template derives role `"Agent"` because description starts with `"Role:"` or a preposition
+4. Agent executes; `ChatModel.doChat()` default throws `RuntimeException("Not implemented")`
+5. Error message: `Agent 'Agent' failed: Not implemented` -- misleading on both counts
+
+**Fixes implemented (branch: `fix/task-first-synthesis-fallback-and-template-role-extraction`):**
+- `LlmBasedAgentSynthesizer`: ChatModel execution call moved outside `try/catch`; only
+  `JsonProcessingException` and `IllegalStateException` (parse/field-validation failures)
+  fall back to template. RuntimeExceptions from the model propagate immediately.
+- `TemplateAgentSynthesizer`: `extractRole()` now scans the first `VERB_SCAN_LIMIT` (8)
+  words instead of just the first word. First match wins.
+- `PassthroughChatModel`: updated to override `doChat(ChatRequest)` instead of
+  `chat(ChatRequest)` to align with the LangChain4j 1.11.0 API convention.
+
+**Tests added:**
+- 6 new tests in `TemplateAgentSynthesizerTest`: verb-after-preposition, role-prefixed
+  description, article-before-verb, preamble scan, beyond-scan-limit, second-word match
+- 2 new tests in `LlmBasedAgentSynthesizerTest`: `modelThrowsRuntimeException_propagatesException`,
+  `modelThrowsNotImplemented_propagatesException`
+- Previous `synthesize_llmThrowsException_fallsBackToTemplate` test replaced with the two
+  above to express the correct propagation contract
+
+**Build status:** All agentensemble-core tests pass; `BUILD SUCCESSFUL`
+
+Previous branches:
+- `feat/135-viz-review-approval-ui` is open for Issue #135: Viz review approval UI (v2.1.0).
 
 Issue #135 implementation complete:
 - `RESOLVE_REVIEW` action added to `LiveAction` union in `live.ts`; handled in `liveActionReducer` in `liveReducer.ts`
