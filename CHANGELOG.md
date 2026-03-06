@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.5.0...v2.0.0) (2026-03-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* Agents are no longer declared on Ensemble.builder(). Tasks are the primary abstraction; the framework auto-synthesises agents via AgentSynthesizer. Ensemble.builder().agent() removed. Memory API changed from EnsembleMemory to MemoryStore. agentensemble-memory and agentensemble-review are now separate optional Gradle modules. MemoryEntry fields restructured. See docs/migration/v1-to-v2.md for the full guide.
+
+### Features
+
+* **#113:** MapReduceEnsemble task-first API and zero-ceremony factory ([#128](https://github.com/AgentEnsemble/agentensemble/issues/128)) ([1665ffa](https://github.com/AgentEnsemble/agentensemble/commit/1665ffa4d08e6b093ecdd63a753389090dccb8e7))
+* agentensemble-bom and v1-to-v2 migration guide ([#114](https://github.com/AgentEnsemble/agentensemble/issues/114), [#115](https://github.com/AgentEnsemble/agentensemble/issues/115)) ([#137](https://github.com/AgentEnsemble/agentensemble/issues/137)) ([d671a3a](https://github.com/AgentEnsemble/agentensemble/commit/d671a3a7776a82920dca838d1f7e2238ff9ef6cb))
+* agentensemble-memory module and task-scoped cross-execution memory ([#106](https://github.com/AgentEnsemble/agentensemble/issues/106), [#107](https://github.com/AgentEnsemble/agentensemble/issues/107)) ([#123](https://github.com/AgentEnsemble/agentensemble/issues/123)) ([233b466](https://github.com/AgentEnsemble/agentensemble/commit/233b46614144324ab65598a88f77452079ba94b8))
+* EnsembleOutput partial results + workflow inference ([#111](https://github.com/AgentEnsemble/agentensemble/issues/111), [#112](https://github.com/AgentEnsemble/agentensemble/issues/112)) ([#127](https://github.com/AgentEnsemble/agentensemble/issues/127)) ([d6a3bc3](https://github.com/AgentEnsemble/agentensemble/commit/d6a3bc3080c03a6ebb906a96f9c2ef139582f69c))
+* human-in-the-loop review system ([#108](https://github.com/AgentEnsemble/agentensemble/issues/108), [#109](https://github.com/AgentEnsemble/agentensemble/issues/109), [#110](https://github.com/AgentEnsemble/agentensemble/issues/110)) ([#125](https://github.com/AgentEnsemble/agentensemble/issues/125)) ([d3e504e](https://github.com/AgentEnsemble/agentensemble/commit/d3e504ed00281c9f021aa585b439f21502308abb))
+* Task-first core + AgentSynthesizer SPI (issues [#104](https://github.com/AgentEnsemble/agentensemble/issues/104) + [#105](https://github.com/AgentEnsemble/agentensemble/issues/105)) ([#122](https://github.com/AgentEnsemble/agentensemble/issues/122)) ([f600913](https://github.com/AgentEnsemble/agentensemble/commit/f600913aebe52fbc5e26ae325acbb70d84bc9402))
+* tool-level approval gates via ReviewHandler ([#126](https://github.com/AgentEnsemble/agentensemble/issues/126)) ([#136](https://github.com/AgentEnsemble/agentensemble/issues/136)) ([7b23dd6](https://github.com/AgentEnsemble/agentensemble/commit/7b23dd6a61ba4eba369ae6284c5782eaff5db900))
+
 ## [1.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v1.4.1...v1.5.0) (2026-03-05)
 
 
