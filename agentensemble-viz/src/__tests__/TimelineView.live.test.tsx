@@ -91,6 +91,7 @@ function mockLiveServer(liveState: LiveState) {
     connect: vi.fn(),
     disconnect: vi.fn(),
     sendMessage: vi.fn(),
+    sendDecision: vi.fn(),
   } as LiveServerContextValue);
 }
 
