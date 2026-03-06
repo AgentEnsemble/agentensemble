@@ -18,6 +18,7 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 | **Task** | A unit of work assigned to an agent, with a description and expected output |
 | **Ensemble** | A group of agents working together on a sequence of tasks |
 | **Tool** | A capability an agent can invoke (e.g., search, calculate) |
+| **Tool Pipeline** | A chain of tools that execute sequentially inside a single LLM tool call, with no round-trips between steps |
 | **Workflow** | How tasks are executed: `SEQUENTIAL`, `HIERARCHICAL` (manager delegates to workers), or `PARALLEL` (concurrent DAG-based execution) |
 | **Memory** | Optional per-run and cross-run context: short-term, long-term (vector store), and entity memory |
 
@@ -1010,7 +1011,33 @@ var agent = Agent.builder()
 
 Both approaches can be combined in a single agent's tool list.
 
-**Full documentation:** [Tools Guide](https://docs.agentensemble.net/guides/tools/)
+### Option 3: Chain tools with `ToolPipeline`
+
+`ToolPipeline` wraps multiple tools into a single compound tool that the LLM calls once. All steps execute inside that single call with no LLM round-trips between them -- reducing token cost and latency for deterministic data-transformation chains.
+
+```java
+import net.agentensemble.tool.ToolPipeline;
+import net.agentensemble.tool.PipelineErrorStrategy;
+
+// JsonParserTool extracts a price; adapter reshapes it; CalculatorTool applies markup
+ToolPipeline priceCalculator = ToolPipeline.builder()
+    .name("extract_and_calculate")
+    .description("Extracts the base_price field from a JSON payload and returns the "
+        + "price with a 10% markup applied. Input: JSON with a product object.")
+    .step(new JsonParserTool())
+    .adapter(result -> result.getOutput() + " * 1.1")
+    .step(new CalculatorTool())
+    .errorStrategy(PipelineErrorStrategy.FAIL_FAST)
+    .build();
+
+// Register on a task -- the LLM sees one tool and calls it once
+var task = Task.builder()
+    .description("Calculate the retail price from the product data")
+    .tools(List.of(priceCalculator))
+    .build();
+```
+
+**Full documentation:** [Tool Pipeline Guide](https://docs.agentensemble.net/guides/tool-pipeline/) | [Tool Pipeline Example](https://docs.agentensemble.net/examples/tool-pipeline/)
 
 ---
 
@@ -1133,6 +1160,9 @@ export OPENAI_API_KEY=your-api-key
 # Callbacks -- event listeners observing task and tool lifecycle
 ./gradlew :agentensemble-examples:runCallbacks
 ./gradlew :agentensemble-examples:runCallbacks --args="the future of AI agents"
+
+# Tool Pipeline -- chain tools into a single LLM call, no round-trips between steps
+./gradlew :agentensemble-examples:runToolPipeline
 ```
 
 **Full documentation:** [Examples](https://docs.agentensemble.net/examples/research-writer/)
@@ -1168,6 +1198,7 @@ See [`docs/design/`](docs/design/) for full specifications:
 - [14 - MapReduceEnsemble](docs/design/14-map-reduce.md)
 - [15 - v2.0.0 Architecture](docs/design/15-v2-architecture.md)
 - [16 - Live Execution Dashboard](docs/design/16-live-dashboard.md)
+- [17 - Tool Pipeline](docs/design/17-tool-pipeline.md)
 
 ---
 

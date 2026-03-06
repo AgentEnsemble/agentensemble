@@ -360,3 +360,44 @@ var agent = Agent.builder()
     .maxIterations(15)
     .build();
 ```
+
+---
+
+## Pipelining Built-in Tools
+
+Use `ToolPipeline` to chain built-in tools together so they execute sequentially inside a
+single LLM tool call, with no LLM round-trips between steps.
+
+```java
+import net.agentensemble.tool.ToolPipeline;
+import net.agentensemble.tool.PipelineErrorStrategy;
+
+// Chain JsonParserTool and CalculatorTool: extract a number, then apply a formula
+ToolPipeline extractAndCalculate = ToolPipeline.builder()
+    .name("extract_and_calculate")
+    .description("Extracts a numeric field from JSON and applies a 10% markup formula. "
+        + "Input: path on first line, JSON on remaining lines.")
+    .step(new JsonParserTool())
+    .adapter(result -> result.getOutput() + " * 1.1")  // reshape for CalculatorTool
+    .step(new CalculatorTool())
+    .build();
+
+// Chain search, extract, and save -- three steps, one LLM tool call
+ToolPipeline searchAndSave = ToolPipeline.builder()
+    .name("search_and_save")
+    .description("Searches the web, extracts the first result title, and saves it.")
+    .step(WebSearchTool.ofTavily(apiKey))
+    .adapter(result -> "results[0].title\n" + result.getOutput())
+    .step(new JsonParserTool())
+    .step(FileWriteTool.of(Path.of("/workspace/output")))
+    .errorStrategy(PipelineErrorStrategy.FAIL_FAST)
+    .build();
+
+// Register on a task -- the pipeline appears as a single tool to the LLM
+var task = Task.builder()
+    .description("Research AI trends and save the top result")
+    .tools(List.of(searchAndSave))
+    .build();
+```
+
+**Full documentation:** [Tool Pipeline Guide](tool-pipeline.md)

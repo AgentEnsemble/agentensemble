@@ -77,6 +77,7 @@ nav:
     - MapReduceEnsemble: guides/map-reduce.md
     - Tools: guides/tools.md
     - Built-in Tools: guides/built-in-tools.md
+    - Tool Pipeline: guides/tool-pipeline.md
     - Remote Tools: guides/remote-tools.md
     - Metrics: guides/metrics.md
     - CaptureMode: guides/capture-mode.md
@@ -109,6 +110,7 @@ nav:
     - Metrics and Traces: examples/metrics.md
     - CaptureMode: examples/capture-mode.md
     - Visualization: examples/visualization.md
+    - Tool Pipeline: examples/tool-pipeline.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
   - Migration:
@@ -130,3 +132,4 @@ nav:
     - MapReduceEnsemble: design/14-map-reduce.md
     - v2.0.0 Architecture: design/15-v2-architecture.md
     - Live Execution Dashboard: design/16-live-dashboard.md
+    - Tool Pipeline: design/17-tool-pipeline.md

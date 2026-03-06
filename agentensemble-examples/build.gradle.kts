@@ -52,6 +52,7 @@ application {
 //   ./gradlew :agentensemble-examples:runCaptureMode
 //   ./gradlew :agentensemble-examples:runHumanInTheLoop --args="AgentEnsemble v2"
 //   ./gradlew :agentensemble-examples:runCrossRunMemory --args="renewable energy"
+//   ./gradlew :agentensemble-examples:runToolPipeline
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -69,6 +70,7 @@ mapOf(
     "runCaptureMode" to "net.agentensemble.examples.CaptureModeExample",
     "runHumanInTheLoop" to "net.agentensemble.examples.HumanInTheLoopExample",
     "runCrossRunMemory" to "net.agentensemble.examples.CrossRunMemoryExample",
+    "runToolPipeline" to "net.agentensemble.examples.ToolPipelineExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

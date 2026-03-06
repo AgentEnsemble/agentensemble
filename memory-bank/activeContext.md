@@ -2,10 +2,46 @@
 
 ## Current Work Focus
 
-Issue #130 (v2.1.0 agentensemble-web module -- WebSocket server + protocol) is complete
-on branch `feat/130-agentensemble-web`. PR #138 is open against main.
+Issue #74 (Tool Pipeline / Chaining) is implemented on branch `feature/tool-pipeline-74`.
 
 ## Recent Changes
+
+### Issue #74: Explicit Tool Pipeline / Chaining (Unix-pipe-style composition)
+
+**New classes in `agentensemble-core` (`net.agentensemble.tool`):**
+- `PipelineErrorStrategy` enum -- `FAIL_FAST` (default) and `CONTINUE_ON_FAILURE`
+- `ToolPipeline` -- `AbstractAgentTool` subclass; builder pattern; `step(AgentTool)` + `adapter(Function<ToolResult,String>)` + `errorStrategy(PipelineErrorStrategy)` builder methods; `of(AgentTool...)` and `of(String, String, AgentTool...)` factory methods; `getSteps()` and `getErrorStrategy()` accessors; overrides package-private `setContext(ToolContext)` to propagate context to nested `AbstractAgentTool` steps
+
+**Design:**
+- The pipeline exposes a single `ToolSpecification` to the LLM; all steps execute inside `doExecute()` with no LLM round-trips between steps
+- Default data handoff: `ToolResult.getOutput()` (String) from step N passed verbatim to step N+1
+- Adapters: optional `Function<ToolResult, String>` transformers attached to any step; receive the full `ToolResult` (including `structuredOutput`); only called when the step succeeds and there is a next step
+- `FAIL_FAST`: short-circuits on first failure, returning the failed step's result immediately
+- `CONTINUE_ON_FAILURE`: forwards error message to next step's input; runs to completion
+- `ToolContext` propagation: `setContext()` override forwards context to all nested `AbstractAgentTool` steps so each gets metrics, logging, executor, and review handler wired correctly
+
+**Tests:**
+- `ToolPipelineTest` (49 unit tests): happy path chaining, both error strategies, adapters (including structured output access), ToolContext propagation, factory method validation, builder validation, empty pipeline pass-through, null input handling
+- `ToolPipelineIntegrationTest` (7 integration tests with mocked LLMs): single-tool LLM call with all steps executing internally, error strategies in ensemble context, ToolContext propagation through full ensemble, adapter in ensemble context, v2 task-first API registration
+
+**Example:**
+- `ToolPipelineExample.java` -- two pipelines using `JsonParserTool` + `CalculatorTool` and chained `JsonParserTool` instances; demonstrates adapters and `getSteps()`/`getErrorStrategy()` inspection
+- `runToolPipeline` Gradle task registered in `agentensemble-examples/build.gradle.kts`
+
+**Documentation:**
+- `docs/design/17-tool-pipeline.md` -- full design specification
+- `docs/guides/tool-pipeline.md` -- user guide with quick start, data flow, error strategies, builder reference, factory methods, metrics, approval gates, common patterns
+- `docs/examples/tool-pipeline.md` -- example page with walk-through and sample output
+- `docs/design/06-tool-system.md` -- "Tool Pipeline" section added
+- `docs/guides/built-in-tools.md` -- "Pipelining Built-in Tools" section added
+- `README.md` -- Tool Pipeline in Core Concepts table; "Option 3: Chain tools with ToolPipeline" in Creating Tools; `runToolPipeline` in Running Examples; design/17 in Design Documentation list
+- `mkdocs.yml` -- Tool Pipeline added to Guides and Examples nav; design/17 added to Design nav
+
+---
+
+## Previous Work
+
+### Issue #130: agentensemble-web module -- Live Execution Dashboard
 
 ### Issue #130: agentensemble-web module -- Live Execution Dashboard
 
