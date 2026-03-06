@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { DagModel } from '../types/dag.js';
 import type { ExecutionTrace } from '../types/trace.js';
 
@@ -86,6 +87,9 @@ export default function LoadTrace({ onFiles, dag, trace }: LoadTraceProps) {
           Visualize execution graphs and debug agent runs
         </p>
       </div>
+
+      {/* Connect to live server */}
+      <LiveConnectForm />
 
       {/* Currently loaded summary */}
       {hasLoaded && (
@@ -207,6 +211,56 @@ Ensemble.builder()
           Export some files from your Java application, then refresh.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Form that lets the user connect to a running agentensemble-web WebSocket server.
+ * Navigates to /live?server=<encodedUrl> on submit.
+ */
+function LiveConnectForm() {
+  const navigate = useNavigate();
+  const [serverUrl, setServerUrl] = useState('ws://localhost:7329/ws');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = serverUrl.trim();
+    if (trimmed) {
+      navigate(`/live?server=${encodeURIComponent(trimmed)}`);
+    }
+  };
+
+  return (
+    <div
+      className="w-full max-w-lg rounded-xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-800 dark:bg-blue-950/30"
+      data-testid="live-connect-form"
+    >
+      <h2 className="mb-3 text-sm font-semibold text-blue-800 dark:text-blue-300">
+        Connect to live server
+      </h2>
+      <p className="mb-4 text-xs text-blue-700 dark:text-blue-400">
+        Watch a running ensemble in real-time. Start your Java application with{' '}
+        <code className="font-mono">.webDashboard(WebDashboard.onPort(7329))</code>, then connect
+        below.
+      </p>
+      <form onSubmit={handleSubmit} className="flex gap-2">
+        <input
+          type="text"
+          value={serverUrl}
+          onChange={(e) => setServerUrl(e.target.value)}
+          placeholder="ws://localhost:7329/ws"
+          data-testid="live-connect-url-input"
+          className="flex-1 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+        />
+        <button
+          type="submit"
+          data-testid="live-connect-button"
+          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+        >
+          Connect
+        </button>
+      </form>
     </div>
   );
 }

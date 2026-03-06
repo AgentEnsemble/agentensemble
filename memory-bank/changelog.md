@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] - Issues #133 + #134: Viz live mode + live timeline/flow updates (v2.1.0) -- 2026-03-06
+
+### Added (Issues #133, #134 -- agentensemble-viz live execution mode)
+
+**New types and modules (`agentensemble-viz`):**
+- `react-router-dom` added as a dependency; `src/main.tsx` wraps the app in `BrowserRouter` with `/live` -> `LivePage` and `/*` -> `App` routes
+- `src/types/live.ts`: wire protocol types -- `ServerMessage` discriminated union (15 message types), `ClientMessage`, `LiveState`, `LiveTask`, `LiveToolCall`, `LiveReviewRequest`, `ConnectionStatus`, `LiveTaskStatus`, `LiveAction`
+- `src/utils/liveReducer.ts`: pure `liveReducer(state, ServerMessage)` + `liveActionReducer(state, LiveAction)` handling all 9 server message types; `initialLiveState`; `findTaskArrayIndex` helper
+- `src/utils/liveDag.ts`: `buildSyntheticDagModel(liveState)` builds a synthetic `DagModel` from live tasks (sequential chain or parallel deps); `buildLiveStatusMap(liveState)` maps node IDs to `LiveTaskStatus`; `liveTaskNodeId(taskIndex)` deterministic ID helper
+- `src/contexts/LiveServerContext.tsx`: `LiveServerProvider` React context managing WebSocket lifecycle; exponential backoff reconnect (1s, 2s, 4s, 8s, 16s, cap 30s); `useLiveServer()` hook
+- `src/components/shared/ConnectionStatusBar.tsx`: green/amber/red status bar with `ae-pulse` dot for connecting state; `role="status"` for accessibility
+- `src/components/live/LiveHeader.tsx`: live mode header bar with ensemble ID, workflow type, task progress count ("2 / 5 tasks"), Flow/Timeline view toggle
+- `src/pages/LivePage.tsx`: `/live` route page; auto-connects from `?server=ws://...` query param; wraps content in `LiveServerProvider`
+- `src/pages/LoadTrace.tsx`: added `LiveConnectForm` -- "Connect to live server" section with URL input; uses `useNavigate` to route to `/live?server=<url>`
+- `src/pages/TimelineView.tsx`: added `isLive?: boolean` prop; when true, renders `LiveTimelineView` (reads from `useLiveServer()`); task bars appear on `task_started`; running bars grow via `requestAnimationFrame`; bars lock on `task_completed`; failed bars render red; tool markers at `receivedAt`; "Follow latest" toggle with scroll re-engagement at right edge
+- `src/pages/FlowView.tsx`: added `isLive?: boolean` prop and `dag: DagModel | null`; when true, renders `LiveFlowViewInner` using `buildSyntheticDagModel` and `buildLiveStatusMap`; applies `liveStatus` overrides to ReactFlow node data
+- `src/components/graph/TaskNode.tsx`: added `liveStatus?: LiveTaskStatus` to `TaskNodeData`; running nodes get blue header + `ae-pulse` on header + `ae-node-pulse` ring on root element; failed nodes get red header; `data-live-status` attribute for testing
+- `src/index.css`: `ae-pulse` (opacity 0.5 at 50%) and `ae-node-pulse` (box-shadow ring) CSS keyframe animations; `ae-node-pending`, `ae-node-running`, `ae-node-failed` status utility classes
+
+### Tests Added (Issues #133, #134)
+
+**Unit (`agentensemble-viz`):**
+- `src/__tests__/liveReducer.test.ts` (37 tests): `findTaskArrayIndex`, all 9 server message types + no-op messages, immutability, `liveActionReducer` all 6 actions
+- `src/__tests__/LiveServerContext.test.tsx` (17 tests): connect/disconnect/reconnect, exponential backoff (1s/2s/4s/cap 30s), retry reset on success, sendMessage open/closed, error transition, cleanup on unmount
+- `src/__tests__/ConnectionStatusBar.test.tsx` (15 tests): label per status, dot color per status, `ae-pulse` on connecting only, URL display, `data-status` attribute, accessibility role
+- `src/__tests__/liveDag.test.ts` (14 tests): `liveTaskNodeId`, `buildSyntheticDagModel` (empty/sequential chain/parallel/SEQUENTIAL null fallback/criticalPath), `buildLiveStatusMap` (running/failed/completed/mixed)
+- `src/__tests__/TimelineView.live.test.tsx` (19 tests): task bar appears on task_started; running bar has animated edge (`ae-pulse`); completed bar locks; failed bar is red; tool markers; follow-latest defaults on; clicking toggles off; re-engages at right edge; does not re-engage at middle; workflow and task count display
+- `src/__tests__/FlowView.live.test.tsx` (16 tests): `TaskNode` with each `liveStatus` -- running renders blue + `ae-pulse` + `ae-node-pulse` + `data-live-status`; completed renders agent color + no animations; failed renders red + no animations; no liveStatus renders agent color + no animations
+
+**Total: 163 tests across 9 test files (all pass)**
+
+### Documentation Added/Updated (Issues #133, #134)
+
+- `docs/examples/live-dashboard.md` (updated): live mode browser usage, Timeline View behavior, Flow View behavior, Connection Status Bar, configuration reference
+- `memory-bank/activeContext.md`: updated with all #133/#134 changes and test summary
+- `memory-bank/progress.md`: I1 and I2 marked complete
+
+### Opportunistic Coverage Added
+
+- `LiveServerContext` disconnect / cleanup tests cover the reconnect-after-unmount edge case (timers not fired after component unmount)
+- `liveReducer` tests cover immutability (original task object not mutated on `task_completed`) and the late-join `hello` snapshot path with both empty and non-empty `taskTraces`
+
 ## [Unreleased] - Issue #131: WebSocketStreamingListener -- bridge callbacks to WebSocket (v2.1.0) -- 2026-03-06
 
 ### Added (Issue #131 -- WebSocketStreamingListener, ensemble lifecycle messages, late-join snapshot)
