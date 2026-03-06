@@ -19,10 +19,15 @@ import dev.langchain4j.model.output.TokenUsage;
  * The framework's context mechanism then makes this output available to any downstream
  * tasks that list the carrier task in their {@code context} list.
  *
- * <p>The returned {@link ChatResponse} sets {@code TokenUsage} to {@code null}, so the
- * carrier task's {@code TaskMetrics} will have {@code outputTokens = -1} (unknown). This
+ * <p>The returned {@link ChatResponse} sets {@code TokenUsage} to zero, so the
+ * carrier task's {@code TaskMetrics} will have {@code outputTokens = 0}. This
  * is intentional: carrier tasks do not represent actual LLM calls, and their token counts
  * should not inflate the aggregated execution metrics.
+ *
+ * <p>This class overrides {@code doChat(ChatRequest)} rather than {@code chat(ChatRequest)}
+ * to align with the LangChain4j 1.x API convention where {@code doChat} is the intended
+ * override point. The default {@code chat} implementation handles listener notification and
+ * parameter merging before delegating to {@code doChat}.
  */
 final class PassthroughChatModel implements ChatModel {
 
@@ -33,7 +38,7 @@ final class PassthroughChatModel implements ChatModel {
     }
 
     @Override
-    public ChatResponse chat(ChatRequest request) {
+    public ChatResponse doChat(ChatRequest request) {
         return ChatResponse.builder()
                 .aiMessage(AiMessage.from(fixedResponse))
                 .finishReason(FinishReason.STOP)

@@ -70,6 +70,55 @@ class TemplateAgentSynthesizerTest {
         assertThat(role).isEqualTo("Agent");
     }
 
+    // ========================
+    // Role extraction: verb appears after first word (task-first persona-in-description patterns)
+    // ========================
+
+    @Test
+    void extractRole_verbAfterPreposition_scansAheadAndMatchesVerb() {
+        // "Based on the analysis, write a summary" -- "write" is at position 4
+        String role = TemplateAgentSynthesizer.extractRole("Based on the analysis, write a summary");
+        assertThat(role).isEqualTo("Writer");
+    }
+
+    @Test
+    void extractRole_rolePrefixedDescription_findsVerbBeyondFirstWord() {
+        // Task-first persona-in-description: "Role: Analyst. Analyse the market data"
+        // First word "Role:" strips to "role", not in table; scans ahead and finds "analyse"
+        String role = TemplateAgentSynthesizer.extractRole("Role: Analyst. Analyse the market data");
+        assertThat(role).isEqualTo("Analyst");
+    }
+
+    @Test
+    void extractRole_articleBeforeVerb_scansAheadAndMatchesVerb() {
+        // "The team must research AI trends" -- "research" at position 3
+        String role = TemplateAgentSynthesizer.extractRole("The team must research AI trends");
+        assertThat(role).isEqualTo("Researcher");
+    }
+
+    @Test
+    void extractRole_usingPreamble_findsVerbWithinScanLimit() {
+        // "Using the collected data, write a comprehensive report"
+        String role = TemplateAgentSynthesizer.extractRole("Using the collected data, write a comprehensive report");
+        assertThat(role).isEqualTo("Writer");
+    }
+
+    @Test
+    void extractRole_verbBeyondScanLimit_returnsDefaultAgent() {
+        // More than 8 words before the first recognized verb: verb is out of scan range
+        // "Given all of the available context material and data, analyse the trends" -- "analyse" at position 10
+        String role = TemplateAgentSynthesizer.extractRole(
+                "Given all of the available context material and data, analyse the trends");
+        assertThat(role).isEqualTo("Agent");
+    }
+
+    @Test
+    void extractRole_secondWordIsKnownVerb_matchesImmediately() {
+        // "Please research the topic" -- "research" at position 1
+        String role = TemplateAgentSynthesizer.extractRole("Please research the topic");
+        assertThat(role).isEqualTo("Researcher");
+    }
+
     @Test
     void extractRole_nullDescription_returnsDefaultAgent() {
         String role = TemplateAgentSynthesizer.extractRole(null);

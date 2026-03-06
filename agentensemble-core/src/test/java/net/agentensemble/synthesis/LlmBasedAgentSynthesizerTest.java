@@ -1,6 +1,7 @@
 package net.agentensemble.synthesis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -122,22 +123,39 @@ class LlmBasedAgentSynthesizerTest {
     }
 
     // ========================
-    // Fallback: LLM throws exception
+    // Model execution failures propagate (not silently swallowed)
     // ========================
 
     @Test
-    void synthesize_llmThrowsException_fallsBackToTemplate() {
+    void synthesize_modelThrowsRuntimeException_propagatesException() {
+        // A RuntimeException from the ChatModel indicates a model-level failure (connectivity,
+        // broken implementation, etc.). The synthesizer must NOT silently swallow this and fall
+        // back to a template agent -- that would mask the real configuration error. The exception
+        // must propagate so the caller gets a clear signal that the model is broken.
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("LLM unavailable"));
         SynthesisContext ctx = SynthesisContext.of(model);
         Task task = taskWithDescription("Write a report");
 
-        // Should NOT throw -- falls back to template silently
-        Agent agent = synthesizer.synthesize(task, ctx);
+        assertThatThrownBy(() -> synthesizer.synthesize(task, ctx))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("LLM unavailable");
+    }
 
-        // Template synthesizer produces "Writer" for "Write..."
-        assertThat(agent.getRole()).isEqualTo("Writer");
-        assertThat(agent.getLlm()).isSameAs(model);
+    @Test
+    void synthesize_modelThrowsNotImplemented_propagatesException() {
+        // RuntimeException("Not implemented") is the LangChain4j 1.11.0 ChatModel.doChat()
+        // default implementation. This signals the ChatModel has no runnable implementation.
+        // The synthesizer must propagate this so the user sees the real problem, not a
+        // misleading downstream runtime failure from a degraded template-synthesized agent.
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenThrow(new RuntimeException("Not implemented"));
+        SynthesisContext ctx = SynthesisContext.of(model);
+        Task task = taskWithDescription("Analyse data trends");
+
+        assertThatThrownBy(() -> synthesizer.synthesize(task, ctx))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Not implemented");
     }
 
     // ========================
