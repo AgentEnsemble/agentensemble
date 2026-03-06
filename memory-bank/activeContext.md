@@ -2,43 +2,54 @@
 
 ## Current Work Focus
 
-Issue #131 (feat: WebSocketStreamingListener -- bridge callbacks to WebSocket, v2.1.0) is
-complete on branch `feat/131-streaming-listener`.
+Issue #132 (feat: WebReviewHandler -- real implementation replacing stub, v2.1.0) is
+complete on branch `feat/132-web-review-handler`.
 
-### Issue #131 summary
+### Issue #132 summary
 
-- All 7 `EnsembleListener` methods bridge to WebSocket JSON messages (task start/complete/
-  fail, tool_called, delegation started/completed/failed)
-- `EnsembleDashboard` SPI extended with `onEnsembleStarted()` / `onEnsembleCompleted()`
-  default lifecycle hooks
-- `Ensemble.java` stores dashboard reference and calls hooks from `runWithInputs()`
-- `WebDashboard` implements hooks to broadcast `ensemble_started` / `ensemble_completed`
-- Late-join snapshot: `ConnectionManager` accumulates all broadcast messages in a
-  `CopyOnWriteArrayList`; `onConnect()` sends them as a JSON array in the `hello` message
-- Also applied Copilot review fixes from PR #138: heartbeat future cancellation,
-  IPv6 loopback origin handling, null outcome for tool_called, -1 tokenCount sentinel,
-  agentensemble-review promoted from compileOnly to api
-- All 141+ tests pass; JaCoCo LINE >= 90% / BRANCH >= 75% both pass; full build clean
+**Breaking change**: `ReviewHandler.web(URI)` factory removed from `agentensemble-review`;
+the stub `WebReviewHandler` in that module deleted. The real implementation has always been
+`net.agentensemble.web.WebReviewHandler` in `agentensemble-web`, obtained via
+`WebDashboard.reviewHandler()`.
+
+Key changes:
+- `ReviewHandler.web(URI)` factory and the URI-based `WebReviewHandler` stub removed from
+  `agentensemble-review` (breaking change -- no longer throws `UnsupportedOperationException`)
+- `ReviewHandler` Javadoc updated to direct users to `WebDashboard.reviewHandler()`
+- `AutoApproveReviewHandlerTest` updated to remove the 4 web() stub tests
+- `ConnectionManager.resolveReview()` now logs at DEBUG when an unknown reviewId is received
+  (covers the race between late browser decisions and already-timed-out reviews)
+- `WebReviewHandlerTest` extended with 2 new tests:
+  - `review_concurrentReviews_eachFutureResolvesIndependently()` -- 3 parallel virtual threads,
+    resolved in reverse order, all return correct decision
+  - `resolveReview_unknownReviewId_afterTimeout_isIgnoredWithoutException()`
+- `WebReviewGateIntegrationTest` created (4 tests, real embedded server + Java WS client):
+  - CONTINUE, EDIT, EXIT_EARLY decision flows
+  - Timeout flow with `review_timed_out` broadcast verification
+- `docs/guides/review.md` updated: removed `ReviewHandler.web(URI)` stub section and
+  "not yet implemented" language; Browser-Based Review section now describes the live
+  `WebReviewHandler` accurately
 
 ## Next Steps
 
-- Open PR for `feat/131-streaming-listener` against main
-- Continue with v2.1.0 viz live mode (Issue #132+: agentensemble-viz WebSocket client,
-  live `/live` route, review approval UI)
+- Open PR for `feat/132-web-review-handler` against main
+- Continue with v2.1.0 viz live mode (Group I):
+  - agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine
+  - Live timeline/flow updates
+  - Review approval UI (modal with Approve/Edit/Exit Early + countdown)
 
-## Key Design Decisions (Issue #131)
+## Key Design Decisions (Issue #132)
 
-- `EnsembleDashboard.onEnsembleStarted/Completed()` added as default no-op interface
-  methods -- backward-compatible; existing implementations not broken
-- `Ensemble.dashboard` field stored alongside listener/reviewHandler so
-  `runWithInputs()` can call lifecycle hooks before/after `executor.execute()`
-- Snapshot format: JSON array of all broadcast messages (including `ensemble_started`)
-  rather than a serialized `ExecutionTrace` -- simpler, and the client-side `liveReducer`
-  can replay the array to reconstruct state
-- `CopyOnWriteArrayList` chosen for snapshot messages: safe for concurrent appends from
-  parallel workflow virtual threads; read (for hello) is a point-in-time snapshot
-- `noteEnsembleStarted()` clears the snapshot before recording new metadata so
-  sequential re-runs do not accumulate events across runs
+- Breaking change chosen over deprecation: `ReviewHandler.web(URI)` was always a stub
+  that threw UnsupportedOperationException, so callers had no working code to migrate;
+  removing it cleanly is better than emitting a deprecation warning for years
+- Real `WebReviewHandler` lives in `agentensemble-web` (not `agentensemble-review`) because
+  it depends on `ConnectionManager`, `MessageSerializer`, and the Javalin server -- none of
+  which belong in the lightweight review module
+- Canonical entry point is `WebDashboard.reviewHandler()`; it is the only way to obtain a
+  working `WebReviewHandler`
+- `ConnectionManager.resolveReview()` logs at DEBUG for unknown reviewId rather than WARN
+  because it is an expected race condition (late browser decision after timeout)
 
 ## Important Patterns and Preferences
 

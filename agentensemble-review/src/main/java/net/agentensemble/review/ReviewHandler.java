@@ -1,6 +1,5 @@
 package net.agentensemble.review;
 
-import java.net.URI;
 import java.time.Duration;
 
 /**
@@ -26,7 +25,8 @@ import java.time.Duration;
  *   <li>{@link #console()} -- CLI implementation; blocks on stdin; displays countdown timer</li>
  *   <li>{@link #autoApprove()} -- always returns {@link ReviewDecision.Continue}; for CI/tests</li>
  *   <li>{@link #autoApproveWithDelay(Duration)} -- returns Continue after delay; simulates human timing</li>
- *   <li>{@link #web(URI)} -- stub / design placeholder for webhook-based review</li>
+ *   <li>Browser-based review -- use {@code WebDashboard.reviewHandler()} from the
+ *       {@code agentensemble-web} module (v2.1.0+)</li>
  * </ul>
  *
  * <p>Custom implementations may be provided by implementing this functional interface.
@@ -96,22 +96,5 @@ public interface ReviewHandler {
             throw new IllegalArgumentException("delay must not be negative");
         }
         return new AutoApproveWithDelayReviewHandler(delay);
-    }
-
-    /**
-     * Return a stub {@link ReviewHandler} that calls a remote URL for review decisions.
-     *
-     * <p>This is a design placeholder. The stub implementation always throws
-     * {@link UnsupportedOperationException}. A real webhook-based implementation is
-     * planned for a future release.
-     *
-     * @param callbackUrl the URL to POST review requests to; must not be null
-     * @return a stub web ReviewHandler
-     */
-    static ReviewHandler web(URI callbackUrl) {
-        if (callbackUrl == null) {
-            throw new IllegalArgumentException("callbackUrl must not be null");
-        }
-        return new WebReviewHandler(callbackUrl);
     }
 }
