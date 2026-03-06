@@ -17,9 +17,9 @@ val errorproneCoreLib = libs.errorprone.core
 
 subprojects {
     // Skip projects that manage themselves via convention plugins:
-    // - "bom" is a java-platform project (cannot have java plugin applied)
+    // - "bom" and "agentensemble-bom" are java-platform projects (cannot have java plugin applied)
     // - sub-modules of :agentensemble-tools use the agentensemble.tool-conventions plugin
-    if (name == "bom" || parent?.path == ":agentensemble-tools") {
+    if (name == "bom" || name == "agentensemble-bom" || parent?.path == ":agentensemble-tools") {
         return@subprojects
     }
 

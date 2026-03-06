@@ -2,7 +2,6 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.List;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -28,6 +27,9 @@ import net.agentensemble.trace.ToolCallTrace;
  *   <li>{@code FULL} -- adds enriched tool I/O (parsedInput maps) and writes a JSON
  *       trace file to {@code traces/}
  * </ul>
+ *
+ * <p>The agent is auto-synthesised from the task description. Tools and maxIterations
+ * are configured directly on the task.
  *
  * <p>CaptureMode can also be activated without any code change:
  * <pre>
@@ -81,21 +83,19 @@ public class CaptureModeExample {
     }
 
     private static EnsembleOutput runEnsemble(dev.langchain4j.model.chat.ChatModel chatModel, CaptureMode captureMode) {
-        var analyst = Agent.builder()
-                .role("Quantitative Analyst")
-                .goal("Perform precise calculations using available tools")
-                .tools(List.of(new CalculatorTool(), new DateTimeTool()))
-                .llm(chatModel)
-                .maxIterations(10)
-                .build();
-
         var task = Task.builder()
                 .description(TASK_DESCRIPTION)
                 .expectedOutput(EXPECTED_OUTPUT)
-                .agent(analyst)
+                .tools(List.of(new CalculatorTool(), new DateTimeTool()))
+                .maxIterations(10)
                 .build();
 
-        return Ensemble.builder().task(task).captureMode(captureMode).build().run();
+        return Ensemble.builder()
+                .task(task)
+                .chatLanguageModel(chatModel)
+                .captureMode(captureMode)
+                .build()
+                .run();
     }
 
     private static void printOffTrace(EnsembleOutput output) {

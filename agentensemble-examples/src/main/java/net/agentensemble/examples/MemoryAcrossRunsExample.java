@@ -2,12 +2,10 @@ package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import java.util.Map;
-import net.agentensemble.Agent;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.memory.MemoryStore;
-import net.agentensemble.workflow.Workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,28 +56,9 @@ public class MemoryAcrossRunsExample {
         MemoryStore store = MemoryStore.inMemory();
 
         // ========================
-        // Define agents (reused across runs)
-        // ========================
-
-        var analyst = Agent.builder()
-                .role("Market Intelligence Analyst")
-                .goal("Track market developments, competitive movements, and industry trends for TechCorp")
-                .background("You produce weekly intelligence briefings. You draw on historical context "
-                        + "from prior analyses to identify trends and changes over time.")
-                .llm(chatModel)
-                .build();
-
-        var strategist = Agent.builder()
-                .role("Strategic Advisor")
-                .goal("Translate market intelligence into strategic recommendations for TechCorp")
-                .background("You provide actionable strategic recommendations grounded in both "
-                        + "current data and historical context.")
-                .llm(chatModel)
-                .build();
-
-        // ========================
         // Define tasks (reused across runs)
         //
+        // Agents are auto-synthesised from the task descriptions.
         // Both tasks declare .memory("weekly-intelligence").
         // The framework will:
         //   1. Read prior entries from the scope before each task runs
@@ -91,14 +70,12 @@ public class MemoryAcrossRunsExample {
                 .description("Analyse TechCorp's competitive environment for week of {week}. "
                         + "Draw on any relevant historical context from memory.")
                 .expectedOutput("A 300-word competitive intelligence briefing for the week of {week}")
-                .agent(analyst)
                 .memory("weekly-intelligence")
                 .build();
 
         var recommendationTask = Task.builder()
                 .description("Provide strategic recommendations for TechCorp based on the " + "week of {week} analysis")
                 .expectedOutput("Three specific, actionable strategic recommendations with supporting rationale")
-                .agent(strategist)
                 .memory("weekly-intelligence")
                 .build();
 
@@ -107,7 +84,7 @@ public class MemoryAcrossRunsExample {
         Ensemble ensemble = Ensemble.builder()
                 .task(analysisTask)
                 .task(recommendationTask)
-                .workflow(Workflow.SEQUENTIAL)
+                .chatLanguageModel(chatModel)
                 .memoryStore(store)
                 .build();
 
