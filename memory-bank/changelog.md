@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] - fix(core): hard runtime deps, context identity remap, null-safe agent role -- 2026-03-06
+
+### Fixed (branch: fix/147-148-149-core-runtime-deps-and-context-identity, commit 1dadb83, PR #150)
+
+Three bugs in `agentensemble-core`:
+
+**#147 — `compileOnly` memory/review deps cause `NoClassDefFoundError` at runtime**
+- `agentensemble-memory` and `agentensemble-review` were declared `compileOnly` but core
+  references their types directly in 14+ source files. Changed both to `api` in
+  `agentensemble-core/build.gradle.kts`.
+
+**#148 — NPE in `SequentialWorkflowExecutor.gatherContextOutputs()` for task-first context workflows**
+- `Ensemble.resolveAgents()` synthesized agents (new Task identities) without re-mapping
+  context references on downstream tasks. Added a two-pass approach mirroring `resolveTasks()`:
+  Pass 1 synthesizes agents and builds `IdentityHashMap<Task,Task>` (old→new); Pass 2
+  rewrites context lists with map updates on each new identity for correct chained deps.
+- Added null-safe `agentRole(Task)` defensive helpers to `SequentialWorkflowExecutor` and
+  `ParallelTaskCoordinator`.
+
+**#149 — Synthesized agent tool loop incompatibility**
+- Root cause was #148. Resolved by the context identity fix above.
+
+**Tests added (`SequentialTaskFirstContextIntegrationTest`, 9 new tests):**
+- 2-task agentless context dep, ensemble-level LLM, 3-task chain, mixed explicit/agentless,
+  context-in-prompt verification, tool loop, tools+context combined, LLM precedence,
+  context-in-prompt with tools
+
+---
+
 ## [Unreleased] - fix: agentensemble-viz compiled binary shows "Not Found" -- 2026-03-06
 
 ### Fixed (branch: fix/viz-cli-binary-asset-embedding, commit 74f1b73)
