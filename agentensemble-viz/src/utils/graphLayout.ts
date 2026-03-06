@@ -9,6 +9,7 @@ import dagre from '@dagrejs/dagre';
 import type { Node, Edge } from '@xyflow/react';
 import type { DagTaskNode, DagModel } from '../types/dag.js';
 import type { TaskTrace } from '../types/trace.js';
+import type { LiveTaskStatus } from '../types/live.js';
 import { getAgentColor } from './colors.js';
 
 export const NODE_WIDTH = 220;
@@ -19,6 +20,14 @@ export interface TaskNodeData extends Record<string, unknown> {
   agentColor: ReturnType<typeof getAgentColor>;
   isSelected: boolean;
   traceData?: TaskTrace;
+  /**
+   * Live execution status for nodes rendered in live mode.
+   * When present, overrides the node's visual appearance:
+   *   - 'running'   -> blue pulsing header
+   *   - 'failed'    -> red header
+   * When absent (undefined), the node renders in its normal agent color.
+   */
+  liveStatus?: LiveTaskStatus;
 }
 
 /** Full ReactFlow node type for task nodes. */

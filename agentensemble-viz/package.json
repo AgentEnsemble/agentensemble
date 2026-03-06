@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.0.4",
-    "@xyflow/react": "^12.5.4"
+    "@xyflow/react": "^12.5.4",
+    "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.2",

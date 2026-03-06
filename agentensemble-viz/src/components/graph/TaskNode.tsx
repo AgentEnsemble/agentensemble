@@ -15,34 +15,74 @@ export type TaskNodeType = Node<TaskNodeData, 'taskNode'>;
  * - Critical path indicator
  * - Parallel group level
  * - Optional trace metrics (duration, token count) when trace data is available
+ *
+ * When `liveStatus` is set the node overrides its header color to reflect the
+ * current execution state:
+ * - 'running'   -> blue (#3B82F6) with a pulsing ring animation (ae-node-pulse)
+ * - 'failed'    -> red (#EF4444)
+ * - 'completed' -> normal agent color (same as historical mode)
  */
 const TaskNode = memo(function TaskNode({ data }: NodeProps<TaskNodeType>) {
-  const { task, agentColor, isSelected, traceData } = data;
+  const { task, agentColor, isSelected, traceData, liveStatus } = data;
 
   const durationMs = traceData ? parseDurationMs(traceData.duration) : null;
 
+  // Determine header and border colors based on live status override
+  const headerColor =
+    liveStatus === 'running'
+      ? '#3B82F6'
+      : liveStatus === 'failed'
+        ? '#EF4444'
+        : agentColor.bg;
+
+  const borderColor =
+    liveStatus === 'running'
+      ? '#2563EB'
+      : liveStatus === 'failed'
+        ? '#DC2626'
+        : isSelected
+          ? agentColor.bg
+          : task.onCriticalPath
+            ? '#EF4444'
+            : agentColor.border;
+
+  // Apply pulsing ring animation only when the task is actively running
+  const isRunning = liveStatus === 'running';
+
   return (
-    <div className="relative" style={{ width: 220 }}>
+    <div
+      className={['relative', isRunning ? 'ae-node-pulse' : ''].join(' ')}
+      style={{ width: 220 }}
+      data-live-status={liveStatus ?? undefined}
+    >
       {/* Incoming edge handle (left) */}
       <Handle type="target" position={Position.Left} />
 
       {/* Node body */}
       <div
         style={{
-          border: `2px solid ${isSelected ? agentColor.bg : task.onCriticalPath ? '#EF4444' : agentColor.border}`,
-          boxShadow: isSelected
-            ? `0 0 0 3px ${agentColor.bg}40`
-            : task.onCriticalPath
-              ? '0 0 0 2px rgba(239,68,68,0.3)'
-              : undefined,
+          border: `2px solid ${borderColor}`,
+          boxShadow:
+            isRunning
+              ? undefined // ae-node-pulse provides the animated ring via keyframe
+              : isSelected
+                ? `0 0 0 3px ${agentColor.bg}40`
+                : task.onCriticalPath
+                  ? '0 0 0 2px rgba(239,68,68,0.3)'
+                  : undefined,
           backgroundColor: '#FFFFFF',
         }}
         className="rounded-lg bg-white transition-all dark:bg-gray-800"
       >
         {/* Header: agent role colored stripe */}
         <div
-          style={{ backgroundColor: agentColor.bg }}
-          className="flex items-center justify-between rounded-t-md px-2.5 py-1.5"
+          style={{ backgroundColor: headerColor }}
+          className={[
+            'flex items-center justify-between rounded-t-md px-2.5 py-1.5',
+            isRunning ? 'ae-pulse' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           <span className="truncate text-xs font-semibold text-white">{task.agentRole}</span>
           <div className="flex items-center gap-1">

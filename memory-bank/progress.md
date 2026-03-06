@@ -299,10 +299,12 @@ Design document: `docs/design/16-live-dashboard.md`
 - Group H1: `WebReviewHandler` -- real browser-based review (Issues #130/#131, PR #142)
 - Group H2 (partial): `ReviewHandler.web(URI)` stub removed; backward compat clean (Issue #132)
 
+**Complete (feat/133-134-viz-live-mode -- Issues #133, #134):**
+- Group I1: agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine; 163 tests pass
+- Group I2: Live timeline/flow updates -- TimelineView isLive + FlowView isLive + TaskNode live status; 163 tests pass
+
 **Remaining:**
 - Group H2: Viz review approval UI (modal with Approve/Edit/Exit Early + countdown timer)
-- Group I1: agentensemble-viz WebSocket client + `/live` route + incremental `liveReducer` state machine
-- Group I2: Live timeline/flow updates
 
 ### Near-term (follow-up issues)
 - MCP (Model Context Protocol) integration (`McpAgentTool`)
