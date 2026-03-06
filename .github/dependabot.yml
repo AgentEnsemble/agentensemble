@@ -14,6 +14,19 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: npm
+    directory: /agentensemble-viz
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore"
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
