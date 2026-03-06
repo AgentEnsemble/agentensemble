@@ -30,7 +30,7 @@
     "compile:linux-x64": "npm run build && npm run embed && bun build --compile --target=bun-linux-x64 cli.js --outfile agentensemble-viz"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^1.0.4",
+    "@dagrejs/dagre": "^2.0.4",
     "@xyflow/react": "^12.5.4",
     "react-router-dom": "^7.13.1"
   },
