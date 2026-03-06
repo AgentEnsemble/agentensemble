@@ -14,7 +14,7 @@ spotless         = "8.3.0"
 errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
 micrometer       = "1.16.3"
-javalin          = "6.3.0"
+javalin          = "7.0.1"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }

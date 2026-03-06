@@ -14,6 +14,7 @@ import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.PingMessage;
 import net.agentensemble.web.protocol.PongMessage;
 import net.agentensemble.web.protocol.ReviewDecisionMessage;
+import org.eclipse.jetty.websocket.api.Callback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,46 +89,47 @@ class WebSocketServer {
                     host);
         }
 
+        final String boundHost = host;
         app = Javalin.create(config -> {
-            config.showJavalinBanner = false;
+            config.startup.showJavalinBanner = false;
             // Static files from viz dist embedded in the JAR under /web/
             // config.staticFiles.add("/web", io.javalin.http.staticfiles.Location.CLASSPATH);
-        });
 
-        final String boundHost = host;
-        app.ws("/ws", ws -> {
-            ws.onConnect(ctx -> {
-                String origin = ctx.header("Origin");
-                if (!isOriginAllowed(origin, boundHost)) {
-                    log.warn("Rejected WebSocket connection from origin '{}' (host binding: {})", origin, boundHost);
-                    ctx.session.close(1008, "Origin not allowed");
-                    return;
-                }
-                connectionManager.onConnect(new JavalinWsSession(ctx));
+            config.routes.ws("/ws", ws -> {
+                ws.onConnect(ctx -> {
+                    String origin = ctx.header("Origin");
+                    if (!isOriginAllowed(origin, boundHost)) {
+                        log.warn(
+                                "Rejected WebSocket connection from origin '{}' (host binding: {})", origin, boundHost);
+                        ctx.session.close(1008, "Origin not allowed", Callback.NOOP);
+                        return;
+                    }
+                    connectionManager.onConnect(new JavalinWsSession(ctx));
+                });
+
+                ws.onMessage(ctx -> {
+                    String message = ctx.message();
+                    try {
+                        ClientMessage parsed = serializer.fromJson(message, ClientMessage.class);
+                        handleClientMessage(ctx, parsed);
+                    } catch (Exception e) {
+                        log.warn("Failed to parse client message: {}", message, e);
+                    }
+                });
+
+                ws.onClose(ctx -> connectionManager.onDisconnect(ctx.sessionId()));
             });
 
-            ws.onMessage(ctx -> {
-                String message = ctx.message();
-                try {
-                    ClientMessage parsed = serializer.fromJson(message, ClientMessage.class);
-                    handleClientMessage(ctx, parsed);
-                } catch (Exception e) {
-                    log.warn("Failed to parse client message: {}", message, e);
-                }
-            });
-
-            ws.onClose(ctx -> connectionManager.onDisconnect(ctx.sessionId()));
+            config.routes.get(
+                    "/api/status",
+                    ctx -> ctx.json(Map.of(
+                            "status",
+                            "running",
+                            "clients",
+                            connectionManager.sessionCount(),
+                            "port",
+                            runningPort > 0 ? runningPort : port)));
         });
-
-        app.get(
-                "/api/status",
-                ctx -> ctx.json(Map.of(
-                        "status",
-                        "running",
-                        "clients",
-                        connectionManager.sessionCount(),
-                        "port",
-                        runningPort > 0 ? runningPort : port)));
 
         app.start(host, port);
 
