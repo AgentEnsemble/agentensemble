@@ -210,6 +210,27 @@ class WebSocketStreamingListenerTest {
         assertThat(json).contains("Researcher");
     }
 
+    @Test
+    void onToolCall_outcomeIsNullBecauseToolCallEventHasNoOutcomeField() {
+        // ToolCallEvent does not carry a success/failure signal, so the protocol message
+        // uses null for outcome to avoid misleading "SUCCESS" when the tool may have failed.
+        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5));
+        listener.onToolCall(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"outcome\":null");
+    }
+
+    @Test
+    void onTaskComplete_tokenCountIsMinusOneToIndicateUnknown() {
+        // tokenCount uses -1 as the "unknown" sentinel, consistent with TaskMetrics.totalTokens.
+        TaskCompleteEvent event = new TaskCompleteEvent("Task", "Agent", null, Duration.ofSeconds(1), 1, 1);
+        listener.onTaskComplete(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"tokenCount\":-1");
+    }
+
     // ========================
     // Delegation lifecycle events
     // ========================

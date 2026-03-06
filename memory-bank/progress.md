@@ -22,7 +22,7 @@
 - `WebDashboard.start()` / `WebDashboard.stop()` -- lifecycle management; idempotent
 - `WebDashboard.streamingListener()` -- returns `EnsembleListener` to wire into Ensemble
 - `WebDashboard.reviewHandler()` -- returns `ReviewHandler` to wire into Ensemble
-- `WebDashboard.builder().webDashboard(dashboard)` on `Ensemble.builder()` -- one-line wiring
+- `Ensemble.builder().webDashboard(dashboard)` -- one-line wiring
 - Embedded Javalin 6.3.0 WebSocket server at `ws://{host}:{port}/ws`
 - HTTP endpoint `GET /api/status` returning `{"status":"running","clients":N,"port":P}`
 - 15-second heartbeat broadcast to all connected sessions

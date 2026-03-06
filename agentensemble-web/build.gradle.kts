@@ -30,10 +30,12 @@ dependencies {
     // Core module - exposed as api so consumers get core types (EnsembleListener, etc.)
     api(project(":agentensemble-core"))
 
-    // Review module - compileOnly so users who only want streaming (no review gates)
-    // do not pull review in transitively. Users wanting WebReviewHandler must add
-    // agentensemble-review explicitly.
-    compileOnly(project(":agentensemble-review"))
+    // Review module - exposed as api because public types in agentensemble-web
+    // (WebDashboard, WebReviewHandler, EnsembleDashboard#reviewHandler()) have direct
+    // compile-time references to net.agentensemble.review.*. Declaring it compileOnly
+    // would cause NoClassDefFoundError at runtime for any consumer of agentensemble-web,
+    // even those that never call review gates.
+    api(project(":agentensemble-review"))
 
     // Embedded WebSocket server -- Javalin wraps Jetty for WebSocket + static file serving.
     implementation(libs.javalin)

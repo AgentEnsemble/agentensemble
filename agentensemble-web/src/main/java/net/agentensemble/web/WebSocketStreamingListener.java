@@ -71,7 +71,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 event.agentRole(),
                 Instant.now(),
                 event.duration().toMillis(),
-                0, // token counts are not yet surfaced via EnsembleListener events
+                -1L, // token counts are not surfaced via EnsembleListener events; -1 = unknown
                 toolCallCount));
     }
 
@@ -96,7 +96,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 0, // taskIndex is not surfaced by ToolCallEvent
                 event.toolName(),
                 event.duration().toMillis(),
-                "SUCCESS",
+                null, // outcome is not surfaced by ToolCallEvent; null means unknown
                 event.toolArguments(),
                 event.toolResult(),
                 event.structuredResult()));

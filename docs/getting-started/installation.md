@@ -25,7 +25,7 @@ repositories {
 
 dependencies {
     // Import the BOM -- aligns all AgentEnsemble module versions
-    implementation(platform("net.agentensemble:agentensemble-bom:2.0.0"))
+    implementation(platform("net.agentensemble:agentensemble-bom:2.1.0"))
 
     // Core framework -- always required
     implementation("net.agentensemble:agentensemble-core")
@@ -46,9 +46,9 @@ dependencies {
 
     // Optional: live execution dashboard -- embedded WebSocket server that streams
     // real-time task/tool events to a browser and supports browser-based review gates.
-    // Add agentensemble-review above if you also want browser-based review approval.
-    // NOTE: use the same version for all net.agentensemble:* modules to avoid conflicts.
-    implementation("net.agentensemble:agentensemble-web:2.1.0")
+    // agentensemble-review is included transitively; declare it above only if you
+    // reference review types directly in your own code.
+    implementation("net.agentensemble:agentensemble-web")
 
     // Optional: Micrometer metrics integration
     implementation("net.agentensemble:agentensemble-metrics-micrometer")
@@ -66,7 +66,7 @@ repositories {
 }
 
 dependencies {
-    implementation platform('net.agentensemble:agentensemble-bom:2.0.0')
+    implementation platform('net.agentensemble:agentensemble-bom:2.1.0')
     implementation 'net.agentensemble:agentensemble-core'
     implementation 'net.agentensemble:agentensemble-memory'
     implementation 'net.agentensemble:agentensemble-review'
@@ -82,7 +82,7 @@ dependencies {
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-bom</artifactId>
-            <version>2.0.0</version>
+            <version>2.1.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>

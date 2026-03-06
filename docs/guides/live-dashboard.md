@@ -34,9 +34,9 @@ dependencies {
     implementation("net.agentensemble:agentensemble-core:2.1.0")
     implementation("net.agentensemble:agentensemble-web:2.1.0")
 
-    // Add agentensemble-review only if you are using review gates.
-    // agentensemble-web has a compileOnly reference to review; you must
-    // add it explicitly to activate the WebReviewHandler.
+    // agentensemble-review is included transitively through agentensemble-web.
+    // Declare it explicitly only if you reference review types (ReviewHandler,
+    // ReviewDecision, etc.) directly in your own code.
     implementation("net.agentensemble:agentensemble-review:2.1.0")
 }
 ```
@@ -274,14 +274,20 @@ respond with a `Ping` message and the server will reply with a `Pong`.
 
 ## Origin Validation
 
-The server validates the `Origin` header of each WebSocket upgrade request. Connections are
-accepted when the request's origin host matches the configured server `host`, or when the
-configured `host` is `"0.0.0.0"` (any origin accepted). All other origins are rejected with
-HTTP 403.
+The server validates the `Origin` header of each WebSocket upgrade request using exact
+hostname comparison (not substring matching) to prevent subdomain spoofing attacks.
+
+When the server is bound to a loopback address (`localhost`, `127.0.0.1`, `::1`, or
+`[::1]`), only origins whose hostname resolves to one of those loopback addresses are
+accepted. All other origins are rejected with WebSocket close code 1008. This protects
+against cross-site WebSocket hijacking (CSRF) from arbitrary web pages.
+
+When the server is bound to any other address (e.g., `0.0.0.0` for all interfaces), all
+origins are accepted. Security is delegated to the network layer (VPN, reverse proxy, etc.).
 
 For local development on `localhost` this requires no configuration. For production
-deployments behind a reverse proxy, ensure the proxy preserves the `Origin` header, or
-configure `host("0.0.0.0")` and apply origin validation at the proxy layer.
+deployments, either bind to a specific non-loopback address and secure at the network
+layer, or use a reverse proxy that applies its own origin policy.
 
 ---
 
