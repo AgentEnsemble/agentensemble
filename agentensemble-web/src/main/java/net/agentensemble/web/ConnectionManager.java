@@ -182,6 +182,10 @@ class ConnectionManager {
         CompletableFuture<String> future = pendingReviews.remove(reviewId);
         if (future != null) {
             future.complete(value);
+        } else {
+            log.debug(
+                    "resolveReview called for unknown reviewId '{}'; ignoring (likely a late decision after timeout)",
+                    reviewId);
         }
     }
 

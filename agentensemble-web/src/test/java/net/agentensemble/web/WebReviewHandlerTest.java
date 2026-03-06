@@ -1,11 +1,18 @@
 package net.agentensemble.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.review.ReviewRequest;
@@ -298,5 +305,112 @@ class WebReviewHandlerTest {
 
         boolean hasTimedOut = session.sentMessages().stream().anyMatch(m -> m.contains("review_timed_out"));
         assertThat(hasTimedOut).isTrue();
+    }
+
+    // ========================
+    // Concurrent reviews
+    // ========================
+
+    /**
+     * Subclass of {@link ConnectionManager} that captures each registered future for manual
+     * resolution, and decrements a latch so the test can wait for all concurrent reviews to
+     * be registered before resolving them in an arbitrary order.
+     *
+     * <p>Review IDs are stored in {@code orderedIds} ({@link CopyOnWriteArrayList}) to preserve
+     * insertion order, because {@link ConcurrentHashMap#keySet()} does not guarantee ordering.
+     */
+    static class CapturingConnectionManager extends ConnectionManager {
+
+        private final ConcurrentHashMap<String, CompletableFuture<String>> captured = new ConcurrentHashMap<>();
+        private final CopyOnWriteArrayList<String> orderedIds = new CopyOnWriteArrayList<>();
+        private final CountDownLatch registeredLatch;
+
+        CapturingConnectionManager(MessageSerializer serializer, int expectedCount) {
+            super(serializer);
+            this.registeredLatch = new CountDownLatch(expectedCount);
+        }
+
+        @Override
+        void registerPendingReview(String reviewId, CompletableFuture<String> future) {
+            super.registerPendingReview(reviewId, future);
+            captured.put(reviewId, future);
+            orderedIds.add(reviewId); // insertion-ordered; used for deterministic index access in tests
+            registeredLatch.countDown();
+        }
+
+        boolean awaitAllRegistered(long timeoutSeconds) throws InterruptedException {
+            return registeredLatch.await(timeoutSeconds, TimeUnit.SECONDS);
+        }
+
+        /** Returns review IDs in registration order. */
+        List<String> capturedReviewIds() {
+            return new ArrayList<>(orderedIds);
+        }
+    }
+
+    @Test
+    void review_concurrentReviews_eachFutureResolvesIndependently() throws Exception {
+        CapturingConnectionManager cm = new CapturingConnectionManager(serializer, 3);
+        WebReviewHandler handler =
+                new WebReviewHandler(cm, serializer, Duration.ofSeconds(10), OnTimeoutAction.CONTINUE);
+
+        // Start 3 concurrent review() calls on virtual threads.
+        // Virtual threads are used deliberately: review() blocks on future.get(), and submitting
+        // blocking tasks to the ForkJoinPool common pool (via supplyAsync) can exhaust the pool
+        // on low-parallelism CI agents and cause the test to hang.
+        CompletableFuture<ReviewDecision> f1 = new CompletableFuture<>();
+        CompletableFuture<ReviewDecision> f2 = new CompletableFuture<>();
+        CompletableFuture<ReviewDecision> f3 = new CompletableFuture<>();
+        Thread.ofVirtual()
+                .start(() -> f1.complete(handler.review(
+                        ReviewRequest.of("Task 1", "o1", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+        Thread.ofVirtual()
+                .start(() -> f2.complete(handler.review(
+                        ReviewRequest.of("Task 2", "o2", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+        Thread.ofVirtual()
+                .start(() -> f3.complete(handler.review(
+                        ReviewRequest.of("Task 3", "o3", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+
+        // Wait for all 3 to register their futures before resolving.
+        // capturedReviewIds() preserves insertion order (CopyOnWriteArrayList) so index access is
+        // deterministic even though review() calls start concurrently.
+        assertThat(cm.awaitAllRegistered(5)).isTrue();
+
+        // Resolve in reverse insertion order to verify each future is resolved independently
+        List<String> reviewIds = cm.capturedReviewIds();
+        cm.resolveReview(reviewIds.get(2), decisionJson("continue", null));
+        cm.resolveReview(reviewIds.get(0), decisionJson("continue", null));
+        cm.resolveReview(reviewIds.get(1), decisionJson("continue", null));
+
+        // All 3 should complete with the correct decision regardless of resolution order
+        assertThat(f1.get(5, TimeUnit.SECONDS)).isEqualTo(ReviewDecision.continueExecution());
+        assertThat(f2.get(5, TimeUnit.SECONDS)).isEqualTo(ReviewDecision.continueExecution());
+        assertThat(f3.get(5, TimeUnit.SECONDS)).isEqualTo(ReviewDecision.continueExecution());
+    }
+
+    // ========================
+    // Unknown reviewId (late decision after timeout)
+    // ========================
+
+    @Test
+    void resolveReview_unknownReviewId_afterTimeout_isIgnoredWithoutException() {
+        // Capture the reviewId so we can call resolveReview on it after it has already timed out
+        AtomicReference<String> capturedId = new AtomicReference<>();
+        ConnectionManager cm = new ConnectionManager(serializer) {
+            @Override
+            void registerPendingReview(String reviewId, CompletableFuture<String> future) {
+                super.registerPendingReview(reviewId, future);
+                capturedId.set(reviewId);
+            }
+        };
+
+        WebReviewHandler handler =
+                new WebReviewHandler(cm, serializer, Duration.ofMillis(10), OnTimeoutAction.CONTINUE);
+        handler.review(request); // times out, removes reviewId from pendingReviews
+
+        // Simulates a late browser decision arriving after the timeout has already cleared
+        // the reviewId -- must be silently ignored with no exception
+        assertThatCode(() -> cm.resolveReview(capturedId.get(), decisionJson("continue", null)))
+                .doesNotThrowAnyException();
     }
 }

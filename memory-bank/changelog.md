@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - Issue #132: WebReviewHandler -- real implementation replacing stub (v2.1.0) -- 2026-03-06
+
+### Changed (Issue #132 -- Breaking: remove ReviewHandler.web(URI) stub)
+
+**`agentensemble-review` module (breaking change):**
+- `ReviewHandler.web(URI)` static factory removed; callers must use `WebDashboard.reviewHandler()`
+- `WebReviewHandler.java` (URI-based stub, always threw `UnsupportedOperationException`) deleted
+- `ReviewHandler` Javadoc updated: `web(URI)` bullet replaced with pointer to
+  `WebDashboard.reviewHandler()` from `agentensemble-web`
+- `AutoApproveReviewHandlerTest`: 4 `web()` tests removed (`web_throwsUnsupportedOperation`,
+  `web_nullCallbackUrl_throwsIllegalArgument`, `web_callbackUrlAccessibleFromHandler`,
+  `web_callbackUrlInExceptionMessage`); `import java.net.URI` removed
+
+**`agentensemble-web` module:**
+- `ConnectionManager.resolveReview()`: added DEBUG log when called with an unknown `reviewId`
+  (expected race: late browser decision arriving after the review already timed out)
+
+**`docs/guides/review.md`:**
+- `### ReviewHandler.web(URI) (stub)` section removed entirely
+- Browser-Based Review section intro updated to describe `WebReviewHandler` as the live
+  implementation (no "not yet implemented" language)
+
+### Tests Added (Issue #132)
+
+**Unit (agentensemble-web `WebReviewHandlerTest`):**
+- `review_concurrentReviews_eachFutureResolvesIndependently()` -- 3 concurrent virtual-thread
+  `review()` calls registered via `CapturingConnectionManager` subclass; resolved in reverse
+  order (index 2, 0, 1); all 3 futures return `continueExecution()`
+- `resolveReview_unknownReviewId_afterTimeout_isIgnoredWithoutException()` -- review times out,
+  reviewId removed from map; subsequent `resolveReview(id, ...)` call does not throw
+
+**Integration (agentensemble-web, new file `WebReviewGateIntegrationTest`, 4 tests):**
+- `reviewGate_continueDecision_returnsReviewDecisionContinue()` -- real embedded server,
+  Java WS client receives `review_requested`, sends `CONTINUE` decision, `review()` returns `continueExecution()`
+- `reviewGate_editDecision_returnsEditWithRevisedOutput()` -- client sends `EDIT` + revisedOutput;
+  `review()` returns `ReviewDecision.edit("Revised press release with corrections.")`
+- `reviewGate_exitEarlyDecision_returnsExitEarly()` -- client sends `EXIT_EARLY`;
+  `review()` returns `ReviewDecision.exitEarly()`
+- `reviewGate_timeout_continueAction_returnsContinueAndBroadcastsReviewTimedOut()` -- 50 ms timeout,
+  no decision sent; `review()` returns `continueExecution()`; client receives `review_timed_out`
+
+### Opportunistic Coverage Added (Issue #132)
+
+- `ConnectionManagerTest.resolveForNonExistentReviewIsNoOp()` already covered the unknown
+  reviewId case; the new debug log adds observability without a test change
+- `WebReviewHandlerTest.CapturingConnectionManager` reusable inner class locks down the
+  concurrent-registration ordering contract for future tests
+
+---
+
 ## [Unreleased] - Issue #131: WebSocketStreamingListener -- bridge callbacks to WebSocket (v2.1.0) -- 2026-03-06
 
 ### Added (Issue #131 -- WebSocketStreamingListener, ensemble lifecycle messages, late-join snapshot)
