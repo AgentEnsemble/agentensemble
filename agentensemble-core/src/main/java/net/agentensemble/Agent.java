@@ -1,6 +1,7 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import java.lang.reflect.Method;
 import java.util.List;
 import lombok.Builder;
@@ -51,6 +52,17 @@ public class Agent {
 
     /** The LLM to use for this agent. Any LangChain4j ChatModel. Required. */
     ChatModel llm;
+
+    /**
+     * Optional streaming LLM for token-by-token generation of the final agent response.
+     *
+     * <p>When set, this model is used to stream the final response (the direct LLM-to-answer
+     * path, i.e. when the agent has no tools). Tool-calling iterations remain non-streaming.
+     * This field takes precedence over any task-level or ensemble-level streaming model.
+     *
+     * <p>Default: null (non-streaming; uses {@link #llm} for all calls).
+     */
+    StreamingChatModel streamingLlm;
 
     /**
      * Whether this agent may delegate subtasks to other agents.
@@ -106,7 +118,16 @@ public class Agent {
                 responseFormat = "";
             }
             return new Agent(
-                    role, goal, background, tools, llm, allowDelegation, verbose, maxIterations, responseFormat);
+                    role,
+                    goal,
+                    background,
+                    tools,
+                    llm,
+                    streamingLlm,
+                    allowDelegation,
+                    verbose,
+                    maxIterations,
+                    responseFormat);
         }
 
         private void validateRole() {

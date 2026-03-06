@@ -20,7 +20,7 @@ const BASE_STATE: LiveState = {
   totalTasks: 3,
 };
 
-function stateWithTask(taskIndex: number, status: 'running' | 'completed' | 'failed') {
+function stateWithTask(taskIndex: number, status: 'running' | 'completed' | 'failed'): LiveState {
   return {
     ...BASE_STATE,
     tasks: [
@@ -603,6 +603,123 @@ describe('liveReducer', () => {
       const next = liveReducer(BASE_STATE, msg);
       expect(next.ensembleComplete).toBe(true);
       expect(next.completedAt).toBe('2026-03-05T14:05:00Z');
+    });
+  });
+
+  describe('token', () => {
+    it('appends token to streamingOutput of matching running task', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'Hello ',
+        agentRole: 'Agent A',
+        taskDescription: 'Task 1',
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].streamingOutput).toEqual(['Hello ']);
+    });
+
+    it('accumulates multiple tokens in order as chunks array', () => {
+      const state = stateWithTask(1, 'running');
+      const tok1: ServerMessage = { type: 'token', token: 'Hel', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const tok2: ServerMessage = { type: 'token', token: 'lo ', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const tok3: ServerMessage = { type: 'token', token: 'world', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const s1 = liveReducer(state, tok1);
+      const s2 = liveReducer(s1, tok2);
+      const s3 = liveReducer(s2, tok3);
+      expect(s3.tasks[0].streamingOutput).toEqual(['Hel', 'lo ', 'world']);
+      expect(s3.tasks[0].streamingOutput?.join('')).toBe('Hello world');
+    });
+
+    it('matches by agentRole + taskDescription for precise attribution in parallel workflows', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Agent A',
+        taskDescription: 'Task 1',  // matches the running task exactly
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].streamingOutput).toEqual(['tok']);
+    });
+
+    it('falls back to most recent running task when no role match', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Unknown Agent',  // no match by role
+        taskDescription: 'Unknown task',
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(state, msg);
+      // Falls back to the only running task
+      expect(next.tasks[0].streamingOutput).toEqual(['tok']);
+    });
+
+    it('returns same state when no running tasks exist', () => {
+      const state = stateWithTask(1, 'completed');
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Agent A',
+        taskDescription: 'Task 1',
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(state, msg);
+      expect(next).toBe(state);
+    });
+
+    it('does not mutate the existing task object', () => {
+      const state = stateWithTask(1, 'running');
+      const originalTask = state.tasks[0];
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Agent A',
+        taskDescription: 'Task 1',
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      liveReducer(state, msg);
+      expect(originalTask.streamingOutput).toBeUndefined();
+    });
+
+    it('task_completed clears streamingOutput', () => {
+      // Accumulate some streaming output
+      const state = stateWithTask(1, 'running');
+      const tok: ServerMessage = { type: 'token', token: 'Hello world', agentRole: 'Agent A', taskDescription: 'Task 1', sentAt: '2026-03-05T14:00:10Z' };
+      const withStreaming = liveReducer(state, tok);
+      expect(withStreaming.tasks[0].streamingOutput).toEqual(['Hello world']);
+
+      // Now complete the task -- streamingOutput must be cleared
+      const completed: ServerMessage = {
+        type: 'task_completed',
+        taskIndex: 1,
+        totalTasks: 3,
+        taskDescription: 'Task 1',
+        agentRole: 'Agent A',
+        completedAt: '2026-03-05T14:00:45Z',
+        durationMs: 44000,
+        tokenCount: 1842,
+        toolCallCount: 0,
+      };
+      const next = liveReducer(withStreaming, completed);
+      expect(next.tasks[0].status).toBe('completed');
+      expect(next.tasks[0].streamingOutput).toBeUndefined();
+    });
+
+    it('token in BASE_STATE (no tasks) returns same state', () => {
+      const msg: ServerMessage = {
+        type: 'token',
+        token: 'tok',
+        agentRole: 'Agent A',
+        taskDescription: 'Some task',
+        sentAt: '2026-03-05T14:00:10Z',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next).toBe(BASE_STATE);
     });
   });
 

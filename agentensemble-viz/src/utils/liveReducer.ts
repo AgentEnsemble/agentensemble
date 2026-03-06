@@ -19,6 +19,7 @@ import type {
   TaskCompletedMessage,
   TaskFailedMessage,
   ToolCalledMessage,
+  TokenMessage,
   ReviewRequestedMessage,
   ReviewTimedOutMessage,
   EnsembleCompletedMessage,
@@ -149,8 +150,70 @@ function applyTaskCompleted(state: LiveState, msg: TaskCompletedMessage): LiveSt
     durationMs: msg.durationMs,
     tokenCount: msg.tokenCount,
     toolCallCount: msg.toolCallCount,
+    // Clear streaming output: task_completed carries the authoritative final output.
+    // The streaming buffer is no longer needed once the task finishes.
+    streamingOutput: undefined,
   };
 
+  const tasks = [...state.tasks];
+  tasks[idx] = updated;
+  return { ...state, tasks };
+}
+
+/**
+ * Append a streaming token to the matching running task.
+ *
+ * Matching priority:
+ * 1. Most recent running task with matching agentRole AND taskDescription (most precise;
+ *    handles parallel workflows where the same role name is shared across tasks).
+ * 2. Most recent running task with matching agentRole only.
+ * 3. Most recent running task regardless of role (last-resort fallback).
+ *
+ * Tokens are stored as an array of chunks to keep appending O(1) and avoid the
+ * quadratic cost of repeated string concatenation for long streamed outputs.
+ */
+function applyToken(state: LiveState, msg: TokenMessage): LiveState {
+  let idx = -1;
+
+  // Priority 1: match by both agentRole and taskDescription
+  for (let i = state.tasks.length - 1; i >= 0; i--) {
+    if (
+      state.tasks[i].status === 'running' &&
+      state.tasks[i].agentRole === msg.agentRole &&
+      state.tasks[i].taskDescription === msg.taskDescription
+    ) {
+      idx = i;
+      break;
+    }
+  }
+
+  // Priority 2: match by agentRole only
+  if (idx === -1) {
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running' && state.tasks[i].agentRole === msg.agentRole) {
+        idx = i;
+        break;
+      }
+    }
+  }
+
+  // Priority 3: most recent running task regardless of role
+  if (idx === -1) {
+    for (let i = state.tasks.length - 1; i >= 0; i--) {
+      if (state.tasks[i].status === 'running') {
+        idx = i;
+        break;
+      }
+    }
+  }
+
+  if (idx === -1) return state;
+
+  const existing = state.tasks[idx].streamingOutput ?? [];
+  const updated: LiveTask = {
+    ...state.tasks[idx],
+    streamingOutput: [...existing, msg.token],
+  };
   const tasks = [...state.tasks];
   tasks[idx] = updated;
   return { ...state, tasks };
@@ -286,6 +349,8 @@ export function liveReducer(state: LiveState, message: ServerMessage): LiveState
       return applyReviewTimedOut(state, message);
     case 'ensemble_completed':
       return applyEnsembleCompleted(state, message);
+    case 'token':
+      return applyToken(state, message);
     // delegation_started, delegation_completed, delegation_failed, heartbeat, pong:
     // No state change needed for core live rendering.
     default:

@@ -251,7 +251,12 @@ function LiveTimelineView() {
   const { liveState } = useLiveServer();
   const { tasks, startedAt, workflow, totalTasks } = liveState;
 
-  const [selectedTask, setSelectedTask] = useState<LiveTask | null>(null);
+  // Use task index as the selected key so the panel always reads from current liveState.tasks
+  // (not a stale snapshot). This ensures streaming output updates are reflected live.
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
+  const selectedTask = selectedTaskIndex !== null
+    ? (tasks.find((t) => t.taskIndex === selectedTaskIndex) ?? null)
+    : null;
   const [followLatest, setFollowLatest] = useState(true);
   const [nowMs, setNowMs] = useState(Date.now());
   const animFrameRef = useRef<number>(0);
@@ -435,7 +440,7 @@ function LiveTimelineView() {
                     return (
                       <g
                         key={`task-${task.taskIndex}`}
-                        onClick={() => setSelectedTask(isSelected ? null : task)}
+                        onClick={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
                         className="cursor-pointer"
                       >
                         {/* Task bar */}
@@ -524,7 +529,7 @@ function LiveTimelineView() {
       {/* Live task detail panel */}
       {selectedTask && (
         <div className="flex w-80 flex-col overflow-hidden border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-          <LiveTaskDetailPanel task={selectedTask} onClose={() => setSelectedTask(null)} />
+          <LiveTaskDetailPanel task={selectedTask} onClose={() => setSelectedTaskIndex(null)} />
         </div>
       )}
     </div>
@@ -655,6 +660,18 @@ function LiveTaskDetailPanel({ task, onClose }: { task: LiveTask; onClose: () =>
           <Section title="Failure Reason">
             <p className="whitespace-pre-wrap text-xs text-red-700 dark:text-red-400">
               {task.reason}
+            </p>
+          </Section>
+        )}
+
+        {task.status === 'running' && task.streamingOutput !== undefined && (
+          <Section title="Live Output">
+            <p
+              className="whitespace-pre-wrap font-mono text-xs text-gray-700 dark:text-gray-300"
+              data-testid="streaming-output"
+            >
+              {task.streamingOutput.join('')}
+              <span className="inline-block w-1.5 h-3 ml-0.5 bg-blue-500 ae-pulse align-text-bottom" />
             </p>
           </Section>
         )}

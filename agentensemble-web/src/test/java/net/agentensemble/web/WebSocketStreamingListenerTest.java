@@ -20,6 +20,7 @@ import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
+import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.trace.LlmInteraction;
@@ -317,6 +318,65 @@ class WebSocketStreamingListenerTest {
                 .duration(Duration.ZERO)
                 .outcome(ToolCallOutcome.SUCCESS)
                 .build();
+    }
+
+    // ========================
+    // Streaming tokens
+    // ========================
+
+    @Test
+    void onToken_broadcastsTokenMessage() {
+        TokenEvent event = new TokenEvent("Hello ", "Senior Research Analyst", "Research AI trends");
+        listener.onToken(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"token\"");
+        assertThat(json).contains("\"token\":\"Hello \"");
+        assertThat(json).contains("Senior Research Analyst");
+        assertThat(json).contains("Research AI trends");
+    }
+
+    @Test
+    void onToken_doesNotAppendToLateJoinSnapshot() {
+        // Token messages are ephemeral -- they must NOT be stored in the snapshot.
+        // A late-joining client should rely on task_completed for the authoritative output,
+        // not on a replayed token stream.
+        TokenEvent event = new TokenEvent("tok", "Writer", "Write a report");
+        listener.onToken(event);
+
+        // Message was broadcast to the live session
+        assertThat(session.sentMessages()).hasSize(1);
+
+        // Connect a late-joining client -- the hello message snapshot must NOT contain token events
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("\"type\":\"hello\"");
+        // snapshotTrace should be absent or empty since onToken skips appendToSnapshot
+        assertThat(helloJson).doesNotContain("\"type\":\"token\"");
+    }
+
+    @Test
+    void onToken_multipleTokens_allBroadcast() {
+        for (int i = 0; i < 5; i++) {
+            listener.onToken(new TokenEvent("tok" + i, "Agent", "Write something"));
+        }
+        assertThat(session.sentMessages()).hasSize(5);
+        assertThat(session.sentMessages()).allMatch(m -> m.contains("\"type\":\"token\""));
+    }
+
+    @Test
+    void onToken_serializerThrows_doesNotPropagateException() {
+        MessageSerializer failingSerializer = mock(MessageSerializer.class);
+        when(failingSerializer.toJson(any())).thenThrow(new IllegalStateException("serialize failed"));
+        WebSocketStreamingListener faultyListener =
+                new WebSocketStreamingListener(connectionManager, failingSerializer);
+
+        // Should not throw
+        faultyListener.onToken(new TokenEvent("tok", "Agent", "Some task"));
+        assertThat(session.sentMessages()).isEmpty();
     }
 
     @Test
