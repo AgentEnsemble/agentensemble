@@ -2,7 +2,32 @@
 
 ## Current Focus
 
-Branch `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
+Branch `fix/147-148-149-core-runtime-deps-and-context-identity` — three bugs fixed in
+`agentensemble-core`, committed, ready for PR.
+
+**Bug #147** — `agentensemble-memory` and `agentensemble-review` were declared `compileOnly`
+in `agentensemble-core/build.gradle.kts` despite core referencing their types directly in 14+
+source files. Fixed by changing both to `api`.
+
+**Bug #148** — `Ensemble.resolveAgents()` created new `Task` instances for agentless tasks
+(pass 1) but never re-mapped the context references on downstream tasks to the new identities
+(missing pass 2). The workflow executor stores completed outputs by identity, so the stale
+reference caused `gatherContextOutputs` to fail with a misleading null lookup, then NPE on
+`contextTask.getAgent().getRole()` in the error handler. Fixed by adding a context re-mapping
+pass (identical pattern to `resolveTasks()`), with map updates on each new identity so chained
+deps (t1->t2->t3) all resolve correctly.
+
+**Bug #149** — downstream effect of #148; once context identity is correct, synthesized agents
+with task-level tools and models run through the normal `executeWithTools` path without issue.
+
+**Null-safety**: Added `agentRole(Task)` helper to `SequentialWorkflowExecutor` and
+`ParallelTaskCoordinator` as a defensive guard for error-handling paths.
+
+**9 new integration tests** in `SequentialTaskFirstContextIntegrationTest` covering all
+scenarios (2-task context dep, 3-task chain, ensemble LLM, mixed explicit/agentless,
+context-in-prompt verification, tool loop, tools+context combined).
+
+Previous focus: Branch `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
 
 The Homebrew-installed `agentensemble-viz` binary showed "Not Found" on every request.
 Root cause: Bun's `--compile` bundler does not recursively embed entire directories

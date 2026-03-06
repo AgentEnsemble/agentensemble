@@ -31,17 +31,19 @@ tasks.named("check") {
 }
 
 dependencies {
-    // Memory module - compileOnly so it is not shipped transitively; users who want
-    // memory add agentensemble-memory explicitly. Available at test runtime via
-    // testImplementation below.
-    compileOnly(project(":agentensemble-memory"))
-    testImplementation(project(":agentensemble-memory"))
+    // Memory module - api so it is shipped transitively to consumers. Core references
+    // MemoryContext, MemoryStore, MemoryEntry, MemoryScope, and related types directly
+    // in field declarations, method signatures, and execution paths across 7+ source
+    // files. compileOnly would cause NoClassDefFoundError at runtime for any user who
+    // depends on agentensemble-core without explicitly adding agentensemble-memory.
+    // Fix for issue #147.
+    api(project(":agentensemble-memory"))
 
-    // Review module - compileOnly so it is not shipped transitively; users who want
-    // human-in-the-loop review add agentensemble-review explicitly. Available at
-    // test runtime via testImplementation below.
-    compileOnly(project(":agentensemble-review"))
-    testImplementation(project(":agentensemble-review"))
+    // Review module - api for the same reason: ReviewHandler, ReviewPolicy, Review,
+    // ReviewDecision, ReviewRequest, ReviewTiming, and ConsoleReviewHandler are
+    // referenced directly in ExecutionContext, SequentialWorkflowExecutor,
+    // ParallelTaskCoordinator, AbstractAgentTool, and Ensemble. Fix for issue #147.
+    api(project(":agentensemble-review"))
 
     // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
