@@ -136,6 +136,17 @@ Ensemble.builder()
     .run();
 ```
 
+!!! warning "Model requirements"
+    `AgentSynthesizer.llmBased()` calls `ChatModel.chat(ChatRequest)` during
+    `Ensemble.resolveAgents()`, **before any task executes**. The configured `ChatModel`
+    must properly implement `chat(ChatRequest)` or `doChat(ChatRequest)` (the LangChain4j
+    1.x override point). A model that does not implement either will throw
+    `RuntimeException: Not implemented` at synthesis time.
+
+    For tests that use a stub or fake `ChatModel`, **prefer the default `AgentSynthesizer.template()`**
+    (no LLM call during synthesis) or ensure the stub returns valid JSON persona responses.
+    See the [Testing guide](testing.md#agent-synthesis-and-stub-models) for patterns.
+
 ### Custom synthesizer
 
 Implement the `AgentSynthesizer` interface to provide your own strategy:

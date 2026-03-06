@@ -35,6 +35,16 @@ import org.slf4j.LoggerFactory;
  *       failure later during actual task execution.</li>
  * </ul>
  *
+ * <p><strong>Model requirements for tests:</strong> This synthesizer calls
+ * {@code context.model().chat(ChatRequest)} during {@code Ensemble.resolveAgents()},
+ * before any task executes. A test stub that does not override either
+ * {@code chat(ChatRequest)} or {@code doChat(ChatRequest)} (the LangChain4j 1.x
+ * override point) will throw {@code RuntimeException("Not implemented")} at synthesis
+ * time, not at task execution time. For deterministic tests, prefer
+ * {@link TemplateAgentSynthesizer} (the default {@link AgentSynthesizer#template()});
+ * or ensure the stub properly implements one of those two methods and returns
+ * JSON that matches the synthesis prompt format.
+ *
  * <p>This synthesizer is stateless and thread-safe.
  */
 class LlmBasedAgentSynthesizer implements AgentSynthesizer {
