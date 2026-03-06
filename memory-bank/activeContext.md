@@ -2,32 +2,24 @@
 
 ## Current Focus
 
-Branch `fix/147-148-149-core-runtime-deps-and-context-identity` — three bugs fixed in
-`agentensemble-core`, committed, ready for PR.
+Branch `feat/135-viz-review-approval-ui` is open for Issue #135: Viz review approval UI (v2.1.0).
 
-**Bug #147** — `agentensemble-memory` and `agentensemble-review` were declared `compileOnly`
-in `agentensemble-core/build.gradle.kts` despite core referencing their types directly in 14+
-source files. Fixed by changing both to `api`.
+Issue #135 implementation complete:
+- `RESOLVE_REVIEW` action added to `LiveAction` union in `live.ts`; handled in `liveActionReducer` in `liveReducer.ts`
+- `sendDecision(reviewId, decision, revisedOutput?)` added to `LiveServerContext` (builds `ReviewDecisionMessage`, calls `sendMessage`, dispatches `RESOLVE_REVIEW` for optimistic removal)
+- `ReviewApprovalPanel` component created at `src/components/live/ReviewApprovalPanel.tsx`:
+  - Modal overlay with header (timing badge), task description, custom prompt, scrollable output
+  - Three modes: view (Approve/Edit/Exit Early) / edit (textarea pre-filled with output) / exit-confirm (confirmation step) / timed-out (message for 2s then closes)
+  - CSS-animated countdown bar (`ae-countdown-bar` class + `animation-duration`/`animation-delay` inline) + 1s JS interval for text label
+  - "+N pending" badge when `additionalPendingCount > 0`
+  - `key={review.reviewId}` in parent ensures clean remount for each new review
+- `LivePage.tsx` integrated: renders `ReviewApprovalPanel` when `pendingReviews.length > 0` (FIFO, oldest first)
+- `src/index.css`: `ae-countdown-bar` utility class + `ae-countdown-shrink` keyframe animation added
+- 237 tests pass (30 new: 25 `ReviewApprovalPanel` unit tests + 5 `RESOLVE_REVIEW` reducer tests)
+- `docs/examples/human-in-the-loop.md` "Browser-Based Approval" section updated with accurate interaction description (panel ASCII diagram, Actions sections, Timeout Countdown, Concurrent Reviews)
 
-**Bug #148** — `Ensemble.resolveAgents()` created new `Task` instances for agentless tasks
-(pass 1) but never re-mapped the context references on downstream tasks to the new identities
-(missing pass 2). The workflow executor stores completed outputs by identity, so the stale
-reference caused `gatherContextOutputs` to fail with a misleading null lookup, then NPE on
-`contextTask.getAgent().getRole()` in the error handler. Fixed by adding a context re-mapping
-pass (identical pattern to `resolveTasks()`), with map updates on each new identity so chained
-deps (t1->t2->t3) all resolve correctly.
-
-**Bug #149** — downstream effect of #148; once context identity is correct, synthesized agents
-with task-level tools and models run through the normal `executeWithTools` path without issue.
-
-**Null-safety**: Added `agentRole(Task)` helper to `SequentialWorkflowExecutor` and
-`ParallelTaskCoordinator` as a defensive guard for error-handling paths.
-
-**9 new integration tests** in `SequentialTaskFirstContextIntegrationTest` covering all
-scenarios (2-task context dep, 3-task chain, ensemble LLM, mixed explicit/agentless,
-context-in-prompt verification, tool loop, tools+context combined).
-
-Previous focus: Branch `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
+Previous branches:
+- `fix/viz-cli-binary-asset-embedding` is open and ready for PR.
 
 The Homebrew-installed `agentensemble-viz` binary showed "Not Found" on every request.
 Root cause: Bun's `--compile` bundler does not recursively embed entire directories

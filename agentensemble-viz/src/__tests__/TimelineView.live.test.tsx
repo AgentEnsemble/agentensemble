@@ -90,8 +90,10 @@ function mockLiveServer(liveState: LiveState) {
     liveState,
     connect: vi.fn(),
     disconnect: vi.fn(),
-    sendMessage: vi.fn(),
-  } as LiveServerContextValue);
+    // Return boolean so the mocks satisfy LiveServerContextValue's typed signatures.
+    sendMessage: vi.fn(() => false),
+    sendDecision: vi.fn(() => false),
+  } as unknown as LiveServerContextValue);
 }
 
 function renderLiveTimeline() {

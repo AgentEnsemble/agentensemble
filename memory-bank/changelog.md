@@ -1,31 +1,108 @@
 # Changelog
 
-## [Unreleased] - fix(core): hard runtime deps, context identity remap, null-safe agent role -- 2026-03-06
+## [Unreleased] - Issue #135: Viz review approval UI (v2.1.0) -- 2026-03-06
 
-### Fixed (branch: fix/147-148-149-core-runtime-deps-and-context-identity, commit 1dadb83, PR #150)
+### Added (Issue #135 -- ReviewApprovalPanel component, branch feat/135-viz-review-approval-ui)
 
-Three bugs in `agentensemble-core`:
+**New types and actions (`agentensemble-viz`):**
+- `live.ts`: `RESOLVE_REVIEW` variant added to `LiveAction` union -- optimistically removes
+  a review from `pendingReviews` after the user submits a decision
+- `liveReducer.ts`: `RESOLVE_REVIEW` case in `liveActionReducer` -- filters by `reviewId`,
+  returns updated state; pure, non-mutating
+- `LiveServerContext.tsx`:
+  - `ReviewDecisionMessage` imported from `live.ts`
+  - `sendDecision(reviewId, decision, revisedOutput?)` method added to `LiveServerContextValue`
+    interface; implementation calls `sendMessage` then dispatches `RESOLVE_REVIEW` for
+    optimistic local state removal
+  - Provider value updated to include `sendDecision`
+- `src/index.css`: `ae-countdown-shrink` keyframe (`width: 100% -> 0%`) and `ae-countdown-bar`
+  utility class (animation-name, linear timing, forwards fill); animation-duration and
+  animation-delay set inline from component props
 
-**#147 — `compileOnly` memory/review deps cause `NoClassDefFoundError` at runtime**
-- `agentensemble-memory` and `agentensemble-review` were declared `compileOnly` but core
-  references their types directly in 14+ source files. Changed both to `api` in
-  `agentensemble-core/build.gradle.kts`.
+**New component: `src/components/live/ReviewApprovalPanel.tsx`:**
+- Modal overlay (`role="dialog"`, `aria-modal="true"`, `data-testid="review-panel"`)
+  rendered as a fixed full-viewport overlay with centered white card
+- **Header**: "Review Required" heading + timing badge (`data-testid="timing-label"`)
+  showing the first segment of the timing string (BEFORE / AFTER / DURING)
+- **Body**: task description (`data-testid="task-description"`), optional custom prompt
+  (`data-testid="review-prompt"`, only rendered when `review.prompt !== null`), output
+  section that switches between three displays:
+  - Read-only `<pre>` (`data-testid="task-output"`) in view mode
+  - `<textarea>` (`data-testid="edit-textarea"`) pre-filled with `review.taskOutput` in edit mode
+  - Timed-out message (`data-testid="timed-out-message"`) when countdown reaches zero
+- **Exit Early confirmation** (`data-testid="exit-confirm-message"`): "Are you sure?
+  This will stop the pipeline." shown in `exit-confirm` mode
+- **Countdown bar**: amber `ae-countdown-bar` div with `animation-duration: timeoutMs ms`
+  and `animation-delay: -elapsedMs ms` (CSS-only smooth progress; hidden in timed-out mode)
+- **Countdown label** (`data-testid="countdown-label"`): "Auto-continue in X:XX" or
+  "Auto-exit in X:XX" based on `review.onTimeout`; updated every 1s via `setInterval`
+- **Action buttons by mode**:
+  - view: Approve (sends CONTINUE) / Edit (enters edit mode) / Exit Early (enters exit-confirm mode)
+  - edit: Submit (sends EDIT + revisedOutput) / Cancel (returns to view)
+  - exit-confirm: Confirm Exit (`data-testid="confirm-exit-button"`, sends EXIT_EARLY) /
+    Cancel (returns to view)
+- **Queue badge** (`data-testid="queue-badge"`): "+N pending" rendered when
+  `additionalPendingCount > 0`; shown below the card
+- **Countdown state machine** (`useEffect`, runs once at mount):
+  - `initialRemainingRef` captures `timeoutMs - (Date.now() - receivedAt)` at mount
+  - `setInterval(1000ms)` decrements `remainingMs` state; when `next === 0`, clears
+    interval, sets `mode = 'timed-out'`, schedules `setTimeout(2000ms)` to set
+    `isVisible = false`
+  - Cleanup cancels both interval and close timer on unmount
+- **Visibility**: component renders `null` when `isVisible = false` (after user decision
+  or after countdown 2s message)
 
-**#148 — NPE in `SequentialWorkflowExecutor.gatherContextOutputs()` for task-first context workflows**
-- `Ensemble.resolveAgents()` synthesized agents (new Task identities) without re-mapping
-  context references on downstream tasks. Added a two-pass approach mirroring `resolveTasks()`:
-  Pass 1 synthesizes agents and builds `IdentityHashMap<Task,Task>` (old→new); Pass 2
-  rewrites context lists with map updates on each new identity for correct chained deps.
-- Added null-safe `agentRole(Task)` defensive helpers to `SequentialWorkflowExecutor` and
-  `ParallelTaskCoordinator`.
+**`src/pages/LivePage.tsx` integration:**
+- `ReviewApprovalPanel` imported
+- `sendDecision` destructured from `useLiveServer()`
+- `currentReview = pendingReviews[0]` (FIFO -- oldest pending review shown first)
+- `<ReviewApprovalPanel key={currentReview.reviewId} ...>` rendered when `currentReview !== null`;
+  `key` ensures remount with fresh countdown for each new review
+- `additionalPendingCount={pendingReviews.length - 1}` passed for queue badge
 
-**#149 — Synthesized agent tool loop incompatibility**
-- Root cause was #148. Resolved by the context identity fix above.
+### Tests Added (Issue #135)
 
-**Tests added (`SequentialTaskFirstContextIntegrationTest`, 9 new tests):**
-- 2-task agentless context dep, ensemble-level LLM, 3-task chain, mixed explicit/agentless,
-  context-in-prompt verification, tool loop, tools+context combined, LLM precedence,
-  context-in-prompt with tools
+**Unit (`agentensemble-viz`):**
+- `src/__tests__/ReviewApprovalPanel.test.tsx` (25 tests):
+  - **initial render** (5): task description, output, timing label (AFTER/BEFORE/DURING),
+    custom prompt rendered/not-rendered based on null
+  - **approve action** (2): sends `CONTINUE` decision; panel closes
+  - **edit action** (5): textarea pre-filled; read-only output hidden; Submit sends
+    `EDIT` + revisedOutput; panel closes; Cancel restores read-only without sending
+  - **exit early action** (4): Exit Early shows confirmation; Confirm Exit sends
+    `EXIT_EARLY`; panel closes; Cancel restores view without sending
+  - **timeout countdown** (8): initial label for CONTINUE; initial label for EXIT_EARLY;
+    decrement after 30s (4:30); timed-out message for CONTINUE; timed-out message for
+    EXIT_EARLY; panel visible immediately after zero; panel closes after 2s; no
+    `sendDecision` call on timeout
+  - **queue badge** (4): no badge at 0; "+1 pending"; "+3 pending"; badge count updates
+    with re-render
+  - **review_timed_out from server** (1): parent unmount removes panel
+
+- `src/__tests__/liveReducer.test.ts` (5 new `RESOLVE_REVIEW` tests):
+  - removes resolved review from pendingReviews
+  - leaves other reviews intact when one is resolved
+  - resolving all reviews in order empties the queue (FIFO)
+  - no-op when reviewId not found
+  - does not mutate input state
+
+**Total: 237 tests across 11 test files (all pass)**
+
+### Documentation Updated (Issue #135)
+
+- `docs/examples/human-in-the-loop.md` "Browser-Based Approval" section rewritten:
+  - ASCII wireframe updated to show actual panel structure (timing badge, Task/Output labels,
+    amber countdown bar, button row)
+  - New "Actions" subsection with accurate Approve/Edit/Exit Early behavior descriptions
+  - New "Timeout Countdown" subsection describing CSS animation + label behavior +
+    timed-out message
+  - New "Concurrent Reviews" subsection with "+2 pending" badge example
+  - New "Wiring" subsection
+
+### Opportunistic Coverage Added (Issue #135)
+
+- `RESOLVE_REVIEW` tests lock down the FIFO dequeue contract (resolving review-1 makes
+  review-2 the new head) and the no-mutation invariant (input state array unchanged)
 
 ---
 
