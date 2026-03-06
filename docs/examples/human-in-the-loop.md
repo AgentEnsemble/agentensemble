@@ -246,7 +246,7 @@ guide for full documentation including custom tool implementation and parallel e
 
 ## Browser-Based Approval
 
-v2.1.0 introduces a browser-based review handler via the `agentensemble-web` module.
+The `agentensemble-web` module provides a browser-based review handler.
 Instead of blocking on the console, review gates display an interactive approval panel
 in the browser alongside the live execution timeline.
 

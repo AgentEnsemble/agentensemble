@@ -51,7 +51,7 @@ const tracesDir = process.argv[2] ? resolve(process.argv[2]) : resolve('./traces
 // fileURLToPath() decodes URL percent-encoding so paths with spaces or special
 // characters resolve correctly on the filesystem.
 const distDir = fileURLToPath(new URL('./dist/', import.meta.url));
-const PORT = parseInt(process.env.PORT ?? '7329', 10);
+const PORT = parseInt(process.env.PORT ?? '7328', 10);
 
 // Pre-decode embedded assets into Buffers once at startup.
 // When distAssets is empty (placeholder or dev mode) useEmbedded is false and

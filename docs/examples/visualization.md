@@ -169,5 +169,5 @@ PORT=8080 agentensemble-viz ./traces/
 # or: PORT=8080 npx @agentensemble/viz ./traces/
 ```
 
-The viewer opens at `http://localhost:7329` (or your custom port) and auto-discovers all
+The viewer opens at `http://localhost:7328` (or your custom port) and auto-discovers all
 `.dag.json` and `.trace.json` files in the directory.

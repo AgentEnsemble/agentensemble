@@ -19,9 +19,9 @@ export default defineConfig({
   },
   server: {
     // The dev server runs on a different port (5173 default) during development.
-    // The /api routes are served by the standalone CLI (cli.js) on port 7329.
+    // The /api routes are served by the standalone CLI (cli.js) on port 7328.
     // When running under the CLI, the static files are served directly; no proxy is needed.
-    // Do NOT proxy /api back to localhost:7329 — that would create a request loop
+    // Do NOT proxy /api back to localhost:7328 — that would create a request loop
     // when the Vite dev server and the CLI server are on the same port.
     port: 5173,
   },

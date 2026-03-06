@@ -1,11 +1,12 @@
-# 16 - Live Execution Dashboard (v2.1.0)
+# 16 - Live Execution Dashboard
 
 This document specifies the design for the Live Execution Dashboard: a real-time browser GUI
 that streams ensemble execution events as they happen, renders a live timeline and dependency
 graph, and allows humans to issue review decisions directly from the browser.
 
-This is the implementation specification for v2.1.0. It extends the existing `agentensemble-viz`
-npm package and introduces a new `agentensemble-web` Java module.
+This is the implementation specification for the `agentensemble-web` module (shipped in v2.1.0).
+It extends the existing `agentensemble-viz` npm package and introduces the new
+`agentensemble-web` Java module.
 
 ---
 
@@ -97,7 +98,7 @@ Rationale:
 ```java
 // Entry point: users register a dashboard via Ensemble.builder()
 WebDashboard dashboard = WebDashboard.builder()
-    .port(7329)                // default: 7329 (same port as existing viz CLI)
+    .port(7329)                // the port the embedded server listens on; required
     .host("localhost")         // default: localhost (local-only binding)
     .reviewTimeout(Duration.ofMinutes(5))   // default: 5 minutes
     .onTimeout(OnTimeoutAction.CONTINUE)    // default: CONTINUE
