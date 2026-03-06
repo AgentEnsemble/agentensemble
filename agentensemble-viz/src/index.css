@@ -53,6 +53,47 @@
   }
 }
 
+/* Live mode animations */
+@keyframes ae-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes ae-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+@layer utilities {
+  /** Pulsing opacity animation -- used on the connecting status dot and running task nodes. */
+  .ae-pulse {
+    animation: ae-pulse 1.5s ease-in-out infinite;
+  }
+
+  /** Pulsing ring animation for running nodes in the live flow graph. */
+  .ae-node-pulse {
+    animation: ae-node-pulse 1.5s ease-in-out infinite;
+  }
+}
+
+/* Live flow graph node status classes */
+@layer utilities {
+  .ae-node-pending {
+    background-color: #9CA3AF !important; /* gray-400 */
+    border-color: #6B7280 !important;      /* gray-500 */
+  }
+
+  .ae-node-running {
+    background-color: #3B82F6 !important; /* blue-500 */
+    border-color: #2563EB !important;      /* blue-600 */
+  }
+
+  .ae-node-failed {
+    background-color: #EF4444 !important; /* red-500 */
+    border-color: #DC2626 !important;      /* red-600 */
+  }
+}
+
 /* Custom scrollbar */
 @layer utilities {
   .scrollbar-thin {
