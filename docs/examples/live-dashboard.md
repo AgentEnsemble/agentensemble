@@ -51,6 +51,37 @@ http://localhost:7329/live?server=ws://localhost:7329/ws
 
 Or open `http://localhost:7329` in your browser and use the "Connect to live server" form on the landing page.
 
+## Streaming Output
+
+Enable token-by-token streaming of the final agent response in the dashboard. Tokens arrive
+over WebSocket as `token` messages and appear live in the **Live Output** section of the task
+detail panel.
+
+```java
+StreamingChatModel streamingModel = OpenAiStreamingChatModel.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .modelName("gpt-4o")
+    .build();
+
+WebDashboard dashboard = WebDashboard.onPort(7329);
+
+Ensemble.builder()
+    .chatLanguageModel(syncModel)               // for tool-loop iterations
+    .streamingChatLanguageModel(streamingModel) // for final answers
+    .task(Task.of("Write a research report on quantum computing"))
+    .webDashboard(dashboard)
+    .build()
+    .run();
+```
+
+Click any running task bar in the timeline to open the detail panel. While the agent is
+generating its final answer, a **Live Output** section appears showing the text as it
+streams, with a pulsing cursor.
+
+Token messages are **ephemeral** -- they are not stored in the late-join snapshot. A client
+that connects mid-stream will see the task as running and receive new tokens from that
+point forward; the full output is available via `task_completed` when the task finishes.
+
 ## What You See
 
 The live dashboard has two views accessible via the header toggle:

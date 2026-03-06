@@ -2,14 +2,72 @@
 
 ## Current Focus
 
-Issues #133 and #134 are complete on branch `feat/133-134-viz-live-mode`.
-Issue #132 (WebReviewHandler real implementation) is complete on `main`.
+Issue #61 (Token-by-token streaming via StreamingChatModel) is complete on branch
+`feature/61-streaming-output`. PR is ready for review and merge.
 
+- **#61** (Streaming Output: token-by-token streaming via StreamingChatModel, v2.1.0): Done
 - **#132** (WebReviewHandler -- real implementation replacing stub, v2.1.0): Done (merged to main)
 - **#133** (Viz live mode -- WebSocket client + incremental state machine): Done
 - **#134** (Viz live timeline and flow view updates): Done
 
 ## Key accomplishments
+
+### Issue #61 -- Streaming Output (branch: feature/61-streaming-output)
+
+New opt-in token-by-token streaming of the final agent response using LangChain4j's
+`StreamingChatModel` (LangChain4j 1.11.0 API). Streaming flows through the EnsembleListener
+callback system and the WebSocket wire protocol to the viz dashboard.
+
+**Core (agentensemble-core):**
+- `TokenEvent` record: `token` + `agentRole` fields
+- `EnsembleListener.onToken(TokenEvent)` default no-op + `Ensemble.builder().onToken(handler)` lambda
+- `streamingChatLanguageModel(StreamingChatModel)` on `Ensemble.builder()` (ensemble-level)
+- `streamingChatLanguageModel(StreamingChatModel)` on `Task.builder()` (task-level override)
+- `streamingLlm(StreamingChatModel)` on `Agent.builder()` (agent-level override)
+- `ExecutionContext.streamingChatModel()` accessor + `fireToken()` dispatch + 11-arg `of()` factory
+- `AgentExecutor.resolveStreamingModel()` -- priority chain: agent > task > ensemble
+- `AgentExecutor.executeStreaming()` -- `StreamingChatResponseHandler` fires `TokenEvent` per token
+- `AgentExecutor.executeWithoutTools()` updated to use streaming when resolved; tool-loop remains sync
+
+**Wire protocol (agentensemble-web):**
+- `TokenMessage` record (type=`token`, token, agentRole, sentAt)
+- Registered in `ServerMessage` sealed interface + `@JsonSubTypes`
+- `WebSocketStreamingListener.onToken()` broadcasts via `broadcastEphemeral()` -- NOT added to snapshot
+
+**Viz dashboard (agentensemble-viz):**
+- `TokenMessage` interface added to `ServerMessage` discriminated union in `live.ts`
+- `streamingOutput?: string` field added to `LiveTask`
+- `liveReducer.applyToken()` accumulates tokens by agentRole; `applyTaskCompleted()` clears it
+- `TimelineView.LiveTaskDetailPanel` shows **Live Output** section with pulsing cursor
+- `LiveTimelineView` uses `selectedTaskIndex` (not stale snapshot) for live updates
+
+**Tests added:** 7 AgentExecutorStreamingTest + 6 TokenEventTest + 2 ProtocolSerializationTest +
+  4 WebSocketStreamingListenerTest + 7 liveReducer.test.ts = 26 new tests
+- Total viz tests: 173 (was 166)
+
+## Test Summary
+- agentensemble-viz: 173 tests pass across 9 test files
+- agentensemble-core: all tests pass, JaCoCo coverage maintains thresholds
+- agentensemble-web: all tests pass including new token tests
+
+## Next Steps
+- Issue #61 PR ready for review
+- Issue #129 epic: G1 done; G2 done; H1 (#132) done; I1 (#133) done; I2 (#134) done; #61 done.
+  Outstanding: H2 (review approval UI), J (docs/examples)
+- H2 depends on H1 (done) and I1 (done) -- can now be started
+
+## Key Design Decisions (Issue #61)
+
+- Streaming only on `executeWithoutTools` path: tool-loop iterations require full responses
+  to detect tool-call requests; streaming only makes sense when the agent produces a direct answer
+- Resolution order: agent > task > ensemble to give maximum flexibility without conflicts
+- `TokenMessage` is NOT added to the late-join snapshot: tokens are ephemeral; `task_completed`
+  carries the authoritative final output; late joiners see the task as running and receive only
+  future tokens from that point forward
+- `broadcastEphemeral()` vs `broadcast()`: separate method to avoid forgetting to skip snapshot
+- `selectedTaskIndex` (number) vs `selectedTask` (LiveTask) in LiveTimelineView: using index
+  means the detail panel always reads from current `liveState.tasks` so streaming updates appear
+  without requiring the user to re-click the task bar
 
 ### Issue #132 -- WebReviewHandler (merged to main)
 

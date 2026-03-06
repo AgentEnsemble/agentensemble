@@ -75,6 +75,20 @@ Fired after each tool execution within an agent's ReAct loop.
 | `agentRole()` | `String` | The role of the agent that invoked the tool |
 | `duration()` | `Duration` | Time taken for the tool execution |
 
+### TokenEvent
+
+Fired for each token received during streaming generation of the final agent response. Only
+fires when a `StreamingChatModel` is resolved for the agent (see
+[Streaming Output](#streaming-output) below).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `token()` | `String` | The text fragment emitted by the streaming model |
+| `agentRole()` | `String` | The role of the agent generating the response |
+
+Token events are fired during the direct LLM-to-answer path only. Tool-loop iterations
+remain synchronous because the full response must be seen to detect tool-call requests.
+
 ### DelegationStartedEvent
 
 Fired immediately before a delegation is handed off to a worker agent. Only fired for
@@ -296,6 +310,86 @@ Ensemble.builder()
         " -> result: " + event.toolResult() +
         " (" + event.duration().toMillis() + "ms)"
     ))
+    .build()
+    .run();
+```
+
+## Streaming Output
+
+Agents can stream their final response token-by-token using LangChain4j's
+`StreamingChatModel`. When streaming is configured, each token fires an
+`onToken(TokenEvent)` callback to all registered listeners.
+
+### Configuration
+
+Streaming is opt-in and off by default. Configure it at one of three levels; the first
+non-null value in the chain wins:
+
+| Level | How to set | Priority |
+|-------|-----------|---------|
+| Agent-level | `Agent.builder().streamingLlm(model)` | Highest |
+| Task-level | `Task.builder().streamingChatLanguageModel(model)` | Middle |
+| Ensemble-level | `Ensemble.builder().streamingChatLanguageModel(model)` | Lowest |
+
+Only the **final answer path** is streamed. When an agent has tools, the tool-calling
+iterations use the synchronous `ChatModel` (full responses are needed to detect tool-call
+requests). Streaming fires only when `executeWithoutTools` is active.
+
+### Example: printing tokens to the console
+
+```java
+StreamingChatModel streamingModel = OpenAiStreamingChatModel.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .modelName("gpt-4o")
+    .build();
+
+EnsembleOutput output = Ensemble.builder()
+    .chatLanguageModel(syncModel)              // used for tool-loop iterations
+    .streamingChatLanguageModel(streamingModel) // used for final answers
+    .task(Task.builder()
+        .description("Write a haiku about Java")
+        .expectedOutput("A three-line haiku")
+        .build())
+    .onToken(event -> System.out.print(event.token()))  // typewriter effect
+    .build()
+    .run();
+
+System.out.println(); // newline after streaming
+```
+
+### Example: streaming with the live dashboard
+
+When `webDashboard()` is registered alongside `streamingChatLanguageModel()`, tokens are
+broadcast over WebSocket as `token` messages. The viz dashboard displays the text live in
+the **Live Output** section of the task detail panel.
+
+```java
+WebDashboard dashboard = WebDashboard.onPort(7329);
+
+Ensemble.builder()
+    .chatLanguageModel(syncModel)
+    .streamingChatLanguageModel(streamingModel)
+    .webDashboard(dashboard)
+    .task(Task.of("Summarize the state of AI in 2025"))
+    .build()
+    .run();
+```
+
+### Thread safety note
+
+In a parallel workflow, `onToken` may be called concurrently from multiple virtual threads
+(one per running agent). Use thread-safe accumulators when collecting tokens across tasks:
+
+```java
+ConcurrentHashMap<String, StringBuilder> tokenBuffers = new ConcurrentHashMap<>();
+
+Ensemble.builder()
+    .workflow(Workflow.PARALLEL)
+    .streamingChatLanguageModel(streamingModel)
+    .onToken(event -> tokenBuffers
+        .computeIfAbsent(event.agentRole(), k -> new StringBuilder())
+        .append(event.token()))
+    .tasks(List.of(task1, task2))
     .build()
     .run();
 ```

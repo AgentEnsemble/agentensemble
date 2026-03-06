@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] - Issue #61: Token-by-token streaming via StreamingChatModel (v2.1.0) -- 2026-03-06
+
+### Added (Issue #61 -- streaming output via StreamingChatModel)
+
+- `TokenEvent` record: `token` + `agentRole` fields; `EnsembleListener.onToken(TokenEvent)` default no-op
+- `Ensemble.builder().onToken(handler)` lambda convenience; `Agent.builder().streamingLlm(StreamingChatModel)`;
+  `Task.builder().streamingChatLanguageModel(StreamingChatModel)`;
+  `Ensemble.builder().streamingChatLanguageModel(StreamingChatModel)`
+- `ExecutionContext.streamingChatModel()` accessor + `fireToken()` + 11-arg `of()` factory
+- `AgentExecutor`: `resolveStreamingModel()` priority chain (agent > task > ensemble);
+  `executeStreaming()` via `StreamingChatResponseHandler` (LangChain4j 1.11.0: `dev.langchain4j.model.chat.response`);
+  `executeWithoutTools()` uses streaming when model resolved; tool-loop path remains sync
+- `TokenMessage` record (type=`token`, token, agentRole, sentAt); registered in `ServerMessage` sealed interface
+- `WebSocketStreamingListener.onToken()` calls `broadcastEphemeral()` -- NOT added to snapshot
+- `live.ts`: `TokenMessage` interface, `streamingOutput?: string` on `LiveTask`
+- `liveReducer`: `applyToken()` accumulates tokens; `applyTaskCompleted()` clears `streamingOutput`
+- `TimelineView.LiveTaskDetailPanel`: Live Output section with pulsing cursor; `selectedTaskIndex` replaces stale snapshot
+
+**Tests:** TokenEventTest (6), AgentExecutorStreamingTest (7), ProtocolSerializationTest (+2),
+  WebSocketStreamingListenerTest (+4), liveReducer.test.ts (+7) = 26 new tests; viz total: 173
+
+**Docs:** `docs/guides/callbacks.md` (TokenEvent type + Streaming Output section);
+  `docs/design/16-live-dashboard.md` (token message type + Section 4.3);
+  `docs/examples/live-dashboard.md` (Streaming Output section)
+
+---
+
 ## [Unreleased] - Issues #133 + #134: Viz live mode + live timeline/flow updates (v2.1.0) -- 2026-03-06
 
 ### Added (Issues #133, #134 -- agentensemble-viz live execution mode)
