@@ -1,6 +1,6 @@
 [versions]
 vanniktech-publish = "0.36.0"
-langchain4j      = "1.11.0"
+langchain4j      = "1.12.2"
 lombok           = "1.18.42"
 jackson          = "2.21.1"
 jsoup            = "1.22.1"
