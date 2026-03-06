@@ -30,10 +30,17 @@ class EnsembleTest {
     // ========================
 
     @Test
-    void testDefaultWorkflow_isSequential() {
-        var researcher = agent("Researcher");
+    void testDefaultWorkflow_isNullWhenNotSet() {
+        // workflow is null when not explicitly set; the framework infers SEQUENTIAL or PARALLEL
+        // at run time based on task context declarations (see issue #112).
         var ensemble = Ensemble.builder().build();
 
+        assertThat(ensemble.getWorkflow()).isNull();
+    }
+
+    @Test
+    void testExplicitWorkflow_sequential_isPreserved() {
+        var ensemble = Ensemble.builder().workflow(Workflow.SEQUENTIAL).build();
         assertThat(ensemble.getWorkflow()).isEqualTo(Workflow.SEQUENTIAL);
     }
 

@@ -52,14 +52,34 @@ See the [Ensemble Configuration reference](../reference/ensemble-configuration.m
 
 ## Workflow
 
-A **Workflow** is the execution strategy used by the ensemble. There are two strategies:
+A **Workflow** is the execution strategy used by the ensemble. As of v2.0.0, **declaring a
+workflow is optional** -- the framework infers the right strategy from your task declarations.
 
-### SEQUENTIAL (default)
+### Inference (default when no `.workflow(...)` call is made)
 
-Tasks run one after another in list order. Each task can declare `context` dependencies on prior tasks; those outputs are injected into the dependent agent's prompt.
+| Condition | Inferred strategy |
+|---|---|
+| No task has a `context` dependency on another task | `SEQUENTIAL` |
+| Any task declares `context(...)` on another ensemble task | `PARALLEL` (DAG-based) |
+
+### SEQUENTIAL
+
+Tasks run one after another in list order. Each task can declare `context` dependencies on prior
+tasks; those outputs are injected into the dependent agent's prompt.
 
 ```
 Task 1 -> Task 2 -> Task 3 (uses output of Task 1 and Task 2)
+```
+
+### PARALLEL
+
+Tasks with no unmet dependencies run concurrently using Java 21 virtual threads. The dependency
+graph is derived automatically from each task's `context` declarations.
+
+```
+Task A ----+
+            +--> Task C (depends on A + B)
+Task B ----+
 ```
 
 ### HIERARCHICAL

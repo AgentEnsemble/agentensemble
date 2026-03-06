@@ -292,7 +292,7 @@ public final class ConsoleReviewHandler implements ReviewHandler {
             }
             case EXIT_EARLY -> {
                 log.info("Review timed out: exiting early (OnTimeoutAction.EXIT_EARLY)");
-                yield ReviewDecision.exitEarly();
+                yield ReviewDecision.exitEarlyTimeout();
             }
             case FAIL -> throw new ReviewTimeoutException(
                     "Review gate timed out after " + timeout.toSeconds() + "s (OnTimeoutAction.FAIL)");

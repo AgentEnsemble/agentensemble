@@ -1,5 +1,125 @@
 # Changelog
 
+## [Unreleased] - Issues #111 + #112: Partial Results and Workflow Inference -- 2026-03-05
+
+### Added (Issue #111 -- EnsembleOutput partial results and graceful exit-early)
+
+**ExitReason enum (extended):**
+- Added `TIMEOUT` -- review gate timeout expired with `onTimeout(EXIT_EARLY)`
+- Added `ERROR` -- unrecoverable exception terminated the pipeline
+
+**ReviewDecision.ExitEarly (breaking change):**
+- Changed from no-arg record to `ExitEarly(boolean timedOut)` record
+- `EXIT_EARLY_INSTANCE = new ExitEarly(false)` (unchanged semantics for `exitEarly()` factory)
+- New `EXIT_EARLY_TIMEOUT_INSTANCE = new ExitEarly(true)` and `exitEarlyTimeout()` factory
+- `ConsoleReviewHandler.handleTimeout()` for `EXIT_EARLY` now returns `exitEarlyTimeout()` (was `exitEarly()`)
+
+**ExitEarlyException (extended):**
+- Added `boolean timedOut` field; 2-arg constructor `(message, timedOut)`
+- `isTimedOut()` accessor; 1-arg constructor defaults to `false`
+- `HumanInputTool` propagates `exitEarly.timedOut()` when constructing the exception
+
+**EnsembleOutput (new convenience API):**
+- `isComplete()` -- `true` only when `exitReason == ExitReason.COMPLETED`
+- `completedTasks()` -- alias for `getTaskOutputs()`; always safe to call
+- `lastCompletedOutput()` -- `Optional<TaskOutput>` last element or empty
+- `getOutput(Task task)` -- identity-based `Optional<TaskOutput>` lookup
+- `Map<Task, TaskOutput> taskOutputIndex` internal field (excluded from equals/hashCode/toString)
+- `Builder.taskOutputIndex(Map)` -- copies to IdentityHashMap for identity-based semantics
+
+**SequentialWorkflowExecutor (updated):**
+- Before-review ExitEarly: checks `timedOut()` to set `TIMEOUT` vs `USER_EXIT_EARLY`
+- After-review ExitEarly: same timeout distinction
+- `ExitEarlyException` catch: uses `e.isTimedOut()` to set exit reason
+- All output builders now include `taskOutputIndex(completedOutputs)`
+
+**ParallelWorkflowExecutor (new capability):**
+- Full exit-early support via `AtomicReference<ExitReason> exitEarlyReasonRef`
+- `exitEarlyReasonRef` checked in `shouldSkip()` to stop submitting new tasks
+- Running tasks allowed to complete; partial output built with correct ExitReason
+- Added `taskOutputIndex` to all output builders
+
+**ParallelTaskCoordinator (updated):**
+- `exitEarlyReasonRef` added to constructor and all relevant logic
+- After-execution review gate logic ported from SequentialWorkflowExecutor
+- `HumanInputTool` injection before task execution
+- `ExitEarlyException` caught separately from generic `Exception`
+- `shouldSkip()` checks `exitEarlyReasonRef != null` first
+
+**Ensemble.runWithInputs() (updated):**
+- Builds original-task -> output index after execution using positional correspondence
+  `tasks.get(i)` -> `agentResolvedTasks.get(i)` to remap executor's agentResolved keys
+  back to the original task instances the caller holds
+- `taskOutputIndex` preserved through trace attachment step
+
+### Added (Issue #112 -- Workflow inference from task context declarations)
+
+**Ensemble.workflow (changed):**
+- Field is now nullable (no `@Builder.Default`); default is `null`
+- When null, `resolveWorkflow(List<Task>)` infers:
+  - `PARALLEL` if any task has `context` dep on another ensemble task
+  - `SEQUENTIAL` otherwise (default)
+- `selectExecutor(Workflow, List<Agent>)` now takes explicit workflow
+- `buildExecutionTrace(...)` takes explicit workflow for `.workflow(name)` call
+- Logs "Workflow inferred: X" when inference applies
+
+**EnsembleValidator (updated):**
+- Added `resolveWorkflow()` private method with same inference logic
+- All workflow-specific validations now take `effective` workflow as parameter:
+  `validateManagerMaxIterations`, `validateParallelErrorStrategy`,
+  `validateHierarchicalRoles`, `validateHierarchicalConstraints`
+- `validateContextOrdering(effective)` skips for inferred or explicit PARALLEL
+
+### Tests Added (Issues #111 + #112)
+
+**Unit tests:**
+- `EnsembleOutputTest`: TIMEOUT/ERROR exit reasons, isComplete() (all 4 cases),
+  completedTasks(), lastCompletedOutput() (3 tests), getOutput(Task) (5 tests
+  including identity vs equality, null task, index not provided)
+- `EnsembleTest`: testDefaultWorkflow_isNullWhenNotSet, testExplicitWorkflow_sequential_isPreserved
+
+**Integration tests (new files):**
+- `PartialResultsIntegrationTest` (8 tests): 3-task sequential exit-early after task 2;
+  all-complete with full index; before-first-task exit; parallel exit-early; full run
+  getOutput for all tasks; timeout exit reason; policy-driven review with index
+- `WorkflowInferenceIntegrationTest` (7 tests): no-workflow 3-task sequential; DAG inferred
+  from context deps; fan-in (C waits for A+B); explicit SEQUENTIAL override; explicit PARALLEL;
+  cycle-detection still runs; single task no-workflow
+
+**Updated tests:**
+- `EnsembleValidationTest`: forward-reference and ordering violation tests now use
+  explicit `.workflow(Workflow.SEQUENTIAL)` (required since context deps now infer PARALLEL)
+
+### Documentation Updated (Issues #111 + #112)
+
+- `docs/guides/workflows.md`: new "Workflow Inference" section with table, code examples,
+  explicit override, context ordering validation note; SEQUENTIAL section updated with note
+  about inference
+- `docs/getting-started/concepts.md`: Workflow section updated; inference table added;
+  PARALLEL section added with DAG diagram
+- `docs/reference/ensemble-configuration.md`: workflow default updated to `null (inferred)`;
+  new EnsembleOutput methods: isComplete, completedTasks, lastCompletedOutput, getOutput;
+  ExitReason updated to show all 4 values
+- `docs/guides/error-handling.md`: new "Exit Reasons" section with all 4 ExitReason values;
+  "Partial Results" section expanded with isComplete(), completedTasks(), lastCompletedOutput(),
+  getOutput(Task), identity-based lookup explanation
+
+### Design Decisions (Issues #111 + #112)
+
+- `ReviewDecision.ExitEarly(boolean timedOut)` is a breaking change to the record signature;
+  existing code using `ReviewDecision.exitEarly()` factory is unaffected since the factory
+  still works; code directly constructing `new ExitEarly()` needs the `timedOut` argument
+- Identity-based task index: the executor keyed by agentResolved instances is remapped in
+  `Ensemble.runWithInputs()` back to original task instances, since `resolveTasks()` always
+  creates new Task instances even for tasks with no template variables
+- Workflow null default chosen over SEQUENTIAL to make inference explicit and opt-in; any
+  existing code calling `.workflow(Workflow.SEQUENTIAL)` is unaffected
+- Context ordering validation in EnsembleValidator is skipped for inferred PARALLEL (not just
+  explicit PARALLEL): if tasks have context deps, they will be handled by the DAG correctly
+  regardless of declaration order, so the ordering constraint is meaningless
+
+---
+
 ## [Unreleased] - PR #125 Copilot review fixes -- 2026-03-05
 
 ### Fixed (PR #125 -- Copilot inline review comments, commit `2e7798e`)

@@ -20,6 +20,7 @@ import net.agentensemble.agent.AgentExecutor;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.ensemble.ExitReason;
 import net.agentensemble.exception.ParallelExecutionException;
 import net.agentensemble.exception.TaskExecutionException;
 import net.agentensemble.execution.ExecutionContext;
@@ -41,6 +42,11 @@ import org.slf4j.MDC;
  *   <li>This naturally handles mixed sequential and parallel patterns -- no explicit
  *       user configuration is required beyond declaring {@code context} dependencies.</li>
  * </ul>
+ *
+ * <strong>Exit-early:</strong> When a review gate or {@code HumanInputTool} triggers
+ * exit-early, all pending (not yet started) tasks are skipped and already-running tasks
+ * are allowed to complete. A partial {@link EnsembleOutput} is returned with the
+ * appropriate {@link ExitReason}.
  *
  * <strong>Error handling:</strong>
  * <ul>
@@ -155,6 +161,9 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         // FAIL_FAST: holds the first TaskExecutionException to throw after all threads finish
         AtomicReference<TaskExecutionException> firstFailureRef = new AtomicReference<>();
 
+        // Exit-early: set when a review gate or HumanInputTool requests pipeline termination
+        AtomicReference<ExitReason> exitEarlyReasonRef = new AtomicReference<>();
+
         // Each task decrements the latch exactly once (on completion, failure, or skip).
         // When latch reaches 0, all tasks have been resolved and the main thread can proceed.
         CountDownLatch latch = new CountDownLatch(totalTasks);
@@ -189,6 +198,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     skippedTasks,
                     pendingDepCounts,
                     firstFailureRef,
+                    exitEarlyReasonRef,
                     latch,
                     delegationContext,
                     executionContext,
@@ -213,6 +223,33 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     "Parallel workflow interrupted", "multiple", "multiple", List.copyOf(completedOutputs.values()), e);
         }
         // try-with-resources calls executor.close(), which awaits all running threads
+
+        // Handle exit-early (review gate or HumanInputTool) -- before error checks
+        ExitReason exitEarlyReason = exitEarlyReasonRef.get();
+        if (exitEarlyReason != null) {
+            List<TaskOutput> partialOutputs = List.copyOf(completionOrder);
+            Duration partialDuration = Duration.between(startTime, Instant.now());
+            String partialFinalOutput =
+                    partialOutputs.isEmpty() ? "" : partialOutputs.getLast().getRaw();
+            int partialToolCalls = partialOutputs.stream()
+                    .mapToInt(TaskOutput::getToolCallCount)
+                    .sum();
+
+            log.info(
+                    "Parallel workflow exit-early ({}) | Completed: {} | Total: {}",
+                    exitEarlyReason,
+                    partialOutputs.size(),
+                    totalTasks);
+
+            return EnsembleOutput.builder()
+                    .raw(partialFinalOutput)
+                    .taskOutputs(partialOutputs)
+                    .totalDuration(partialDuration)
+                    .totalToolCalls(partialToolCalls)
+                    .exitReason(exitEarlyReason)
+                    .taskOutputIndex(completedOutputs) // identity-based index for getOutput(Task)
+                    .build();
+        }
 
         // Handle FAIL_FAST failure
         TaskExecutionException firstFailure = firstFailureRef.get();
@@ -259,6 +296,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                 .taskOutputs(allOutputs)
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
+                .taskOutputIndex(completedOutputs) // identity-based index for getOutput(Task)
                 .build();
     }
 }

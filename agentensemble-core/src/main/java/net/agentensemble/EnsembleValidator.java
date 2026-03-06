@@ -1,8 +1,10 @@
 package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +23,13 @@ import net.agentensemble.workflow.Workflow;
  * <p>In v2, agents are no longer required on the ensemble -- they may be synthesized
  * at runtime. Validation ensures each task has an LLM source (explicit agent, task-level
  * {@code chatLanguageModel}, or ensemble-level {@code chatLanguageModel}).
+ *
+ * <p>When {@code workflow} is {@code null}, the effective workflow is inferred from the
+ * task context declarations before workflow-specific validation runs:
+ * <ul>
+ *   <li>Any context dependency between ensemble tasks -> PARALLEL</li>
+ *   <li>No such dependency -> SEQUENTIAL</li>
+ * </ul>
  */
 class EnsembleValidator {
 
@@ -46,12 +55,14 @@ class EnsembleValidator {
         validateTasksNotEmpty();
         validateTasksHaveLlm();
         validateMaxDelegationDepth();
-        validateManagerMaxIterations();
-        validateParallelErrorStrategy();
-        validateHierarchicalRoles();
-        validateHierarchicalConstraints();
+        // Workflow-specific validations use the resolved (possibly inferred) workflow
+        Workflow effective = resolveWorkflow();
+        validateManagerMaxIterations(effective);
+        validateParallelErrorStrategy(effective);
+        validateHierarchicalRoles(effective);
+        validateHierarchicalConstraints(effective);
         validateNoCircularContextDependencies();
-        validateContextOrdering();
+        validateContextOrdering(effective);
     }
 
     private void validateTasksNotEmpty() {
@@ -88,15 +99,15 @@ class EnsembleValidator {
         }
     }
 
-    private void validateManagerMaxIterations() {
-        if (workflow == Workflow.HIERARCHICAL && managerMaxIterations <= 0) {
+    private void validateManagerMaxIterations(Workflow effective) {
+        if (effective == Workflow.HIERARCHICAL && managerMaxIterations <= 0) {
             throw new ValidationException("Ensemble managerMaxIterations must be > 0 for HIERARCHICAL workflow, got: "
                     + managerMaxIterations);
         }
     }
 
-    private void validateParallelErrorStrategy() {
-        if (workflow == Workflow.PARALLEL && parallelErrorStrategy == null) {
+    private void validateParallelErrorStrategy(Workflow effective) {
+        if (effective == Workflow.PARALLEL && parallelErrorStrategy == null) {
             throw new ValidationException("Ensemble parallelErrorStrategy must not be null for PARALLEL workflow");
         }
     }
@@ -108,8 +119,8 @@ class EnsembleValidator {
      * <p>Tasks without an explicit agent are excluded from this check since their agents
      * are synthesized at runtime and will not conflict with the Manager role.
      */
-    private void validateHierarchicalRoles() {
-        if (workflow != Workflow.HIERARCHICAL) {
+    private void validateHierarchicalRoles(Workflow effective) {
+        if (effective != Workflow.HIERARCHICAL) {
             return;
         }
         Set<String> seenRoles = new HashSet<>();
@@ -134,10 +145,10 @@ class EnsembleValidator {
      * Validates the optional {@link HierarchicalConstraints} configuration against the
      * explicitly registered agents (derived from tasks that have an explicit agent set).
      *
-     * <p>Only runs when {@code workflow == HIERARCHICAL} and constraints are non-null.
+     * <p>Only runs when {@code effective == HIERARCHICAL} and constraints are non-null.
      */
-    private void validateHierarchicalConstraints() {
-        if (workflow != Workflow.HIERARCHICAL || hierarchicalConstraints == null) {
+    private void validateHierarchicalConstraints(Workflow effective) {
+        if (effective != Workflow.HIERARCHICAL || hierarchicalConstraints == null) {
             return;
         }
 
@@ -251,9 +262,16 @@ class EnsembleValidator {
         inStack.remove(task);
     }
 
-    private void validateContextOrdering() {
-        // Hierarchical and parallel workflows do not require sequential task ordering.
-        if (workflow == Workflow.HIERARCHICAL || workflow == Workflow.PARALLEL) {
+    /**
+     * For SEQUENTIAL effective workflow: validate that context tasks appear before the
+     * tasks that reference them in the task list.
+     *
+     * <p>Skipped for HIERARCHICAL and PARALLEL (including inferred PARALLEL), since
+     * those workflows use the DAG to determine execution order and do not require
+     * declaration-order constraints.
+     */
+    private void validateContextOrdering(Workflow effective) {
+        if (effective == Workflow.HIERARCHICAL || effective == Workflow.PARALLEL) {
             return;
         }
 
@@ -280,5 +298,31 @@ class EnsembleValidator {
             }
             executedSoFar.add(task);
         }
+    }
+
+    /**
+     * Infer the effective workflow from the original task list, for use in validation
+     * before template resolution.
+     *
+     * <p>When {@link #workflow} is explicitly set, returns it unchanged. Otherwise uses
+     * the same inference logic as {@link Ensemble#resolveWorkflow}: if any task has a
+     * context dependency on another task in this ensemble, infer PARALLEL; else SEQUENTIAL.
+     *
+     * @return the effective workflow for this ensemble run
+     */
+    private Workflow resolveWorkflow() {
+        if (workflow != null) {
+            return workflow;
+        }
+        Set<Task> taskSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        taskSet.addAll(tasks);
+        for (Task task : tasks) {
+            for (Task dep : task.getContext()) {
+                if (taskSet.contains(dep)) {
+                    return Workflow.PARALLEL;
+                }
+            }
+        }
+        return Workflow.SEQUENTIAL;
     }
 }
