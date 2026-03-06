@@ -20,7 +20,7 @@ const BASE_STATE: LiveState = {
   totalTasks: 3,
 };
 
-function stateWithTask(taskIndex: number, status: 'running' | 'completed' | 'failed') {
+function stateWithTask(taskIndex: number, status: 'running' | 'completed' | 'failed'): LiveState {
   return {
     ...BASE_STATE,
     tasks: [
