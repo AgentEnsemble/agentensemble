@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] - Issue #126: Tool-Level Approval Gates -- 2026-03-05
+
+### Added (Issue #126 -- Tool-level approval gates via ReviewHandler)
+
+**Infrastructure (agentensemble-core):**
+- `ToolContext`: `Object reviewHandler` field; 4-arg `of()` factory; `reviewHandler()` accessor
+- `ToolResolver.resolve()`: 4-arg overload threads `reviewHandler` from `ExecutionContext` into each `ToolContext`
+- `AgentExecutor`: passes `executionContext.reviewHandler()` to `ToolResolver.resolve()`
+- `AbstractAgentTool`: `protected ReviewDecision requestApproval(String)` and `requestApproval(String, Duration, OnTimeoutAction)`; `protected Object rawReviewHandler()`; re-throws `IllegalStateException` from `execute()`; `static final ReentrantLock CONSOLE_APPROVAL_LOCK`
+- `LangChain4jToolAdapter.executeForResult()`: re-throws `IllegalStateException` so configuration errors propagate up
+
+**Built-in tools (agentensemble-tools):**
+- `ProcessAgentTool.Builder.requireApproval(boolean)` -- approval before subprocess start
+- `FileWriteTool.Builder` (new builder pattern) with `requireApproval(boolean)` -- approval before file write
+- `HttpAgentTool.Builder.requireApproval(boolean)` -- approval before HTTP send
+- Build files for process, file-write, http: added `compileOnly` and `testImplementation` on `:agentensemble-review`
+
+**Tests:**
+- `ToolContextTest` (new), `AbstractAgentToolApprovalTest` (new), `ToolResolverTest` (+5 tests)
+- `ProcessAgentToolTest` (+7), `FileWriteToolTest` (+10), `HttpAgentToolTest` (+8)
+- `ToolApprovalIntegrationTest` (new, 6 end-to-end tests)
+
+**Documentation:**
+- `docs/guides/review.md`: Tool-Level Approval Gates section
+- `docs/guides/built-in-tools.md`: Approval Gate subsections for 3 tools
+- `docs/examples/human-in-the-loop.md`: Tool-Level Approval example
+- `docs/design/06-tool-system.md`: Tool-Level Approval Gates architecture section
+
+---
+
 ## [Planned] - v2.1.0 Live Execution Dashboard -- 2026-03-05
 
 ### Design Decisions
