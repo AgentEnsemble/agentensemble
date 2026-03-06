@@ -14,6 +14,7 @@ import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.ensemble.ExitReason;
+import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.review.Review;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.review.ReviewHandler;
@@ -255,6 +256,53 @@ class PartialResultsIntegrationTest {
         assertThat(output.isComplete()).isFalse();
         assertThat(output.completedTasks()).hasSize(1);
         assertThat(output.getRaw()).isEqualTo("Research complete");
+    }
+
+    // ========================
+    // Memory persistence: completed task outputs persisted even on exit-early
+    // ========================
+
+    @Test
+    void sequential_exitEarly_completedTaskOutputPersistedToMemoryScope() {
+        // Arrange: task1 declares a memory scope, task2 never runs (exit-early after task1)
+        Agent researcher = agentWithResponse("Researcher", "Research stored to memory");
+        Agent writer = agentWithResponse("Writer", "Should not run");
+
+        MemoryStore memoryStore = MemoryStore.inMemory();
+
+        Task task1 = Task.builder()
+                .description("Research AI")
+                .expectedOutput("Report")
+                .agent(researcher)
+                .memory("research-scope") // output will be stored in this scope
+                .review(Review.required())
+                .build();
+        Task task2 = Task.builder()
+                .description("Write post (skipped)")
+                .expectedOutput("Post")
+                .agent(writer)
+                .build();
+
+        // Exit-early fires after task1 (after task1 has already completed + stored its output)
+        EnsembleOutput output = Ensemble.builder()
+                .task(task1)
+                .task(task2)
+                .memoryStore(memoryStore)
+                .reviewHandler(request -> ReviewDecision.exitEarly())
+                .build()
+                .run();
+
+        // Pipeline stopped early
+        assertThat(output.getExitReason()).isEqualTo(ExitReason.USER_EXIT_EARLY);
+        assertThat(output.isComplete()).isFalse();
+        assertThat(output.completedTasks()).hasSize(1);
+
+        // Memory was persisted for the completed task BEFORE exit-early fired
+        // AgentExecutor stores to declared scopes immediately after task execution,
+        // before the review gate fires, so the output is always persisted.
+        var storedEntries = memoryStore.retrieve("research-scope", "", 10);
+        assertThat(storedEntries).isNotEmpty();
+        assertThat(storedEntries.get(0).getContent()).isEqualTo("Research stored to memory");
     }
 
     // ========================
