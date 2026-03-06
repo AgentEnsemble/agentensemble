@@ -71,6 +71,24 @@ public interface AgentSynthesizer {
      * descriptions. Incurs one additional LLM call per task that uses this
      * synthesizer.
      *
+     * <p><strong>Model requirements:</strong> The {@code ChatModel} supplied to the ensemble
+     * must be able to respond to synthesis prompts at configuration time -- not just at task
+     * execution time. Synthesis calls {@code ChatModel.chat(ChatRequest)} directly, so the
+     * model must properly implement either {@code chat(ChatRequest)} or {@code doChat(ChatRequest)}
+     * (the LangChain4j 1.x override point). A model that implements neither will throw
+     * {@code RuntimeException("Not implemented")} during {@code Ensemble.resolveAgents()},
+     * before any task execution begins.
+     *
+     * <p><strong>Tests and deterministic models:</strong> For unit or integration tests that
+     * use a stub or fake {@code ChatModel}, prefer {@link #template()} (the default) unless
+     * the stub can return well-formed JSON persona responses. If you do use {@code llmBased()}
+     * in tests, the stub must override {@code doChat(ChatRequest)} (or {@code chat(ChatRequest)})
+     * and return valid JSON matching the synthesis prompt format:
+     * <pre>
+     * {"role": "...", "goal": "...", "backstory": "..."}
+     * </pre>
+     * See the <a href="../guides/testing.md">Testing guide</a> for recommended stub patterns.
+     *
      * @return the LLM-based synthesizer
      */
     static AgentSynthesizer llmBased() {

@@ -92,6 +92,7 @@ nav:
     - Logging: guides/logging.md
     - Template Variables: guides/template-variables.md
     - Framework Integration: guides/framework-integration.md
+    - Testing: guides/testing.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
