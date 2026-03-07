@@ -1,0 +1,37 @@
+name: Sync Site Docs
+
+# Fires when docs change on main and triggers the agentensemble.net site
+# to pull the updated documentation.
+#
+# Prerequisites:
+#   1. Create a GitHub Personal Access Token with the "public_repo" scope.
+#   2. Store it as a repository secret named SITE_REPO_PAT in this repo:
+#      https://github.com/AgentEnsemble/agentensemble/settings/secrets/actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    name: Trigger site docs sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch repository_dispatch to AgentEnsemble/site
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SITE_REPO_PAT }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'AgentEnsemble',
+              repo: 'site',
+              event_type: 'docs-updated',
+              client_payload: {
+                sha: context.sha,
+                ref: context.ref,
+              },
+            });
+            console.log('Dispatched docs-updated to AgentEnsemble/site');
