@@ -22,7 +22,7 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 | **Workflow** | How tasks are executed: `SEQUENTIAL`, `HIERARCHICAL` (manager delegates to workers), or `PARALLEL` (concurrent DAG-based execution) |
 | **Memory** | Optional per-run and cross-run context: short-term, long-term (vector store), and entity memory |
 
-**Full documentation:** [Core Concepts](https://docs.agentensemble.net/getting-started/concepts/) | [Getting Started](https://docs.agentensemble.net/getting-started/quickstart/)
+**Full documentation:** [Core Concepts](https://agentensemble.net/getting-started/concepts/) | [Getting Started](https://agentensemble.net/getting-started/quickstart/)
 
 ---
 
@@ -167,9 +167,9 @@ System.out.println(output.getRaw());
 
 If `managerLlm` is not set, the Manager uses the first agent's LLM. All worker agents participate in the same memory context when memory is configured (see [Memory System](#memory-system) below).
 
-**Custom manager prompts:** Use `.managerPromptStrategy(ManagerPromptStrategy)` to inject domain-specific context into the Manager's system and user prompts without forking framework internals. The built-in `DefaultManagerPromptStrategy.DEFAULT` is used when no strategy is set. See the [Workflows Guide](https://docs.agentensemble.net/guides/workflows/#customizing-the-manager-prompt) for full details.
+**Custom manager prompts:** Use `.managerPromptStrategy(ManagerPromptStrategy)` to inject domain-specific context into the Manager's system and user prompts without forking framework internals. The built-in `DefaultManagerPromptStrategy.DEFAULT` is used when no strategy is set. See the [Workflows Guide](https://agentensemble.net/guides/workflows/#customizing-the-manager-prompt) for full details.
 
-**Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Hierarchical Team Example](https://docs.agentensemble.net/examples/hierarchical-team/)
+**Full documentation:** [Workflows Guide](https://agentensemble.net/guides/workflows/) | [Hierarchical Team Example](https://agentensemble.net/examples/hierarchical-team/)
 
 ### Hierarchical Constraints
 
@@ -198,7 +198,7 @@ Ensemble.builder()
 
 Pre-delegation violations (disallowed worker, cap exceeded, stage order) are returned as error messages to the Manager LLM so it can adjust its plan. Post-execution, if a required worker was never called, a `ConstraintViolationException` is thrown with the full violation list and any partial worker outputs.
 
-**Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#hierarchical-constraints)
+**Full documentation:** [Delegation Guide](https://agentensemble.net/guides/delegation/#hierarchical-constraints)
 
 ---
 
@@ -261,7 +261,7 @@ Ensemble.builder()
 
 When using `CONTINUE_ON_ERROR`, a `ParallelExecutionException` is thrown if any tasks fail, carrying both the successful outputs and a map of failures.
 
-**Full documentation:** [Workflows Guide](https://docs.agentensemble.net/guides/workflows/) | [Parallel Workflow Example](https://docs.agentensemble.net/examples/parallel-workflow/)
+**Full documentation:** [Workflows Guide](https://agentensemble.net/guides/workflows/) | [Parallel Workflow Example](https://agentensemble.net/examples/parallel-workflow/)
 
 ### Dynamic Agent Creation
 
@@ -315,7 +315,7 @@ specialist tasks to produce compact structured JSON, reducing aggregation contex
 For very large N, use `MapReduceEnsemble` (see below) to aggregate results in bounded batches
 across multiple levels.
 
-**Full documentation:** [Dynamic Agent Creation Example](https://docs.agentensemble.net/examples/dynamic-agents/)
+**Full documentation:** [Dynamic Agent Creation Example](https://agentensemble.net/examples/dynamic-agents/)
 
 ### MapReduceEnsemble (v2.0.0)
 
@@ -397,7 +397,7 @@ output.getTrace().getMapReduceLevels().forEach(level ->
     System.out.printf("Level %d: %d tasks%n", level.getLevel(), level.getTaskCount()));
 ```
 
-**Full documentation:** [MapReduceEnsemble Guide](https://docs.agentensemble.net/guides/map-reduce/) | [Kitchen Examples](https://docs.agentensemble.net/examples/map-reduce/)
+**Full documentation:** [MapReduceEnsemble Guide](https://agentensemble.net/guides/map-reduce/) | [Kitchen Examples](https://agentensemble.net/examples/map-reduce/)
 
 ---
 
@@ -497,7 +497,7 @@ EnsembleOutput output = Ensemble.builder()
 | `entityMemory` | `EntityMemory` | `null` | Named entity fact store; use `InMemoryEntityMemory` |
 | `longTermMaxResults` | `int` | `5` | Maximum memories retrieved per task when long-term memory is enabled |
 
-**Full documentation:** [Memory Guide](https://docs.agentensemble.net/guides/memory/) | [Memory Across Runs Example](https://docs.agentensemble.net/examples/memory-across-runs/)
+**Full documentation:** [Memory Guide](https://agentensemble.net/guides/memory/) | [Memory Across Runs Example](https://agentensemble.net/examples/memory-across-runs/)
 
 ---
 
@@ -546,7 +546,7 @@ The framework executes the writer, returns the result as the tool output, and th
 - Delegating to an unknown agent role returns an error to the caller
 - Delegation depth is capped at `maxDelegationDepth` (default 3) to prevent infinite chains
 
-**Structured delegation contracts:** For each delegation attempt the framework constructs a `DelegationRequest` (with auto-generated `taskId`, priority, scope, and metadata fields) and produces a `DelegationResponse` (with `status`, `rawOutput`, `errors`, and `duration`). Guard failures also produce a `FAILURE` response, so every delegation attempt is auditable. See the [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#structured-delegation-contracts) for the full field reference.
+**Structured delegation contracts:** For each delegation attempt the framework constructs a `DelegationRequest` (with auto-generated `taskId`, priority, scope, and metadata fields) and produces a `DelegationResponse` (with `status`, `rawOutput`, `errors`, and `duration`). Guard failures also produce a `FAILURE` response, so every delegation attempt is auditable. See the [Delegation Guide](https://agentensemble.net/guides/delegation/#structured-delegation-contracts) for the full field reference.
 
 **Delegation policy hooks:** Register pluggable `DelegationPolicy` interceptors that run after built-in guards and before the worker executes. Each policy can allow, reject (with a reason), or modify the `DelegationRequest`. Policies are evaluated in registration order; the first rejection short-circuits worker execution.
 
@@ -564,9 +564,9 @@ Ensemble.builder()
     .build();
 ```
 
-**Delegation lifecycle events:** `DelegationStartedEvent`, `DelegationCompletedEvent`, and `DelegationFailedEvent` are fired to all registered `EnsembleListener` instances. Each event carries a `delegationId` that correlates the start/complete/failed pair. Register listeners with `.onDelegationStarted(...)`, `.onDelegationCompleted(...)`, `.onDelegationFailed(...)`. See the [Delegation Guide](https://docs.agentensemble.net/guides/delegation/#delegation-lifecycle-events) for full details.
+**Delegation lifecycle events:** `DelegationStartedEvent`, `DelegationCompletedEvent`, and `DelegationFailedEvent` are fired to all registered `EnsembleListener` instances. Each event carries a `delegationId` that correlates the start/complete/failed pair. Register listeners with `.onDelegationStarted(...)`, `.onDelegationCompleted(...)`, `.onDelegationFailed(...)`. See the [Delegation Guide](https://agentensemble.net/guides/delegation/#delegation-lifecycle-events) for full details.
 
-**Full documentation:** [Delegation Guide](https://docs.agentensemble.net/guides/delegation/)
+**Full documentation:** [Delegation Guide](https://agentensemble.net/guides/delegation/)
 
 ---
 
@@ -584,7 +584,7 @@ Ensemble.builder()
 | `maxIterations` | `int` | `25` | Max tool-call iterations before forcing final answer |
 | `responseFormat` | `String` | `""` | Extra formatting instructions in the system prompt |
 
-**Full documentation:** [Agent Configuration Reference](https://docs.agentensemble.net/reference/agent-configuration/) | [Agents Guide](https://docs.agentensemble.net/guides/agents/)
+**Full documentation:** [Agent Configuration Reference](https://agentensemble.net/reference/agent-configuration/) | [Agents Guide](https://agentensemble.net/guides/agents/)
 
 ---
 
@@ -630,7 +630,7 @@ report.findings().forEach(System.out::println);
 
 **Formatted text (no schema):** For Markdown or other formatted prose, use `Agent.responseFormat` and a descriptive `expectedOutput` -- no `outputType` needed. The `TaskOutput.raw` field always contains the complete response.
 
-**Full documentation:** [Structured Output Example](https://docs.agentensemble.net/examples/structured-output/)
+**Full documentation:** [Structured Output Example](https://agentensemble.net/examples/structured-output/)
 
 ---
 
@@ -688,7 +688,7 @@ Ensemble.builder()
 
 **Thread safety:** for `Workflow.PARALLEL`, listener methods may be called concurrently. Listener implementations must be thread-safe.
 
-**Full documentation:** [Callbacks Guide](https://docs.agentensemble.net/guides/callbacks/) | [Callbacks Example](https://docs.agentensemble.net/examples/callbacks/)
+**Full documentation:** [Callbacks Guide](https://agentensemble.net/guides/callbacks/) | [Callbacks Example](https://agentensemble.net/examples/callbacks/)
 
 ---
 
@@ -792,7 +792,7 @@ implementation("net.agentensemble:agentensemble-web:2.1.0")
 implementation("net.agentensemble:agentensemble-review:2.1.0")   // required for review gates
 ```
 
-**Full documentation:** [Live Dashboard Guide](https://docs.agentensemble.net/guides/live-dashboard/) | [Live Dashboard Example](https://docs.agentensemble.net/examples/live-dashboard/)
+**Full documentation:** [Live Dashboard Guide](https://agentensemble.net/guides/live-dashboard/) | [Live Dashboard Example](https://agentensemble.net/examples/live-dashboard/)
 
 ---
 
@@ -827,7 +827,7 @@ The viewer starts at `http://localhost:7329` and auto-discovers all `.dag.json` 
 files in the directory. The **Flow View** shows the dependency graph with critical-path highlighting;
 the **Timeline View** shows a Gantt-chart breakdown of task, LLM call, and tool execution timing.
 
-**Full documentation:** [Visualization Guide](https://docs.agentensemble.net/guides/visualization/) | [Visualization Example](https://docs.agentensemble.net/examples/visualization/)
+**Full documentation:** [Visualization Guide](https://agentensemble.net/guides/visualization/) | [Visualization Example](https://agentensemble.net/examples/visualization/)
 
 ---
 
@@ -919,7 +919,7 @@ var task = Task.builder()
 
 When a guardrail blocks a task, `GuardrailViolationException` propagates and is wrapped in `TaskExecutionException`, consistent with other task failures. The `TaskFailedEvent` callback fires before the exception propagates.
 
-**Full documentation:** [Guardrails Guide](https://docs.agentensemble.net/guides/guardrails/)
+**Full documentation:** [Guardrails Guide](https://agentensemble.net/guides/guardrails/)
 
 ---
 
@@ -936,7 +936,7 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 | `inputGuardrails` | `List<InputGuardrail>` | `[]` | Validation hooks that run before the LLM call. |
 | `outputGuardrails` | `List<OutputGuardrail>` | `[]` | Validation hooks that run after the agent produces a response. |
 
-**Full documentation:** [Task Configuration Reference](https://docs.agentensemble.net/reference/task-configuration/) | [Tasks Guide](https://docs.agentensemble.net/guides/tasks/)
+**Full documentation:** [Task Configuration Reference](https://agentensemble.net/reference/task-configuration/) | [Tasks Guide](https://agentensemble.net/guides/tasks/)
 
 ---
 
@@ -965,7 +965,7 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 | `onDelegationFailed` | `Consumer<DelegationFailedEvent>` | -- | Lambda: fired when a delegation fails (guard, policy, or worker exception). Guard/policy failures have no matching start event (repeatable). |
 | `hierarchicalConstraints` | `HierarchicalConstraints` | `null` | Optional guardrails for the delegation graph (hierarchical workflow only): required workers, allowed workers, per-worker caps, global delegation cap, stage ordering. See [Hierarchical Constraints](#hierarchical-constraints). |
 
-**Full documentation:** [Ensemble Configuration Reference](https://docs.agentensemble.net/reference/ensemble-configuration/)
+**Full documentation:** [Ensemble Configuration Reference](https://agentensemble.net/reference/ensemble-configuration/)
 
 ---
 
@@ -1037,7 +1037,7 @@ var task = Task.builder()
     .build();
 ```
 
-**Full documentation:** [Tool Pipeline Guide](https://docs.agentensemble.net/guides/tool-pipeline/) | [Tool Pipeline Example](https://docs.agentensemble.net/examples/tool-pipeline/) | [Tools Guide](https://docs.agentensemble.net/guides/tools/)
+**Full documentation:** [Tool Pipeline Guide](https://agentensemble.net/guides/tool-pipeline/) | [Tool Pipeline Example](https://agentensemble.net/examples/tool-pipeline/) | [Tools Guide](https://agentensemble.net/guides/tools/)
 
 ---
 
@@ -1058,7 +1058,7 @@ ensemble.run(Map.of("topic", "quantum computing", "year", "2026"));
 
 Use `{{variable}}` to include a literal `{variable}` in the text without substitution.
 
-**Full documentation:** [Template Variables Guide](https://docs.agentensemble.net/guides/template-variables/)
+**Full documentation:** [Template Variables Guide](https://agentensemble.net/guides/template-variables/)
 
 ---
 
@@ -1085,7 +1085,7 @@ try {
 }
 ```
 
-**Full documentation:** [Error Handling Guide](https://docs.agentensemble.net/guides/error-handling/)
+**Full documentation:** [Error Handling Guide](https://agentensemble.net/guides/error-handling/)
 
 ---
 
@@ -1115,7 +1115,7 @@ AgentEnsemble uses SLF4J. Add your preferred implementation (Logback, Log4j2, et
 | `task.index` | `"2/5"` |
 | `agent.role` | `"Senior Research Analyst"` |
 
-**Full documentation:** [Logging Guide](https://docs.agentensemble.net/guides/logging/)
+**Full documentation:** [Logging Guide](https://agentensemble.net/guides/logging/)
 
 ---
 
@@ -1165,7 +1165,7 @@ export OPENAI_API_KEY=your-api-key
 ./gradlew :agentensemble-examples:runToolPipeline
 ```
 
-**Full documentation:** [Examples](https://docs.agentensemble.net/examples/research-writer/)
+**Full documentation:** [Examples](https://agentensemble.net/examples/research-writer/)
 
 ---
 
@@ -1204,14 +1204,14 @@ See [`docs/design/`](docs/design/) for full specifications:
 
 ## Documentation
 
-Full documentation is available at **[docs.agentensemble.net](https://docs.agentensemble.net)**:
+Full documentation is available at **[agentensemble.net](https://agentensemble.net)**:
 
 | Section | Description |
 |---|---|
-| [Getting Started](https://docs.agentensemble.net/getting-started/installation/) | Installation, quickstart, core concepts |
-| [Guides](https://docs.agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging, visualization |
-| [Reference](https://docs.agentensemble.net/reference/ensemble-configuration/) | Complete configuration field tables |
-| [Examples](https://docs.agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs including [visualization](https://docs.agentensemble.net/examples/visualization/) |
+| [Getting Started](https://agentensemble.net/getting-started/installation/) | Installation, quickstart, core concepts |
+| [Guides](https://agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging, visualization |
+| [Reference](https://agentensemble.net/reference/ensemble-configuration/) | Complete configuration field tables |
+| [Examples](https://agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs including [visualization](https://agentensemble.net/examples/visualization/) |
 | [Design Specs](docs/design/) | Internal architecture and design documentation |
 
 ---
