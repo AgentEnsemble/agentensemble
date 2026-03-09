@@ -1,9 +1,15 @@
-/* ReactFlow base styles -- must come before @tailwind directives */
+/* ReactFlow base styles -- must come before Tailwind */
 @import '@xyflow/react/dist/style.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Class-based dark mode -- matches v3 darkMode: 'class' behaviour */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Font theme override */
+@theme {
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
 
 @layer base {
   html {
@@ -27,11 +33,15 @@
   }
 
   .btn-primary {
-    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-1;
+    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
   }
 
   .btn-secondary {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-400;
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-1;
+    @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-400;
     @apply dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700;
   }
 
