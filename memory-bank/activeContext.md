@@ -2,6 +2,56 @@
 
 ## Current Focus
 
+### v3.0.0 Ensemble Network Design (branch: docs/v3-ensemble-network-design)
+
+Comprehensive v3.0.0 architecture designed and documented. Branch has 4 commits, NOT pushed.
+
+**What was produced:**
+- Design document: `docs/design/18-ensemble-network.md` (24 sections, 1269 lines)
+- Issue breakdown: `docs/design/18-ensemble-network-issues.md` (30 issues, 4 phases)
+- White paper: `docs/whitepaper/ensemble-network-architecture.md`
+- Blog post: `docs/blog/ensemble-network.md`
+- Book: `docs/book/` (15 chapters + 3 appendices, 19 files, ~36K words)
+- Book PDF: `docs/book/ensemble-network-book.pdf` (author: Matthew Dickinson)
+- Design notes: `docs/design/18-ensemble-network-design-notes.md` (conversation record)
+
+**Core architecture decisions:**
+- Peer-to-peer mesh of autonomous long-running ensembles (NOT central conductor)
+- Hotel analogy: departments as ensembles, hotel runs 24/7, humans come and go
+- Two sharing primitives: SharedTask (delegate a process) + SharedTool (borrow a capability)
+- WorkRequest envelope with priority, deadline, delivery method, trace context
+- "Bend, don't break" capacity management: accept and queue, reject only at hard limits
+- Caller-side SLA: caller specifies deadline, provider reports ETA, caller decides
+- Dual transport: WebSocket (real-time events) + durable queues (reliable work delivery)
+- Human participation spectrum: Autonomous -> Advisory -> Notifiable -> Approvable -> Gated
+- K8s-native deployment: no custom registry, framework provides health endpoints + metrics
+- OTel for distributed tracing, W3C trace context mandatory in wire protocol
+- Natural language contracts: LLM is the compatibility layer, no schema versioning
+- Built-in chaos engineering (application-level fault injection, not infrastructure-level)
+- Adaptive audit trail with dynamic rules (metric/event/schedule/human-triggered escalation)
+- Per-scope shared state consistency: EVENTUAL / LOCKED / OPTIMISTIC / EXTERNAL
+
+**10 design topics resolved:**
+1. Distributed Tracing: OTel SDK + W3C trace context + backend-agnostic
+2. Resilience: framework=semantics, infra=transport; expose metrics for K8s HPA
+3. Versioning: no explicit versioning; LLM=compatibility layer
+4. Testing: 3-tier (component/simulation/chaos), all built into framework
+5. Capacity: "bend don't break"; caller-side SLA; operational profiles
+6. Audit: leveled + dynamic rules; pluggable sink SPI
+7. Delivery: WorkRequest envelope; 7 delivery methods; pluggable ingress; durable queues
+8. Lifecycle: STARTING/READY/DRAINING/STOPPED; K8s integration
+9. Shared State: per-scope configurable consistency; LockProvider SPI
+10. Cost: in tracing; control plane directives for model tier switching
+
+**Next steps:**
+- Review all docs for completeness
+- Push branch when ready
+- Implementation begins with Phase 1 (EN-001 through EN-009)
+
+---
+
+### Previous: Branch fix/task-first-synthesis-fallback-and-template-role-extraction
+
 Branch `fix/task-first-synthesis-fallback-and-template-role-extraction` is open to address
 two interacting bugs in the task-first agent synthesis path:
 
