@@ -86,6 +86,7 @@ nav:
     - Review: guides/review.md
     - Live Dashboard: guides/live-dashboard.md
     - Delegation: guides/delegation.md
+    - Rate Limiting: guides/rate-limiting.md
     - Error Handling: guides/error-handling.md
     - Callbacks: guides/callbacks.md
     - Guardrails: guides/guardrails.md

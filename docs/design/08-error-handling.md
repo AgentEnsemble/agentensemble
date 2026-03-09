@@ -14,6 +14,7 @@ java.lang.RuntimeException
         +-- ToolExecutionException             (tool infrastructure failure)
         +-- MaxIterationsExceededException     (agent stuck in tool loop)
         +-- PromptTemplateException            (template variable error)
+        +-- RateLimitTimeoutException          (rate limit wait timeout exceeded)
 ```
 
 All exceptions are **unchecked** (extend `RuntimeException`). This is a deliberate design choice: AgentEnsemble is a framework, and forcing users to catch-or-declare everywhere would make the API cumbersome. Users who want to handle errors can catch specific types; others can let exceptions propagate naturally.
@@ -258,6 +259,35 @@ public class PromptTemplateException extends AgentEnsembleException {
 - User provides the missing variables in `ensemble.run(Map.of("var1", "value1", ...))`
 - Or user removes the `{variable}` placeholders from the task description/expectedOutput
 
+### RateLimitTimeoutException
+
+Thrown by `RateLimitedChatModel` when a thread cannot acquire a rate-limit token within
+the configured wait timeout.
+
+```java
+public class RateLimitTimeoutException extends AgentEnsembleException {
+
+    /** The rate limit that was being enforced. */
+    private final RateLimit rateLimit;
+
+    /** The wait timeout that was exceeded. */
+    private final Duration waitTimeout;
+
+    public RateLimitTimeoutException(RateLimit rateLimit, Duration waitTimeout) { ... }
+
+    // Getters
+}
+```
+
+**When thrown:**
+- A calling thread waited longer than `waitTimeout` for a rate-limit token to become available
+- Typically propagates through `AgentExecutor` and is wrapped in `TaskExecutionException`
+
+**Recovery:**
+- Increase `waitTimeout` on `RateLimitedChatModel.of(model, rateLimit, timeout)`
+- Reduce concurrency (fewer parallel tasks sharing the same bucket)
+- Increase the `RateLimit` to allow more requests per period
+
 ## Error Recovery Strategy Summary
 
 | Exception | Where Thrown | Recovery |
@@ -269,6 +299,7 @@ public class PromptTemplateException extends AgentEnsembleException {
 | `ToolExecutionException` | Tool execution | NOT propagated (error fed to LLM). Fix tool implementation if persistent. |
 | `MaxIterationsExceededException` | `AgentExecutor` | Increase `maxIterations`, simplify task, or reduce tools. |
 | `PromptTemplateException` | Template resolution | Provide missing variables or fix template syntax. |
+| `RateLimitTimeoutException` | `RateLimitedChatModel` | Increase `waitTimeout`, reduce concurrency, or increase `RateLimit`. |
 
 ## Exception Flow Diagram
 
@@ -284,6 +315,7 @@ ensemble.run(inputs)
         |     |
         |     +-- AgentExecutionException (LLM failed)
         |     +-- MaxIterationsExceededException (agent stuck)
+        |     +-- RateLimitTimeoutException (rate bucket exhausted, wait timed out)
         |     |
         |     (Tool errors are NOT exceptions -- fed back to LLM)
         |

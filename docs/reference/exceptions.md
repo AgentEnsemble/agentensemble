@@ -15,6 +15,7 @@ java.lang.RuntimeException
     MaxIterationsExceededException
     PromptTemplateException
     ToolExecutionException
+  net.agentensemble.ratelimit.RateLimitTimeoutException
 ```
 
 ---
@@ -132,6 +133,28 @@ Input violations are thrown before any LLM call is made. Output violations are t
 | `getViolationMessage()` | `String` | The failure reason returned by the guardrail |
 | `getTaskDescription()` | `String` | Description of the blocked task |
 | `getAgentRole()` | `String` | Role of the agent assigned to the task |
+
+---
+
+## `RateLimitTimeoutException`
+
+**Package:** `net.agentensemble.ratelimit`
+
+**Thrown by:** `RateLimitedChatModel`
+
+A thread waited for a rate-limit token longer than the configured `waitTimeout` and no token
+became available. Propagates up through `AgentExecutor` and is wrapped in `TaskExecutionException`.
+
+**Methods:**
+| Method | Type | Description |
+|---|---|---|
+| `getRateLimit()` | `RateLimit` | The rate limit being enforced when the timeout occurred |
+| `getWaitTimeout()` | `Duration` | The wait timeout that was exceeded |
+
+**Remediation:** increase `waitTimeout` on `RateLimitedChatModel`, reduce concurrency, or
+increase the `RateLimit` to allow more requests per period.
+
+See the [Rate Limiting guide](../guides/rate-limiting.md) for details.
 
 ---
 

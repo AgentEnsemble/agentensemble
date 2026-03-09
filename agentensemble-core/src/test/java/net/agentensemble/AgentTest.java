@@ -6,8 +6,11 @@ import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.model.chat.ChatModel;
+import java.time.Duration;
 import java.util.List;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
@@ -273,6 +276,64 @@ class AgentTest {
         assertThat(original.isVerbose()).isFalse();
         assertThat(modified.getRole()).isEqualTo("Researcher");
         assertThat(modified.getLlm()).isSameAs(mockLlm);
+    }
+
+    // ========================
+    // rateLimit builder convenience
+    // ========================
+
+    @Test
+    void testBuild_withRateLimit_wrapsLlm() {
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find information")
+                .llm(mockLlm)
+                .rateLimit(RateLimit.perMinute(60))
+                .build();
+
+        assertThat(agent.getLlm()).isInstanceOf(RateLimitedChatModel.class);
+        assertThat(((RateLimitedChatModel) agent.getLlm()).getDelegate()).isSameAs(mockLlm);
+        assertThat(((RateLimitedChatModel) agent.getLlm()).getRateLimit()).isEqualTo(RateLimit.perMinute(60));
+    }
+
+    @Test
+    void testBuild_withRateLimit_defaultTimeout_is30Seconds() {
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find information")
+                .llm(mockLlm)
+                .rateLimit(RateLimit.perSecond(2))
+                .build();
+
+        assertThat(((RateLimitedChatModel) agent.getLlm()).getWaitTimeout()).isEqualTo(Duration.ofSeconds(30));
+    }
+
+    @Test
+    void testBuild_withRateLimit_noRateLimit_llmIsUnwrapped() {
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find information")
+                .llm(mockLlm)
+                .build();
+
+        assertThat(agent.getLlm()).isSameAs(mockLlm);
+        assertThat(agent.getLlm()).isNotInstanceOf(RateLimitedChatModel.class);
+    }
+
+    @Test
+    void testBuild_withRateLimit_alreadyWrappedModel_wrapsAgain() {
+        // If user passes an already-wrapped model AND sets rateLimit(), we wrap again.
+        // This is valid: the user explicitly asked for an additional layer.
+        var innerModel = RateLimitedChatModel.of(mockLlm, RateLimit.perSecond(5));
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find information")
+                .llm(innerModel)
+                .rateLimit(RateLimit.perMinute(60))
+                .build();
+
+        assertThat(agent.getLlm()).isInstanceOf(RateLimitedChatModel.class);
+        assertThat(((RateLimitedChatModel) agent.getLlm()).getDelegate()).isSameAs(innerModel);
     }
 
     // ========================

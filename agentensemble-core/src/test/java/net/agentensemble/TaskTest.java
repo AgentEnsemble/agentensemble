@@ -9,6 +9,8 @@ import net.agentensemble.guardrail.GuardrailResult;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryScope;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
@@ -555,5 +557,75 @@ class TaskTest {
     void testBuild_defaultMemoryScopes_isEmpty() {
         var task = Task.of("Do something");
         assertThat(task.getMemoryScopes()).isEmpty();
+    }
+
+    // ========================
+    // rateLimit builder convenience
+    // ========================
+
+    @Test
+    void testBuild_withRateLimit_andChatLanguageModel_wrapsChatModel() {
+        ChatModel model = mock(ChatModel.class);
+
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .chatLanguageModel(model)
+                .rateLimit(RateLimit.perMinute(60))
+                .build();
+
+        // chatLanguageModel is wrapped with RateLimitedChatModel
+        assertThat(task.getChatLanguageModel()).isInstanceOf(RateLimitedChatModel.class);
+        assertThat(((RateLimitedChatModel) task.getChatLanguageModel()).getDelegate())
+                .isSameAs(model);
+        // rateLimit is consumed at build time; not stored on the task
+        assertThat(task.getRateLimit()).isNull();
+    }
+
+    @Test
+    void testBuild_withRateLimit_noChatLanguageModel_storedOnTask() {
+        // When no task-level chatLanguageModel is set, rateLimit is stored for Ensemble to apply
+        var task = Task.builder()
+                .description("Research task")
+                .expectedOutput("Output")
+                .rateLimit(RateLimit.perMinute(30))
+                .build();
+
+        assertThat(task.getChatLanguageModel()).isNull();
+        assertThat(task.getRateLimit()).isEqualTo(RateLimit.perMinute(30));
+    }
+
+    @Test
+    void testBuild_defaultRateLimit_isNull() {
+        var task = Task.of("Do something");
+        assertThat(task.getRateLimit()).isNull();
+    }
+
+    @Test
+    void testBuild_withRateLimit_andChatLanguageModel_rateLimitNullOnTask() {
+        // Verify rateLimit is NOT carried to the resulting Task when model is also set
+        ChatModel model = mock(ChatModel.class);
+
+        var task = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .chatLanguageModel(model)
+                .rateLimit(RateLimit.perSecond(2))
+                .build();
+
+        assertThat(task.getRateLimit()).isNull();
+    }
+
+    @Test
+    void testToBuilder_preservesRateLimit_whenNoChatModel() {
+        // toBuilder on a task with rateLimit (no chatModel) preserves it
+        var original = Task.builder()
+                .description("Task")
+                .expectedOutput("Output")
+                .rateLimit(RateLimit.perMinute(10))
+                .build();
+
+        var copy = original.toBuilder().description("Updated task").build();
+        assertThat(copy.getRateLimit()).isEqualTo(RateLimit.perMinute(10));
     }
 }

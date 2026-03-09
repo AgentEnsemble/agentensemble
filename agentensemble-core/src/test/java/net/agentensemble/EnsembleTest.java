@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import dev.langchain4j.model.chat.ChatModel;
 import java.util.Map;
 import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
 
@@ -182,5 +183,40 @@ class EnsembleTest {
         assertThatThrownBy(() -> Ensemble.builder().onToolCall(null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("handler");
+    }
+
+    // ========================
+    // rateLimit builder field
+    // ========================
+
+    @Test
+    void testDefaultRateLimit_isNull() {
+        var ensemble = Ensemble.builder().build();
+        assertThat(ensemble.getRateLimit()).isNull();
+    }
+
+    @Test
+    void testRateLimit_isStoredOnEnsemble() {
+        var limit = RateLimit.perMinute(60);
+        var ensemble = Ensemble.builder().rateLimit(limit).build();
+        assertThat(ensemble.getRateLimit()).isSameAs(limit);
+    }
+
+    @Test
+    void testRateLimit_perSecond_isStoredOnEnsemble() {
+        var limit = RateLimit.perSecond(2);
+        var ensemble = Ensemble.builder().rateLimit(limit).build();
+        assertThat(ensemble.getRateLimit()).isEqualTo(RateLimit.perSecond(2));
+    }
+
+    @Test
+    void testRateLimit_canBeCombinedWithChatLanguageModel() {
+        ChatModel model = mock(ChatModel.class);
+        var ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .rateLimit(RateLimit.perMinute(60))
+                .build();
+        assertThat(ensemble.getChatLanguageModel()).isSameAs(model);
+        assertThat(ensemble.getRateLimit()).isEqualTo(RateLimit.perMinute(60));
     }
 }

@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] - feature/rate-limiting (Issue #59)
+### Added
+- `net.agentensemble.ratelimit` package:
+  - `RateLimit` -- immutable value object; `of(N, Duration)`, `perMinute(N)`, `perSecond(N)` factories;
+    `nanosPerToken()` clamped to minimum 1 ns to prevent silent no-op on extreme rates
+  - `RateLimitedChatModel` -- `ChatModel` decorator using a real token-bucket algorithm (starts with
+    1 token, refills up to capacity while idle, enabling burst traffic); thread-safe; no external
+    dependencies
+  - `RateLimitTimeoutException` -- thrown when wait exceeds timeout; message uses `Duration.toString()`
+    (ISO-8601) for precision on sub-second periods
+  - `RateLimitInterruptedException` -- thrown when a waiting thread is interrupted; distinct from
+    timeout; preserves `InterruptedException` as cause
+- `.rateLimit()` builder convenience on `Ensemble`, `Task`, and `Agent` builders
+- Ensemble-level rate limit wraps `chatLanguageModel` once per `run()` call (shared bucket)
+- Task-level rate limit: wraps task's own model at build time, or stored on Task and applied by
+  `Ensemble.resolveAgents()` to the **raw** ensemble model (prevents nested rate-limiting)
+- Agent-level rate limit: wraps `llm` at build time
+- `EnsembleValidator` fails fast when `rateLimit` is set without `chatLanguageModel`
+- 65 new tests across unit, builder, and integration levels (including interrupt handling, clamp,
+  Duration precision, validator fail-fast)
+- `docs/guides/rate-limiting.md` guide
+- `docs/reference/ensemble-configuration.md` updated (`rateLimit` field)
+- `docs/reference/exceptions.md` updated (both exception classes)
+- `docs/design/08-error-handling.md` updated (exception hierarchy, section, table, flow diagram)
+- `mkdocs.yml` navigation updated
+
+
 ## [Unreleased] - fix: task-first synthesis fallback and template role extraction -- 2026-03-06
 
 ### Fixed (branch: fix/task-first-synthesis-fallback-and-template-role-extraction)

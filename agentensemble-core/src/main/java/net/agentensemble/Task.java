@@ -11,6 +11,8 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryScope;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.review.Review;
 import net.agentensemble.tool.AgentTool;
 
@@ -266,6 +268,26 @@ public class Task {
      */
     Review beforeReview;
 
+    /**
+     * Per-task request rate limit applied to the LLM used for agent synthesis.
+     *
+     * <p>Behaviour depends on whether a task-level {@link #chatLanguageModel} is also set:
+     * <ul>
+     *   <li>If {@code chatLanguageModel} is set: the model is automatically wrapped with a
+     *       {@link RateLimitedChatModel} at build time. The wrapped model is stored in
+     *       {@link #chatLanguageModel}; this field is {@code null} on the resulting Task.</li>
+     *   <li>If {@code chatLanguageModel} is null (task inherits the ensemble model): this
+     *       field is preserved on the Task. {@code Ensemble.resolveAgents()} reads it and
+     *       wraps the inherited ensemble model when building the synthesized agent.</li>
+     * </ul>
+     *
+     * <p>Ignored when {@link #agent} is set explicitly (configure rate limiting via
+     * {@code Agent.builder().rateLimit()} instead).
+     *
+     * <p>Default: null (no task-level rate limiting).
+     */
+    RateLimit rateLimit;
+
     // ========================
     // Static convenience factories
     // ========================
@@ -332,6 +354,7 @@ public class Task {
         private List<MemoryScope> memoryScopes = new ArrayList<>();
         private Review review = null;
         private Review beforeReview = null;
+        private RateLimit rateLimit = null;
 
         /**
          * Declare a single named memory scope for this task.
@@ -386,6 +409,28 @@ public class Task {
             return this;
         }
 
+        /**
+         * Apply a request rate limit to this task's LLM.
+         *
+         * <p>Behaviour at build time:
+         * <ul>
+         *   <li>If {@code chatLanguageModel} is also set: the model is automatically
+         *       wrapped with {@link net.agentensemble.ratelimit.RateLimitedChatModel} using the
+         *       default 30-second wait timeout. The {@code rateLimit} is not stored on the
+         *       resulting Task.</li>
+         *   <li>If no task-level {@code chatLanguageModel} is set: the {@code rateLimit} is
+         *       stored on the Task. {@code Ensemble.resolveAgents()} applies it to the inherited
+         *       ensemble model when building the synthesized agent.</li>
+         * </ul>
+         *
+         * @param rateLimit the rate limit to enforce; must not be null
+         * @return this builder
+         */
+        public TaskBuilder rateLimit(RateLimit rateLimit) {
+            this.rateLimit = rateLimit;
+            return this;
+        }
+
         public Task build() {
             validateDescription();
             validateExpectedOutput();
@@ -396,6 +441,7 @@ public class Task {
             validateContext(effectiveContext);
             validateOutputType();
             validateMaxOutputRetries();
+            applyRateLimit();
             tools = List.copyOf(effectiveTools);
             context = List.copyOf(effectiveContext);
             List<InputGuardrail> effectiveInputGuardrails = inputGuardrails != null ? inputGuardrails : List.of();
@@ -418,7 +464,21 @@ public class Task {
                     outputGuardrails,
                     List.copyOf(effectiveMemoryScopes),
                     review,
-                    beforeReview);
+                    beforeReview,
+                    rateLimit);
+        }
+
+        /**
+         * When {@code rateLimit} is set and {@code chatLanguageModel} is also set, wrap the
+         * model at build time. If only {@code rateLimit} is set (no task-level model), the
+         * rate limit is preserved on the Task for Ensemble to apply to the inherited model.
+         */
+        private void applyRateLimit() {
+            if (rateLimit != null && chatLanguageModel != null) {
+                chatLanguageModel = RateLimitedChatModel.of(chatLanguageModel, rateLimit);
+                // Rate limit consumed at build time; not stored on the Task.
+                rateLimit = null;
+            }
         }
 
         private void validateDescription() {
