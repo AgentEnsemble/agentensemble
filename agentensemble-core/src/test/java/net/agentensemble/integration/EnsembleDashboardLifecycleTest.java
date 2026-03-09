@@ -3,6 +3,8 @@ package net.agentensemble.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -203,6 +205,56 @@ class EnsembleDashboardLifecycleTest {
 
         // The ensemble must NOT call stop() -- the user manages the lifecycle
         verify(dashboard, never()).stop();
+    }
+
+    // ========================
+    // Externally-started dashboard: caller retains lifecycle ownership
+    // ========================
+
+    @Test
+    void webDashboard_externallyStarted_doesNotStartOrStopServer() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Done."));
+
+        EnsembleDashboard dashboard = mock(EnsembleDashboard.class);
+        // Dashboard is already running (caller started it externally before webDashboard())
+        when(dashboard.isRunning()).thenReturn(true);
+        when(dashboard.streamingListener()).thenReturn(mock(EnsembleListener.class));
+
+        Ensemble.builder()
+                .chatLanguageModel(mockLlm)
+                .webDashboard(dashboard)
+                .task(Task.of("Research AI trends"))
+                .build()
+                .run();
+
+        // The ensemble must not call start() or stop() -- the caller owns the server lifecycle
+        verify(dashboard, never()).start();
+        verify(dashboard, never()).stop();
+    }
+
+    @Test
+    void webDashboard_externallyStarted_stillReceivesEnsembleLifecycleHooks() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Done."));
+
+        EnsembleDashboard dashboard = mock(EnsembleDashboard.class);
+        // Dashboard is already running (caller started it externally)
+        when(dashboard.isRunning()).thenReturn(true);
+        when(dashboard.streamingListener()).thenReturn(mock(EnsembleListener.class));
+
+        Ensemble.builder()
+                .chatLanguageModel(mockLlm)
+                .webDashboard(dashboard)
+                .task(Task.of("Research AI trends"))
+                .build()
+                .run();
+
+        // Even when lifecycle is caller-owned, the ensemble must still fire the
+        // ensemble_started and ensemble_completed dashboard hooks so late-joining clients
+        // (e.g. Playwright connecting after run() completes) receive full event history.
+        verify(dashboard).onEnsembleStarted(any(), any(), anyInt(), any());
+        verify(dashboard).onEnsembleCompleted(any(), any(), anyLong(), any(), anyLong(), anyInt());
     }
 
     // ========================
