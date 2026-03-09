@@ -8,6 +8,10 @@ import net.agentensemble.review.ReviewHandler;
  * SPI for an external execution dashboard that can be wired into an {@link net.agentensemble.Ensemble}
  * via {@code Ensemble.builder().webDashboard(dashboard)}.
  *
+ * <p>Implements {@link AutoCloseable} so that dashboards managed with full lifecycle
+ * control can use try-with-resources. The {@link #close()} method delegates to
+ * {@link #stop()} and does not throw any checked exception.
+ *
  * <p>Registering a dashboard with the ensemble builder auto-starts the server (if not
  * already running), attaches the streaming listener to the ensemble's listener chain, and
  * configures the review handler so that browser-based human-in-the-loop review gates work
@@ -32,7 +36,7 @@ import net.agentensemble.review.ReviewHandler;
  * {@code net.agentensemble.web.WebDashboard}) carry the full configuration API
  * (port, host, review timeout, etc.).
  */
-public interface EnsembleDashboard {
+public interface EnsembleDashboard extends AutoCloseable {
 
     /**
      * Returns the {@link EnsembleListener} that translates execution lifecycle events into
@@ -67,6 +71,29 @@ public interface EnsembleDashboard {
      * (idempotent).
      */
     void stop();
+
+    /**
+     * Stops the dashboard server. Equivalent to {@link #stop()}, provided so that
+     * dashboards can be used in try-with-resources blocks:
+     *
+     * <pre>
+     * try (WebDashboard dashboard = WebDashboard.onPort(7329)) {
+     *     dashboard.start();
+     *     Ensemble.builder()
+     *         .listener(dashboard.streamingListener())
+     *         .task(...)
+     *         .build()
+     *         .run();
+     * }  // dashboard.close() called automatically -- server stops here
+     * </pre>
+     *
+     * <p>Default implementation delegates to {@link #stop()}. Does not throw any
+     * checked exception.
+     */
+    @Override
+    default void close() {
+        stop();
+    }
 
     /**
      * Returns {@code true} if the dashboard server is currently running and accepting
