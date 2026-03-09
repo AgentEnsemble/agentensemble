@@ -54,8 +54,8 @@ public class RateLimitTimeoutException extends AgentEnsembleException {
                 + "Limit: "
                 + rateLimit.getRequests()
                 + " requests per "
-                + rateLimit.getPeriod().toSeconds()
-                + "s. "
+                + rateLimit.getPeriod()
+                + ". "
                 + "Increase waitTimeout or reduce concurrency.";
     }
 }

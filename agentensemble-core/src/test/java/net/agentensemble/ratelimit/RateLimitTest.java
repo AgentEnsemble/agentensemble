@@ -153,4 +153,12 @@ class RateLimitTest {
         // 2 requests per second = 500_000_000 ns/token
         assertThat(limit.nanosPerToken()).isEqualTo(500_000_000L);
     }
+
+    @Test
+    void testNanosPerToken_clampedToOneForExtremelyHighRequestRate() {
+        // When requests exceed period.toNanos() the raw integer division yields 0,
+        // which would silently disable rate limiting. nanosPerToken() clamps to >= 1.
+        var limit = RateLimit.of(Integer.MAX_VALUE, Duration.ofNanos(1));
+        assertThat(limit.nanosPerToken()).isGreaterThanOrEqualTo(1L);
+    }
 }

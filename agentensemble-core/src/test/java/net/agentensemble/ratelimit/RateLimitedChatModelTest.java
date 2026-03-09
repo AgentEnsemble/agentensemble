@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class RateLimitedChatModelTest {
@@ -205,26 +206,72 @@ class RateLimitedChatModelTest {
     }
 
     @Test
-    void testSharedInstance_twoModels_shareTokenBucket() {
-        ChatModel delegate1 = mock(ChatModel.class);
-        ChatModel delegate2 = mock(ChatModel.class);
-        ChatResponse r1 = mock(ChatResponse.class);
-        ChatResponse r2 = mock(ChatResponse.class);
-        when(delegate1.chat(any(ChatRequest.class))).thenReturn(r1);
-        when(delegate2.chat(any(ChatRequest.class))).thenReturn(r2);
+    void testSingleInstance_secondRequestExceedsLimit_throws() {
+        ChatModel delegate = mock(ChatModel.class);
+        when(delegate.chat(any(ChatRequest.class))).thenReturn(mock(ChatResponse.class));
 
-        // Create a shared TokenBucket via a shared RateLimitedChatModel wrapping delegate1,
-        // but the point of a shared limiter is that two wrappers share the same RateLimit instance.
-        // In practice, users share by passing the same RateLimitedChatModel to multiple agents.
-        // Here we verify that a single instance correctly refuses a second request when limit=1/10s.
+        // 1 request per 10 seconds with a short wait timeout
         var limit = RateLimit.of(1, Duration.ofSeconds(10));
-        var sharedModel = RateLimitedChatModel.of(delegate1, limit, Duration.ofMillis(50));
+        var model = RateLimitedChatModel.of(delegate, limit, Duration.ofMillis(50));
 
-        sharedModel.chat(mock(ChatRequest.class)); // consumes token
+        model.chat(mock(ChatRequest.class)); // consumes the single token
 
-        // Third call (from same model, sharing the bucket) should timeout
+        // Second request must wait 10 seconds for next token but times out at 50ms
+        assertThatThrownBy(() -> model.chat(mock(ChatRequest.class))).isInstanceOf(RateLimitTimeoutException.class);
+    }
+
+    @Test
+    void testSharedInstance_twoCallersOnSameModel_shareOneBucket() throws Exception {
+        ChatModel delegate = mock(ChatModel.class);
+        when(delegate.chat(any(ChatRequest.class))).thenReturn(mock(ChatResponse.class));
+
+        // Shared model with 1 request per 10 seconds
+        var sharedModel =
+                RateLimitedChatModel.of(delegate, RateLimit.of(1, Duration.ofSeconds(10)), Duration.ofMillis(50));
+
+        // Caller 1 consumes the single token
+        sharedModel.chat(mock(ChatRequest.class));
+
+        // Caller 2 uses the SAME model instance -- the bucket is empty, so it times out
         assertThatThrownBy(() -> sharedModel.chat(mock(ChatRequest.class)))
                 .isInstanceOf(RateLimitTimeoutException.class);
+    }
+
+    // ========================
+    // Interrupt handling
+    // ========================
+
+    @Test
+    void testInterrupt_throwsRateLimitInterruptedException() throws Exception {
+        ChatModel delegate = mock(ChatModel.class);
+        when(delegate.chat(any(ChatRequest.class))).thenReturn(mock(ChatResponse.class));
+
+        // 1 request per 10 seconds -- second request will block for a long time
+        var model = RateLimitedChatModel.of(delegate, RateLimit.of(1, Duration.ofSeconds(10)), Duration.ofSeconds(30));
+
+        model.chat(mock(ChatRequest.class)); // consume the only token
+
+        CountDownLatch blocking = new CountDownLatch(1);
+        AtomicReference<Throwable> caughtException = new AtomicReference<>();
+
+        Thread waiter = Thread.ofVirtual().start(() -> {
+            try {
+                blocking.countDown();
+                model.chat(mock(ChatRequest.class));
+            } catch (Exception e) {
+                caughtException.set(e);
+            }
+        });
+
+        blocking.await();
+        Thread.sleep(30); // allow waiter to enter acquireToken
+        waiter.interrupt();
+        waiter.join(2_000);
+
+        assertThat(caughtException.get()).isInstanceOf(RateLimitInterruptedException.class);
+        var ex = (RateLimitInterruptedException) caughtException.get();
+        assertThat(ex.getRateLimit()).isEqualTo(RateLimit.of(1, Duration.ofSeconds(10)));
+        assertThat(ex.getCause()).isInstanceOf(InterruptedException.class);
     }
 
     // ========================

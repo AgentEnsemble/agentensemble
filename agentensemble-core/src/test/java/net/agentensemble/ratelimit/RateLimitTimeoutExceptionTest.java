@@ -42,4 +42,14 @@ class RateLimitTimeoutExceptionTest {
         var ex = new RateLimitTimeoutException(RateLimit.perSecond(2), Duration.ofSeconds(5));
         assertThat(ex.getMessage()).contains("2");
     }
+
+    @Test
+    void testMessageUsesFullDurationNotJustSeconds_subSecondPeriod() {
+        // toSeconds() would return 0 for a 100ms period, making the message say "0s".
+        // Duration.toString() (ISO-8601) always shows the full duration.
+        var ex = new RateLimitTimeoutException(RateLimit.of(100, Duration.ofMillis(100)), Duration.ofMillis(50));
+        assertThat(ex.getMessage()).doesNotContain("0s");
+        // ISO-8601 representation of 100ms is PT0.1S
+        assertThat(ex.getMessage()).contains("PT");
+    }
 }

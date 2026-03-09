@@ -485,8 +485,11 @@ public class Ensemble {
             // once so all tasks that inherit the ensemble model share the same token bucket)
             ChatModel effectiveChatModel = buildEffectiveChatModel();
 
-            // Step 3: Resolve agents -- synthesize for tasks without an explicit agent
-            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks, effectiveChatModel);
+            // Step 3: Resolve agents -- synthesize for tasks without an explicit agent.
+            // The raw (unwrapped) chatLanguageModel is also passed so that task-level rate
+            // limits can wrap the bare model directly, preventing unintended nesting of the
+            // ensemble-level rate limit on top of a task-level one.
+            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks, effectiveChatModel, chatLanguageModel);
 
             // Step 4: Derive unique agents (for delegation context, trace, hierarchical)
             List<Agent> derivedAgents = deriveAgents(agentResolvedTasks);
@@ -672,10 +675,14 @@ public class Ensemble {
      *       outputs for context-bearing tasks.</li>
      * </ol>
      *
-     * @param templateResolvedTasks tasks after template variable resolution
-     * @param ensembleLlm           the effective ensemble-level chat model (may be rate-limited)
+     * @param templateResolvedTasks  tasks after template variable resolution
+     * @param ensembleLlm            the effective ensemble-level chat model (may be rate-limited)
+     * @param rawChatLanguageModel   the unwrapped ensemble chat model; used when a task overrides
+     *                               with its own {@code rateLimit} so the task-level limiter wraps
+     *                               the bare model instead of nesting on the ensemble limiter
      */
-    private List<Task> resolveAgents(List<Task> templateResolvedTasks, ChatModel ensembleLlm) {
+    private List<Task> resolveAgents(
+            List<Task> templateResolvedTasks, ChatModel ensembleLlm, ChatModel rawChatLanguageModel) {
         // Pass 1: synthesize agents; build old-identity -> new-identity map.
         IdentityHashMap<Task, Task> oldToNew = new IdentityHashMap<>();
         List<Task> firstPass = new ArrayList<>(templateResolvedTasks.size());
@@ -695,12 +702,15 @@ public class Ensemble {
                 if (task.getChatLanguageModel() != null) {
                     llm = task.getChatLanguageModel();
                 } else if (task.getRateLimit() != null) {
-                    // Task has a rate limit but no task-level model: apply it to the ensemble model
-                    if (ensembleLlm == null) {
+                    // Task has a rate limit but no task-level model: wrap the *raw* ensemble model
+                    // (bypassing any ensemble-level rate-limit wrapper) so task-level limits truly
+                    // replace rather than nest on top of the ensemble-level limit.
+                    ChatModel baseModel = rawChatLanguageModel != null ? rawChatLanguageModel : ensembleLlm;
+                    if (baseModel == null) {
                         throw new ValidationException("No LLM available for task '" + task.getDescription()
                                 + "'. Provide a task-level chatLanguageModel or an ensemble-level chatLanguageModel.");
                     }
-                    llm = RateLimitedChatModel.of(ensembleLlm, task.getRateLimit());
+                    llm = RateLimitedChatModel.of(baseModel, task.getRateLimit());
                 } else {
                     llm = ensembleLlm;
                 }

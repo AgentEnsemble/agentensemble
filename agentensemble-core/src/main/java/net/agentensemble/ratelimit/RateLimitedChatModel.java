@@ -13,9 +13,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>Wraps any {@link ChatModel} and blocks calling threads when the rate limit is exceeded,
  * allowing at most {@code rateLimit.requests} requests per {@code rateLimit.period}. When a
  * thread waits longer than {@code waitTimeout}, a {@link RateLimitTimeoutException} is thrown.
+ * If a waiting thread is interrupted, a {@link RateLimitInterruptedException} is thrown instead
+ * (the interrupt flag is preserved on the thread).
  *
  * <p>This class is thread-safe. Multiple threads calling {@link #chat(ChatRequest)} concurrently
  * share the same token bucket, making it suitable for use with parallel workflows.
+ *
+ * <h2>Token-bucket behaviour</h2>
+ *
+ * <p>The bucket starts with one pre-loaded token so the first request is always immediate.
+ * It refills at a rate of one token per {@code period / requests} nanoseconds, up to a
+ * maximum capacity of {@code requests} tokens. Tokens accumulate while the model is idle,
+ * allowing a burst of up to {@code requests} consecutive requests after a sufficiently long
+ * quiet period.
  *
  * <h2>Usage</h2>
  *
@@ -64,23 +74,41 @@ public final class RateLimitedChatModel implements ChatModel {
     private final Duration waitTimeout;
     private final long nanosPerToken;
 
-    /** Guards nextAvailableNanos and the tokenAvailable condition. */
+    /** Guards availableTokens, lastRefillNanos, and the tokenAvailable condition. */
     private final ReentrantLock lock = new ReentrantLock();
 
-    /** Signalled whenever nextAvailableNanos advances due to time passing. */
+    /**
+     * Used for time-based waiting only. Wakeups are purely time-driven via
+     * {@link Condition#awaitNanos(long)}; no explicit signals are sent.
+     * The condition is used solely so that waiting threads release the lock
+     * during the wait and can be woken by a timed expiry.
+     */
     private final Condition tokenAvailable = lock.newCondition();
 
+    /** Token bucket capacity: the maximum number of tokens that can accumulate while idle. */
+    private final double capacity;
+
     /**
-     * Timestamp (System.nanoTime) at which the next token will be available.
-     * Starts at 0 so the very first request is always immediate.
+     * Monotonic timestamp (System.nanoTime) of the last token refill.
+     * Used to compute how many tokens have accumulated since the previous request.
      */
-    private long nextAvailableNanos = 0;
+    private long lastRefillNanos;
+
+    /**
+     * Available tokens in the bucket. Starts at 1.0 so the very first request is always
+     * immediate. Accumulates up to {@link #capacity} during idle periods, enabling burst
+     * traffic up to the configured request limit.
+     */
+    private double availableTokens;
 
     private RateLimitedChatModel(ChatModel delegate, RateLimit rateLimit, Duration waitTimeout) {
         this.delegate = delegate;
         this.rateLimit = rateLimit;
         this.waitTimeout = waitTimeout;
         this.nanosPerToken = rateLimit.nanosPerToken();
+        this.capacity = rateLimit.getRequests();
+        this.lastRefillNanos = System.nanoTime();
+        this.availableTokens = 1.0;
     }
 
     /**
@@ -122,11 +150,13 @@ public final class RateLimitedChatModel implements ChatModel {
      * Acquires a rate-limit token (blocking if necessary) then delegates to the underlying model.
      *
      * <p>If the wait exceeds {@link #getWaitTimeout()}, throws {@link RateLimitTimeoutException}
-     * without making any LLM call.
+     * without making any LLM call. If the waiting thread is interrupted, throws
+     * {@link RateLimitInterruptedException} (the interrupt flag is preserved).
      *
      * @param request the chat request
      * @return the chat response from the delegate
-     * @throws RateLimitTimeoutException if a token could not be acquired within the wait timeout
+     * @throws RateLimitTimeoutException     if a token could not be acquired within the wait timeout
+     * @throws RateLimitInterruptedException if the waiting thread was interrupted
      */
     @Override
     public ChatResponse chat(ChatRequest request) {
@@ -135,11 +165,15 @@ public final class RateLimitedChatModel implements ChatModel {
     }
 
     /**
-     * Acquires a single token from the bucket. Blocks until:
-     * <ul>
-     *   <li>a token is available (nextAvailableNanos &lt;= now), or</li>
-     *   <li>the wait timeout is exceeded (throws {@link RateLimitTimeoutException})</li>
-     * </ul>
+     * Acquires a single token from the bucket using the token-bucket algorithm.
+     * Blocks until a token is available or the deadline/interrupt condition is met.
+     *
+     * <p>Algorithm:
+     * <ol>
+     *   <li>Refill tokens based on elapsed time since the last refill, up to capacity.</li>
+     *   <li>If {@code availableTokens >= 1}, consume one and return immediately.</li>
+     *   <li>Otherwise wait (releasing the lock) until the next token is expected, then retry.</li>
+     * </ol>
      */
     private void acquireToken() {
         lock.lock();
@@ -149,9 +183,16 @@ public final class RateLimitedChatModel implements ChatModel {
             while (true) {
                 long now = System.nanoTime();
 
-                if (nextAvailableNanos <= now) {
-                    // Token is available: claim it by advancing the next-available timestamp
-                    nextAvailableNanos = now + nanosPerToken;
+                // Refill tokens based on elapsed time since the last refill
+                long elapsed = now - lastRefillNanos;
+                if (elapsed > 0) {
+                    availableTokens = Math.min(capacity, availableTokens + (double) elapsed / nanosPerToken);
+                    lastRefillNanos = now;
+                }
+
+                if (availableTokens >= 1.0) {
+                    // Token available: consume it and proceed
+                    availableTokens -= 1.0;
                     return;
                 }
 
@@ -161,14 +202,15 @@ public final class RateLimitedChatModel implements ChatModel {
                     throw new RateLimitTimeoutException(rateLimit, waitTimeout);
                 }
 
-                // Wait for the lesser of: time until next token, or remaining timeout
-                long waitNanos = Math.min(nextAvailableNanos - now, remainingNanos);
+                // Wait for the lesser of: time until the next token, or remaining timeout
+                long nanosUntilToken = (long) Math.ceil((1.0 - availableTokens) * nanosPerToken);
+                long waitNanos = Math.min(nanosUntilToken, remainingNanos);
                 try {
                     //noinspection ResultOfMethodCallIgnored
                     tokenAvailable.awaitNanos(waitNanos);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RateLimitTimeoutException(rateLimit, waitTimeout);
+                    throw new RateLimitInterruptedException(rateLimit, e);
                 }
             }
         } finally {

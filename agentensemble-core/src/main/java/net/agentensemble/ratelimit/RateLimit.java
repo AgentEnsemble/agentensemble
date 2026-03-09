@@ -86,13 +86,15 @@ public final class RateLimit {
     }
 
     /**
-     * The nanosecond interval between consecutive tokens in the token-bucket.
+     * The nanosecond interval between consecutive tokens in the token bucket.
      *
      * <p>Used internally by {@link RateLimitedChatModel}. Equal to
-     * {@code period.toNanos() / requests}.
+     * {@code period.toNanos() / requests}, clamped to a minimum of 1 nanosecond so that
+     * extremely high request rates (where {@code requests > period.toNanos()}) do not
+     * silently disable rate limiting by returning zero.
      */
     long nanosPerToken() {
-        return period.toNanos() / requests;
+        return Math.max(1L, period.toNanos() / requests);
     }
 
     @Override
