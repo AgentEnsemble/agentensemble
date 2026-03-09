@@ -38,6 +38,8 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
@@ -339,6 +341,29 @@ public class Ensemble {
      */
     private final StreamingChatModel streamingChatLanguageModel;
 
+    /**
+     * Ensemble-level request rate limit applied to {@link #chatLanguageModel}.
+     *
+     * <p>When set, all synthesized agents that inherit the ensemble-level model (i.e. tasks
+     * without their own {@code chatLanguageModel} and without an explicit {@code agent})
+     * share a single rate-limit token bucket, capping the total number of LLM requests
+     * per time window across the entire ensemble run.
+     *
+     * <p>The {@link #chatLanguageModel} is wrapped with a {@link RateLimitedChatModel}
+     * once per run in {@link #runWithInputs(Map)} before agent resolution. All tasks that
+     * inherit the ensemble model therefore share the same bucket.
+     *
+     * <p>Tasks with their own {@code chatLanguageModel} or {@code rateLimit} are not
+     * affected by this setting (they have independent buckets).
+     *
+     * <p>To create a shared bucket that also covers the hierarchical Manager agent,
+     * use {@link RateLimitedChatModel#of(ChatModel, RateLimit)} explicitly and pass the
+     * result to both {@code chatLanguageModel} and {@code managerLlm}.
+     *
+     * <p>Default: null (no ensemble-level rate limiting).
+     */
+    private final RateLimit rateLimit;
+
     // ========================
     // Static zero-ceremony factory
     // ========================
@@ -456,8 +481,12 @@ public class Ensemble {
                 log.info("Workflow inferred: {} (from task context declarations)", effectiveWorkflow);
             }
 
+            // Step 2c: Compute the effective ensemble chat model (apply ensemble-level rate limit
+            // once so all tasks that inherit the ensemble model share the same token bucket)
+            ChatModel effectiveChatModel = buildEffectiveChatModel();
+
             // Step 3: Resolve agents -- synthesize for tasks without an explicit agent
-            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks);
+            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks, effectiveChatModel);
 
             // Step 4: Derive unique agents (for delegation context, trace, hierarchical)
             List<Agent> derivedAgents = deriveAgents(agentResolvedTasks);
@@ -608,12 +637,29 @@ public class Ensemble {
     }
 
     /**
+     * Builds the effective ensemble-level chat model, applying the ensemble-level rate limit
+     * if configured. The resulting model (possibly wrapped) is created once per run, ensuring
+     * all tasks that inherit the ensemble model share the same token bucket.
+     */
+    private ChatModel buildEffectiveChatModel() {
+        if (rateLimit != null && chatLanguageModel != null) {
+            return RateLimitedChatModel.of(chatLanguageModel, rateLimit);
+        }
+        return chatLanguageModel;
+    }
+
+    /**
      * Resolve agents for tasks that do not have an explicit agent set.
      *
      * <p>For each task without an agent, the configured {@link AgentSynthesizer} is
      * invoked with the task-level or ensemble-level LLM. Task-level tools and
      * maxIterations are applied to the synthesized agent. Tasks with explicit agents
      * are returned unchanged.
+     *
+     * <p>The {@code ensembleLlm} parameter is the effective ensemble chat model (already
+     * wrapped with a rate limiter if configured at the ensemble level). It is passed in
+     * rather than read from {@link #chatLanguageModel} directly so that a single wrapped
+     * instance is reused across all tasks, which is required for shared-bucket semantics.
      *
      * <p>Uses a two-pass approach to keep context references consistent after synthesis
      * (fix for issue #148):
@@ -625,8 +671,11 @@ public class Ensemble {
      *       {@code completedOutputs} lookup in the workflow executor can find upstream
      *       outputs for context-bearing tasks.</li>
      * </ol>
+     *
+     * @param templateResolvedTasks tasks after template variable resolution
+     * @param ensembleLlm           the effective ensemble-level chat model (may be rate-limited)
      */
-    private List<Task> resolveAgents(List<Task> templateResolvedTasks) {
+    private List<Task> resolveAgents(List<Task> templateResolvedTasks, ChatModel ensembleLlm) {
         // Pass 1: synthesize agents; build old-identity -> new-identity map.
         IdentityHashMap<Task, Task> oldToNew = new IdentityHashMap<>();
         List<Task> firstPass = new ArrayList<>(templateResolvedTasks.size());
@@ -636,8 +685,25 @@ public class Ensemble {
                 // Explicit agent: use as-is (power-user escape hatch)
                 agentResolved = task;
             } else {
-                // Synthesize agent: use task-level LLM if set, else ensemble-level LLM
-                ChatModel llm = task.getChatLanguageModel() != null ? task.getChatLanguageModel() : chatLanguageModel;
+                // LLM resolution order:
+                // 1. Task has its own chatLanguageModel (already rate-limited at Task.build() time
+                //    if task.rateLimit was also set)
+                // 2. Task has no chatLanguageModel but has its own rateLimit: wrap the inherited
+                //    ensemble LLM with the task-level rate limit (creates a separate bucket)
+                // 3. Task inherits the ensemble LLM (already rate-limited by ensembleLlm)
+                ChatModel llm;
+                if (task.getChatLanguageModel() != null) {
+                    llm = task.getChatLanguageModel();
+                } else if (task.getRateLimit() != null) {
+                    // Task has a rate limit but no task-level model: apply it to the ensemble model
+                    if (ensembleLlm == null) {
+                        throw new ValidationException("No LLM available for task '" + task.getDescription()
+                                + "'. Provide a task-level chatLanguageModel or an ensemble-level chatLanguageModel.");
+                    }
+                    llm = RateLimitedChatModel.of(ensembleLlm, task.getRateLimit());
+                } else {
+                    llm = ensembleLlm;
+                }
                 if (llm == null) {
                     // Should have been caught by EnsembleValidator.validateTasksHaveLlm()
                     throw new ValidationException("No LLM available for task '" + task.getDescription()

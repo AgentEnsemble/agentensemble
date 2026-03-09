@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] - feature/rate-limiting (Issue #59)
+### Added
+- `net.agentensemble.ratelimit` package: `RateLimit`, `RateLimitedChatModel`, `RateLimitTimeoutException`
+- Token-bucket rate limiting decorator for any `ChatModel` (no external dependencies)
+- `.rateLimit()` builder convenience on `Ensemble`, `Task`, and `Agent` builders
+- Ensemble-level rate limit wraps `chatLanguageModel` once per `run()` call (shared bucket for all synthesized agents)
+- Task-level rate limit: wraps task's own model at build time, or stored on Task for Ensemble to apply to inherited model
+- Agent-level rate limit: wraps `llm` at build time
+- 52 new tests across unit, builder, and integration levels
+- `docs/guides/rate-limiting.md` guide
+- `docs/reference/ensemble-configuration.md` updated (`rateLimit` field)
+- `docs/reference/exceptions.md` updated (`RateLimitTimeoutException`)
+- `docs/design/08-error-handling.md` updated (exception hierarchy, section, table, flow diagram)
+- `mkdocs.yml` navigation updated
+
+
 ## [Unreleased] - fix: task-first synthesis fallback and template role extraction -- 2026-03-06
 
 ### Fixed (branch: fix/task-first-synthesis-fallback-and-template-role-extraction)
