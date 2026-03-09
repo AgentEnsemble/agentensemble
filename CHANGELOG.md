@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.2...v2.3.0) (2026-03-09)
+
+
+### Features
+
+* rate limiting at Task/Agent/Ensemble levels (Issue [#59](https://github.com/AgentEnsemble/agentensemble/issues/59)) ([#173](https://github.com/AgentEnsemble/agentensemble/issues/173)) ([7b0dc01](https://github.com/AgentEnsemble/agentensemble/commit/7b0dc017302624736f2015b0568c552d0174273a))
+
+
+### Bug Fixes
+
+* auto-stop WebDashboard after ensemble run to allow JVM exit ([#175](https://github.com/AgentEnsemble/agentensemble/issues/175)) ([a65b39b](https://github.com/AgentEnsemble/agentensemble/commit/a65b39bc72637be772f28f8e4edbfe99a1954c53))
+
 ## [2.2.2](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.1...v2.2.2) (2026-03-06)
 
 
