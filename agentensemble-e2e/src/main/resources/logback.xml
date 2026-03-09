@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- E2E server status messages (the [E2eTestServer] lines) -->
+    <logger name="net.agentensemble.e2e" level="INFO"/>
+
+    <!-- AgentEnsemble framework: INFO is sufficient for E2E diagnostics -->
+    <logger name="net.agentensemble" level="INFO"/>
+
+    <!-- Third-party noise: suppress below WARN -->
+    <logger name="dev.langchain4j" level="WARN"/>
+    <logger name="io.javalin" level="WARN"/>
+    <logger name="org.eclipse.jetty" level="WARN"/>
+
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

@@ -173,6 +173,40 @@ class WebDashboardTest {
         assertThat(dashboard.isRunning()).isTrue();
     }
 
+    @Test
+    void close_delegatesToStop() {
+        dashboard = WebDashboard.onPort(0);
+        dashboard.start();
+        assertThat(dashboard.isRunning()).isTrue();
+
+        dashboard.close();
+
+        assertThat(dashboard.isRunning()).isFalse();
+        // tearDown will call stop() again -- idempotent, no problem
+    }
+
+    @Test
+    void usableWithTryWithResources() {
+        // Verify that try-with-resources automatically stops the server when the block exits.
+        // Use a local variable (not the @AfterEach-managed field) to avoid a double-stop
+        // in tearDown; stop() is idempotent but we keep the test self-contained.
+        WebDashboard local = WebDashboard.onPort(0);
+        try (local) {
+            local.start();
+            assertThat(local.isRunning()).isTrue();
+        }
+        assertThat(local.isRunning()).isFalse();
+    }
+
+    @Test
+    void implementsAutoCloseable() {
+        // Compile-time verification that WebDashboard satisfies AutoCloseable.
+        dashboard = WebDashboard.onPort(0);
+        @SuppressWarnings("unused")
+        AutoCloseable asCloseable = dashboard;
+        assertThat(asCloseable).isNotNull();
+    }
+
     // ========================
     // Component accessors
     // ========================

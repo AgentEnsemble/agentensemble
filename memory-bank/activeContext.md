@@ -2,6 +2,40 @@
 
 ## Current Focus
 
+Branch `fix/web-dashboard-lifecycle-auto-stop` addresses a lifecycle bug where
+`WebDashboard` (Javalin/Jetty) non-daemon threads prevented JVM exit after an ensemble
+run completed.
+
+**Root cause:** `EnsembleBuilder.webDashboard()` auto-started the dashboard but
+`Ensemble.runWithInputs()` never called `dashboard.stop()`. Javalin/Jetty server threads
+are non-daemon, so the JVM could not exit. The JVM shutdown hook registered in `WebDashboard`
+can only fire when the JVM *begins* shutdown, which never happened because non-daemon threads
+were still alive.
+
+**Fixes implemented:**
+- `Ensemble.runWithInputs()` now calls `dashboard.stop()` in the `finally` block after
+  the run completes (normal or exceptional). Only applies when the dashboard was registered
+  via `webDashboard()` (the `dashboard` field is null when wired manually).
+- `EnsembleDashboard` now extends `AutoCloseable`; default `close()` delegates to `stop()`.
+  This enables try-with-resources for manually-managed dashboards.
+- `EnsembleBuilder.webDashboard()` Javadoc updated to document the new auto-stop (4th item).
+- Design doc `docs/design/16-live-dashboard.md` section 3.4 updated to document the
+  lifecycle contract and try-with-resources pattern.
+
+**Tests added (TDD -- written failing first, then fixed):**
+- `EnsembleDashboardLifecycleTest` (3 tests in agentensemble-core):
+  - `webDashboard_stopsAfterSuccessfulRun` -- verifies `stop()` called after normal run
+  - `webDashboard_stopsEvenWhenRunThrows` -- verifies `stop()` called even when run throws
+  - `manuallyWiredDashboard_isNotAutoStopped` -- verifies manually-wired dashboard NOT stopped
+- `WebDashboardTest` additions (4 tests in agentensemble-web):
+  - `close_delegatesToStop` -- verifies `close()` stops the server
+  - `usableWithTryWithResources` -- verifies try-with-resources works
+  - `implementsAutoCloseable` -- compile-time check
+
+**Build status:** Full `./gradlew build` including javadoc and JaCoCo: **BUILD SUCCESSFUL**.
+
+## Previously Focused
+
 Branch `feature/rate-limiting` is open for Issue #59. PR #173 is up to date at commit
 `e91eda9` — all 9 Copilot review comments addressed. Ready for final review and merge.
 

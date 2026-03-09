@@ -1,5 +1,66 @@
 # Changelog
 
+## [Unreleased] - fix/web-dashboard-lifecycle-auto-stop -- 2026-03-09
+
+### Fixed (branch: fix/web-dashboard-lifecycle-auto-stop)
+
+**Bug:** After `Ensemble.run()` completed, the JVM process did not exit when a
+`WebDashboard` was registered via `.webDashboard(dashboard)`.
+
+**Root cause:** `EnsembleBuilder.webDashboard()` auto-started the Javalin/Jetty server
+but `Ensemble.runWithInputs()` never called `dashboard.stop()`. Jetty's acceptor/selector
+threads are non-daemon threads; the JVM cannot exit while any non-daemon thread is alive.
+The JVM shutdown hook registered in `WebDashboard` was caught in a catch-22: it only fires
+when the JVM begins shutdown, but the JVM cannot begin shutdown because the non-daemon
+Jetty threads are still alive.
+
+**Fixes:**
+
+- **`Ensemble.runWithInputs()`** (`agentensemble-core`): Calls `dashboard.stop()` in the
+  `finally` block after the run completes, whether normally or via exception. This only
+  applies when the dashboard was registered via `webDashboard()` -- the `dashboard` field
+  is `null` when the user wires the dashboard manually via `listener()` + `reviewHandler()`,
+  so the caller retains full lifecycle control in that case.
+
+- **`EnsembleDashboard`** (`agentensemble-core`): Now extends `AutoCloseable`. A default
+  `close()` method delegates to `stop()`, enabling try-with-resources for manually-managed
+  dashboards:
+  ```java
+  try (WebDashboard dashboard = WebDashboard.onPort(7329)) {
+      dashboard.start();
+      Ensemble.builder().listener(dashboard.streamingListener()).task(...).build().run();
+  } // stop() called automatically
+  ```
+
+- **`EnsembleBuilder.webDashboard()` Javadoc**: Updated to document the new auto-stop
+  as the 4th operation performed by the convenience method, alongside the existing
+  auto-start, streaming, and review gate wiring.
+
+- **`docs/design/16-live-dashboard.md`**: Section 3.4 rewritten to accurately describe
+  the four operations performed by `webDashboard()`, and to document both the auto-managed
+  (via `webDashboard()`) and manually-managed (via `listener()` + try-with-resources)
+  lifecycle patterns.
+
+### Tests Added (TDD -- red before green)
+
+**Unit/Integration (`agentensemble-core`):**
+- `EnsembleDashboardLifecycleTest` (new file, 3 tests):
+  - `webDashboard_stopsAfterSuccessfulRun` -- verifies `stop()` is called when run succeeds
+  - `webDashboard_stopsEvenWhenRunThrows` -- verifies `stop()` is called when run throws
+  - `manuallyWiredDashboard_isNotAutoStopped` -- verifies manually-wired dashboard not stopped
+
+**Unit (`agentensemble-web`):**
+- `WebDashboardTest` additions (4 tests):
+  - `close_delegatesToStop` -- verifies `close()` delegates to `stop()`
+  - `usableWithTryWithResources` -- verifies try-with-resources auto-closes
+  - `implementsAutoCloseable` -- compile-time assignability to `AutoCloseable`
+
+### Opportunistic Coverage Added
+- `webDashboard_stopsEvenWhenRunThrows` locks down the exception-path cleanup contract
+  (previously untested -- the only shutdown path was the JVM hook)
+
+---
+
 ## [Unreleased] - feature/rate-limiting (Issue #59)
 ### Added
 - `net.agentensemble.ratelimit` package:
