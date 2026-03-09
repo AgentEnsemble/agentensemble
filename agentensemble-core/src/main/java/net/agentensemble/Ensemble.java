@@ -465,6 +465,19 @@ public class Ensemble {
         }
 
         try {
+            // Auto-start the dashboard at the beginning of each run. This is idempotent
+            // (no-op when already running), so the first run is unaffected when the builder
+            // already started it. For multiple sequential run() calls on the same Ensemble
+            // instance, this re-starts the server after the previous run's finally block
+            // stopped it, ensuring streaming and review gates work correctly on each run.
+            if (dashboard != null) {
+                try {
+                    dashboard.start();
+                } catch (Exception e) {
+                    log.warn("Failed to start dashboard before ensemble run: {}", e.getMessage(), e);
+                }
+            }
+
             log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
             log.debug("Input variables: {}", resolvedInputs);
 
