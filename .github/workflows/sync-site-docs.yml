@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch repository_dispatch to AgentEnsemble/site
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.SITE_REPO_PAT }}
           script: |
