@@ -117,12 +117,46 @@ EnsembleOutput output = Ensemble.builder()
 ```
 
 `Ensemble.builder().webDashboard(WebDashboard)` is the single registration point. Internally
-this wires:
-1. A `WebSocketStreamingListener` to the ensemble's listener chain
-2. A `WebReviewHandler` as the ensemble's review handler (overrides any previously registered handler)
+this wires four things in one call:
+1. **Auto-start** -- calls `dashboard.start()` if the server is not already running.
+2. **Streaming** -- registers `WebSocketStreamingListener` to the ensemble's listener chain.
+3. **Review gates** -- sets `WebReviewHandler` as the ensemble's review handler.
+4. **Auto-stop** -- calls `dashboard.stop()` in the `finally` block of `Ensemble.run()`, even
+   if the run throws an exception. This releases Javalin/Jetty non-daemon server threads so
+   the JVM can exit normally after the ensemble task is complete.
 
-The server starts automatically when the first event arrives and stops after the ensemble
-completes. Users can also start it manually via `dashboard.start()` / `dashboard.stop()`.
+Users who need the dashboard to outlive a single run (e.g. reuse across multiple runs) can
+wire it manually and manage the lifecycle themselves:
+
+```java
+WebDashboard dashboard = WebDashboard.builder().port(7329).build();
+dashboard.start();
+
+// wire manually -- ensemble does NOT own the lifecycle
+Ensemble.builder()
+    .listener(dashboard.streamingListener())
+    .reviewHandler(dashboard.reviewHandler())
+    .task(...)
+    .build()
+    .run();
+
+// caller is responsible for stopping
+dashboard.stop();
+```
+
+`WebDashboard` also implements `AutoCloseable` (via the `EnsembleDashboard` interface), so
+manually-managed dashboards can be used in try-with-resources blocks:
+
+```java
+try (WebDashboard dashboard = WebDashboard.builder().port(7329).build()) {
+    dashboard.start();
+    Ensemble.builder()
+        .listener(dashboard.streamingListener())
+        .task(...)
+        .build()
+        .run();
+} // dashboard.close() -> stop() called automatically
+```
 
 ---
 

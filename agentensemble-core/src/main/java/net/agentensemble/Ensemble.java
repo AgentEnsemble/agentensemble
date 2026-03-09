@@ -635,6 +635,18 @@ public class Ensemble {
             log.error("Ensemble run failed", e);
             throw e;
         } finally {
+            // Auto-stop the dashboard when the ensemble owns its lifecycle (i.e. it was
+            // registered via webDashboard()). This ensures Javalin/Jetty non-daemon threads
+            // do not block JVM exit after the ensemble task is complete.
+            // When the user wires the dashboard manually (listener() + reviewHandler()),
+            // the dashboard field is null and stop() is not called -- the caller owns cleanup.
+            if (dashboard != null) {
+                try {
+                    dashboard.stop();
+                } catch (Exception e) {
+                    log.warn("Failed to stop dashboard after ensemble run: {}", e.getMessage(), e);
+                }
+            }
             MDC.remove("ensemble.id");
         }
     }
@@ -1060,7 +1072,7 @@ public class Ensemble {
          * Register a {@link EnsembleDashboard} (e.g. {@code WebDashboard}) as the live execution
          * dashboard for this ensemble run.
          *
-         * <p>This convenience method performs three operations in one call:
+         * <p>This convenience method performs four operations in one call:
          * <ol>
          *   <li><strong>Auto-start</strong> -- calls {@link EnsembleDashboard#start()} if the
          *       dashboard is not already running.</li>
@@ -1069,7 +1081,15 @@ public class Ensemble {
          *   <li><strong>Review gates</strong> -- sets {@link EnsembleDashboard#reviewHandler()}
          *       as the ensemble's review handler so that human-in-the-loop decisions are routed
          *       through the browser dashboard.</li>
+         *   <li><strong>Auto-stop</strong> -- calls {@link EnsembleDashboard#stop()} in the
+         *       {@code finally} block of {@link Ensemble#run()}, even if the run throws. This
+         *       ensures Javalin/Jetty non-daemon threads are released and the JVM can exit
+         *       normally after the ensemble task is complete.</li>
          * </ol>
+         *
+         * <p>If you need the dashboard to outlive a single ensemble run (e.g. for manual
+         * start/stop control), wire it using {@code .listener()} and
+         * {@code .reviewHandler()} directly and manage the lifecycle yourself.
          *
          * <p>Usage:
          * <pre>
