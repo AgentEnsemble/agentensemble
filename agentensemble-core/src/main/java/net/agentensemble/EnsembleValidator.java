@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.Workflow;
@@ -35,6 +36,7 @@ class EnsembleValidator {
 
     private final List<Task> tasks;
     private final ChatModel ensembleLlm;
+    private final RateLimit rateLimit;
     private final Workflow workflow;
     private final int maxDelegationDepth;
     private final int managerMaxIterations;
@@ -44,6 +46,7 @@ class EnsembleValidator {
     EnsembleValidator(Ensemble ensemble) {
         this.tasks = ensemble.getTasks();
         this.ensembleLlm = ensemble.getChatLanguageModel();
+        this.rateLimit = ensemble.getRateLimit();
         this.workflow = ensemble.getWorkflow();
         this.maxDelegationDepth = ensemble.getMaxDelegationDepth();
         this.managerMaxIterations = ensemble.getManagerMaxIterations();
@@ -53,6 +56,7 @@ class EnsembleValidator {
 
     void validate() {
         validateTasksNotEmpty();
+        validateRateLimitConfiguration();
         validateTasksHaveLlm();
         validateMaxDelegationDepth();
         // Workflow-specific validations use the resolved (possibly inferred) workflow
@@ -90,6 +94,19 @@ class EnsembleValidator {
                         + "Provide an explicit agent, a task-level chatLanguageModel, "
                         + "or an ensemble-level chatLanguageModel.");
             }
+        }
+    }
+
+    /**
+     * Validate that the ensemble-level {@code rateLimit} is not set without a corresponding
+     * {@code chatLanguageModel}. When {@code rateLimit} is configured but {@code chatLanguageModel}
+     * is null, the rate limit is silently ignored at runtime, which is almost certainly a
+     * misconfiguration.
+     */
+    private void validateRateLimitConfiguration() {
+        if (rateLimit != null && ensembleLlm == null) {
+            throw new ValidationException("Ensemble rateLimit is configured but chatLanguageModel is null. "
+                    + "An ensemble-level chatLanguageModel is required when rateLimit is set.");
         }
     }
 

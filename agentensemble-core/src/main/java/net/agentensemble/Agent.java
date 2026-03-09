@@ -7,6 +7,8 @@ import java.util.List;
 import lombok.Builder;
 import lombok.Value;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.tool.AgentTool;
 
 /**
@@ -106,10 +108,39 @@ public class Agent {
         private int maxIterations = 25;
         private String responseFormat = "";
 
+        /**
+         * Builder-only field: when set, the LLM is automatically wrapped with
+         * {@link net.agentensemble.ratelimit.RateLimitedChatModel} at build time using the
+         * default 30-second wait timeout.
+         * This field is not stored on the resulting {@link Agent}; only the wrapped LLM is.
+         */
+        private RateLimit rateLimit = null;
+
+        /**
+         * Convenience method to apply a request rate limit to this agent's LLM.
+         *
+         * <p>At build time, the {@code llm} model is wrapped with a
+         * {@link net.agentensemble.ratelimit.RateLimitedChatModel} using the supplied
+         * {@code rateLimit} and the default wait timeout of
+         * {@link net.agentensemble.ratelimit.RateLimitedChatModel#DEFAULT_WAIT_TIMEOUT}.
+         *
+         * <p>To share a single rate-limit bucket between multiple agents, pass a pre-configured
+         * {@link net.agentensemble.ratelimit.RateLimitedChatModel} directly to
+         * {@code llm()} instead.
+         *
+         * @param rateLimit the rate limit to enforce; must not be null
+         * @return this builder
+         */
+        public AgentBuilder rateLimit(RateLimit rateLimit) {
+            this.rateLimit = rateLimit;
+            return this;
+        }
+
         public Agent build() {
             validateRole();
             validateGoal();
             validateLlm();
+            applyRateLimit();
             validateMaxIterations();
             validateTools();
             tools = List.copyOf(tools);
@@ -128,6 +159,12 @@ public class Agent {
                     verbose,
                     maxIterations,
                     responseFormat);
+        }
+
+        private void applyRateLimit() {
+            if (rateLimit != null) {
+                llm = RateLimitedChatModel.of(llm, rateLimit);
+            }
         }
 
         private void validateRole() {
