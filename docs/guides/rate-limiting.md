@@ -89,27 +89,95 @@ Agent researcher = Agent.builder()
 
 ---
 
-## Shared Buckets
+## Shared vs separate buckets
 
-To enforce a single rate limit across multiple agents that share an API key, pass the
-**same `RateLimitedChatModel` instance** to all agents. All calls go through the same bucket.
+Understanding which pattern gives you a shared bucket vs an independent one is key to
+getting the behaviour you expect.
+
+### Ensemble `.rateLimit()` -- shared across all tasks
+
+`Ensemble.builder().rateLimit(limit)` creates **one** `RateLimitedChatModel` once per
+`run()` call and gives it to every synthesized agent that inherits the ensemble model.
+All those agents share the same token bucket.
 
 ```java
-// Create one shared rate-limited model
-var sharedModel = RateLimitedChatModel.of(openAiModel, RateLimit.perMinute(60));
-
-// Both agents share the same token bucket
-var researcher = Agent.builder()
-    .role("Researcher").goal("Research").llm(sharedModel).build();
-var writer = Agent.builder()
-    .role("Writer").goal("Write").llm(sharedModel).build();
-
-EnsembleOutput result = Ensemble.builder()
-    .task(Task.builder().description("Research").expectedOutput("Report").agent(researcher).build())
-    .task(Task.builder().description("Write").expectedOutput("Article").agent(writer).build())
+// One bucket: all tasks compete for the same 60 req/min allowance
+Ensemble.builder()
+    .chatLanguageModel(openAiModel)
+    .rateLimit(RateLimit.perMinute(60))  // shared bucket for the whole ensemble
+    .task(Task.of("Research AI trends"))
+    .task(Task.of("Analyse the findings"))
+    .task(Task.of("Write an executive summary"))
     .build()
     .run();
 ```
+
+This is the right choice when you have one API key and want to enforce a global request
+cap across an entire run.
+
+### Task or Agent `.rateLimit()` -- independent bucket per task/agent
+
+Each `.rateLimit()` on a `Task` or `Agent` builder creates a **new, separate** token
+bucket for that task or agent. Two tasks both configured with `perMinute(30)` each get
+their own 30 req/min allowance -- they do not share.
+
+```java
+// TWO independent buckets: task1 has 30 req/min, task2 has 30 req/min (separate)
+var task1 = Task.builder()
+    .description("Research AI trends")
+    .chatLanguageModel(openAiModel)
+    .rateLimit(RateLimit.perMinute(30))   // bucket A
+    .build();
+
+var task2 = Task.builder()
+    .description("Write a summary")
+    .chatLanguageModel(openAiModel)
+    .rateLimit(RateLimit.perMinute(30))   // bucket B (independent from A)
+    .build();
+```
+
+Use this when different tasks or agents have different quotas (e.g. a fast model with a
+higher cap and a slow model with a lower one).
+
+### Explicit shared instance -- share across selected tasks/agents
+
+To share one bucket across a subset of tasks or agents, create one
+`RateLimitedChatModel` instance and pass it explicitly wherever you want it:
+
+```java
+// One bucket shared by researcher and writer; analyst has its own
+var shared = RateLimitedChatModel.of(openAiModel, RateLimit.perMinute(60));
+var separate = RateLimitedChatModel.of(openAiModel, RateLimit.perMinute(20));
+
+var researcher = Agent.builder().role("Researcher").goal("Research").llm(shared).build();
+var writer = Agent.builder().role("Writer").goal("Write").llm(shared).build();
+var analyst = Agent.builder().role("Analyst").goal("Analyse").llm(separate).build();
+```
+
+This works for explicit agents. For task-first (agentless) tasks, pass the shared model
+as `chatLanguageModel`:
+
+```java
+var shared = RateLimitedChatModel.of(openAiModel, RateLimit.perMinute(60));
+
+var task1 = Task.builder()
+    .description("Research")
+    .chatLanguageModel(shared)   // shares bucket with task2
+    .build();
+var task2 = Task.builder()
+    .description("Write")
+    .chatLanguageModel(shared)   // same bucket
+    .build();
+```
+
+### Summary
+
+| Approach | Bucket sharing |
+|---|---|
+| `Ensemble.builder().rateLimit()` | Shared across all synthesized agents that use the ensemble model |
+| `Task.builder().rateLimit()` | Independent per task |
+| `Agent.builder().rateLimit()` | Independent per agent |
+| `RateLimitedChatModel.of(model, limit)` passed to multiple agents/tasks | Shared (same object instance = same bucket) |
 
 ---
 

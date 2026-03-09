@@ -312,6 +312,81 @@ class RateLimitIntegrationTest {
     }
 
     // ========================
+    // Shared vs independent buckets
+    // ========================
+
+    @Test
+    void testTaskLevelRateLimit_twoDifferentTasks_haveIndependentBuckets() {
+        // Two tasks each with their own rateLimit(perSecond(2)) have INDEPENDENT buckets.
+        // Each task can use its full 2 req/sec independently -- they do NOT compete.
+        // This contrasts with Ensemble.rateLimit() where all tasks share one bucket.
+        var model1 = stubModel("task1 done");
+        var model2 = stubModel("task2 done");
+
+        // Both tasks have their own rate limit (independent buckets)
+        var task1 = Task.builder()
+                .description("Summarise topic A")
+                .expectedOutput("Summary A")
+                .chatLanguageModel(model1)
+                .rateLimit(RateLimit.perSecond(2))
+                .build();
+        var task2 = Task.builder()
+                .description("Summarise topic B")
+                .expectedOutput("Summary B")
+                .chatLanguageModel(model2)
+                .rateLimit(RateLimit.perSecond(2))
+                .build();
+
+        // Both tasks run in parallel -- with independent buckets neither waits on the other
+        var output = Ensemble.builder()
+                .task(task1)
+                .task(task2)
+                .workflow(Workflow.PARALLEL)
+                .build()
+                .run();
+
+        assertThat(output.getTaskOutputs()).hasSize(2);
+        // rateLimit is consumed at build time; not stored on the resulting tasks
+        assertThat(task1.getRateLimit()).isNull();
+        assertThat(task2.getRateLimit()).isNull();
+        // Each model was wrapped independently
+        assertThat(task1.getChatLanguageModel()).isInstanceOf(RateLimitedChatModel.class);
+        assertThat(task2.getChatLanguageModel()).isInstanceOf(RateLimitedChatModel.class);
+        // The two wrapped models are different instances (independent buckets)
+        assertThat(task1.getChatLanguageModel()).isNotSameAs(task2.getChatLanguageModel());
+    }
+
+    @Test
+    void testExplicitSharedModel_taskFirst_twoTasksShareOneBucket() {
+        // Passing the same RateLimitedChatModel as chatLanguageModel to two tasks
+        // gives them a shared bucket. This is the recommended pattern for sharing
+        // across task-first (agentless) tasks.
+        var underlying = stubModel("shared result");
+        var sharedModel = RateLimitedChatModel.of(underlying, RateLimit.of(1, Duration.ofSeconds(10)));
+
+        // Both tasks use the same shared rate-limited model
+        var task1 = Task.builder()
+                .description("Research AI")
+                .expectedOutput("Research")
+                .chatLanguageModel(sharedModel) // shared bucket
+                .build();
+        var task2 = Task.builder()
+                .description("Write article")
+                .expectedOutput("Article")
+                .chatLanguageModel(sharedModel) // same shared bucket
+                .build();
+
+        // task1 and task2 are DIFFERENT RateLimitedChatModel instances wrapping the same
+        // sharedModel... actually sharedModel IS the RateLimitedChatModel. The tasks both
+        // hold a direct reference to the same sharedModel instance.
+        assertThat(task1.getChatLanguageModel()).isSameAs(sharedModel);
+        assertThat(task2.getChatLanguageModel()).isSameAs(sharedModel);
+
+        // Confirming they are the same object (shared bucket)
+        assertThat(task1.getChatLanguageModel()).isSameAs(task2.getChatLanguageModel());
+    }
+
+    // ========================
     // Helpers
     // ========================
 
