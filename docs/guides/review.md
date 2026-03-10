@@ -209,9 +209,9 @@ a gate fires, blocks the calling virtual thread, and resumes when the browser se
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:2.1.0")
-    implementation("net.agentensemble:agentensemble-web:2.1.0")
-    implementation("net.agentensemble:agentensemble-review:2.1.0")
+    implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
+    implementation("net.agentensemble:agentensemble-web:{{ae_version}}")
+    implementation("net.agentensemble:agentensemble-review:{{ae_version}}")
 }
 ```
 

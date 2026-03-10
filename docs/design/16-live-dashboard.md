@@ -117,12 +117,75 @@ EnsembleOutput output = Ensemble.builder()
 ```
 
 `Ensemble.builder().webDashboard(WebDashboard)` is the single registration point. Internally
-this wires:
-1. A `WebSocketStreamingListener` to the ensemble's listener chain
-2. A `WebReviewHandler` as the ensemble's review handler (overrides any previously registered handler)
+this wires four things in one call:
+1. **Auto-start** -- calls `dashboard.start()` if the server is not already running.
+2. **Streaming** -- registers `WebSocketStreamingListener` to the ensemble's listener chain.
+3. **Review gates** -- sets `WebReviewHandler` as the ensemble's review handler.
+4. **Lifecycle ownership** -- if the dashboard was **not already running** when
+   `webDashboard()` is called, the ensemble takes ownership: it calls `dashboard.stop()` in
+   the `finally` block of `Ensemble.run()`, even if the run throws. This releases Javalin/Jetty
+   non-daemon server threads so the JVM can exit normally after the ensemble task is complete.
+   If the dashboard was **already running** when `webDashboard()` is called, the caller retains
+   ownership -- the ensemble does NOT stop the server, so it stays alive after `run()` returns.
 
-The server starts automatically when the first event arrives and stops after the ensemble
-completes. Users can also start it manually via `dashboard.start()` / `dashboard.stop()`.
+The ownership rule in practice:
+
+| Dashboard state at `webDashboard()` call | Who owns lifecycle | Ensemble calls `stop()` after run? |
+|---|---|---|
+| Not yet started (`isRunning() == false`) | Ensemble | Yes |
+| Already started (`isRunning() == true`) | Caller | No |
+
+**Caller-owned lifecycle** (server outlives the run): start the dashboard yourself before
+calling `webDashboard()`. The ensemble uses it for streaming and review events but leaves it
+running when `run()` returns. This pattern is used by the E2E test harness (and any long-lived
+server process that wants to keep the WebSocket endpoint up for late-joining clients):
+
+```java
+WebDashboard dashboard = WebDashboard.builder().port(7329).build();
+dashboard.start();  // caller owns -- run() will NOT stop it
+
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(dashboard)
+    .task(Task.of("Research AI trends"))
+    .build()
+    .run();
+
+// dashboard is still running here -- stop it when done
+dashboard.stop();
+```
+
+**Manual wiring** (alternative, no lifecycle tracking): wire streaming and review directly
+via `.listener()` / `.reviewHandler()`. The `dashboard` field on the `Ensemble` is null, so
+no lifecycle calls are made at all (the caller owns start and stop entirely):
+
+```java
+WebDashboard dashboard = WebDashboard.builder().port(7329).build();
+dashboard.start();
+
+Ensemble.builder()
+    .listener(dashboard.streamingListener())
+    .reviewHandler(dashboard.reviewHandler())
+    .task(...)
+    .build()
+    .run();
+
+dashboard.stop();
+```
+
+`WebDashboard` also implements `AutoCloseable` (via the `EnsembleDashboard` interface), so
+manually-managed dashboards can be used in try-with-resources blocks:
+
+```java
+try (WebDashboard dashboard = WebDashboard.builder().port(7329).build()) {
+    dashboard.start();
+    Ensemble.builder()
+        .listener(dashboard.streamingListener())
+        .task(...)
+        .build()
+        .run();
+} // dashboard.close() -> stop() called automatically
+```
 
 ---
 

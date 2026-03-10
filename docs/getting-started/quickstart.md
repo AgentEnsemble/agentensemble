@@ -10,7 +10,7 @@ Add the dependencies (see [Installation](installation.md)):
 
 ```kotlin
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:0.5.0")
+    implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
     implementation("ch.qos.logback:logback-classic:1.5.32")
 }

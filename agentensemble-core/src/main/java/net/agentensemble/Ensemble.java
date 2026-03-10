@@ -38,6 +38,8 @@ import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
+import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
@@ -326,6 +328,23 @@ public class Ensemble {
     private final EnsembleDashboard dashboard;
 
     /**
+     * Controls whether this ensemble owns the dashboard lifecycle (start and stop).
+     *
+     * <p>Set to {@code true} (the default) when the dashboard was not yet running when
+     * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)} was called -- meaning the
+     * ensemble started it and is responsible for stopping it in the {@code finally} block.
+     *
+     * <p>Set to {@code false} when the dashboard was already running at registration time,
+     * indicating that the caller started it externally and retains lifecycle ownership.
+     * In this case, {@link #runWithInputs} skips both the auto-start and auto-stop so
+     * the server outlives the ensemble run.
+     *
+     * <p>Default: {@code true} (ensemble owns lifecycle when dashboard field is non-null).
+     */
+    @Builder.Default
+    private final boolean ownsDashboardLifecycle = true;
+
+    /**
      * Optional ensemble-level streaming model for token-by-token generation of final responses.
      *
      * <p>When set, agents that produce a direct LLM answer (no tool loop) stream each token
@@ -338,6 +357,29 @@ public class Ensemble {
      * <p>Default: null (non-streaming).
      */
     private final StreamingChatModel streamingChatLanguageModel;
+
+    /**
+     * Ensemble-level request rate limit applied to {@link #chatLanguageModel}.
+     *
+     * <p>When set, all synthesized agents that inherit the ensemble-level model (i.e. tasks
+     * without their own {@code chatLanguageModel} and without an explicit {@code agent})
+     * share a single rate-limit token bucket, capping the total number of LLM requests
+     * per time window across the entire ensemble run.
+     *
+     * <p>The {@link #chatLanguageModel} is wrapped with a {@link RateLimitedChatModel}
+     * once per run in {@link #runWithInputs(Map)} before agent resolution. All tasks that
+     * inherit the ensemble model therefore share the same bucket.
+     *
+     * <p>Tasks with their own {@code chatLanguageModel} or {@code rateLimit} are not
+     * affected by this setting (they have independent buckets).
+     *
+     * <p>To create a shared bucket that also covers the hierarchical Manager agent,
+     * use {@link RateLimitedChatModel#of(ChatModel, RateLimit)} explicitly and pass the
+     * result to both {@code chatLanguageModel} and {@code managerLlm}.
+     *
+     * <p>Default: null (no ensemble-level rate limiting).
+     */
+    private final RateLimit rateLimit;
 
     // ========================
     // Static zero-ceremony factory
@@ -440,6 +482,22 @@ public class Ensemble {
         }
 
         try {
+            // Auto-start the dashboard at the beginning of each run only when the ensemble
+            // owns the lifecycle (i.e. it started the server in webDashboard()). This is
+            // idempotent for the first run (already started by the builder). For multiple
+            // sequential run() calls it re-starts the server after the previous run's finally
+            // block stopped it, ensuring streaming and review gates work on each run.
+            // When the caller started the server externally before calling webDashboard(),
+            // ownsDashboardLifecycle is false -- we skip start/stop so the server outlives
+            // the ensemble run (e.g. the E2E test server holds the process open for Playwright).
+            if (dashboard != null && ownsDashboardLifecycle) {
+                try {
+                    dashboard.start();
+                } catch (Exception e) {
+                    log.warn("Failed to start dashboard before ensemble run: {}", e.getMessage(), e);
+                }
+            }
+
             log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
             log.debug("Input variables: {}", resolvedInputs);
 
@@ -456,8 +514,15 @@ public class Ensemble {
                 log.info("Workflow inferred: {} (from task context declarations)", effectiveWorkflow);
             }
 
-            // Step 3: Resolve agents -- synthesize for tasks without an explicit agent
-            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks);
+            // Step 2c: Compute the effective ensemble chat model (apply ensemble-level rate limit
+            // once so all tasks that inherit the ensemble model share the same token bucket)
+            ChatModel effectiveChatModel = buildEffectiveChatModel();
+
+            // Step 3: Resolve agents -- synthesize for tasks without an explicit agent.
+            // The raw (unwrapped) chatLanguageModel is also passed so that task-level rate
+            // limits can wrap the bare model directly, preventing unintended nesting of the
+            // ensemble-level rate limit on top of a task-level one.
+            List<Task> agentResolvedTasks = resolveAgents(templateResolvedTasks, effectiveChatModel, chatLanguageModel);
 
             // Step 4: Derive unique agents (for delegation context, trace, hierarchical)
             List<Agent> derivedAgents = deriveAgents(agentResolvedTasks);
@@ -603,8 +668,33 @@ public class Ensemble {
             log.error("Ensemble run failed", e);
             throw e;
         } finally {
+            // Auto-stop the dashboard only when the ensemble owns the lifecycle. Ownership
+            // is true when the dashboard was not running at webDashboard() call time (the
+            // ensemble started it), and false when the caller started it externally before
+            // passing it to webDashboard() (the caller retains lifecycle responsibility).
+            // When ownsDashboardLifecycle is false the server stays up after run() returns,
+            // allowing external processes (e.g. E2E test server) to keep it alive.
+            if (dashboard != null && ownsDashboardLifecycle) {
+                try {
+                    dashboard.stop();
+                } catch (Exception e) {
+                    log.warn("Failed to stop dashboard after ensemble run: {}", e.getMessage(), e);
+                }
+            }
             MDC.remove("ensemble.id");
         }
+    }
+
+    /**
+     * Builds the effective ensemble-level chat model, applying the ensemble-level rate limit
+     * if configured. The resulting model (possibly wrapped) is created once per run, ensuring
+     * all tasks that inherit the ensemble model share the same token bucket.
+     */
+    private ChatModel buildEffectiveChatModel() {
+        if (rateLimit != null && chatLanguageModel != null) {
+            return RateLimitedChatModel.of(chatLanguageModel, rateLimit);
+        }
+        return chatLanguageModel;
     }
 
     /**
@@ -614,6 +704,11 @@ public class Ensemble {
      * invoked with the task-level or ensemble-level LLM. Task-level tools and
      * maxIterations are applied to the synthesized agent. Tasks with explicit agents
      * are returned unchanged.
+     *
+     * <p>The {@code ensembleLlm} parameter is the effective ensemble chat model (already
+     * wrapped with a rate limiter if configured at the ensemble level). It is passed in
+     * rather than read from {@link #chatLanguageModel} directly so that a single wrapped
+     * instance is reused across all tasks, which is required for shared-bucket semantics.
      *
      * <p>Uses a two-pass approach to keep context references consistent after synthesis
      * (fix for issue #148):
@@ -625,8 +720,15 @@ public class Ensemble {
      *       {@code completedOutputs} lookup in the workflow executor can find upstream
      *       outputs for context-bearing tasks.</li>
      * </ol>
+     *
+     * @param templateResolvedTasks  tasks after template variable resolution
+     * @param ensembleLlm            the effective ensemble-level chat model (may be rate-limited)
+     * @param rawChatLanguageModel   the unwrapped ensemble chat model; used when a task overrides
+     *                               with its own {@code rateLimit} so the task-level limiter wraps
+     *                               the bare model instead of nesting on the ensemble limiter
      */
-    private List<Task> resolveAgents(List<Task> templateResolvedTasks) {
+    private List<Task> resolveAgents(
+            List<Task> templateResolvedTasks, ChatModel ensembleLlm, ChatModel rawChatLanguageModel) {
         // Pass 1: synthesize agents; build old-identity -> new-identity map.
         IdentityHashMap<Task, Task> oldToNew = new IdentityHashMap<>();
         List<Task> firstPass = new ArrayList<>(templateResolvedTasks.size());
@@ -636,8 +738,28 @@ public class Ensemble {
                 // Explicit agent: use as-is (power-user escape hatch)
                 agentResolved = task;
             } else {
-                // Synthesize agent: use task-level LLM if set, else ensemble-level LLM
-                ChatModel llm = task.getChatLanguageModel() != null ? task.getChatLanguageModel() : chatLanguageModel;
+                // LLM resolution order:
+                // 1. Task has its own chatLanguageModel (already rate-limited at Task.build() time
+                //    if task.rateLimit was also set)
+                // 2. Task has no chatLanguageModel but has its own rateLimit: wrap the inherited
+                //    ensemble LLM with the task-level rate limit (creates a separate bucket)
+                // 3. Task inherits the ensemble LLM (already rate-limited by ensembleLlm)
+                ChatModel llm;
+                if (task.getChatLanguageModel() != null) {
+                    llm = task.getChatLanguageModel();
+                } else if (task.getRateLimit() != null) {
+                    // Task has a rate limit but no task-level model: wrap the *raw* ensemble model
+                    // (bypassing any ensemble-level rate-limit wrapper) so task-level limits truly
+                    // replace rather than nest on top of the ensemble-level limit.
+                    ChatModel baseModel = rawChatLanguageModel != null ? rawChatLanguageModel : ensembleLlm;
+                    if (baseModel == null) {
+                        throw new ValidationException("No LLM available for task '" + task.getDescription()
+                                + "'. Provide a task-level chatLanguageModel or an ensemble-level chatLanguageModel.");
+                    }
+                    llm = RateLimitedChatModel.of(baseModel, task.getRateLimit());
+                } else {
+                    llm = ensembleLlm;
+                }
                 if (llm == null) {
                     // Should have been caught by EnsembleValidator.validateTasksHaveLlm()
                     throw new ValidationException("No LLM available for task '" + task.getDescription()
@@ -984,7 +1106,7 @@ public class Ensemble {
          * Register a {@link EnsembleDashboard} (e.g. {@code WebDashboard}) as the live execution
          * dashboard for this ensemble run.
          *
-         * <p>This convenience method performs three operations in one call:
+         * <p>This convenience method performs four operations in one call:
          * <ol>
          *   <li><strong>Auto-start</strong> -- calls {@link EnsembleDashboard#start()} if the
          *       dashboard is not already running.</li>
@@ -993,19 +1115,33 @@ public class Ensemble {
          *   <li><strong>Review gates</strong> -- sets {@link EnsembleDashboard#reviewHandler()}
          *       as the ensemble's review handler so that human-in-the-loop decisions are routed
          *       through the browser dashboard.</li>
+         *   <li><strong>Lifecycle ownership</strong> -- if the dashboard was not already running
+         *       when this method is called, the ensemble takes ownership: it will call
+         *       {@link EnsembleDashboard#stop()} in the {@code finally} block of
+         *       {@link Ensemble#run()}, even if the run throws. This ensures Javalin/Jetty
+         *       non-daemon threads are released and the JVM can exit normally.
+         *       If the dashboard was <em>already running</em> when this method is called (the
+         *       caller started it externally), ownership stays with the caller -- the ensemble
+         *       will NOT stop the server after the run, so it can outlive the ensemble run.</li>
          * </ol>
          *
-         * <p>Usage:
+         * <p><strong>Caller-owned lifecycle</strong>: start the dashboard yourself before
+         * calling this method, and the server will stay alive after {@code run()} returns.
+         * This is useful for E2E test harnesses or long-lived server processes that want to
+         * keep the WebSocket endpoint up for late-joining clients:
          * <pre>
-         * WebDashboard dashboard = WebDashboard.onPort(7329);
+         * WebDashboard dashboard = WebDashboard.builder().port(7329).build();
+         * dashboard.start();  // caller owns lifecycle -- run() will NOT stop it
          *
          * Ensemble.builder()
          *     .chatLanguageModel(model)
          *     .webDashboard(dashboard)
-         *     .reviewPolicy(ReviewPolicy.AFTER_EVERY_TASK)
          *     .task(Task.of("Research AI trends"))
          *     .build()
          *     .run();
+         *
+         * // dashboard is still running here -- stop it whenever you are done
+         * dashboard.stop();
          * </pre>
          *
          * <p>To use live streaming <em>without</em> review gates, register the listener
@@ -1022,12 +1158,18 @@ public class Ensemble {
          */
         public EnsembleBuilder webDashboard(EnsembleDashboard dashboard) {
             Objects.requireNonNull(dashboard, "dashboard must not be null");
-            if (!dashboard.isRunning()) {
+            // Track ownership before potentially starting the server. If the dashboard is
+            // already running, the caller started it and retains lifecycle responsibility --
+            // the ensemble must not stop it after run() completes.
+            boolean alreadyRunning = dashboard.isRunning();
+            if (!alreadyRunning) {
                 dashboard.start();
             }
             // Store the dashboard reference so Ensemble.runWithInputs() can call the
-            // onEnsembleStarted/onEnsembleCompleted lifecycle hooks.
+            // onEnsembleStarted/onEnsembleCompleted lifecycle hooks, and set ownership so
+            // the finally block knows whether to call stop().
             this.dashboard(dashboard);
+            this.ownsDashboardLifecycle(!alreadyRunning);
             return listener(dashboard.streamingListener()).reviewHandler(dashboard.reviewHandler());
         }
     }

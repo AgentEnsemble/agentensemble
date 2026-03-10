@@ -1,5 +1,124 @@
 # Changelog
 
+## [Unreleased] - "Why AgentEnsemble?" comparison content -- 2026-03-09
+
+### Added (site, README, docs)
+
+**Landing page (`/Users/matt/workspace/ae/site`):**
+- `src/components/landing/WhyAgentEnsemble.astro` -- new Astro component placed between
+  Hero and Features sections. Three comparison cards with left-border color accents, badge
+  chips, semantic `<h3>` headings, intro paragraphs, and four bullet points each.
+  Uses CSS custom properties for per-card color theming.
+- `src/pages/index.astro` -- imported and wired `WhyAgentEnsemble` between `<Hero />` and
+  `<Features />`.
+- Site build verified clean: 65 pages, sitemap-index.xml generated at dist root.
+
+**Three comparison subsections (consistent across site, README, and docs):**
+1. "AgentEnsemble vs hand-rolled LangChain4j orchestration" -- boilerplate elimination,
+   built-in workflow strategies, production concerns, full observability.
+2. "Why JVM teams need a production-minded agent framework" -- Java 21 idioms, BOM-based
+   dependency management, existing stack integration, type-safe output.
+3. "Why AgentEnsemble instead of Python-first agent frameworks" -- no Python runtime or
+   interop tax, LLM-agnostic via LangChain4j, feature parity, single language to test.
+
+**`README.md`:**
+- `## Why AgentEnsemble?` section with three `###` subsections inserted between the opening
+  description paragraph and `## Core Concepts`.
+
+**`docs/index.md`:**
+- Same `## Why AgentEnsemble?` section inserted between the opening description and
+  `## Getting Started`.
+
+---
+
+## [Unreleased] - fix/web-dashboard-lifecycle-auto-stop -- 2026-03-09
+
+### Fixed (branch: fix/web-dashboard-lifecycle-auto-stop)
+
+**Bug:** After `Ensemble.run()` completed, the JVM process did not exit when a
+`WebDashboard` was registered via `.webDashboard(dashboard)`.
+
+**Root cause:** `EnsembleBuilder.webDashboard()` auto-started the Javalin/Jetty server
+but `Ensemble.runWithInputs()` never called `dashboard.stop()`. Jetty's acceptor/selector
+threads are non-daemon threads; the JVM cannot exit while any non-daemon thread is alive.
+The JVM shutdown hook registered in `WebDashboard` was caught in a catch-22: it only fires
+when the JVM begins shutdown, but the JVM cannot begin shutdown because the non-daemon
+Jetty threads are still alive.
+
+**Fixes:**
+
+- **`Ensemble.runWithInputs()`** (`agentensemble-core`): Calls `dashboard.stop()` in the
+  `finally` block after the run completes, whether normally or via exception. This only
+  applies when the dashboard was registered via `webDashboard()` -- the `dashboard` field
+  is `null` when the user wires the dashboard manually via `listener()` + `reviewHandler()`,
+  so the caller retains full lifecycle control in that case.
+
+- **`EnsembleDashboard`** (`agentensemble-core`): Now extends `AutoCloseable`. A default
+  `close()` method delegates to `stop()`, enabling try-with-resources for manually-managed
+  dashboards:
+  ```java
+  try (WebDashboard dashboard = WebDashboard.onPort(7329)) {
+      dashboard.start();
+      Ensemble.builder().listener(dashboard.streamingListener()).task(...).build().run();
+  } // stop() called automatically
+  ```
+
+- **`EnsembleBuilder.webDashboard()` Javadoc**: Updated to document the new auto-stop
+  as the 4th operation performed by the convenience method, alongside the existing
+  auto-start, streaming, and review gate wiring.
+
+- **`docs/design/16-live-dashboard.md`**: Section 3.4 rewritten to accurately describe
+  the four operations performed by `webDashboard()`, and to document both the auto-managed
+  (via `webDashboard()`) and manually-managed (via `listener()` + try-with-resources)
+  lifecycle patterns.
+
+### Tests Added (TDD -- red before green)
+
+**Unit/Integration (`agentensemble-core`):**
+- `EnsembleDashboardLifecycleTest` (new file, 3 tests):
+  - `webDashboard_stopsAfterSuccessfulRun` -- verifies `stop()` is called when run succeeds
+  - `webDashboard_stopsEvenWhenRunThrows` -- verifies `stop()` is called when run throws
+  - `manuallyWiredDashboard_isNotAutoStopped` -- verifies manually-wired dashboard not stopped
+
+**Unit (`agentensemble-web`):**
+- `WebDashboardTest` additions (4 tests):
+  - `close_delegatesToStop` -- verifies `close()` delegates to `stop()`
+  - `usableWithTryWithResources` -- verifies try-with-resources auto-closes
+  - `implementsAutoCloseable` -- compile-time assignability to `AutoCloseable`
+
+### Opportunistic Coverage Added
+- `webDashboard_stopsEvenWhenRunThrows` locks down the exception-path cleanup contract
+  (previously untested -- the only shutdown path was the JVM hook)
+
+---
+
+## [Unreleased] - feature/rate-limiting (Issue #59)
+### Added
+- `net.agentensemble.ratelimit` package:
+  - `RateLimit` -- immutable value object; `of(N, Duration)`, `perMinute(N)`, `perSecond(N)` factories;
+    `nanosPerToken()` clamped to minimum 1 ns to prevent silent no-op on extreme rates
+  - `RateLimitedChatModel` -- `ChatModel` decorator using a real token-bucket algorithm (starts with
+    1 token, refills up to capacity while idle, enabling burst traffic); thread-safe; no external
+    dependencies
+  - `RateLimitTimeoutException` -- thrown when wait exceeds timeout; message uses `Duration.toString()`
+    (ISO-8601) for precision on sub-second periods
+  - `RateLimitInterruptedException` -- thrown when a waiting thread is interrupted; distinct from
+    timeout; preserves `InterruptedException` as cause
+- `.rateLimit()` builder convenience on `Ensemble`, `Task`, and `Agent` builders
+- Ensemble-level rate limit wraps `chatLanguageModel` once per `run()` call (shared bucket)
+- Task-level rate limit: wraps task's own model at build time, or stored on Task and applied by
+  `Ensemble.resolveAgents()` to the **raw** ensemble model (prevents nested rate-limiting)
+- Agent-level rate limit: wraps `llm` at build time
+- `EnsembleValidator` fails fast when `rateLimit` is set without `chatLanguageModel`
+- 65 new tests across unit, builder, and integration levels (including interrupt handling, clamp,
+  Duration precision, validator fail-fast)
+- `docs/guides/rate-limiting.md` guide
+- `docs/reference/ensemble-configuration.md` updated (`rateLimit` field)
+- `docs/reference/exceptions.md` updated (both exception classes)
+- `docs/design/08-error-handling.md` updated (exception hierarchy, section, table, flow diagram)
+- `mkdocs.yml` navigation updated
+
+
 ## [Unreleased] - fix: task-first synthesis fallback and template role extraction -- 2026-03-06
 
 ### Fixed (branch: fix/task-first-synthesis-fallback-and-template-role-extraction)
