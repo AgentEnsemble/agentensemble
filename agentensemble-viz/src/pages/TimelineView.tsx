@@ -57,7 +57,14 @@ function GroupingToggle({
 }) {
   return (
     <button
+      type="button"
       onClick={onToggle}
+      aria-pressed={groupBy === 'task'}
+      aria-label={
+        groupBy === 'task'
+          ? 'Grouping by task. Click to switch to group by agent.'
+          : 'Grouping by agent. Click to switch to group by task.'
+      }
       data-testid="grouping-toggle"
       data-grouping={groupBy}
       className={[
@@ -121,6 +128,109 @@ function TaskLaneLabel({
         {role}
       </text>
     </>
+  );
+}
+
+// ========================
+// Shared live task bar helper
+// ========================
+
+/**
+ * Renders the clickable task bar group for a single live task in the timeline SVG.
+ *
+ * Encapsulates the task bar rect, animated running-edge indicator, tool call markers,
+ * and inline task label. Used by both "By Task" and "By Agent" grouping modes so that
+ * fixes to bar rendering apply consistently in both code paths.
+ */
+function LiveTaskBarGroup({
+  task,
+  barY,
+  barH,
+  nowMs,
+  isSelected,
+  color,
+  toX,
+  onToggleSelect,
+}: {
+  task: LiveTask;
+  barY: number;
+  barH: number;
+  nowMs: number;
+  isSelected: boolean;
+  color: { bg: string };
+  toX: (ms: number) => number;
+  onToggleSelect: () => void;
+}) {
+  const taskStartMs = new Date(task.startedAt).getTime();
+  const barX = toX(taskStartMs);
+
+  let taskEndMs: number;
+  if (task.status === 'completed' && task.completedAt) {
+    taskEndMs = new Date(task.completedAt).getTime();
+  } else if (task.status === 'failed' && task.failedAt) {
+    taskEndMs = new Date(task.failedAt).getTime();
+  } else {
+    taskEndMs = nowMs;
+  }
+  const w = Math.max(4, toX(taskEndMs) - barX);
+
+  const isFailed = task.status === 'failed';
+  const isRunning = task.status === 'running';
+  const fillColor = isFailed ? '#EF4444' : color.bg;
+  const fillOpacity = isSelected ? 0.9 : 0.6;
+
+  return (
+    <g onClick={onToggleSelect} className="cursor-pointer">
+      <rect
+        x={barX}
+        y={barY}
+        width={w}
+        height={barH}
+        rx={4}
+        fill={withOpacity(fillColor, fillOpacity)}
+        stroke={isSelected ? fillColor : 'transparent'}
+        strokeWidth={2}
+        data-testid="live-task-bar"
+        data-task-index={task.taskIndex}
+        data-task-status={task.status}
+      />
+      {isRunning && (
+        <rect
+          x={barX + w - 3}
+          y={barY}
+          width={3}
+          height={barH}
+          rx={2}
+          fill={fillColor}
+          opacity={0.9}
+          className="ae-pulse"
+          data-testid="live-task-bar-running-edge"
+        />
+      )}
+      {task.toolCalls.map((tool, ti) => {
+        const toolX = toX(tool.receivedAt);
+        return (
+          <rect
+            key={ti}
+            x={toolX - 1}
+            y={barY + barH - 6}
+            width={3}
+            height={6}
+            rx={1}
+            fill={getToolOutcomeColor(tool.outcome)}
+            opacity={0.9}
+            data-testid="live-tool-marker"
+            data-task-index={task.taskIndex}
+            data-tool-name={tool.toolName}
+          />
+        );
+      })}
+      {w > 50 && (
+        <text x={barX + 4} y={barY + barH / 2} dominantBaseline="middle" fontSize={9} fill="white" className="pointer-events-none select-none">
+          {task.taskDescription.slice(0, Math.floor(w / 6))}{task.taskDescription.length > Math.floor(w / 6) ? '...' : ''}
+        </text>
+      )}
+    </g>
   );
 }
 
@@ -572,26 +682,9 @@ function LiveTimelineView() {
               ? tasks.map((task, i) => {
                   const y = HEADER_HEIGHT + i * LANE_HEIGHT;
                   const color = getAgentColor(task.agentRole);
-                  const taskStartMs = new Date(task.startedAt).getTime();
-                  const barX = toX(taskStartMs);
                   const barY = y + LANE_PADDING;
                   const barH = LANE_HEIGHT - LANE_PADDING * 2;
-
-                  let taskEndMs: number;
-                  if (task.status === 'completed' && task.completedAt) {
-                    taskEndMs = new Date(task.completedAt).getTime();
-                  } else if (task.status === 'failed' && task.failedAt) {
-                    taskEndMs = new Date(task.failedAt).getTime();
-                  } else {
-                    taskEndMs = nowMs;
-                  }
-                  const w = Math.max(4, toX(taskEndMs) - toX(taskStartMs));
-
-                  const isFailed = task.status === 'failed';
-                  const isRunning = task.status === 'running';
                   const isSelected = selectedTask?.taskIndex === task.taskIndex;
-                  const fillColor = isFailed ? '#EF4444' : color.bg;
-                  const fillOpacity = isSelected ? 0.9 : 0.6;
 
                   return (
                     <g key={`task-${task.taskIndex}`}>
@@ -604,66 +697,16 @@ function LiveTimelineView() {
                       <TaskLaneLabel task={task} y={y} color={color} />
 
                       {/* Task bar */}
-                      <g
-                        onClick={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
-                        className="cursor-pointer"
-                      >
-                        <rect
-                          x={barX}
-                          y={barY}
-                          width={w}
-                          height={barH}
-                          rx={4}
-                          fill={withOpacity(fillColor, fillOpacity)}
-                          stroke={isSelected ? fillColor : 'transparent'}
-                          strokeWidth={2}
-                          data-testid="live-task-bar"
-                          data-task-index={task.taskIndex}
-                          data-task-status={task.status}
-                        />
-
-                        {/* Animated right-edge indicator for running bars */}
-                        {isRunning && (
-                          <rect
-                            x={barX + w - 3}
-                            y={barY}
-                            width={3}
-                            height={barH}
-                            rx={2}
-                            fill={fillColor}
-                            opacity={0.9}
-                            className="ae-pulse"
-                            data-testid="live-task-bar-running-edge"
-                          />
-                        )}
-
-                        {/* Tool call markers */}
-                        {task.toolCalls.map((tool, ti) => {
-                          const toolX = toX(tool.receivedAt);
-                          return (
-                            <rect
-                              key={ti}
-                              x={toolX - 1}
-                              y={barY + barH - 6}
-                              width={3}
-                              height={6}
-                              rx={1}
-                              fill={getToolOutcomeColor(tool.outcome)}
-                              opacity={0.9}
-                              data-testid="live-tool-marker"
-                              data-task-index={task.taskIndex}
-                              data-tool-name={tool.toolName}
-                            />
-                          );
-                        })}
-
-                        {/* Task label */}
-                        {w > 50 && (
-                          <text x={barX + 4} y={barY + barH / 2} dominantBaseline="middle" fontSize={9} fill="white" className="pointer-events-none select-none">
-                            {task.taskDescription.slice(0, Math.floor(w / 6))}{task.taskDescription.length > Math.floor(w / 6) ? '...' : ''}
-                          </text>
-                        )}
-                      </g>
+                      <LiveTaskBarGroup
+                        task={task}
+                        barY={barY}
+                        barH={barH}
+                        nowMs={nowMs}
+                        isSelected={isSelected}
+                        color={color}
+                        toX={toX}
+                        onToggleSelect={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
+                      />
                     </g>
                   );
                 })
@@ -696,90 +739,21 @@ function LiveTimelineView() {
 
                       {/* Task bars */}
                       {agentTasks.map((task) => {
-                        const taskStartMs = new Date(task.startedAt).getTime();
-                        const barX = toX(taskStartMs);
                         const barY = y + LANE_PADDING;
                         const barH = LANE_HEIGHT - LANE_PADDING * 2;
-
-                        let taskEndMs: number;
-                        if (task.status === 'completed' && task.completedAt) {
-                          taskEndMs = new Date(task.completedAt).getTime();
-                        } else if (task.status === 'failed' && task.failedAt) {
-                          taskEndMs = new Date(task.failedAt).getTime();
-                        } else {
-                          taskEndMs = nowMs;
-                        }
-                        const w = Math.max(4, toX(taskEndMs) - toX(taskStartMs));
-
-                        const isFailed = task.status === 'failed';
-                        const isRunning = task.status === 'running';
                         const isSelected = selectedTask?.taskIndex === task.taskIndex;
-                        const fillColor = isFailed ? '#EF4444' : color.bg;
-                        const fillOpacity = isSelected ? 0.9 : 0.6;
-
                         return (
-                          <g
+                          <LiveTaskBarGroup
                             key={`task-${task.taskIndex}`}
-                            onClick={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
-                            className="cursor-pointer"
-                          >
-                            {/* Task bar */}
-                            <rect
-                              x={barX}
-                              y={barY}
-                              width={w}
-                              height={barH}
-                              rx={4}
-                              fill={withOpacity(fillColor, fillOpacity)}
-                              stroke={isSelected ? fillColor : 'transparent'}
-                              strokeWidth={2}
-                              data-testid="live-task-bar"
-                              data-task-index={task.taskIndex}
-                              data-task-status={task.status}
-                            />
-
-                            {/* Animated right-edge indicator for running bars */}
-                            {isRunning && (
-                              <rect
-                                x={barX + w - 3}
-                                y={barY}
-                                width={3}
-                                height={barH}
-                                rx={2}
-                                fill={fillColor}
-                                opacity={0.9}
-                                className="ae-pulse"
-                                data-testid="live-task-bar-running-edge"
-                              />
-                            )}
-
-                            {/* Tool call markers */}
-                            {task.toolCalls.map((tool, ti) => {
-                              const toolX = toX(tool.receivedAt);
-                              return (
-                                <rect
-                                  key={ti}
-                                  x={toolX - 1}
-                                  y={barY + barH - 6}
-                                  width={3}
-                                  height={6}
-                                  rx={1}
-                                  fill={getToolOutcomeColor(tool.outcome)}
-                                  opacity={0.9}
-                                  data-testid="live-tool-marker"
-                                  data-task-index={task.taskIndex}
-                                  data-tool-name={tool.toolName}
-                                />
-                              );
-                            })}
-
-                            {/* Task label */}
-                            {w > 50 && (
-                              <text x={barX + 4} y={barY + barH / 2} dominantBaseline="middle" fontSize={9} fill="white" className="pointer-events-none select-none">
-                                {task.taskDescription.slice(0, Math.floor(w / 6))}{task.taskDescription.length > Math.floor(w / 6) ? '...' : ''}
-                              </text>
-                            )}
-                          </g>
+                            task={task}
+                            barY={barY}
+                            barH={barH}
+                            nowMs={nowMs}
+                            isSelected={isSelected}
+                            color={color}
+                            toX={toX}
+                            onToggleSelect={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
+                          />
                         );
                       })}
                     </g>
