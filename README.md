@@ -785,8 +785,8 @@ Ensemble.builder()
 Each run writes a file named `{ensembleId}.json` inside the directory. Implement
 `ExecutionTraceExporter` for custom destinations (databases, APIs, etc.).
 
-See the [Metrics and Observability guide](docs/guides/metrics.md) and
-[Metrics example](docs/examples/metrics.md) for full details.
+See the [Metrics and Observability guide](https://agentensemble.net/guides/metrics/) and
+[Metrics example](https://agentensemble.net/examples/metrics/) for full details.
 
 ---
 
@@ -909,8 +909,8 @@ for (LlmInteraction iteration : output.getTrace().getTaskTraces().get(0).getLlmI
 }
 ```
 
-See the [CaptureMode guide](docs/guides/capture-mode.md) and
-[CaptureMode examples](docs/examples/capture-mode.md) for full details.
+See the [CaptureMode guide](https://agentensemble.net/guides/capture-mode/) and
+[CaptureMode examples](https://agentensemble.net/examples/capture-mode/) for full details.
 
 ---
 
@@ -1211,25 +1211,25 @@ export OPENAI_API_KEY=your-api-key
 
 ## Design Documentation
 
-See [`docs/design/`](docs/design/) for full specifications:
+Full design specifications are published at **[agentensemble.net/design/](https://agentensemble.net/design/01-overview/)**:
 
-- [01 - Overview](docs/design/01-overview.md)
-- [02 - Architecture](docs/design/02-architecture.md)
-- [03 - Domain Model](docs/design/03-domain-model.md)
-- [04 - Execution Engine](docs/design/04-execution-engine.md)
-- [05 - Prompt Templates](docs/design/05-prompt-templates.md)
-- [06 - Tool System](docs/design/06-tool-system.md)
-- [07 - Template Resolver](docs/design/07-template-resolver.md)
-- [08 - Error Handling](docs/design/08-error-handling.md)
-- [09 - Logging](docs/design/09-logging.md)
-- [10 - Concurrency](docs/design/10-concurrency.md)
-- [11 - Configuration Reference](docs/design/11-configuration.md)
-- [12 - Testing Strategy](docs/design/12-testing-strategy.md)
-- [13 - Future Roadmap](docs/design/13-future-roadmap.md)
-- [14 - MapReduceEnsemble](docs/design/14-map-reduce.md)
-- [15 - v2.0.0 Architecture](docs/design/15-v2-architecture.md)
-- [16 - Live Execution Dashboard](docs/design/16-live-dashboard.md)
-- [17 - Tool Pipeline](docs/design/17-tool-pipeline.md)
+- [01 - Overview](https://agentensemble.net/design/01-overview/)
+- [02 - Architecture](https://agentensemble.net/design/02-architecture/)
+- [03 - Domain Model](https://agentensemble.net/design/03-domain-model/)
+- [04 - Execution Engine](https://agentensemble.net/design/04-execution-engine/)
+- [05 - Prompt Templates](https://agentensemble.net/design/05-prompt-templates/)
+- [06 - Tool System](https://agentensemble.net/design/06-tool-system/)
+- [07 - Template Resolver](https://agentensemble.net/design/07-template-resolver/)
+- [08 - Error Handling](https://agentensemble.net/design/08-error-handling/)
+- [09 - Logging](https://agentensemble.net/design/09-logging/)
+- [10 - Concurrency](https://agentensemble.net/design/10-concurrency/)
+- [11 - Configuration Reference](https://agentensemble.net/design/11-configuration/)
+- [12 - Testing Strategy](https://agentensemble.net/design/12-testing-strategy/)
+- [13 - Future Roadmap](https://agentensemble.net/design/13-future-roadmap/)
+- [14 - MapReduceEnsemble](https://agentensemble.net/design/14-map-reduce/)
+- [15 - v2.0.0 Architecture](https://agentensemble.net/design/15-v2-architecture/)
+- [16 - Live Execution Dashboard](https://agentensemble.net/design/16-live-dashboard/)
+- [17 - Tool Pipeline](https://agentensemble.net/design/17-tool-pipeline/)
 
 ---
 
@@ -1243,26 +1243,7 @@ Full documentation is available at **[agentensemble.net](https://agentensemble.n
 | [Guides](https://agentensemble.net/guides/agents/) | Agents, tasks, workflows, tools, memory, delegation, error handling, logging, visualization |
 | [Reference](https://agentensemble.net/reference/ensemble-configuration/) | Complete configuration field tables |
 | [Examples](https://agentensemble.net/examples/research-writer/) | Runnable annotated example walkthroughs including [visualization](https://agentensemble.net/examples/visualization/) |
-| [Design Specs](docs/design/) | Internal architecture and design documentation |
-
----
-
-## What's Next (Roadmap)
-
-| Phase | Features |
-|---|---|
-| ~~v0.2.0~~ | ~~Hierarchical workflow (manager agent delegates)~~ |
-| ~~v0.3.0~~ | ~~Memory system (short-term, long-term, entity)~~ |
-| ~~v0.4.0~~ | ~~Agent delegation~~ |
-| ~~v0.5.0~~ | ~~Parallel workflow (virtual threads)~~ |
-| ~~v0.6.0~~ | ~~Structured output (typed output parsing)~~ |
-| ~~v0.7.0~~ | ~~Callbacks and event listeners~~ |
-| ~~v0.8.0~~ | ~~Guardrails: pre/post execution validation~~ |
-| ~~v1.0.0~~ | ~~Built-in tool library (agentensemble-tools module)~~ |
-| ~~v2.0.0~~ | ~~MapReduceEnsemble: static tree-reduction DAG with chunkSize~~ |
-| ~~v2.0.0~~ | ~~MapReduceEnsemble: adaptive reduction with targetTokenBudget~~ |
-| ~~v2.1.0~~ | ~~Live Execution Dashboard: real-time browser GUI, browser-based review approval~~ |
-| Future | MCP (Model Context Protocol) integration, GraalVM polyglot tools |
+| [Design Specs](https://agentensemble.net/design/01-overview/) | Internal architecture and design documentation |
 
 ---
 
