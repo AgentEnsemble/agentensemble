@@ -31,13 +31,13 @@ Add `agentensemble-web` to your project and attach a `WebDashboard` to an ensemb
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:2.1.0")
-    implementation("net.agentensemble:agentensemble-web:2.1.0")
+    implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
+    implementation("net.agentensemble:agentensemble-web:{{ae_version}}")
 
     // agentensemble-review is included transitively through agentensemble-web.
     // Declare it explicitly only if you reference review types (ReviewHandler,
     // ReviewDecision, etc.) directly in your own code.
-    // implementation("net.agentensemble:agentensemble-review:2.1.0")
+    // implementation("net.agentensemble:agentensemble-review:{{ae_version}}")
 }
 ```
 
@@ -47,18 +47,18 @@ dependencies {
     <dependency>
         <groupId>net.agentensemble</groupId>
         <artifactId>agentensemble-core</artifactId>
-        <version>2.1.0</version>
+        <version>{{ae_version}}</version>
     </dependency>
     <dependency>
         <groupId>net.agentensemble</groupId>
         <artifactId>agentensemble-web</artifactId>
-        <version>2.1.0</version>
+        <version>{{ae_version}}</version>
     </dependency>
     <!-- Required if using browser-based review gates -->
     <dependency>
         <groupId>net.agentensemble</groupId>
         <artifactId>agentensemble-review</artifactId>
-        <version>2.1.0</version>
+        <version>{{ae_version}}</version>
     </dependency>
 </dependencies>
 ```
