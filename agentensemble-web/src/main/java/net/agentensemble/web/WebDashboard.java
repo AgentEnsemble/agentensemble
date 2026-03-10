@@ -1,5 +1,6 @@
 package net.agentensemble.web;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -10,6 +11,8 @@ import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.trace.export.ExecutionTraceExporter;
+import net.agentensemble.trace.export.JsonTraceExporter;
 import net.agentensemble.web.protocol.EnsembleCompletedMessage;
 import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
@@ -93,6 +96,25 @@ public final class WebDashboard implements EnsembleDashboard {
     private final Duration reviewTimeout;
     private final OnTimeoutAction onTimeout;
 
+    /**
+     * Optional directory to which each run's trace is exported as
+     * {@code {ensembleId}.trace.json}. Null when no automatic export is desired.
+     */
+    private final Path traceExportDir;
+
+    /**
+     * Maximum number of completed runs retained in the late-join snapshot.
+     * When a new run starts and the total exceeds this cap, the oldest run's events
+     * are evicted from the snapshot. Default is 10.
+     */
+    private final int maxRetainedRuns;
+
+    /**
+     * Eagerly created trace exporter when {@link #traceExportDir} is configured.
+     * Null otherwise.
+     */
+    private final ExecutionTraceExporter configuredTraceExporter;
+
     // ========================
     // Internal infrastructure -- created eagerly so listener/handler are available before start()
     // ========================
@@ -111,9 +133,12 @@ public final class WebDashboard implements EnsembleDashboard {
         this.host = builder.host;
         this.reviewTimeout = builder.reviewTimeout;
         this.onTimeout = builder.onTimeout;
+        this.traceExportDir = builder.traceExportDir;
+        this.maxRetainedRuns = builder.maxRetainedRuns;
+        this.configuredTraceExporter = traceExportDir != null ? new JsonTraceExporter(traceExportDir) : null;
 
         this.serializer = new MessageSerializer();
-        this.connectionManager = new ConnectionManager(serializer);
+        this.connectionManager = new ConnectionManager(serializer, maxRetainedRuns);
         this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "agentensemble-web-heartbeat");
             t.setDaemon(true);
@@ -326,6 +351,41 @@ public final class WebDashboard implements EnsembleDashboard {
     }
 
     /**
+     * Returns the trace export directory configured on this dashboard, or {@code null} when
+     * no automatic trace export was configured.
+     *
+     * @return the trace export directory, or {@code null}
+     */
+    public Path getTraceExportDir() {
+        return traceExportDir;
+    }
+
+    /**
+     * Returns the maximum number of completed runs retained in the late-join snapshot.
+     *
+     * @return the configured cap; always &ge; 1
+     */
+    public int getMaxRetainedRuns() {
+        return maxRetainedRuns;
+    }
+
+    /**
+     * Returns an {@link ExecutionTraceExporter} that writes each run's trace to
+     * {@link #getTraceExportDir()}, or {@code null} when no trace export directory was
+     * configured.
+     *
+     * <p>When non-null, {@link net.agentensemble.Ensemble.EnsembleBuilder#webDashboard}
+     * automatically wires this exporter so that callers do not need a separate
+     * {@code .traceExporter(...)} call on the ensemble builder.
+     *
+     * @return the configured trace exporter, or {@code null}
+     */
+    @Override
+    public ExecutionTraceExporter traceExporter() {
+        return configuredTraceExporter;
+    }
+
+    /**
      * Returns the port the server is actually listening on after {@link #start()} has been
      * called.
      *
@@ -361,6 +421,8 @@ public final class WebDashboard implements EnsembleDashboard {
         private String host = "localhost";
         private Duration reviewTimeout = Duration.ofMinutes(5);
         private OnTimeoutAction onTimeout = OnTimeoutAction.CONTINUE;
+        private Path traceExportDir = null;
+        private int maxRetainedRuns = 10;
 
         private Builder() {}
 
@@ -416,6 +478,63 @@ public final class WebDashboard implements EnsembleDashboard {
         }
 
         /**
+         * Configures a directory to which each ensemble run's trace is automatically
+         * exported as {@code {ensembleId}.json}.
+         *
+         * <p>When set, {@code Ensemble.builder().webDashboard(dashboard)} automatically
+         * wires a {@link net.agentensemble.trace.export.JsonTraceExporter} pointing to
+         * this directory, so callers do not need a separate
+         * {@code .traceExporter(new JsonTraceExporter(dir))} call on the ensemble builder.
+         *
+         * <p>The directory is created automatically on the first export if it does not
+         * already exist. Export failures log a warning but do not fail the run.
+         *
+         * <pre>
+         * // Convenience (equivalent behavior):
+         * WebDashboard dashboard = WebDashboard.builder()
+         *     .port(7329)
+         *     .traceExportDir(Path.of("./traces"))
+         *     .build();
+         * Ensemble.builder()
+         *     .webDashboard(dashboard)
+         *     .build();
+         *
+         * // Manual equivalent:
+         * Ensemble.builder()
+         *     .webDashboard(WebDashboard.onPort(7329))
+         *     .traceExporter(new JsonTraceExporter(Path.of("./traces")))
+         *     .build();
+         * </pre>
+         *
+         * @param traceExportDir the directory to write trace files into; may be {@code null}
+         *                       to disable automatic export (the default)
+         * @return this builder
+         */
+        public Builder traceExportDir(Path traceExportDir) {
+            this.traceExportDir = traceExportDir;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of completed ensemble runs retained in the
+         * late-join snapshot sent to newly connecting browsers.
+         *
+         * <p>When a new run starts and the total number of retained runs would exceed
+         * this cap, the oldest run's events are evicted from the snapshot. This prevents
+         * unbounded memory and message growth in long-running batch processes.
+         *
+         * <p>Default: 10. Must be &ge; 1.
+         *
+         * @param maxRetainedRuns the maximum number of runs to retain; must be &ge; 1
+         * @return this builder
+         * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1
+         */
+        public Builder maxRetainedRuns(int maxRetainedRuns) {
+            this.maxRetainedRuns = maxRetainedRuns;
+            return this;
+        }
+
+        /**
          * Validates configuration and constructs the {@link WebDashboard}.
          *
          * <p>The returned dashboard is not yet started; call {@link WebDashboard#start()}
@@ -439,6 +558,9 @@ public final class WebDashboard implements EnsembleDashboard {
                 throw new IllegalArgumentException("reviewTimeout must not be negative; got: " + reviewTimeout);
             }
             Objects.requireNonNull(onTimeout, "onTimeout must not be null");
+            if (maxRetainedRuns < 1) {
+                throw new IllegalArgumentException("maxRetainedRuns must be >= 1; got: " + maxRetainedRuns);
+            }
             return new WebDashboard(this);
         }
     }

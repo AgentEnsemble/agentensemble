@@ -1170,6 +1170,17 @@ public class Ensemble {
             // the finally block knows whether to call stop().
             this.dashboard(dashboard);
             this.ownsDashboardLifecycle(!alreadyRunning);
+
+            // Auto-wire a trace exporter when the dashboard provides one (e.g. when
+            // WebDashboard.builder().traceExportDir(...) was set) and the caller has not
+            // already configured an explicit traceExporter on this builder. This is a
+            // convenience so callers do not need both .webDashboard(...) and
+            // .traceExporter(new JsonTraceExporter(...)) in the common multi-run case.
+            net.agentensemble.trace.export.ExecutionTraceExporter dashboardExporter = dashboard.traceExporter();
+            if (dashboardExporter != null && this.traceExporter == null) {
+                this.traceExporter(dashboardExporter);
+            }
+
             return listener(dashboard.streamingListener()).reviewHandler(dashboard.reviewHandler());
         }
     }

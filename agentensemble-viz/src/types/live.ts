@@ -66,6 +66,29 @@ export interface LiveTask {
 }
 
 // ========================
+// Completed run (archived from live state when a new run starts)
+// ========================
+
+/**
+ * A snapshot of a completed ensemble run archived when the next run starts.
+ * Used to render stacked read-only timeline sections in the live view.
+ */
+export interface CompletedRun {
+  /** Ensemble ID of the completed run, or null when not yet received. */
+  ensembleId: string | null;
+  /** Workflow strategy used for this run. */
+  workflow: string | null;
+  /** ISO-8601 timestamp when this run started. */
+  startedAt: string | null;
+  /** ISO-8601 timestamp when this run completed. Null when the run ended without ensemble_completed. */
+  completedAt: string | null;
+  /** Total expected task count from ensemble_started. */
+  totalTasks: number;
+  /** Deep copy of the tasks at the time the run was archived. */
+  tasks: LiveTask[];
+}
+
+// ========================
 // Pending reviews
 // ========================
 
@@ -109,6 +132,13 @@ export interface LiveState {
   pendingReviews: LiveReviewRequest[];
   /** True after ensemble_completed is received. */
   ensembleComplete: boolean;
+  /**
+   * Archived completed runs, in chronological order (oldest first).
+   * Each entry is a snapshot of a prior run captured when the next run's
+   * ensemble_started message was received. Used to render stacked read-only
+   * timeline sections above the active run.
+   */
+  completedRuns: CompletedRun[];
 }
 
 // ========================

@@ -22,21 +22,45 @@ import org.slf4j.LoggerFactory;
  * <p>Also manages pending review futures: when a {@link WebReviewHandler} registers a review,
  * the future is stored here so that {@link #resolveReview} can complete it when the browser
  * sends a decision, and so that disconnection can cancel pending reviews.
+ *
+ * <h2>Multi-run snapshot storage</h2>
+ * <p>Maintains a per-run snapshot: one inner list of messages per ensemble run. When a new run
+ * starts, a new inner list is opened while all prior inner lists are retained (up to
+ * {@code maxRetainedRuns}). The flattened concatenation of all inner lists is sent to
+ * late-joining browsers in the {@code hello} message so they can replay the full history.
+ * When the number of retained runs exceeds the cap, the oldest run's inner list is evicted.
  */
 class ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConnectionManager.class);
+
+    /** Default maximum number of completed runs to retain in the snapshot. */
+    static final int DEFAULT_MAX_RETAINED_RUNS = 10;
 
     private final ConcurrentHashMap<String, WsSession> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
     private final MessageSerializer serializer;
 
     /**
-     * Ordered log of all messages broadcast during the current run, used to send a
-     * late-join snapshot via the {@code hello} message. Thread-safe: append via
-     * CopyOnWriteArrayList; snapshot is obtained by iterating the list at connect time.
+     * Maximum number of runs to retain in the snapshot. When a new run starts and the total
+     * would exceed this cap, the oldest run's messages are evicted.
      */
-    private final CopyOnWriteArrayList<String> snapshotMessages = new CopyOnWriteArrayList<>();
+    private final int maxRetainedRuns;
+
+    /**
+     * Per-run snapshot storage. Each inner list holds all messages broadcast during one run.
+     * The latest run's list is last. Protected by {@code synchronized(runSnapshots)} for
+     * structural modifications (add/remove of inner lists). Individual inner lists use
+     * {@link CopyOnWriteArrayList} so that concurrent appends within a single run are
+     * thread-safe without holding the outer lock.
+     */
+    private final List<CopyOnWriteArrayList<String>> runSnapshots = new ArrayList<>();
+
+    /**
+     * The current run's message list. Updated atomically (volatile) when a new run starts.
+     * Null until the first {@link #noteEnsembleStarted} call.
+     */
+    private volatile CopyOnWriteArrayList<String> currentRunMessages = null;
 
     /** Ensemble ID from the most recent {@code ensemble_started} message, for hello. */
     private volatile String currentEnsembleId = null;
@@ -44,8 +68,26 @@ class ConnectionManager {
     /** Ensemble start time from the most recent {@code ensemble_started} message, for hello. */
     private volatile Instant ensembleStartedAt = null;
 
+    /**
+     * Create a {@code ConnectionManager} with the default run retention cap of
+     * {@value #DEFAULT_MAX_RETAINED_RUNS}.
+     *
+     * @param serializer the message serializer; must not be null
+     */
     ConnectionManager(MessageSerializer serializer) {
+        this(serializer, DEFAULT_MAX_RETAINED_RUNS);
+    }
+
+    /**
+     * Create a {@code ConnectionManager} with an explicit run retention cap.
+     *
+     * @param serializer       the message serializer; must not be null
+     * @param maxRetainedRuns  maximum number of completed runs to retain in the late-join snapshot;
+     *                         must be &ge; 1
+     */
+    ConnectionManager(MessageSerializer serializer, int maxRetainedRuns) {
         this.serializer = serializer;
+        this.maxRetainedRuns = maxRetainedRuns;
     }
 
     /**
@@ -54,8 +96,10 @@ class ConnectionManager {
      * that late-joining browsers can reconstruct the in-progress display without waiting for
      * the next live event.
      *
-     * <p>The snapshot is a JSON array of all messages broadcast since the run started. The
-     * browser-side {@code liveReducer} can replay this array to restore state.
+     * <p>The snapshot is a JSON array of all messages broadcast across all retained runs
+     * (flattened in chronological order). The browser-side {@code liveReducer} replays this
+     * array to restore state, including building the {@code completedRuns} list for multi-run
+     * timelines.
      *
      * @param session the newly connected session
      */
@@ -63,8 +107,6 @@ class ConnectionManager {
         sessions.put(session.id(), session);
         log.debug("WebSocket client connected: {}", session.id());
 
-        // Build a snapshot JSON array from all messages broadcast so far. Taking a
-        // copy of the CopyOnWriteArrayList is atomic and safe without external locking.
         JsonNode snapshotNode = buildSnapshotNode();
         HelloMessage hello = new HelloMessage(currentEnsembleId, ensembleStartedAt, snapshotNode);
         String helloJson = serializer.toJson(hello);
@@ -131,33 +173,62 @@ class ConnectionManager {
     }
 
     /**
-     * Appends a JSON message to the late-join snapshot log. Called by
+     * Appends a JSON message to the current run's snapshot log. Called by
      * {@link WebSocketStreamingListener} after each broadcast so that late-joining
      * clients receive all past events in the {@code hello} message.
      *
-     * <p>Thread-safe: {@link CopyOnWriteArrayList#add} is atomic.
+     * <p>Thread-safe: the current run's {@link CopyOnWriteArrayList#add} is atomic.
+     * If no run has started yet (i.e. {@link #noteEnsembleStarted} has not been called),
+     * the message is silently dropped.
      *
      * @param messageJson the serialized JSON message that was just broadcast; must not be null
      */
     void appendToSnapshot(String messageJson) {
-        snapshotMessages.add(messageJson);
+        CopyOnWriteArrayList<String> current = currentRunMessages;
+        if (current == null) {
+            // appendToSnapshot called before noteEnsembleStarted (e.g. during streaming listener
+            // tests or when messages are broadcast before the ensemble lifecycle begins).
+            // Lazy-create an implicit pre-run list using double-checked locking.
+            synchronized (runSnapshots) {
+                current = currentRunMessages;
+                if (current == null) {
+                    current = new CopyOnWriteArrayList<>();
+                    runSnapshots.add(current);
+                    currentRunMessages = current;
+                }
+            }
+        }
+        current.add(messageJson);
     }
 
     /**
-     * Records ensemble metadata for the {@code hello} message sent to late-joining clients.
-     * Called by {@link net.agentensemble.web.WebDashboard} when it receives the
-     * {@code onEnsembleStarted} lifecycle hook, immediately before the first task begins.
+     * Records ensemble metadata for the {@code hello} message sent to late-joining clients
+     * and opens a new per-run snapshot inner list.
      *
-     * <p>Also clears any snapshot accumulated from a previous run so that late-joining
-     * clients see only the current run's events.
+     * <p>Unlike the previous single-run implementation, this method does <em>not</em> clear
+     * the existing snapshot. Instead it opens a new inner list for the new run while
+     * retaining all prior runs' messages. When the number of retained runs exceeds
+     * {@link #maxRetainedRuns}, the oldest run's inner list is evicted.
      *
      * @param ensembleId the UUID identifying this run
      * @param startedAt  when this run began
      */
     void noteEnsembleStarted(String ensembleId, Instant startedAt) {
-        snapshotMessages.clear();
         this.currentEnsembleId = ensembleId;
         this.ensembleStartedAt = startedAt;
+
+        CopyOnWriteArrayList<String> newRunList = new CopyOnWriteArrayList<>();
+        synchronized (runSnapshots) {
+            runSnapshots.add(newRunList);
+            // Evict the oldest run when we exceed the cap. The new run's list was just added,
+            // so if size > cap the first element is the oldest run to evict.
+            while (runSnapshots.size() > maxRetainedRuns) {
+                runSnapshots.remove(0);
+            }
+        }
+        // Volatile write: all threads that subsequently call appendToSnapshot() will see
+        // the new current list.
+        this.currentRunMessages = newRunList;
     }
 
     /**
@@ -202,23 +273,38 @@ class ConnectionManager {
     // ========================
 
     /**
-     * Builds a {@link JsonNode} JSON array from the current snapshot message log.
-     * Returns {@code null} when no messages have been recorded yet (empty snapshot).
+     * Builds a {@link JsonNode} JSON array from all retained run snapshots, flattened in
+     * chronological order (oldest run first, newest run last). Returns {@code null} when no
+     * messages have been recorded yet (empty snapshot).
      *
-     * <p>The CopyOnWriteArrayList iterator provides a consistent snapshot of the list
-     * state at the time of this call, safe under concurrent appends.
+     * <p>Acquires {@code runSnapshots} lock only to take a stable copy of the outer list;
+     * each inner list's iterator provides a consistent snapshot without external locking.
      */
     private JsonNode buildSnapshotNode() {
-        List<String> snapshot = new ArrayList<>(snapshotMessages);
-        if (snapshot.isEmpty()) {
+        List<CopyOnWriteArrayList<String>> runsCopy;
+        synchronized (runSnapshots) {
+            if (runSnapshots.isEmpty()) {
+                return null;
+            }
+            runsCopy = new ArrayList<>(runSnapshots);
+        }
+
+        // Flatten: collect all messages from all runs in order
+        List<String> all = new ArrayList<>();
+        for (CopyOnWriteArrayList<String> runList : runsCopy) {
+            all.addAll(runList);
+        }
+
+        if (all.isEmpty()) {
             return null;
         }
+
         StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < snapshot.size(); i++) {
+        for (int i = 0; i < all.size(); i++) {
             if (i > 0) {
                 sb.append(',');
             }
-            sb.append(snapshot.get(i));
+            sb.append(all.get(i));
         }
         sb.append(']');
         return serializer.toJsonNode(sb.toString());

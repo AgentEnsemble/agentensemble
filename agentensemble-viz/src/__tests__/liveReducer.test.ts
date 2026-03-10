@@ -188,6 +188,139 @@ describe('liveReducer', () => {
       expect(next.ensembleComplete).toBe(false);
       expect(next.completedAt).toBeNull();
     });
+
+    it('archives current run into completedRuns when tasks exist before new run starts', () => {
+      const stateWithCompletedRun: LiveState = {
+        ...BASE_STATE,
+        tasks: stateWithTask(1, 'completed').tasks,
+        ensembleComplete: true,
+        completedAt: '2026-03-05T14:05:00Z',
+      };
+      const msg: ServerMessage = {
+        type: 'ensemble_started',
+        ensembleId: 'ens-002',
+        startedAt: '2026-03-05T15:00:00Z',
+        totalTasks: 2,
+        workflow: 'SEQUENTIAL',
+      };
+      const next = liveReducer(stateWithCompletedRun, msg);
+      // The old run should be archived
+      expect(next.completedRuns).toHaveLength(1);
+      expect(next.completedRuns[0].ensembleId).toBe('ens-001');
+      expect(next.completedRuns[0].tasks).toHaveLength(1);
+      expect(next.completedRuns[0].completedAt).toBe('2026-03-05T14:05:00Z');
+      // Active state should be reset for the new run
+      expect(next.tasks).toHaveLength(0);
+      expect(next.ensembleId).toBe('ens-002');
+      expect(next.ensembleComplete).toBe(false);
+      expect(next.completedAt).toBeNull();
+    });
+
+    it('does NOT archive an empty-task run (avoids race condition entries)', () => {
+      // If no tasks have been dispatched yet, do not create an empty CompletedRun
+      const emptyState: LiveState = {
+        ...BASE_STATE,
+        tasks: [],
+      };
+      const msg: ServerMessage = {
+        type: 'ensemble_started',
+        ensembleId: 'ens-002',
+        startedAt: '2026-03-05T15:00:00Z',
+        totalTasks: 2,
+        workflow: 'SEQUENTIAL',
+      };
+      const next = liveReducer(emptyState, msg);
+      expect(next.completedRuns).toHaveLength(0);
+    });
+
+    it('accumulates completedRuns across multiple consecutive runs', () => {
+      let state = initialLiveState;
+      // Run 1: task_started, ensemble_started (run 2 begins)
+      state = liveReducer(state, {
+        type: 'ensemble_started',
+        ensembleId: 'run-1',
+        startedAt: '2026-03-05T14:00:00Z',
+        totalTasks: 1,
+        workflow: 'SEQUENTIAL',
+      });
+      state = liveReducer(state, {
+        type: 'task_started',
+        taskIndex: 1,
+        totalTasks: 1,
+        taskDescription: 'Task A',
+        agentRole: 'Agent A',
+        startedAt: '2026-03-05T14:00:01Z',
+      });
+      state = liveReducer(state, {
+        type: 'task_completed',
+        taskIndex: 1,
+        totalTasks: 1,
+        taskDescription: 'Task A',
+        agentRole: 'Agent A',
+        completedAt: '2026-03-05T14:00:30Z',
+        durationMs: 29000,
+        tokenCount: 500,
+        toolCallCount: 0,
+      });
+
+      // Run 2 starts: run 1 should be archived
+      state = liveReducer(state, {
+        type: 'ensemble_started',
+        ensembleId: 'run-2',
+        startedAt: '2026-03-05T14:01:00Z',
+        totalTasks: 1,
+        workflow: 'SEQUENTIAL',
+      });
+      expect(state.completedRuns).toHaveLength(1);
+      expect(state.completedRuns[0].ensembleId).toBe('run-1');
+
+      state = liveReducer(state, {
+        type: 'task_started',
+        taskIndex: 1,
+        totalTasks: 1,
+        taskDescription: 'Task B',
+        agentRole: 'Agent B',
+        startedAt: '2026-03-05T14:01:01Z',
+      });
+
+      // Run 3 starts: both run 1 and run 2 should be in completedRuns
+      state = liveReducer(state, {
+        type: 'ensemble_started',
+        ensembleId: 'run-3',
+        startedAt: '2026-03-05T14:02:00Z',
+        totalTasks: 1,
+        workflow: 'SEQUENTIAL',
+      });
+      expect(state.completedRuns).toHaveLength(2);
+      expect(state.completedRuns[0].ensembleId).toBe('run-1');
+      expect(state.completedRuns[1].ensembleId).toBe('run-2');
+      expect(state.ensembleId).toBe('run-3');
+      expect(state.tasks).toHaveLength(0);
+    });
+
+    it('late-join snapshot replay builds completedRuns correctly', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'run-2',
+        startedAt: '2026-03-05T14:01:00Z',
+        snapshotTrace: [
+          { type: 'ensemble_started', ensembleId: 'run-1', startedAt: '2026-03-05T14:00:00Z', totalTasks: 1, workflow: 'SEQUENTIAL' },
+          { type: 'task_started', taskIndex: 1, totalTasks: 1, taskDescription: 'Task A', agentRole: 'Agent A', startedAt: '2026-03-05T14:00:01Z' },
+          { type: 'task_completed', taskIndex: 1, totalTasks: 1, taskDescription: 'Task A', agentRole: 'Agent A', completedAt: '2026-03-05T14:00:30Z', durationMs: 29000, tokenCount: 500, toolCallCount: 0 },
+          { type: 'ensemble_completed', ensembleId: 'run-1', completedAt: '2026-03-05T14:00:31Z', durationMs: 31000, exitReason: 'COMPLETED', totalTokens: 500, totalToolCalls: 0 },
+          { type: 'ensemble_started', ensembleId: 'run-2', startedAt: '2026-03-05T14:01:00Z', totalTasks: 1, workflow: 'SEQUENTIAL' },
+          { type: 'task_started', taskIndex: 1, totalTasks: 1, taskDescription: 'Task B', agentRole: 'Agent B', startedAt: '2026-03-05T14:01:01Z' },
+        ],
+      };
+      const next = liveReducer(initialLiveState, msg);
+      // run-1 should be in completedRuns; run-2 is the active run
+      expect(next.completedRuns).toHaveLength(1);
+      expect(next.completedRuns[0].ensembleId).toBe('run-1');
+      expect(next.completedRuns[0].tasks).toHaveLength(1);
+      expect(next.ensembleId).toBe('run-2');
+      expect(next.tasks).toHaveLength(1);
+      expect(next.tasks[0].taskDescription).toBe('Task B');
+    });
   });
 
   describe('task_started', () => {

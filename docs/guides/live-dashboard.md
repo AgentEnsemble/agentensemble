@@ -87,6 +87,78 @@ shutdown hook.
 
 ---
 
+## Multi-Run Support
+
+When an application reuses a single `WebDashboard` across multiple sequential `Ensemble.run()` calls, the dashboard now retains all completed runs and renders them as stacked read-only timeline sections above the active run.
+
+### How it works
+
+- **Server**: Each `ensemble_started` event opens a new per-run snapshot list rather than clearing the previous run's events. Late-joining browsers receive the full flattened history of all retained runs and replay it to rebuild the stacked timeline.
+- **Browser (Timeline View)**: Completed runs appear as read-only stacked sections above the live run. Each section shows a run header (`#N | workflow | task count | duration`) and its own time axis. The By Task / By Agent grouping toggle applies uniformly to all sections.
+- **Browser (Flow View)**: The live DAG always shows the current run. A run selector dropdown in the top-right corner lets you inspect the DAG of any completed run.
+
+### Configuration
+
+```java
+WebDashboard dashboard = WebDashboard.builder()
+    .port(7329)
+    .maxRetainedRuns(5)                      // (optional, default: 10)
+    .traceExportDir(Path.of("./traces"))     // (optional, default: null)
+    .build();
+
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(dashboard)
+    .build()
+    .run();
+
+// Second run -- browser shows run 1 as a completed section above run 2
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(dashboard)
+    .build()
+    .run();
+```
+
+---
+
+## Auto Trace Export
+
+`WebDashboard.builder().traceExportDir(Path)` is a convenience shortcut that automatically
+wires a `JsonTraceExporter` for each run. This saves you from manually adding
+`.traceExporter(new JsonTraceExporter(...))` on every `Ensemble.builder()` call when
+you are already using a dashboard.
+
+```java
+// Before (manual -- two separate calls required):
+WebDashboard dashboard = WebDashboard.onPort(7329);
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(dashboard)
+    .traceExporter(new JsonTraceExporter(Path.of("./traces")))
+    .build()
+    .run();
+
+// After (convenience -- single dashboard builder call):
+WebDashboard dashboard = WebDashboard.builder()
+    .port(7329)
+    .traceExportDir(Path.of("./traces"))   // wired automatically
+    .build();
+Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(dashboard)
+    .build();                              // no explicit traceExporter needed
+```
+
+Each run exports `traces/{ensembleId}.json`. These can be loaded in the viz's static mode afterward to replay the full trace with LLM and tool call detail.
+
+**Behaviour:**
+- The export directory is created automatically if it does not exist.
+- Export failures (disk full, permissions) log a warning but do not fail the run.
+- When `traceExportDir` is not set, no trace export happens (unchanged behaviour).
+
+---
+
 ## Builder API
 
 ### `WebDashboard.onPort(int port)`

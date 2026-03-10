@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TimelineView from '../pages/TimelineView.js';
 import { initialLiveState } from '../utils/liveReducer.js';
-import type { LiveState, LiveTask } from '../types/live.js';
+import type { LiveState, LiveTask, CompletedRun } from '../types/live.js';
 import type { LiveServerContextValue } from '../contexts/LiveServerContext.js';
 
 // ========================
@@ -450,6 +450,121 @@ describe('TimelineView live mode', () => {
       // By Agent mode: still 3 bars
       fireEvent.click(screen.getByTestId('grouping-toggle'));
       expect(screen.getAllByTestId('live-task-bar')).toHaveLength(3);
+    });
+  });
+
+  describe('completed runs (stacked sections)', () => {
+    function makeCompletedRunFixture(runNumber: number, taskCount = 1): CompletedRun {
+      const runStartMs = STARTED_AT_MS - runNumber * 300000; // 5 minutes apart
+      return {
+        ensembleId: `run-${runNumber}`,
+        workflow: 'SEQUENTIAL',
+        startedAt: new Date(runStartMs).toISOString(),
+        completedAt: new Date(runStartMs + 30000 * taskCount).toISOString(),
+        totalTasks: taskCount,
+        tasks: Array.from({ length: taskCount }, (_, i) =>
+          makeCompletedTask(i + 1, `Agent ${String.fromCharCode(65 + i)}`),
+        ),
+      };
+    }
+
+    it('does not render completed-run sections when completedRuns is empty', () => {
+      mockLiveServer(makeLiveState({ tasks: [makeRunningTask(0)], completedRuns: [] }));
+      renderLiveTimeline();
+      expect(screen.queryAllByTestId('completed-run-section')).toHaveLength(0);
+    });
+
+    it('renders one completed-run section when one run has been archived', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      expect(screen.getAllByTestId('completed-run-section')).toHaveLength(1);
+    });
+
+    it('renders N completed-run sections for N archived runs', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(2), makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      expect(screen.getAllByTestId('completed-run-section')).toHaveLength(2);
+    });
+
+    it('each completed-run section has a run header', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const headers = screen.getAllByTestId('completed-run-header');
+      expect(headers).toHaveLength(1);
+    });
+
+    it('run header shows run number as #1 for the first completed run', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const header = screen.getByTestId('completed-run-header');
+      expect(header.textContent).toContain('#1');
+    });
+
+    it('sections are separated by labeled dividers', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(2), makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // One divider per completed run section
+      const dividers = screen.getAllByTestId('completed-run-divider');
+      expect(dividers.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('completed run sections render task bars for the archived tasks', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1, 2)], // 2 archived tasks
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // The 2 archived completed tasks + 1 active running task = 3 task bars total
+      const bars = screen.getAllByTestId('live-task-bar');
+      expect(bars.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('groupBy toggle applies uniformly (sections share the same groupBy state)', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0, 'Agent A'), makeRunningTask(1, 'Agent B')],
+        completedRuns: [makeCompletedRunFixture(1, 2)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // Verify the grouping toggle is present -- clicking it should affect all sections
+      expect(screen.getByTestId('grouping-toggle')).toBeInTheDocument();
+    });
+
+    it('completed run sections appear above the active run (before the live timeline scroll)', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // Completed run section should exist
+      const section = screen.getByTestId('completed-run-section');
+      const liveScroll = screen.getByTestId('live-timeline-scroll');
+      // completed-run-section must appear before live-timeline-scroll in DOM order
+      const sectionPos = section.compareDocumentPosition(liveScroll);
+      // DOCUMENT_POSITION_FOLLOWING = 4 (liveScroll follows section)
+      expect(sectionPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
   });
 });

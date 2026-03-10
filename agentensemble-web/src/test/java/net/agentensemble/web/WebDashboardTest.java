@@ -256,6 +256,69 @@ class WebDashboardTest {
     }
 
     // ========================
+    // traceExportDir builder option
+    // ========================
+
+    @Test
+    void builderWithoutTraceExportDirHasNullTraceExporter() {
+        dashboard = WebDashboard.builder().port(0).build();
+        assertThat(dashboard.traceExporter()).isNull();
+    }
+
+    @Test
+    void builderWithTraceExportDirReturnsNonNullTraceExporter() {
+        java.nio.file.Path dir = java.nio.file.Path.of("./traces-test");
+        dashboard = WebDashboard.builder().port(0).traceExportDir(dir).build();
+        assertThat(dashboard.traceExporter()).isNotNull();
+    }
+
+    @Test
+    void getTraceExportDirReturnsConfiguredPath() {
+        java.nio.file.Path dir = java.nio.file.Path.of("./traces-test");
+        dashboard = WebDashboard.builder().port(0).traceExportDir(dir).build();
+        assertThat(dashboard.getTraceExportDir()).isEqualTo(dir);
+    }
+
+    @Test
+    void traceExporterIsSameInstanceOnMultipleCalls() {
+        java.nio.file.Path dir = java.nio.file.Path.of("./traces-test");
+        dashboard = WebDashboard.builder().port(0).traceExportDir(dir).build();
+        assertThat(dashboard.traceExporter()).isSameAs(dashboard.traceExporter());
+    }
+
+    // ========================
+    // maxRetainedRuns builder option
+    // ========================
+
+    @Test
+    void defaultMaxRetainedRunsIsTen() {
+        dashboard = WebDashboard.builder().port(0).build();
+        assertThat(dashboard.getMaxRetainedRuns()).isEqualTo(10);
+    }
+
+    @Test
+    void builderConfiguresMaxRetainedRuns() {
+        dashboard = WebDashboard.builder().port(0).maxRetainedRuns(5).build();
+        assertThat(dashboard.getMaxRetainedRuns()).isEqualTo(5);
+    }
+
+    @Test
+    void maxRetainedRunsOfZeroThrows() {
+        assertThatThrownBy(
+                        () -> WebDashboard.builder().port(0).maxRetainedRuns(0).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedRuns");
+    }
+
+    @Test
+    void maxRetainedRunsNegativeThrows() {
+        assertThatThrownBy(
+                        () -> WebDashboard.builder().port(0).maxRetainedRuns(-1).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedRuns");
+    }
+
+    // ========================
     // Ensemble lifecycle hooks
     // ========================
 

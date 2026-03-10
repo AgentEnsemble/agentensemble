@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExecutionTrace, TaskTrace, LlmInteraction, ToolCallTrace } from '../types/trace.js';
-import type { LiveTask } from '../types/live.js';
+import type { CompletedRun, LiveTask } from '../types/live.js';
 import { parseDurationMs, formatDuration, formatInstant, formatTokenCount } from '../utils/parser.js';
 import { getAgentColor, withOpacity, getToolOutcomeColor, LLM_CALL_COLOR, seedAgentColors } from '../utils/colors.js';
 import { TaskMetricsBadges, RunSummaryBadges } from '../components/shared/MetricsBadge.js';
@@ -524,9 +524,201 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
  * one lane per task -- useful for task-first workflows where multiple tasks share a
  * synthesized agent role. "By Agent" groups tasks under their agent role lane.
  */
+/**
+ * Read-only timeline section for a single completed ensemble run.
+ * Renders a header bar + compact SVG timeline using the archived task data.
+ * All bars are fixed-width (no live animation) since the run is complete.
+ */
+function CompletedRunSection({
+  run,
+  runNumber,
+  groupBy,
+}: {
+  run: CompletedRun;
+  runNumber: number;
+  groupBy: GroupBy;
+}) {
+  const runStart = run.startedAt ? new Date(run.startedAt).getTime() : 0;
+
+  // Compute the run's effective end time for positioning task bars
+  const runEndMs = useMemo(() => {
+    if (run.completedAt) return new Date(run.completedAt).getTime();
+    if (run.tasks.length > 0) {
+      return Math.max(
+        ...run.tasks.map((t) => {
+          if (t.completedAt) return new Date(t.completedAt).getTime();
+          if (t.failedAt) return new Date(t.failedAt).getTime();
+          return new Date(t.startedAt).getTime();
+        }),
+      );
+    }
+    return runStart + 1;
+  }, [run, runStart]);
+
+  const totalMs = Math.max(runEndMs - runStart, 1);
+  const durationMs = runEndMs - runStart;
+
+  const agentRoles = useMemo(() => {
+    const seen = new Set<string>();
+    const roles: string[] = [];
+    for (const task of run.tasks) {
+      if (!seen.has(task.agentRole)) {
+        seen.add(task.agentRole);
+        roles.push(task.agentRole);
+      }
+    }
+    return roles;
+  }, [run.tasks]);
+
+  const tasksByAgent = useMemo(() => {
+    const map = new Map<string, LiveTask[]>();
+    for (const task of run.tasks) {
+      const list = map.get(task.agentRole) ?? [];
+      list.push(task);
+      map.set(task.agentRole, list);
+    }
+    return map;
+  }, [run.tasks]);
+
+  const svgWidth = 900;
+  const chartWidth = svgWidth - LABEL_WIDTH;
+  const laneCount = groupBy === 'task' ? run.tasks.length : agentRoles.length;
+  const svgHeight = Math.max(1, laneCount) * LANE_HEIGHT + HEADER_HEIGHT + 10;
+
+  const toX = useCallback(
+    (ms: number) => {
+      const fraction = (ms - runStart) / totalMs;
+      return LABEL_WIDTH + fraction * chartWidth;
+    },
+    [runStart, totalMs, chartWidth],
+  );
+
+  const ticks = useMemo(() => {
+    const tickCount = Math.min(8, Math.max(4, Math.floor(chartWidth / 80)));
+    return Array.from({ length: tickCount + 1 }, (_, i) => {
+      const ms = runStart + (totalMs * i) / tickCount;
+      return { x: toX(ms), label: `+${formatDuration(ms - runStart)}` };
+    });
+  }, [runStart, totalMs, chartWidth, toX]);
+
+  return (
+    <div data-testid="completed-run-section" className="border-b border-gray-100 dark:border-gray-800">
+      {/* Run header bar */}
+      <div
+        data-testid="completed-run-header"
+        className="flex items-center gap-3 bg-gray-50 px-4 py-1.5 dark:bg-gray-800"
+      >
+        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+          #{runNumber}
+        </span>
+        {run.workflow && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{run.workflow}</span>
+        )}
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {run.tasks.length} task{run.tasks.length !== 1 ? 's' : ''}
+        </span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">
+          {formatDuration(durationMs)}
+        </span>
+        {run.startedAt && (
+          <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">
+            {formatInstant(run.startedAt)}
+          </span>
+        )}
+      </div>
+
+      {/* Read-only SVG timeline */}
+      <div className="overflow-auto scrollbar-thin">
+        <svg
+          width={Math.max(svgWidth, LABEL_WIDTH + chartWidth + 40)}
+          height={svgHeight}
+          className="bg-white dark:bg-gray-900"
+        >
+          {groupBy === 'task'
+            ? run.tasks.map((task, i) => {
+                const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                const color = getAgentColor(task.agentRole);
+                const barY = y + LANE_PADDING;
+                const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                return (
+                  <g key={`task-${task.taskIndex}`}>
+                    <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                    <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                    <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                    <TaskLaneLabel task={task} y={y} color={color} />
+                    <LiveTaskBarGroup
+                      task={task}
+                      barY={barY}
+                      barH={barH}
+                      nowMs={runEndMs}
+                      isSelected={false}
+                      color={color}
+                      toX={toX}
+                      onToggleSelect={() => {}}
+                    />
+                  </g>
+                );
+              })
+            : agentRoles.map((role, i) => {
+                const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                const color = getAgentColor(role);
+                const agentTasks = tasksByAgent.get(role) ?? [];
+                return (
+                  <g key={role}>
+                    <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                    <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                    <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                    <text
+                      x={LABEL_WIDTH - 8}
+                      y={y + LANE_HEIGHT / 2}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      fontSize={11}
+                      fontWeight={600}
+                      fill={color.bg}
+                      data-testid="timeline-lane-label"
+                      data-lane-type="agent"
+                    >
+                      {role.length > 18 ? role.slice(0, 16) + '...' : role}
+                    </text>
+                    {agentTasks.map((task) => {
+                      const barY = y + LANE_PADDING;
+                      const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                      return (
+                        <LiveTaskBarGroup
+                          key={`task-${task.taskIndex}`}
+                          task={task}
+                          barY={barY}
+                          barH={barH}
+                          nowMs={runEndMs}
+                          isSelected={false}
+                          color={color}
+                          toX={toX}
+                          onToggleSelect={() => {}}
+                        />
+                      );
+                    })}
+                  </g>
+                );
+              })}
+
+          {/* Time axis */}
+          <rect x={0} y={0} width={LABEL_WIDTH + chartWidth + 100} height={HEADER_HEIGHT} fill="white" className="dark:fill-gray-900" />
+          {ticks.map((tick) => (
+            <g key={tick.label}>
+              <line x1={tick.x} y1={HEADER_HEIGHT - 8} x2={tick.x} y2={svgHeight} stroke="#E5E7EB" strokeWidth={0.5} strokeDasharray="4 4" />
+              <text x={tick.x} y={HEADER_HEIGHT / 2} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="#9CA3AF">{tick.label}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function LiveTimelineView() {
   const { liveState } = useLiveServer();
-  const { tasks, startedAt, workflow, totalTasks } = liveState;
+  const { tasks, startedAt, workflow, totalTasks, completedRuns } = liveState;
 
   // Use task index as the selected key so the panel always reads from current liveState.tasks
   // (not a stale snapshot). This ensures streaming output updates are reflected live.
@@ -645,6 +837,19 @@ function LiveTimelineView() {
           groupBy={groupBy}
           onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
+        {completedRuns.map((run, i) => (
+          <React.Fragment key={run.ensembleId ?? `completed-run-${i}`}>
+            <CompletedRunSection run={run} runNumber={i + 1} groupBy={groupBy} />
+            <div
+              data-testid="completed-run-divider"
+              className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-1 dark:border-gray-700 dark:bg-gray-800"
+            >
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+              <span className="text-xs text-gray-400 dark:text-gray-500">Run {i + 1} completed</span>
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            </div>
+          </React.Fragment>
+        ))}
         <div className="flex flex-1 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
           Waiting for tasks to start...
         </div>
@@ -666,7 +871,22 @@ function LiveTimelineView() {
           onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
 
-        {/* Scrollable SVG */}
+        {/* Stacked completed run sections above the active run */}
+        {completedRuns.map((run, i) => (
+          <React.Fragment key={run.ensembleId ?? `completed-run-${i}`}>
+            <CompletedRunSection run={run} runNumber={i + 1} groupBy={groupBy} />
+            <div
+              data-testid="completed-run-divider"
+              className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-1 dark:border-gray-700 dark:bg-gray-800"
+            >
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+              <span className="text-xs text-gray-400 dark:text-gray-500">Run {i + 1} completed</span>
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            </div>
+          </React.Fragment>
+        ))}
+
+        {/* Active run scrollable SVG */}
         <div
           ref={scrollRef}
           className="flex-1 overflow-auto scrollbar-thin"

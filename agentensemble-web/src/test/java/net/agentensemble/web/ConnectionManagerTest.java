@@ -71,13 +71,13 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void noteEnsembleStarted_clearsOldSnapshotFromPreviousRun() {
+    void noteEnsembleStarted_retainsBothRunsInSnapshotAcrossConsecutiveRuns() {
         // Run 1: accumulate events
         connectionManager.noteEnsembleStarted("ens-run1", Instant.now());
         connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run1\"}");
         connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
 
-        // Run 2: new run clears old snapshot
+        // Run 2: new run starts; run-1 events must still be in the snapshot
         connectionManager.noteEnsembleStarted("ens-run2", Instant.now());
         connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run2\"}");
 
@@ -85,9 +85,111 @@ class ConnectionManagerTest {
         connectionManager.onConnect(session);
         String helloJson = session.sentMessages().get(0);
 
-        // Only run-2 events should be present
+        // Both run-1 and run-2 events must be present in the flattened snapshot
+        assertThat(helloJson).contains("ens-run1");
         assertThat(helloJson).contains("ens-run2");
+        // run-1 events appear before run-2 events within the snapshotTrace array
+        // (not the hello header's ensembleId field which always shows the latest run)
+        int snapshotStart = helloJson.indexOf("snapshotTrace");
+        assertThat(snapshotStart).isGreaterThan(-1);
+        int run1InSnapshot = helloJson.indexOf("ens-run1", snapshotStart);
+        int run2InSnapshot = helloJson.indexOf("ens-run2", snapshotStart);
+        assertThat(run1InSnapshot).isGreaterThan(-1);
+        assertThat(run2InSnapshot).isGreaterThan(-1);
+        assertThat(run1InSnapshot).isLessThan(run2InSnapshot);
+    }
+
+    @Test
+    void multiRunSnapshot_evictsOldestRunWhenCapExceeded() {
+        // Use a ConnectionManager with maxRetainedRuns=2
+        ConnectionManager limited = new ConnectionManager(serializer, 2);
+
+        // Run 1
+        limited.noteEnsembleStarted("ens-run1", Instant.now());
+        limited.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run1\"}");
+
+        // Run 2
+        limited.noteEnsembleStarted("ens-run2", Instant.now());
+        limited.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run2\"}");
+
+        // Run 3: causes run-1 to be evicted (cap is 2)
+        limited.noteEnsembleStarted("ens-run3", Instant.now());
+        limited.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run3\"}");
+
+        MockWsSession session = new MockWsSession("session-cap");
+        limited.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // run-1 should be evicted; run-2 and run-3 should be present
         assertThat(helloJson).doesNotContain("ens-run1");
+        assertThat(helloJson).contains("ens-run2");
+        assertThat(helloJson).contains("ens-run3");
+    }
+
+    @Test
+    void multiRunSnapshot_defaultCapOfTenRetainsAllRunsUpToCap() {
+        // Default cap is 10; 9 runs should all be retained
+        for (int i = 1; i <= 9; i++) {
+            connectionManager.noteEnsembleStarted("ens-run" + i, Instant.now());
+            connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run" + i + "\"}");
+        }
+
+        MockWsSession session = new MockWsSession("session-9runs");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // All 9 runs should be in the snapshot
+        for (int i = 1; i <= 9; i++) {
+            assertThat(helloJson).contains("ens-run" + i);
+        }
+    }
+
+    @Test
+    void multiRunSnapshot_evictsCorrectlyAfterMultipleOverflows() {
+        // Cap of 2; run 4 runs total -- only runs 3 and 4 should survive
+        ConnectionManager limited = new ConnectionManager(serializer, 2);
+        for (int i = 1; i <= 4; i++) {
+            limited.noteEnsembleStarted("ens-run" + i, Instant.now());
+            limited.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run" + i + "\"}");
+        }
+
+        MockWsSession session = new MockWsSession("session-overflow");
+        limited.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        assertThat(helloJson).doesNotContain("ens-run1");
+        assertThat(helloJson).doesNotContain("ens-run2");
+        assertThat(helloJson).contains("ens-run3");
+        assertThat(helloJson).contains("ens-run4");
+    }
+
+    @Test
+    void lateJoinReceivesAllRunsInChronologicalOrder() {
+        // Two runs with distinct events; late-joiner should see both in order
+        connectionManager.noteEnsembleStarted("ens-run1", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run1\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_completed\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_completed\",\"ensembleId\":\"ens-run1\"}");
+
+        connectionManager.noteEnsembleStarted("ens-run2", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run2\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+
+        MockWsSession lateSession = new MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+        String helloJson = lateSession.sentMessages().get(0);
+
+        assertThat(helloJson).contains("snapshotTrace");
+        // Verify ordering: run1 ensemble_started precedes run2 ensemble_started
+        // Search within snapshotTrace to avoid the hello header's ensembleId field
+        int snapshotOffset = helloJson.indexOf("snapshotTrace");
+        assertThat(snapshotOffset).isGreaterThan(-1);
+        int run1Idx = helloJson.indexOf("ens-run1", snapshotOffset);
+        int run2Idx = helloJson.indexOf("ens-run2", snapshotOffset);
+        assertThat(run1Idx).isGreaterThan(-1);
+        assertThat(run2Idx).isGreaterThan(-1);
+        assertThat(run1Idx).isLessThan(run2Idx);
     }
 
     @Test

@@ -12,6 +12,7 @@
 import type {
   LiveState,
   LiveTask,
+  CompletedRun,
   ServerMessage,
   HelloMessage,
   EnsembleStartedMessage,
@@ -38,6 +39,7 @@ export const initialLiveState: LiveState = {
   tasks: [],
   pendingReviews: [],
   ensembleComplete: false,
+  completedRuns: [],
 };
 
 // ========================
@@ -110,6 +112,24 @@ function applyHello(state: LiveState, msg: HelloMessage): LiveState {
 }
 
 function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): LiveState {
+  // If the current run has tasks (i.e. at least one task_started was received), archive it
+  // into completedRuns before resetting. Skip archiving when tasks is empty to avoid
+  // creating empty CompletedRun entries from race conditions (a second ensemble_started
+  // arriving before the first task_started has been dispatched).
+  let updatedCompletedRuns = state.completedRuns;
+  if (state.tasks.length > 0) {
+    const archivedRun: CompletedRun = {
+      ensembleId: state.ensembleId,
+      workflow: state.workflow,
+      startedAt: state.startedAt,
+      completedAt: state.completedAt,
+      totalTasks: state.totalTasks,
+      // Shallow copy of the tasks array -- each LiveTask is already immutable
+      tasks: [...state.tasks],
+    };
+    updatedCompletedRuns = [...state.completedRuns, archivedRun];
+  }
+
   return {
     ...state,
     ensembleId: msg.ensembleId,
@@ -120,6 +140,7 @@ function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): Li
     pendingReviews: [],
     ensembleComplete: false,
     completedAt: null,
+    completedRuns: updatedCompletedRuns,
   };
 }
 
