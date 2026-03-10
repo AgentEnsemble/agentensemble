@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.4.0...v2.5.0) (2026-03-10)
+
+
+### Features
+
+* **viz/web:** multi-run support -- stacked timelines and per-run trace export ([#180](https://github.com/AgentEnsemble/agentensemble/issues/180)) ([d739b14](https://github.com/AgentEnsemble/agentensemble/commit/d739b148e8fbe1a89895f0ee88f5b3dc7fc1673b))
+
 ## [2.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.3.0...v2.4.0) (2026-03-10)
 
 
