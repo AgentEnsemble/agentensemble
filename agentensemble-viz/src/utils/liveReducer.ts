@@ -378,7 +378,13 @@ function applyDelegationStarted(state: LiveState, msg: DelegationStartedMessage)
  * worker execution as measured by DelegateTaskTool) to update endedAt.
  */
 function applyDelegationCompleted(state: LiveState, msg: DelegationCompletedMessage): LiveState {
-  const idx = state.delegations.findLastIndex((d) => d.delegationId === msg.delegationId);
+  let idx = -1;
+  for (let i = state.delegations.length - 1; i >= 0; i--) {
+    if (state.delegations[i].delegationId === msg.delegationId) {
+      idx = i;
+      break;
+    }
+  }
   if (idx === -1) return state;
 
   const updated: LiveDelegation = {
@@ -399,7 +405,13 @@ function applyDelegationCompleted(state: LiveState, msg: DelegationCompletedMess
  * ID (handles edge cases where duplicate IDs are sent due to retries).
  */
 function applyDelegationFailed(state: LiveState, msg: DelegationFailedMessage): LiveState {
-  const idx = state.delegations.findLastIndex((d) => d.delegationId === msg.delegationId);
+  let idx = -1;
+  for (let i = state.delegations.length - 1; i >= 0; i--) {
+    if (state.delegations[i].delegationId === msg.delegationId) {
+      idx = i;
+      break;
+    }
+  }
   if (idx === -1) return state;
 
   const updated: LiveDelegation = {
