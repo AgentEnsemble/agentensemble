@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { initialLiveState } from '../utils/liveReducer.js';
 import {
   ReactFlow,
   Background,
@@ -209,11 +210,45 @@ function LiveFlowViewInner() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
 
-  // Build synthetic DagModel from live tasks
-  const dag = useMemo(() => buildSyntheticDagModel(liveState), [liveState]);
+  /**
+   * Run selector: null = active (current) run; 0..N-1 = index into completedRuns.
+   * Allows inspecting the DAG of any completed run without leaving live mode.
+   */
+  const [viewRunIndex, setViewRunIndex] = useState<number | null>(null);
 
-  // Build live status map: node ID -> LiveTaskStatus | undefined
-  const liveStatusMap = useMemo(() => buildLiveStatusMap(liveState), [liveState]);
+  // Stable snapshot of the selected completed run, or null when viewing the active run.
+  // Computing this in a separate memo prevents the DAG from being re-laid out on every
+  // live update (tokens, delegations, etc.) while the user is inspecting a past run.
+  const completedRunState = useMemo(
+    () =>
+      viewRunIndex !== null && viewRunIndex < liveState.completedRuns.length
+        ? {
+            ...initialLiveState,
+            ensembleId: liveState.completedRuns[viewRunIndex].ensembleId,
+            workflow: liveState.completedRuns[viewRunIndex].workflow,
+            startedAt: liveState.completedRuns[viewRunIndex].startedAt,
+            completedAt: liveState.completedRuns[viewRunIndex].completedAt,
+            totalTasks: liveState.completedRuns[viewRunIndex].totalTasks,
+            tasks: liveState.completedRuns[viewRunIndex].tasks,
+            ensembleComplete: true,
+          }
+        : null,
+    [viewRunIndex, liveState.completedRuns],
+  );
+
+  // When a completed run is selected, use its frozen state so live updates to the active
+  // run do not cause unnecessary DAG re-layouts. When no completed run is selected, fall
+  // back to the full live state to keep the active-run DAG current.
+  const displayedState = completedRunState ?? liveState;
+
+  // Build synthetic DagModel from the displayed state
+  const dag = useMemo(() => buildSyntheticDagModel(displayedState), [displayedState]);
+
+  // Build live status map only for the active run (completed runs have no live status)
+  const liveStatusMap = useMemo(
+    () => (viewRunIndex === null ? buildLiveStatusMap(liveState) : new Map()),
+    [viewRunIndex, liveState],
+  );
 
   // Seed agent colors from the live task agent roles in arrival order
   useEffect(() => {
@@ -354,7 +389,30 @@ function LiveFlowViewInner() {
           </span>
         </div>
 
-        <div className="absolute right-3 top-3 z-10">
+        <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
+          {/* Run selector: allows inspecting any completed run's DAG or the active run */}
+          {liveState.completedRuns.length > 0 && (
+            <select
+              value={viewRunIndex === null ? 'active' : String(viewRunIndex)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setViewRunIndex(v === 'active' ? null : Number(v));
+                setSelectedTaskId(null);
+              }}
+              data-testid="live-flow-run-selector"
+              className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+              aria-label="Select run to view"
+            >
+              {liveState.completedRuns.map((_, i) => (
+                <option key={i} value={String(i)}>
+                  Run {i + 1}
+                </option>
+              ))}
+              <option value="active">
+                Run {liveState.completedRuns.length + 1} (active)
+              </option>
+            </select>
+          )}
           <button
             onClick={() => setShowMinimap((v) => !v)}
             className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"

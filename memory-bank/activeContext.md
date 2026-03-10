@@ -1,6 +1,55 @@
 # Active Context
 
+## Current Work
+All work on PR #180 (`feat/issue-179-multi-run-support`) is complete including Copilot review feedback. Branch pushed at `cc632ea`.
+
+## Completed in last session
+- Addressed all 12 Copilot inline review comments on PR #180:
+  - `ConnectionManager`: constructor validates `maxRetainedRuns>=1` and `serializer!=null`; `appendToSnapshot` truly drops pre-run messages
+  - `WebDashboard.java`: fixed Javadoc for `traceExportDir` field (`.trace.json` -> `.json`)
+  - `docs/examples/live-dashboard.md`: fixed wrong import (`net.agentensemble.web.OnTimeoutAction` -> `net.agentensemble.review.OnTimeoutAction`)
+  - `live.ts`: updated `CompletedRun.tasks/delegations` docstrings (shallow copy, not deep copy)
+  - `liveReducer.ts`: `applyDelegationCompleted` now derives `endedAt = startedAt + durationMs`
+  - `TimelineView.tsx`: extracted `CompletedRunList` component; `CompletedRunSection` uses `buildLiveLanes` for HIERARCHICAL delegation lanes; `buildLiveLanes` uses a pre-grouped `Map` for O(1) lookup
+  - `FlowView.tsx`: split `displayedState` into `completedRunState` memo + `liveState` fallback to avoid unnecessary DAG re-layouts
+  - Tests: `ConnectionManagerTest` (constructor validation + pre-run drop), `EnsembleDashboardLifecycleTest` (traceExporter auto-wiring), `liveReducer.test.ts` (endedAt assertion), `WebSocketStreamingListenerTest` (snapshot test updated)
+- All 294 TypeScript tests pass; Java BUILD SUCCESSFUL
+
+# Active Context
+
 ## Current Focus
+
+**Issue #179 -- Multi-Run Support + Hierarchical Task Rendering (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented multi-run stacked timelines, per-run trace export, AND fixed hierarchical task rendering in the dashboard.
+
+### Hierarchical Task Rendering Fix
+- **Problem**: `HIERARCHICAL` workflow only showed a single Manager lane because delegation events were ignored by `liveReducer` and the historical view iterated `taskTraces` flat.
+- **Live reducer**: Added `LiveDelegation` type + `delegations: LiveDelegation[]` to `LiveState`; `liveReducer` now handles `delegation_started`, `delegation_completed`, `delegation_failed` -- each updates `state.delegations`.
+- **Historical timeline**: `buildHistoricalByTaskLanes()` puts Manager at depth 0 and workers at depth 1 for `HIERARCHICAL` workflow; `DelegationLaneLabel` renders L-shaped bracket connector + indented labels.
+- **Live timeline**: `buildLiveLanes()` interleaves `LiveDelegation` sub-lanes after their parent task; `LiveDelegationBarGroup` renders dashed timing bar with active pulse indicator.
+- `CompletedRun` now includes `delegations: LiveDelegation[]` so archived runs preserve delegation data.
+- Tests: 294 TypeScript/React tests all pass (20 new tests for delegation tracking and hierarchical lane helpers).
+
+### Previously in PR #180: Multi-Run Support (Issue #179)
+
+**Issue #179 -- Multi-Run Support (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented two complementary features for the live dashboard when a single `WebDashboard` is reused across multiple sequential `Ensemble.run()` calls.
+
+### Feature A: Auto-export per run
+- `EnsembleDashboard.traceExporter()` default method; `WebDashboard` overrides when `traceExportDir` set
+- `WebDashboard.builder().traceExportDir(Path)` auto-wires `JsonTraceExporter`
+- `Ensemble.builder().webDashboard()` propagates the exporter when builder has none set
+- `JsonTraceExporter` auto-creates output directory
+
+### Feature B: Stacked timelines + per-run snapshot storage
+- `ConnectionManager` uses `List<List<String>> runSnapshots`; `maxRetainedRuns` cap (default 10)
+- `WebDashboard.builder().maxRetainedRuns(int)` builder option
+- `CompletedRun` type + `completedRuns: CompletedRun[]` on `LiveState`
+- `liveReducer` archives run to `completedRuns` on `ensemble_started` when tasks exist
+- `CompletedRunSection` renders stacked read-only sections above the active run
+- `LiveFlowViewInner` run selector dropdown for inspecting past DAGs
+
+---
+
+## Previously: "Why AgentEnsemble?" comparison content
 
 Added a "Why AgentEnsemble?" comparison section to the landing page, README, and docs.
 Three comparison cards were added to the site (`WhyAgentEnsemble.astro` component)

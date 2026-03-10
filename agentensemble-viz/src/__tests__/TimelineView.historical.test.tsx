@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import TimelineView from '../pages/TimelineView.js';
+import TimelineView, { buildHistoricalByTaskLanes } from '../pages/TimelineView.js';
 import type { ExecutionTrace, TaskTrace } from '../types/trace.js';
 
 // ========================
@@ -179,5 +179,100 @@ describe('TimelineView historical mode', () => {
       expect(screen.getAllByTestId('timeline-lane-label')).toHaveLength(2);
       expect(toggle).toHaveAttribute('data-grouping', 'task');
     });
+  });
+
+  describe('HIERARCHICAL workflow renders indented worker lanes', () => {
+    function makeHierarchicalTrace(): ExecutionTrace {
+      const managerTask = makeTaskTrace('Coordinate team', 'Manager', 0, 30000);
+      const worker1 = makeTaskTrace('Research topic', 'Researcher', 1000, 15000);
+      const worker2 = makeTaskTrace('Write summary', 'Writer', 16000, 12000);
+      const trace = makeTrace([managerTask, worker1, worker2]);
+      return { ...trace, workflow: 'HIERARCHICAL' };
+    }
+
+    it('renders Manager lane at depth 0 and worker lanes at depth 1', () => {
+      const trace = makeHierarchicalTrace();
+      render(<TimelineView trace={trace} />);
+      // Manager at depth 0 uses data-lane-type="task"
+      const taskLabels = screen.getAllByTestId('timeline-lane-label').filter(
+        (el) => el.getAttribute('data-lane-type') === 'task',
+      );
+      const delegationLabels = screen.getAllByTestId('timeline-lane-label').filter(
+        (el) => el.getAttribute('data-lane-type') === 'delegation',
+      );
+      expect(taskLabels).toHaveLength(1); // Manager
+      expect(delegationLabels).toHaveLength(2); // Researcher and Writer
+    });
+
+    it('total lane count is 3 (1 Manager + 2 workers) in HIERARCHICAL "By Task" mode', () => {
+      const trace = makeHierarchicalTrace();
+      render(<TimelineView trace={trace} />);
+      const labels = screen.getAllByTestId('timeline-lane-label');
+      expect(labels).toHaveLength(3);
+    });
+  });
+});
+
+// ========================
+// buildHistoricalByTaskLanes unit tests
+// ========================
+
+describe('buildHistoricalByTaskLanes', () => {
+  const base: TaskTrace = makeTaskTrace('T', 'A') as unknown as TaskTrace;
+
+  it('returns depth-0 lanes for non-HIERARCHICAL workflows', () => {
+    const traces = [
+      makeTaskTrace('Task 1', 'Agent A') as unknown as TaskTrace,
+      makeTaskTrace('Task 2', 'Agent B') as unknown as TaskTrace,
+    ];
+    const lanes = buildHistoricalByTaskLanes(traces, 'SEQUENTIAL');
+    expect(lanes).toHaveLength(2);
+    expect(lanes.every((l) => l.depth === 0)).toBe(true);
+  });
+
+  it('returns depth-0 lanes for PARALLEL workflow', () => {
+    const traces = [makeTaskTrace('T', 'A') as unknown as TaskTrace];
+    const lanes = buildHistoricalByTaskLanes(traces, 'PARALLEL');
+    expect(lanes[0].depth).toBe(0);
+  });
+
+  it('places Manager at depth 0 and workers at depth 1 for HIERARCHICAL workflow', () => {
+    const manager = { ...base, agentRole: 'Manager', taskDescription: 'Manage' } as unknown as TaskTrace;
+    const worker1 = { ...base, agentRole: 'Researcher', taskDescription: 'Research' } as unknown as TaskTrace;
+    const worker2 = { ...base, agentRole: 'Writer', taskDescription: 'Write' } as unknown as TaskTrace;
+    const lanes = buildHistoricalByTaskLanes([manager, worker1, worker2], 'HIERARCHICAL');
+    expect(lanes).toHaveLength(3);
+    expect(lanes[0].trace.agentRole).toBe('Manager');
+    expect(lanes[0].depth).toBe(0);
+    expect(lanes[1].depth).toBe(1);
+    expect(lanes[2].depth).toBe(1);
+  });
+
+  it('falls back to flat depth-0 rendering when no Manager task is found', () => {
+    const w1 = { ...base, agentRole: 'Worker A' } as unknown as TaskTrace;
+    const w2 = { ...base, agentRole: 'Worker B' } as unknown as TaskTrace;
+    const lanes = buildHistoricalByTaskLanes([w1, w2], 'HIERARCHICAL');
+    // No Manager -> all depth 0
+    expect(lanes.every((l) => l.depth === 0)).toBe(true);
+    expect(lanes).toHaveLength(2);
+  });
+
+  it('preserves input order for non-HIERARCHICAL traces', () => {
+    const t1 = { ...base, taskDescription: 'First' } as unknown as TaskTrace;
+    const t2 = { ...base, taskDescription: 'Second' } as unknown as TaskTrace;
+    const t3 = { ...base, taskDescription: 'Third' } as unknown as TaskTrace;
+    const lanes = buildHistoricalByTaskLanes([t1, t2, t3], 'SEQUENTIAL');
+    expect(lanes.map((l) => l.trace.taskDescription)).toEqual(['First', 'Second', 'Third']);
+  });
+
+  it('places Manager first regardless of input order', () => {
+    const worker = { ...base, agentRole: 'Worker', taskDescription: 'Work' } as unknown as TaskTrace;
+    const manager = { ...base, agentRole: 'Manager', taskDescription: 'Manage' } as unknown as TaskTrace;
+    // Worker comes before Manager in input
+    const lanes = buildHistoricalByTaskLanes([worker, manager], 'HIERARCHICAL');
+    expect(lanes[0].trace.agentRole).toBe('Manager');
+    expect(lanes[0].depth).toBe(0);
+    expect(lanes[1].trace.agentRole).toBe('Worker');
+    expect(lanes[1].depth).toBe(1);
   });
 });

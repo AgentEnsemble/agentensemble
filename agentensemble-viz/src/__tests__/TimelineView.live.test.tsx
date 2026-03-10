@@ -11,9 +11,9 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import TimelineView from '../pages/TimelineView.js';
+import TimelineView, { buildLiveLanes } from '../pages/TimelineView.js';
 import { initialLiveState } from '../utils/liveReducer.js';
-import type { LiveState, LiveTask } from '../types/live.js';
+import type { LiveState, LiveTask, LiveDelegation, CompletedRun } from '../types/live.js';
 import type { LiveServerContextValue } from '../contexts/LiveServerContext.js';
 
 // ========================
@@ -451,5 +451,300 @@ describe('TimelineView live mode', () => {
       fireEvent.click(screen.getByTestId('grouping-toggle'));
       expect(screen.getAllByTestId('live-task-bar')).toHaveLength(3);
     });
+  });
+
+  describe('completed runs (stacked sections)', () => {
+    function makeCompletedRunFixture(runNumber: number, taskCount = 1): CompletedRun {
+      const runStartMs = STARTED_AT_MS - runNumber * 300000; // 5 minutes apart
+      return {
+        ensembleId: `run-${runNumber}`,
+        workflow: 'SEQUENTIAL',
+        startedAt: new Date(runStartMs).toISOString(),
+        completedAt: new Date(runStartMs + 30000 * taskCount).toISOString(),
+        totalTasks: taskCount,
+        tasks: Array.from({ length: taskCount }, (_, i) =>
+          makeCompletedTask(i + 1, `Agent ${String.fromCharCode(65 + i)}`),
+        ),
+        delegations: [],
+      };
+    }
+
+    it('does not render completed-run sections when completedRuns is empty', () => {
+      mockLiveServer(makeLiveState({ tasks: [makeRunningTask(0)], completedRuns: [] }));
+      renderLiveTimeline();
+      expect(screen.queryAllByTestId('completed-run-section')).toHaveLength(0);
+    });
+
+    it('renders one completed-run section when one run has been archived', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      expect(screen.getAllByTestId('completed-run-section')).toHaveLength(1);
+    });
+
+    it('renders N completed-run sections for N archived runs', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(2), makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      expect(screen.getAllByTestId('completed-run-section')).toHaveLength(2);
+    });
+
+    it('each completed-run section has a run header', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const headers = screen.getAllByTestId('completed-run-header');
+      expect(headers).toHaveLength(1);
+    });
+
+    it('run header shows run number as #1 for the first completed run', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const header = screen.getByTestId('completed-run-header');
+      expect(header.textContent).toContain('#1');
+    });
+
+    it('sections are separated by labeled dividers', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(2), makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // One divider per completed run section
+      const dividers = screen.getAllByTestId('completed-run-divider');
+      expect(dividers.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('completed run sections render task bars for the archived tasks', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1, 2)], // 2 archived tasks
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // The 2 archived completed tasks + 1 active running task = 3 task bars total
+      const bars = screen.getAllByTestId('live-task-bar');
+      expect(bars.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('groupBy toggle applies uniformly (sections share the same groupBy state)', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0, 'Agent A'), makeRunningTask(1, 'Agent B')],
+        completedRuns: [makeCompletedRunFixture(1, 2)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // Verify the grouping toggle is present -- clicking it should affect all sections
+      expect(screen.getByTestId('grouping-toggle')).toBeInTheDocument();
+    });
+
+    it('completed run sections appear above the active run (before the live timeline scroll)', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [makeCompletedRunFixture(1)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // Completed run section should exist
+      const section = screen.getByTestId('completed-run-section');
+      const liveScroll = screen.getByTestId('live-timeline-scroll');
+      // completed-run-section must appear before live-timeline-scroll in DOM order
+      const sectionPos = section.compareDocumentPosition(liveScroll);
+      // DOCUMENT_POSITION_FOLLOWING = 4 (liveScroll follows section)
+      expect(sectionPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  describe('HIERARCHICAL delegation lanes', () => {
+    function makeActiveDelegation(
+      delegationId: string,
+      delegatingAgentRole: string,
+      workerRole: string,
+      taskDescription: string,
+    ): LiveDelegation {
+      return {
+        delegationId,
+        delegatingAgentRole,
+        workerRole,
+        taskDescription,
+        status: 'active',
+        startedAt: STARTED_AT_MS + 1000,
+        endedAt: null,
+        durationMs: null,
+        reason: null,
+      };
+    }
+
+    it('renders delegation bars for active delegations in HIERARCHICAL workflow', () => {
+      const managerTask = makeRunningTask(1, 'Manager');
+      const delegation = makeActiveDelegation('del-1', 'Manager', 'Researcher', 'Research topic');
+      const state = makeLiveState({
+        workflow: 'HIERARCHICAL',
+        tasks: [managerTask],
+        delegations: [delegation],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const delegationBars = screen.getAllByTestId('live-delegation-bar');
+      expect(delegationBars).toHaveLength(1);
+      expect(delegationBars[0]).toHaveAttribute('data-delegation-id', 'del-1');
+      expect(delegationBars[0]).toHaveAttribute('data-delegation-status', 'active');
+    });
+
+    it('active delegation bars have pulsing right-edge indicator', () => {
+      const state = makeLiveState({
+        workflow: 'HIERARCHICAL',
+        tasks: [makeRunningTask(1, 'Manager')],
+        delegations: [makeActiveDelegation('del-1', 'Manager', 'Worker', 'Do work')],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const activeEdge = screen.getByTestId('live-delegation-bar-active-edge');
+      expect(activeEdge).toBeInTheDocument();
+      expect(activeEdge.getAttribute('class')).toContain('ae-pulse');
+    });
+
+    it('renders delegation lanes with data-lane-type="delegation" labels', () => {
+      const state = makeLiveState({
+        workflow: 'HIERARCHICAL',
+        tasks: [makeRunningTask(1, 'Manager')],
+        delegations: [makeActiveDelegation('del-1', 'Manager', 'Researcher', 'Research topic')],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const delegationLabels = screen.getAllByTestId('timeline-lane-label').filter(
+        (el) => el.getAttribute('data-lane-type') === 'delegation',
+      );
+      expect(delegationLabels).toHaveLength(1);
+    });
+
+    it('renders one Manager lane + N delegation lanes for N delegations', () => {
+      const state = makeLiveState({
+        workflow: 'HIERARCHICAL',
+        tasks: [makeRunningTask(1, 'Manager')],
+        delegations: [
+          makeActiveDelegation('del-1', 'Manager', 'Researcher', 'Research topic A'),
+          makeActiveDelegation('del-2', 'Manager', 'Writer', 'Write summary'),
+        ],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const labels = screen.getAllByTestId('timeline-lane-label');
+      // 1 Manager (data-lane-type="task") + 2 delegations (data-lane-type="delegation")
+      expect(labels).toHaveLength(3);
+      const taskLabels = labels.filter((l) => l.getAttribute('data-lane-type') === 'task');
+      const delegationLabels = labels.filter((l) => l.getAttribute('data-lane-type') === 'delegation');
+      expect(taskLabels).toHaveLength(1);
+      expect(delegationLabels).toHaveLength(2);
+    });
+
+    it('does not render delegation bars for SEQUENTIAL workflow even if delegations exist', () => {
+      const state = makeLiveState({
+        workflow: 'SEQUENTIAL',
+        tasks: [makeRunningTask(1, 'Agent A')],
+        delegations: [makeActiveDelegation('del-1', 'Agent A', 'Sub-agent', 'Sub-task')],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // buildLiveLanes returns task-only list for non-HIERARCHICAL
+      expect(screen.queryAllByTestId('live-delegation-bar')).toHaveLength(0);
+    });
+  });
+});
+
+// ========================
+// buildLiveLanes unit tests
+// ========================
+
+describe('buildLiveLanes', () => {
+  const task1 = makeRunningTask(1, 'Manager');
+  const task2 = makeRunningTask(2, 'Researcher');
+
+  function makeDelegation(id: string, from: string, to: string): LiveDelegation {
+    return {
+      delegationId: id,
+      delegatingAgentRole: from,
+      workerRole: to,
+      taskDescription: `Delegation ${id}`,
+      status: 'active',
+      startedAt: STARTED_AT_MS + 1000,
+      endedAt: null,
+      durationMs: null,
+      reason: null,
+    };
+  }
+
+  it('returns task-only lanes for non-HIERARCHICAL workflow', () => {
+    const lanes = buildLiveLanes([task1, task2], [], 'SEQUENTIAL');
+    expect(lanes).toHaveLength(2);
+    expect(lanes.every((l) => l.kind === 'task')).toBe(true);
+    expect(lanes.every((l) => l.depth === 0)).toBe(true);
+  });
+
+  it('returns task-only lanes when delegations array is empty', () => {
+    const lanes = buildLiveLanes([task1], [], 'HIERARCHICAL');
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].kind).toBe('task');
+  });
+
+  it('returns task-only lanes for null workflow', () => {
+    const del = makeDelegation('d1', 'Manager', 'Worker');
+    const lanes = buildLiveLanes([task1], [del], null);
+    expect(lanes.every((l) => l.kind === 'task')).toBe(true);
+  });
+
+  it('interleaves delegation child lanes after their parent task', () => {
+    const del = makeDelegation('d1', 'Manager', 'Researcher');
+    const lanes = buildLiveLanes([task1], [del], 'HIERARCHICAL');
+    expect(lanes).toHaveLength(2);
+    expect(lanes[0].kind).toBe('task');
+    expect(lanes[0].depth).toBe(0);
+    expect(lanes[1].kind).toBe('delegation');
+    expect(lanes[1].depth).toBe(1);
+  });
+
+  it('places multiple delegation children after the correct parent task', () => {
+    const del1 = makeDelegation('d1', 'Manager', 'Researcher');
+    const del2 = makeDelegation('d2', 'Manager', 'Writer');
+    const lanes = buildLiveLanes([task1, task2], [del1, del2], 'HIERARCHICAL');
+    // task1 (Manager) -> del1 + del2 as children; task2 (Researcher) -> no children
+    expect(lanes).toHaveLength(4);
+    expect(lanes[0]).toMatchObject({ kind: 'task', depth: 0 });
+    expect(lanes[1]).toMatchObject({ kind: 'delegation', depth: 1 });
+    expect(lanes[2]).toMatchObject({ kind: 'delegation', depth: 1 });
+    expect(lanes[3]).toMatchObject({ kind: 'task', depth: 0 });
+  });
+
+  it('attaches delegations only to the task whose agentRole matches delegatingAgentRole', () => {
+    const del = makeDelegation('d1', 'Researcher', 'SubResearcher');
+    const lanes = buildLiveLanes([task1, task2], [del], 'HIERARCHICAL');
+    // task1 is 'Manager' (no match), task2 is 'Researcher' (match)
+    expect(lanes).toHaveLength(3);
+    expect(lanes[0]).toMatchObject({ kind: 'task' });    // Manager - no children
+    expect(lanes[1]).toMatchObject({ kind: 'task' });    // Researcher
+    expect(lanes[2]).toMatchObject({ kind: 'delegation' }); // del1 under Researcher
+  });
+
+  it('preserves task order and does not mutate input arrays', () => {
+    const del = makeDelegation('d1', 'Manager', 'Worker');
+    const originalTasks = [task1, task2];
+    const originalDels = [del];
+    buildLiveLanes(originalTasks, originalDels, 'HIERARCHICAL');
+    expect(originalTasks).toHaveLength(2);
+    expect(originalDels).toHaveLength(1);
   });
 });

@@ -120,19 +120,72 @@ The green/amber/red status bar below the header shows:
 
 If the connection drops, the client automatically reconnects with exponential backoff (1s, 2s, 4s, 8s, 16s, capped at 30s).
 
+## Multi-Run Batch Processor
+
+Attach a single `WebDashboard` to multiple sequential ensemble runs and watch all runs
+accumulate in the live timeline. Each completed run appears as a stacked read-only section
+above the active run, so you can compare durations and tool usage across iterations
+without losing history.
+
+```java
+import java.nio.file.Path;
+import net.agentensemble.Ensemble;
+import net.agentensemble.Task;
+import net.agentensemble.web.WebDashboard;
+
+// One dashboard for all runs. traceExportDir auto-exports each run as
+// traces/{ensembleId}.json so you can load them in the viz's static mode later.
+WebDashboard dashboard = WebDashboard.builder()
+    .port(7329)
+    .maxRetainedRuns(10)                         // keep up to 10 runs in the snapshot
+    .traceExportDir(Path.of("./traces"))         // auto-export each run's trace
+    .build();
+
+List<String> topics = List.of("AI trends", "Quantum computing", "Climate tech");
+
+for (String topic : topics) {
+    Ensemble.builder()
+        .chatLanguageModel(model)
+        .task(Task.of("Research " + topic))
+        .task(Task.of("Write a summary of " + topic + " research"))
+        .webDashboard(dashboard)
+        .build()
+        .run();
+    // Browser shows run N completed above run N+1 as it starts
+}
+
+// After all runs: browse trace files in ./traces/ or load them in the viz
+```
+
+Open `http://localhost:7329` and connect to the live server. As each run completes,
+the timeline adds a new read-only section showing that run's tasks. The Flow View
+provides a run selector dropdown to inspect the DAG of any past run.
+
 ## Configuration
 
 ```java
+import java.nio.file.Path;
 import java.time.Duration;
 import net.agentensemble.web.WebDashboard;
-import net.agentensemble.web.OnTimeoutAction;
+import net.agentensemble.review.OnTimeoutAction;
 
 WebDashboard dashboard = WebDashboard.builder()
-    .port(7329)                          // default: 7329
-    .host("localhost")                   // default: localhost (local-only)
-    .reviewTimeout(Duration.ofMinutes(5)) // default: 5 minutes
-    .onTimeout(OnTimeoutAction.CONTINUE)  // default: CONTINUE
+    .port(7329)                                    // default: 7329
+    .host("localhost")                             // default: localhost (local-only)
+    .reviewTimeout(Duration.ofMinutes(5))          // default: 5 minutes
+    .onTimeout(OnTimeoutAction.CONTINUE)           // default: CONTINUE
+    .maxRetainedRuns(10)                           // default: 10
+    .traceExportDir(Path.of("./traces"))           // default: null (disabled)
     .build();
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `port` | `int` | required | Listening TCP port. |
+| `host` | `String` | `"localhost"` | Network interface to bind. |
+| `reviewTimeout` | `Duration` | 5 minutes | Timeout for browser review decisions. |
+| `onTimeout` | `OnTimeoutAction` | `CONTINUE` | Action when review times out. |
+| `maxRetainedRuns` | `int` | `10` | Maximum number of completed runs retained in the late-join snapshot. |
+| `traceExportDir` | `Path` | `null` | Directory for automatic per-run trace export. Null disables export. |
 
 See `docs/guides/live-dashboard.md` for the full configuration reference.

@@ -1,5 +1,6 @@
 package net.agentensemble.trace.export;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import net.agentensemble.trace.ExecutionTrace;
@@ -71,6 +72,9 @@ public class JsonTraceExporter implements ExecutionTraceExporter {
     public void export(ExecutionTrace trace) {
         Path target = resolveTarget(trace);
         try {
+            if (directoryMode) {
+                Files.createDirectories(outputPath);
+            }
             trace.toJson(target);
             log.debug("Execution trace written to {}", target);
         } catch (Exception e) {

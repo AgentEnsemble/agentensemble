@@ -3,6 +3,7 @@ package net.agentensemble.dashboard;
 import java.time.Instant;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.review.ReviewHandler;
+import net.agentensemble.trace.export.ExecutionTraceExporter;
 
 /**
  * SPI for an external execution dashboard that can be wired into an {@link net.agentensemble.Ensemble}
@@ -102,6 +103,25 @@ public interface EnsembleDashboard extends AutoCloseable {
      * @return true when running
      */
     boolean isRunning();
+
+    /**
+     * Returns an {@link ExecutionTraceExporter} to be auto-wired by the ensemble when
+     * {@link net.agentensemble.Ensemble.EnsembleBuilder#webDashboard(EnsembleDashboard)} is
+     * called and no explicit {@code traceExporter} has been configured on the builder.
+     *
+     * <p>When non-null, the returned exporter is registered automatically by the ensemble
+     * builder so that each run exports a trace file without requiring the caller to also
+     * call {@code Ensemble.builder().traceExporter(...)} separately.
+     *
+     * <p>Default implementation returns {@code null} (no automatic trace export).
+     * Concrete implementations (e.g. {@code WebDashboard}) override this when
+     * {@code traceExportDir} is configured on the builder.
+     *
+     * @return an exporter, or {@code null} when no automatic export is desired
+     */
+    default ExecutionTraceExporter traceExporter() {
+        return null;
+    }
 
     /**
      * Called by the {@link net.agentensemble.Ensemble} executor before the first task

@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased] - 2026-03-10
+### Fixed
+- ConnectionManager constructor now validates `maxRetainedRuns >= 1` and `serializer != null`; `appendToSnapshot` truly drops pre-run messages (no implicit lazy-create)
+- WebDashboard.java Javadoc: `traceExportDir` field now says `{ensembleId}.json` (was `.trace.json`)
+- docs/examples/live-dashboard.md: fixed import for `OnTimeoutAction` (`net.agentensemble.review`, was `net.agentensemble.web`)
+- live.ts: `CompletedRun.tasks/delegations` docstrings reflect shallow-copy semantics
+- liveReducer.ts: `applyDelegationCompleted` derives `endedAt = startedAt + durationMs` for accurate bar positioning
+- TimelineView.tsx: `CompletedRunSection` uses `buildLiveLanes` so HIERARCHICAL archived runs include delegation sub-lanes; `buildLiveLanes` pre-groups delegations by role (O(1) per task instead of O(tasks*delegations))
+- FlowView.tsx: `displayedState` splits into `completedRunState` memo + `liveState` fallback, avoiding DAG re-layouts on every live update while a completed run is selected
+
+### Added
+- TimelineView.tsx: `CompletedRunList` component eliminates duplicated `completedRuns.map()` + divider rendering
+- ConnectionManagerTest: constructor validation tests + pre-run message drop test
+- EnsembleDashboardLifecycleTest: `webDashboard` auto-wires dashboard's `traceExporter`; explicit exporter is not overridden
+
+# Changelog
+
+## [Unreleased] - Hierarchical task rendering in dashboard -- 2026-03-10
+
+### Fixed
+- **HIERARCHICAL workflow tasks rendered as single line in dashboard**: delegation events
+  were previously ignored; workers are now rendered as indented child lanes beneath the Manager.
+
+### Added (agentensemble-viz)
+- `LiveDelegation` type and `delegations: LiveDelegation[]` on `LiveState` and `CompletedRun`
+- `liveReducer` handles `delegation_started` / `delegation_completed` / `delegation_failed`
+  messages and tracks per-delegation status, timing, and reason
+- `buildHistoricalByTaskLanes()` -- puts Manager at depth 0, workers at depth 1 for
+  `HIERARCHICAL` workflow in the historical timeline "By Task" view
+- `buildLiveLanes()` -- interleaves `LiveDelegation` sub-lanes after their parent task in
+  the live timeline "By Task" view for `HIERARCHICAL` workflow
+- `DelegationLaneLabel` SVG component -- indented two-line label with L-shape bracket connector
+- `LiveDelegationBarGroup` SVG component -- dashed timing bar with active pulse indicator
+- 20 new tests: delegation reducer handlers, `buildHistoricalByTaskLanes`, `buildLiveLanes`,
+  delegation lane rendering in `TimelineView`
+
+---
+
 ## [Unreleased] - "Why AgentEnsemble?" comparison content -- 2026-03-09
 
 ### Added (site, README, docs)
@@ -2069,6 +2107,21 @@ Key design decisions:
 - `docs/reference/ensemble-configuration.md`: adaptive fields, updated methods table
 
 ## [Unreleased]
+
+### Added (Issue #179, PR #180)
+- `EnsembleDashboard.traceExporter()` default method in core SPI
+- `WebDashboard.builder().traceExportDir(Path)` -- convenience shortcut; auto-wires `JsonTraceExporter` via `Ensemble.builder().webDashboard()`
+- `WebDashboard.builder().maxRetainedRuns(int)` -- cap on per-run snapshot retention (default 10)
+- `ConnectionManager` per-run snapshot storage: `List<List<String>> runSnapshots` with `maxRetainedRuns` eviction
+- `CompletedRun` type in `live.ts`; `completedRuns: CompletedRun[]` field on `LiveState`
+- `liveReducer` archives current run into `completedRuns` on `ensemble_started` when tasks exist
+- `CompletedRunSection` React component: stacked read-only timeline sections above the active run
+- `LiveFlowViewInner` run selector dropdown to inspect any completed run's DAG
+- `JsonTraceExporter` auto-creates output directory in directory mode
+
+### Fixed
+- `JsonTraceExporter` export now creates the output directory if it does not exist
+
 
 ### Fixed (PR #144 Copilot review fixes -- commit d1a7604)
 - `live.ts`: Aligned `HelloMessage` fields with Java protocol (`ensembleId`/`startedAt`

@@ -23,6 +23,7 @@ import net.agentensemble.Task;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.trace.export.ExecutionTraceExporter;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
@@ -255,6 +256,62 @@ class EnsembleDashboardLifecycleTest {
         // (e.g. Playwright connecting after run() completes) receive full event history.
         verify(dashboard).onEnsembleStarted(any(), any(), anyInt(), any());
         verify(dashboard).onEnsembleCompleted(any(), any(), anyLong(), any(), anyLong(), anyInt());
+    }
+
+    // ========================
+    // traceExporter auto-wiring via webDashboard
+    // ========================
+
+    @Test
+    void webDashboard_autoWiresDashboardTraceExporterWhenNoExplicitExporterConfigured() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Done."));
+
+        EnsembleDashboard dashboard = mock(EnsembleDashboard.class);
+        when(dashboard.isRunning()).thenReturn(false);
+        when(dashboard.streamingListener()).thenReturn(mock(EnsembleListener.class));
+
+        // Dashboard provides a trace exporter (e.g. configured via traceExportDir)
+        ExecutionTraceExporter dashboardExporter = mock(ExecutionTraceExporter.class);
+        when(dashboard.traceExporter()).thenReturn(dashboardExporter);
+
+        Ensemble.builder()
+                .chatLanguageModel(mockLlm)
+                .webDashboard(dashboard) // auto-wires dashboardExporter since no explicit exporter set
+                .task(Task.of("Research AI trends"))
+                .build()
+                .run();
+
+        // The dashboard's exporter must be used since no explicit traceExporter was set
+        verify(dashboardExporter).export(any());
+    }
+
+    @Test
+    void webDashboard_doesNotOverrideExplicitlyConfiguredTraceExporter() {
+        var mockLlm = mock(ChatModel.class);
+        when(mockLlm.chat(any(ChatRequest.class))).thenReturn(textResponse("Done."));
+
+        EnsembleDashboard dashboard = mock(EnsembleDashboard.class);
+        when(dashboard.isRunning()).thenReturn(false);
+        when(dashboard.streamingListener()).thenReturn(mock(EnsembleListener.class));
+
+        ExecutionTraceExporter dashboardExporter = mock(ExecutionTraceExporter.class);
+        when(dashboard.traceExporter()).thenReturn(dashboardExporter);
+
+        // An explicit exporter is set BEFORE webDashboard() -- it must not be overridden
+        ExecutionTraceExporter explicitExporter = mock(ExecutionTraceExporter.class);
+
+        Ensemble.builder()
+                .chatLanguageModel(mockLlm)
+                .traceExporter(explicitExporter) // set before webDashboard
+                .webDashboard(dashboard) // must not override explicit exporter
+                .task(Task.of("Research AI trends"))
+                .build()
+                .run();
+
+        // The explicit exporter must be used; the dashboard's exporter must NOT be invoked
+        verify(explicitExporter).export(any());
+        verify(dashboardExporter, never()).export(any());
     }
 
     // ========================

@@ -12,6 +12,8 @@
 import type {
   LiveState,
   LiveTask,
+  LiveDelegation,
+  CompletedRun,
   ServerMessage,
   HelloMessage,
   EnsembleStartedMessage,
@@ -19,6 +21,9 @@ import type {
   TaskCompletedMessage,
   TaskFailedMessage,
   ToolCalledMessage,
+  DelegationStartedMessage,
+  DelegationCompletedMessage,
+  DelegationFailedMessage,
   TokenMessage,
   ReviewRequestedMessage,
   ReviewTimedOutMessage,
@@ -36,8 +41,10 @@ export const initialLiveState: LiveState = {
   completedAt: null,
   totalTasks: 0,
   tasks: [],
+  delegations: [],
   pendingReviews: [],
   ensembleComplete: false,
+  completedRuns: [],
 };
 
 // ========================
@@ -110,6 +117,26 @@ function applyHello(state: LiveState, msg: HelloMessage): LiveState {
 }
 
 function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): LiveState {
+  // If the current run has tasks (i.e. at least one task_started was received), archive it
+  // into completedRuns before resetting. Skip archiving when tasks is empty to avoid
+  // creating empty CompletedRun entries from race conditions (a second ensemble_started
+  // arriving before the first task_started has been dispatched).
+  let updatedCompletedRuns = state.completedRuns;
+  if (state.tasks.length > 0) {
+    const archivedRun: CompletedRun = {
+      ensembleId: state.ensembleId,
+      workflow: state.workflow,
+      startedAt: state.startedAt,
+      completedAt: state.completedAt,
+      totalTasks: state.totalTasks,
+      // Shallow copy of the tasks array -- each LiveTask is already immutable
+      tasks: [...state.tasks],
+      // Shallow copy of the delegations array -- each LiveDelegation is already immutable
+      delegations: [...state.delegations],
+    };
+    updatedCompletedRuns = [...state.completedRuns, archivedRun];
+  }
+
   return {
     ...state,
     ensembleId: msg.ensembleId,
@@ -117,9 +144,11 @@ function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): Li
     startedAt: msg.startedAt,
     totalTasks: msg.totalTasks,
     tasks: [],
+    delegations: [],
     pendingReviews: [],
     ensembleComplete: false,
     completedAt: null,
+    completedRuns: updatedCompletedRuns,
   };
 }
 
@@ -317,6 +346,87 @@ function applyEnsembleCompleted(state: LiveState, msg: EnsembleCompletedMessage)
 }
 
 // ========================
+// Delegation handlers
+// ========================
+
+/**
+ * Append a new active delegation when delegation_started arrives.
+ *
+ * Uses client-side Date.now() for startedAt since the server does not
+ * include a timestamp in DelegationStartedMessage. This is sufficient for
+ * positioning the delegation bar relative to task_started timestamps.
+ */
+function applyDelegationStarted(state: LiveState, msg: DelegationStartedMessage): LiveState {
+  const delegation: LiveDelegation = {
+    delegationId: msg.delegationId,
+    delegatingAgentRole: msg.delegatingAgentRole,
+    workerRole: msg.workerRole,
+    taskDescription: msg.taskDescription,
+    status: 'active',
+    startedAt: Date.now(),
+    endedAt: null,
+    durationMs: null,
+    reason: null,
+  };
+  return { ...state, delegations: [...state.delegations, delegation] };
+}
+
+/**
+ * Mark the matching delegation as completed when delegation_completed arrives.
+ *
+ * Derives endedAt from startedAt + durationMs so the rendered bar reflects
+ * the server-measured worker duration rather than client-side wall-clock time
+ * (which would include network and processing latency).
+ */
+function applyDelegationCompleted(state: LiveState, msg: DelegationCompletedMessage): LiveState {
+  let idx = -1;
+  for (let i = state.delegations.length - 1; i >= 0; i--) {
+    if (state.delegations[i].delegationId === msg.delegationId) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx === -1) return state;
+
+  const updated: LiveDelegation = {
+    ...state.delegations[idx],
+    status: 'completed',
+    endedAt: state.delegations[idx].startedAt + msg.durationMs,
+    durationMs: msg.durationMs,
+  };
+  const delegations = [...state.delegations];
+  delegations[idx] = updated;
+  return { ...state, delegations };
+}
+
+/**
+ * Mark the matching delegation as failed when delegation_failed arrives.
+ *
+ * Searches from the end to match the most recent delegation with the same
+ * ID (handles edge cases where duplicate IDs are sent due to retries).
+ */
+function applyDelegationFailed(state: LiveState, msg: DelegationFailedMessage): LiveState {
+  let idx = -1;
+  for (let i = state.delegations.length - 1; i >= 0; i--) {
+    if (state.delegations[i].delegationId === msg.delegationId) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx === -1) return state;
+
+  const updated: LiveDelegation = {
+    ...state.delegations[idx],
+    status: 'failed',
+    endedAt: Date.now(),
+    reason: msg.reason,
+  };
+  const delegations = [...state.delegations];
+  delegations[idx] = updated;
+  return { ...state, delegations };
+}
+
+// ========================
 // Main reducer
 // ========================
 
@@ -351,8 +461,13 @@ export function liveReducer(state: LiveState, message: ServerMessage): LiveState
       return applyEnsembleCompleted(state, message);
     case 'token':
       return applyToken(state, message);
-    // delegation_started, delegation_completed, delegation_failed, heartbeat, pong:
-    // No state change needed for core live rendering.
+    case 'delegation_started':
+      return applyDelegationStarted(state, message);
+    case 'delegation_completed':
+      return applyDelegationCompleted(state, message);
+    case 'delegation_failed':
+      return applyDelegationFailed(state, message);
+    // heartbeat, pong: no state change needed.
     default:
       return state;
   }

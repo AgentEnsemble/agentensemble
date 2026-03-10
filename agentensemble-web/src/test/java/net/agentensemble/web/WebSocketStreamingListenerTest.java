@@ -436,6 +436,9 @@ class WebSocketStreamingListenerTest {
     void broadcastBuildsSnapshotIncrementally() {
         // Each call to broadcast() should add to the snapshot in ConnectionManager.
         // After 3 events, the snapshot should contain all 3 messages.
+        // noteEnsembleStarted must be called first -- appendToSnapshot silently drops
+        // pre-run messages (i.e. messages before a run has started).
+        connectionManager.noteEnsembleStarted("ens-snap", java.time.Instant.now());
         listener.onTaskStart(new TaskStartEvent("Task 1", "Agent A", 1, 3));
         listener.onTaskStart(new TaskStartEvent("Task 2", "Agent B", 2, 3));
         listener.onTaskStart(new TaskStartEvent("Task 3", "Agent C", 3, 3));
