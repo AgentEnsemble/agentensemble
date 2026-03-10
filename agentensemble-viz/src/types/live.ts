@@ -66,6 +66,75 @@ export interface LiveTask {
 }
 
 // ========================
+// Live delegation state
+// ========================
+
+/** Execution status of a single delegation in live mode. */
+export type LiveDelegationStatus = 'active' | 'completed' | 'failed';
+
+/**
+ * Live state for a single agent-to-agent delegation, built from
+ * delegation_started / delegation_completed / delegation_failed messages.
+ *
+ * Used by LiveTimelineView to render indented worker lanes beneath the
+ * parent (delegating) agent lane in HIERARCHICAL workflow runs.
+ */
+export interface LiveDelegation {
+  /** Unique correlation ID shared across start, completed, and failed events. */
+  delegationId: string;
+  /** Role of the agent that initiated the delegation (typically "Manager"). */
+  delegatingAgentRole: string;
+  /** Role of the worker agent receiving the delegated task. */
+  workerRole: string;
+  /** Description of the delegated sub-task. */
+  taskDescription: string;
+  /** Current status of this delegation. */
+  status: LiveDelegationStatus;
+  /** Client-side epoch ms when delegation_started was received. */
+  startedAt: number;
+  /** Client-side epoch ms when delegation_completed or delegation_failed was received. */
+  endedAt: number | null;
+  /** Duration in ms from delegation_completed message. Null until completed. */
+  durationMs: number | null;
+  /** Failure reason from delegation_failed message. Null unless failed. */
+  reason: string | null;
+}
+
+// ========================
+// Completed run (archived from live state when a new run starts)
+// ========================
+
+/**
+ * A snapshot of a completed ensemble run archived when the next run starts.
+ * Used to render stacked read-only timeline sections in the live view.
+ */
+export interface CompletedRun {
+  /** Ensemble ID of the completed run, or null when not yet received. */
+  ensembleId: string | null;
+  /** Workflow strategy used for this run. */
+  workflow: string | null;
+  /** ISO-8601 timestamp when this run started. */
+  startedAt: string | null;
+  /** ISO-8601 timestamp when this run completed. Null when the run ended without ensemble_completed. */
+  completedAt: string | null;
+  /** Total expected task count from ensemble_started. */
+  totalTasks: number;
+  /**
+   * Snapshot of the tasks at the time the run was archived.
+   * The tasks array itself is shallow-copied; LiveTask objects within (and their nested
+   * arrays such as toolCalls) are shared with the live state until they are replaced
+   * by the next ensemble_started.
+   */
+  tasks: LiveTask[];
+  /**
+   * Snapshot of the delegations at the time the run was archived (HIERARCHICAL workflow).
+   * The delegations array itself is shallow-copied; LiveDelegation objects within are
+   * shared with the live state until they are replaced by the next ensemble_started.
+   */
+  delegations: LiveDelegation[];
+}
+
+// ========================
 // Pending reviews
 // ========================
 
@@ -105,10 +174,22 @@ export interface LiveState {
   totalTasks: number;
   /** Tasks accumulated in task_started arrival order. */
   tasks: LiveTask[];
+  /**
+   * Delegations accumulated in delegation_started arrival order (HIERARCHICAL workflow).
+   * Each entry tracks one manager-to-worker delegation with live status.
+   */
+  delegations: LiveDelegation[];
   /** Pending review requests not yet answered. */
   pendingReviews: LiveReviewRequest[];
   /** True after ensemble_completed is received. */
   ensembleComplete: boolean;
+  /**
+   * Archived completed runs, in chronological order (oldest first).
+   * Each entry is a snapshot of a prior run captured when the next run's
+   * ensemble_started message was received. Used to render stacked read-only
+   * timeline sections above the active run.
+   */
+  completedRuns: CompletedRun[];
 }
 
 // ========================
