@@ -1,6 +1,7 @@
 package net.agentensemble.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
@@ -440,6 +441,48 @@ class ConnectionManagerTest {
         connectionManager.onDisconnect("session-1");
 
         assertThat(future.isDone()).isFalse();
+    }
+
+    // ========================
+    // Constructor validation
+    // ========================
+
+    @Test
+    void constructor_throwsNullPointerException_whenSerializerIsNull() {
+        assertThatThrownBy(() -> new ConnectionManager(null, 1))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("serializer");
+    }
+
+    @Test
+    void constructor_throwsIllegalArgumentException_whenMaxRetainedRunsIsZero() {
+        assertThatThrownBy(() -> new ConnectionManager(serializer, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedRuns");
+    }
+
+    @Test
+    void constructor_throwsIllegalArgumentException_whenMaxRetainedRunsIsNegative() {
+        assertThatThrownBy(() -> new ConnectionManager(serializer, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedRuns");
+    }
+
+    @Test
+    void appendToSnapshot_beforeNoteEnsembleStarted_messagesAreSilentlyDropped() {
+        // Messages appended before noteEnsembleStarted() must be silently dropped.
+        // A late-joining client must NOT see pre-run messages in the snapshot.
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_completed\",\"taskIndex\":1}");
+
+        MockWsSession session = new MockWsSession("session-pre-run");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // Snapshot must not appear and pre-run messages must not be in the hello payload
+        assertThat(helloJson).doesNotContain("snapshotTrace");
+        assertThat(helloJson).doesNotContain("task_started");
+        assertThat(helloJson).doesNotContain("task_completed");
     }
 
     @Test

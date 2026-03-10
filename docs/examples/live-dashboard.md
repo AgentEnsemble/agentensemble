@@ -167,7 +167,7 @@ provides a run selector dropdown to inspect the DAG of any past run.
 import java.nio.file.Path;
 import java.time.Duration;
 import net.agentensemble.web.WebDashboard;
-import net.agentensemble.web.OnTimeoutAction;
+import net.agentensemble.review.OnTimeoutAction;
 
 WebDashboard dashboard = WebDashboard.builder()
     .port(7329)                                    // default: 7329

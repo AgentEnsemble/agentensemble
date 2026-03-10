@@ -119,9 +119,18 @@ export interface CompletedRun {
   completedAt: string | null;
   /** Total expected task count from ensemble_started. */
   totalTasks: number;
-  /** Deep copy of the tasks at the time the run was archived. */
+  /**
+   * Snapshot of the tasks at the time the run was archived.
+   * The tasks array itself is shallow-copied; LiveTask objects within (and their nested
+   * arrays such as toolCalls) are shared with the live state until they are replaced
+   * by the next ensemble_started.
+   */
   tasks: LiveTask[];
-  /** Deep copy of the delegations at the time the run was archived (HIERARCHICAL workflow). */
+  /**
+   * Snapshot of the delegations at the time the run was archived (HIERARCHICAL workflow).
+   * The delegations array itself is shallow-copied; LiveDelegation objects within are
+   * shared with the live state until they are replaced by the next ensemble_started.
+   */
   delegations: LiveDelegation[];
 }
 

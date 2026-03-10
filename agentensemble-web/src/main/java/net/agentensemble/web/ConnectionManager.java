@@ -84,8 +84,16 @@ class ConnectionManager {
      * @param serializer       the message serializer; must not be null
      * @param maxRetainedRuns  maximum number of completed runs to retain in the late-join snapshot;
      *                         must be &ge; 1
+     * @throws NullPointerException     when {@code serializer} is null
+     * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1
      */
     ConnectionManager(MessageSerializer serializer, int maxRetainedRuns) {
+        if (serializer == null) {
+            throw new NullPointerException("serializer must not be null");
+        }
+        if (maxRetainedRuns < 1) {
+            throw new IllegalArgumentException("maxRetainedRuns must be >= 1; got: " + maxRetainedRuns);
+        }
         this.serializer = serializer;
         this.maxRetainedRuns = maxRetainedRuns;
     }
@@ -179,24 +187,16 @@ class ConnectionManager {
      *
      * <p>Thread-safe: the current run's {@link CopyOnWriteArrayList#add} is atomic.
      * If no run has started yet (i.e. {@link #noteEnsembleStarted} has not been called),
-     * the message is silently dropped.
+     * the message is silently dropped -- pre-run messages carry no meaning for late-join
+     * replay and must not be stored.
      *
      * @param messageJson the serialized JSON message that was just broadcast; must not be null
      */
     void appendToSnapshot(String messageJson) {
         CopyOnWriteArrayList<String> current = currentRunMessages;
         if (current == null) {
-            // appendToSnapshot called before noteEnsembleStarted (e.g. during streaming listener
-            // tests or when messages are broadcast before the ensemble lifecycle begins).
-            // Lazy-create an implicit pre-run list using double-checked locking.
-            synchronized (runSnapshots) {
-                current = currentRunMessages;
-                if (current == null) {
-                    current = new CopyOnWriteArrayList<>();
-                    runSnapshots.add(current);
-                    currentRunMessages = current;
-                }
-            }
+            // noteEnsembleStarted has not been called yet; silently drop the message.
+            return;
         }
         current.add(messageJson);
     }

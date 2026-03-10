@@ -303,10 +303,18 @@ export function buildLiveLanes(
   if (workflow !== 'HIERARCHICAL' || delegations.length === 0) {
     return tasks.map((task) => ({ kind: 'task' as const, task, depth: 0 as const }));
   }
+  // Pre-group delegations by delegatingAgentRole for O(1) per-task lookup instead of
+  // iterating the full delegations array for every task (O(tasks * delegations)).
+  const delegationsByRole = new Map<string, LiveDelegation[]>();
+  for (const d of delegations) {
+    const list = delegationsByRole.get(d.delegatingAgentRole) ?? [];
+    list.push(d);
+    delegationsByRole.set(d.delegatingAgentRole, list);
+  }
   const lanes: LiveLane[] = [];
   for (const task of tasks) {
     lanes.push({ kind: 'task', task, depth: 0 });
-    const children = delegations.filter((d) => d.delegatingAgentRole === task.agentRole);
+    const children = delegationsByRole.get(task.agentRole) ?? [];
     for (const delegation of children) {
       lanes.push({ kind: 'delegation', delegation, depth: 1 });
     }
@@ -815,9 +823,16 @@ function CompletedRunSection({
     return map;
   }, [run.tasks]);
 
+  // Build lane list including delegation sub-lanes for HIERARCHICAL runs so that
+  // CompletedRunSection lane count and bar rendering matches the active-run view.
+  const completedLanes = useMemo(
+    () => buildLiveLanes(run.tasks, run.delegations, run.workflow),
+    [run.tasks, run.delegations, run.workflow],
+  );
+
   const svgWidth = 900;
   const chartWidth = svgWidth - LABEL_WIDTH;
-  const laneCount = groupBy === 'task' ? run.tasks.length : agentRoles.length;
+  const laneCount = groupBy === 'task' ? completedLanes.length : agentRoles.length;
   const svgHeight = Math.max(1, laneCount) * LANE_HEIGHT + HEADER_HEIGHT + 10;
 
   const toX = useCallback(
@@ -870,11 +885,36 @@ function CompletedRunSection({
           className="bg-white dark:bg-gray-900"
         >
           {groupBy === 'task'
-            ? run.tasks.map((task, i) => {
+            ? completedLanes.map((lane, i) => {
                 const y = HEADER_HEIGHT + i * LANE_HEIGHT;
-                const color = getAgentColor(task.agentRole);
                 const barY = y + LANE_PADDING;
                 const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                if (lane.kind === 'delegation') {
+                  const { delegation } = lane;
+                  const color = getAgentColor(delegation.workerRole);
+                  return (
+                    <g key={`del-${delegation.delegationId}`} data-lane-depth={1}>
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.04)} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                      <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <DelegationLaneLabel
+                        delegation={{ workerRole: delegation.workerRole, taskDescription: delegation.taskDescription }}
+                        y={y}
+                        color={color}
+                      />
+                      <LiveDelegationBarGroup
+                        delegation={delegation}
+                        barY={barY}
+                        barH={barH}
+                        nowMs={runEndMs}
+                        color={color}
+                        toX={toX}
+                      />
+                    </g>
+                  );
+                }
+                const { task } = lane;
+                const color = getAgentColor(task.agentRole);
                 return (
                   <g key={`task-${task.taskIndex}`}>
                     <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
@@ -948,6 +988,37 @@ function CompletedRunSection({
         </svg>
       </div>
     </div>
+  );
+}
+
+/**
+ * Renders stacked completed run sections with dividers.
+ * Extracted to eliminate duplication between the empty-state and normal branches
+ * of LiveTimelineView; both code paths render the completed run history identically.
+ */
+function CompletedRunList({
+  completedRuns,
+  groupBy,
+}: {
+  completedRuns: CompletedRun[];
+  groupBy: GroupBy;
+}) {
+  return (
+    <>
+      {completedRuns.map((run, i) => (
+        <React.Fragment key={run.ensembleId ?? `completed-run-${i}`}>
+          <CompletedRunSection run={run} runNumber={i + 1} groupBy={groupBy} />
+          <div
+            data-testid="completed-run-divider"
+            className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-1 dark:border-gray-700 dark:bg-gray-800"
+          >
+            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            <span className="text-xs text-gray-400 dark:text-gray-500">Run {i + 1} completed</span>
+            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+          </div>
+        </React.Fragment>
+      ))}
+    </>
   );
 }
 
@@ -1079,19 +1150,7 @@ function LiveTimelineView() {
           groupBy={groupBy}
           onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
-        {completedRuns.map((run, i) => (
-          <React.Fragment key={run.ensembleId ?? `completed-run-${i}`}>
-            <CompletedRunSection run={run} runNumber={i + 1} groupBy={groupBy} />
-            <div
-              data-testid="completed-run-divider"
-              className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-1 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-              <span className="text-xs text-gray-400 dark:text-gray-500">Run {i + 1} completed</span>
-              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-            </div>
-          </React.Fragment>
-        ))}
+        <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
         <div className="flex flex-1 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
           Waiting for tasks to start...
         </div>
@@ -1114,19 +1173,7 @@ function LiveTimelineView() {
         />
 
         {/* Stacked completed run sections above the active run */}
-        {completedRuns.map((run, i) => (
-          <React.Fragment key={run.ensembleId ?? `completed-run-${i}`}>
-            <CompletedRunSection run={run} runNumber={i + 1} groupBy={groupBy} />
-            <div
-              data-testid="completed-run-divider"
-              className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-1 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-              <span className="text-xs text-gray-400 dark:text-gray-500">Run {i + 1} completed</span>
-              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-            </div>
-          </React.Fragment>
-        ))}
+        <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
 
         {/* Active run scrollable SVG */}
         <div

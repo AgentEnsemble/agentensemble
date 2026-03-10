@@ -216,25 +216,30 @@ function LiveFlowViewInner() {
    */
   const [viewRunIndex, setViewRunIndex] = useState<number | null>(null);
 
-  // Build the DAG for the currently viewed run. When viewRunIndex is null (default),
-  // show the active run. When a completed run is selected, build its DAG from
-  // a synthetic LiveState constructed from the archived task data.
-  const displayedState = useMemo(() => {
-    if (viewRunIndex === null || viewRunIndex >= liveState.completedRuns.length) {
-      return liveState;
-    }
-    const run = liveState.completedRuns[viewRunIndex];
-    return {
-      ...initialLiveState,
-      ensembleId: run.ensembleId,
-      workflow: run.workflow,
-      startedAt: run.startedAt,
-      completedAt: run.completedAt,
-      totalTasks: run.totalTasks,
-      tasks: run.tasks,
-      ensembleComplete: true,
-    };
-  }, [viewRunIndex, liveState]);
+  // Stable snapshot of the selected completed run, or null when viewing the active run.
+  // Computing this in a separate memo prevents the DAG from being re-laid out on every
+  // live update (tokens, delegations, etc.) while the user is inspecting a past run.
+  const completedRunState = useMemo(
+    () =>
+      viewRunIndex !== null && viewRunIndex < liveState.completedRuns.length
+        ? {
+            ...initialLiveState,
+            ensembleId: liveState.completedRuns[viewRunIndex].ensembleId,
+            workflow: liveState.completedRuns[viewRunIndex].workflow,
+            startedAt: liveState.completedRuns[viewRunIndex].startedAt,
+            completedAt: liveState.completedRuns[viewRunIndex].completedAt,
+            totalTasks: liveState.completedRuns[viewRunIndex].totalTasks,
+            tasks: liveState.completedRuns[viewRunIndex].tasks,
+            ensembleComplete: true,
+          }
+        : null,
+    [viewRunIndex, liveState.completedRuns],
+  );
+
+  // When a completed run is selected, use its frozen state so live updates to the active
+  // run do not cause unnecessary DAG re-layouts. When no completed run is selected, fall
+  // back to the full live state to keep the active-run DAG current.
+  const displayedState = completedRunState ?? liveState;
 
   // Build synthetic DagModel from the displayed state
   const dag = useMemo(() => buildSyntheticDagModel(displayedState), [displayedState]);

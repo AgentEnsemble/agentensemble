@@ -98,7 +98,7 @@ public final class WebDashboard implements EnsembleDashboard {
 
     /**
      * Optional directory to which each run's trace is exported as
-     * {@code {ensembleId}.trace.json}. Null when no automatic export is desired.
+     * {@code {ensembleId}.json}. Null when no automatic export is desired.
      */
     private final Path traceExportDir;
 

@@ -374,8 +374,9 @@ function applyDelegationStarted(state: LiveState, msg: DelegationStartedMessage)
 /**
  * Mark the matching delegation as completed when delegation_completed arrives.
  *
- * Uses the durationMs from the server message (wall-clock duration of the
- * worker execution as measured by DelegateTaskTool) to update endedAt.
+ * Derives endedAt from startedAt + durationMs so the rendered bar reflects
+ * the server-measured worker duration rather than client-side wall-clock time
+ * (which would include network and processing latency).
  */
 function applyDelegationCompleted(state: LiveState, msg: DelegationCompletedMessage): LiveState {
   let idx = -1;
@@ -390,7 +391,7 @@ function applyDelegationCompleted(state: LiveState, msg: DelegationCompletedMess
   const updated: LiveDelegation = {
     ...state.delegations[idx],
     status: 'completed',
-    endedAt: Date.now(),
+    endedAt: state.delegations[idx].startedAt + msg.durationMs,
     durationMs: msg.durationMs,
   };
   const delegations = [...state.delegations];

@@ -953,6 +953,7 @@ describe('liveReducer', () => {
 
   describe('delegation_completed', () => {
     it('marks the matching active delegation as completed with durationMs', () => {
+      const startedAt = Date.now() - 5000;
       const stateWithDel: LiveState = {
         ...BASE_STATE,
         delegations: [
@@ -962,7 +963,7 @@ describe('liveReducer', () => {
             workerRole: 'Researcher',
             taskDescription: 'Research X',
             status: 'active',
-            startedAt: Date.now() - 5000,
+            startedAt,
             endedAt: null,
             durationMs: null,
             reason: null,
@@ -978,7 +979,9 @@ describe('liveReducer', () => {
       });
       expect(next.delegations[0].status).toBe('completed');
       expect(next.delegations[0].durationMs).toBe(4800);
-      expect(next.delegations[0].endedAt).not.toBeNull();
+      // endedAt is derived from startedAt + durationMs for accurate bar positioning;
+      // it must not be Date.now() which would include network/processing latency.
+      expect(next.delegations[0].endedAt).toBe(startedAt + 4800);
       expect(next.delegations[0].reason).toBeNull();
     });
 
