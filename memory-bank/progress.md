@@ -1,5 +1,21 @@
 # Progress
 
+## What Works (as of 2026-03-09 -- "Why AgentEnsemble?" comparison content)
+
+**Landing page, README, and docs comparison section:**
+- `WhyAgentEnsemble.astro` -- new Astro component with three comparison cards, placed between
+  Hero and Features on the landing page. Each card has a left-border accent, badge, headline,
+  intro paragraph, and four bullet points with check icons.
+- Three comparison subsections:
+  - "AgentEnsemble vs hand-rolled LangChain4j orchestration"
+  - "Why JVM teams need a production-minded agent framework"
+  - "Why AgentEnsemble instead of Python-first agent frameworks"
+- `README.md` -- same three subsections as Markdown, inserted above Core Concepts
+- `docs/index.md` -- same three subsections, inserted above Getting Started
+- Site build verified clean: 65 pages, sitemap generated, no errors
+- Semantic `<h3>` headings used in the component so Google can parse comparison content
+- Card headlines match high-value Java developer search terms
+
 ## What Works (as of Issue #74 -- Tool Pipeline / Chaining)
 
 **ToolPipeline (Issue #74):**

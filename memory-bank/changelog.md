@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] - "Why AgentEnsemble?" comparison content -- 2026-03-09
+
+### Added (site, README, docs)
+
+**Landing page (`/Users/matt/workspace/ae/site`):**
+- `src/components/landing/WhyAgentEnsemble.astro` -- new Astro component placed between
+  Hero and Features sections. Three comparison cards with left-border color accents, badge
+  chips, semantic `<h3>` headings, intro paragraphs, and four bullet points each.
+  Uses CSS custom properties for per-card color theming.
+- `src/pages/index.astro` -- imported and wired `WhyAgentEnsemble` between `<Hero />` and
+  `<Features />`.
+- Site build verified clean: 65 pages, sitemap-index.xml generated at dist root.
+
+**Three comparison subsections (consistent across site, README, and docs):**
+1. "AgentEnsemble vs hand-rolled LangChain4j orchestration" -- boilerplate elimination,
+   built-in workflow strategies, production concerns, full observability.
+2. "Why JVM teams need a production-minded agent framework" -- Java 21 idioms, BOM-based
+   dependency management, existing stack integration, type-safe output.
+3. "Why AgentEnsemble instead of Python-first agent frameworks" -- no Python runtime or
+   interop tax, LLM-agnostic via LangChain4j, feature parity, single language to test.
+
+**`README.md`:**
+- `## Why AgentEnsemble?` section with three `###` subsections inserted between the opening
+  description paragraph and `## Core Concepts`.
+
+**`docs/index.md`:**
+- Same `## Why AgentEnsemble?` section inserted between the opening description and
+  `## Getting Started`.
+
+---
+
 ## [Unreleased] - fix/web-dashboard-lifecycle-auto-stop -- 2026-03-09
 
 ### Fixed (branch: fix/web-dashboard-lifecycle-auto-stop)

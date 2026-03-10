@@ -10,6 +10,37 @@ Built natively in Java on top of [LangChain4j](https://github.com/langchain4j/la
 
 ---
 
+## Why AgentEnsemble?
+
+### AgentEnsemble vs hand-rolled LangChain4j orchestration
+
+LangChain4j gives you excellent building blocks. But stitching multiple agents together yourself means writing the same boilerplate every time: prompt assembly, context threading, error recovery, retry logic, and delegation plumbing. AgentEnsemble is that layer, already built and battle-tested.
+
+- **Three lines instead of hundreds** -- A working multi-agent pipeline runs with a single `Ensemble.run(model, task1, task2, task3)` call. Sequential, hierarchical, parallel, and MapReduce strategies come built-in.
+- **Workflow strategies that compose** -- SEQUENTIAL, HIERARCHICAL (manager delegates to workers), PARALLEL (DAG-based concurrent execution via virtual threads), and MapReduce for large-context workloads. Switching between them is one enum value.
+- **Production concerns handled for you** -- Memory across runs, review gates for human-in-the-loop approval, input/output guardrails, structured output with automatic retry, delegation guards and lifecycle events. None of this has to be invented from scratch.
+- **Full observability out of the box** -- Every run produces token counts, LLM latency, tool timing, and a complete execution trace. Export to JSON, stream to a live browser dashboard, or push to Micrometer. Zero configuration required.
+
+### Why JVM teams need a production-minded agent framework
+
+Python agent frameworks are not designed for Java engineering constraints. AgentEnsemble is written in Java 21, distributed as standard Maven/Gradle artifacts, and fits directly into the toolchains, testing practices, and deployment pipelines that JVM teams already use.
+
+- **Idiomatic Java 21** -- Fluent builders, records for structured output, sealed interfaces, and Java virtual threads for concurrent execution. No reflection tricks, no annotation processors, no runtime surprises.
+- **Gradle and Maven with a BOM** -- Add the BOM and pull the modules you need. Versions align automatically. The same dependency management your team uses for every other library.
+- **Plugs into your existing stack** -- Micrometer metrics integrate with Prometheus and Grafana. SLF4J logging works with Logback and Log4j2. The live dashboard is a plain embedded WebSocket server -- no Docker, no npm, no sidecar process.
+- **Type-safe from input to output** -- Declare `outputType(MyRecord.class)` on a task and receive a fully typed, schema-validated Java object. Parse failures trigger automatic correction prompts before any exception is thrown.
+
+### Why AgentEnsemble instead of Python-first agent frameworks
+
+Frameworks like LangChain and CrewAI are excellent in their ecosystem. Bringing them into a Java service means a Python runtime, an HTTP sidecar or subprocess, serialization overhead, and two languages to test and deploy. AgentEnsemble runs on the same JVM as your service.
+
+- **No Python runtime or interop tax** -- Deploy as a library JAR. No subprocess management, no inter-process serialization, no latency from crossing a process boundary on every agent call.
+- **LLM-agnostic via LangChain4j** -- OpenAI, Anthropic, Ollama, Azure OpenAI, Amazon Bedrock, Google Vertex AI -- and any provider LangChain4j adds in the future. Switching providers is a one-line change.
+- **Feature parity with Python frameworks** -- Sequential, hierarchical, and parallel workflows. MapReduce for large workloads. Multi-level memory. Tool pipelines. Human-in-the-loop review gates. Delegation with guards. Structured typed output. All in Java.
+- **One language to test and deploy** -- Unit tests with JUnit, integration tests with your existing test containers, CI with the same Gradle tasks. No Python virtualenv to maintain, no separate test suite to keep in sync.
+
+---
+
 ## Core Concepts
 
 | Concept | Description |
