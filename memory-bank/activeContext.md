@@ -2,6 +2,21 @@
 
 ## Current Focus
 
+Added a "Why AgentEnsemble?" comparison section to the landing page, README, and docs.
+Three comparison cards were added to the site (`WhyAgentEnsemble.astro` component)
+placed between the Hero and Features sections:
+- "AgentEnsemble vs hand-rolled LangChain4j orchestration"
+- "Why JVM teams need a production-minded agent framework"
+- "Why AgentEnsemble instead of Python-first agent frameworks"
+
+The same three sections (as Markdown) were added near the top of `README.md` and
+`docs/index.md`. The site build was verified clean (65 pages, sitemap generated).
+
+The content is positioned as an explicit comparison story for Java engineers evaluating
+alternatives, using the exact phrasing identified as high-leverage search terms.
+
+## Previously Focused
+
 Branch `fix/web-dashboard-lifecycle-auto-stop` addresses a lifecycle bug where
 `WebDashboard` (Javalin/Jetty) non-daemon threads prevented JVM exit after an ensemble
 run completed.
