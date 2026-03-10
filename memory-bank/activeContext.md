@@ -2,6 +2,26 @@
 
 ## Current Focus
 
+**Issue #179 -- Multi-Run Support (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented two complementary features for the live dashboard when a single `WebDashboard` is reused across multiple sequential `Ensemble.run()` calls.
+
+### Feature A: Auto-export per run
+- `EnsembleDashboard.traceExporter()` default method; `WebDashboard` overrides when `traceExportDir` set
+- `WebDashboard.builder().traceExportDir(Path)` auto-wires `JsonTraceExporter`
+- `Ensemble.builder().webDashboard()` propagates the exporter when builder has none set
+- `JsonTraceExporter` auto-creates output directory
+
+### Feature B: Stacked timelines + per-run snapshot storage
+- `ConnectionManager` uses `List<List<String>> runSnapshots`; `maxRetainedRuns` cap (default 10)
+- `WebDashboard.builder().maxRetainedRuns(int)` builder option
+- `CompletedRun` type + `completedRuns: CompletedRun[]` on `LiveState`
+- `liveReducer` archives run to `completedRuns` on `ensemble_started` when tasks exist
+- `CompletedRunSection` renders stacked read-only sections above the active run
+- `LiveFlowViewInner` run selector dropdown for inspecting past DAGs
+
+---
+
+## Previously: "Why AgentEnsemble?" comparison content
+
 Added a "Why AgentEnsemble?" comparison section to the landing page, README, and docs.
 Three comparison cards were added to the site (`WhyAgentEnsemble.astro` component)
 placed between the Hero and Features sections:

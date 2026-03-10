@@ -2070,6 +2070,21 @@ Key design decisions:
 
 ## [Unreleased]
 
+### Added (Issue #179, PR #180)
+- `EnsembleDashboard.traceExporter()` default method in core SPI
+- `WebDashboard.builder().traceExportDir(Path)` -- convenience shortcut; auto-wires `JsonTraceExporter` via `Ensemble.builder().webDashboard()`
+- `WebDashboard.builder().maxRetainedRuns(int)` -- cap on per-run snapshot retention (default 10)
+- `ConnectionManager` per-run snapshot storage: `List<List<String>> runSnapshots` with `maxRetainedRuns` eviction
+- `CompletedRun` type in `live.ts`; `completedRuns: CompletedRun[]` field on `LiveState`
+- `liveReducer` archives current run into `completedRuns` on `ensemble_started` when tasks exist
+- `CompletedRunSection` React component: stacked read-only timeline sections above the active run
+- `LiveFlowViewInner` run selector dropdown to inspect any completed run's DAG
+- `JsonTraceExporter` auto-creates output directory in directory mode
+
+### Fixed
+- `JsonTraceExporter` export now creates the output directory if it does not exist
+
+
 ### Fixed (PR #144 Copilot review fixes -- commit d1a7604)
 - `live.ts`: Aligned `HelloMessage` fields with Java protocol (`ensembleId`/`startedAt`
   now `string | null`); corrected `LiveTask.taskIndex` doc (1-based); added missing
