@@ -25,7 +25,7 @@ repositories {
 
 dependencies {
     // Import the BOM -- aligns all AgentEnsemble module versions
-    implementation(platform("net.agentensemble:agentensemble-bom:2.1.0"))
+    implementation(platform("net.agentensemble:agentensemble-bom:{{ae_version}}"))
 
     // Core framework -- always required
     implementation("net.agentensemble:agentensemble-core")
@@ -66,7 +66,7 @@ repositories {
 }
 
 dependencies {
-    implementation platform('net.agentensemble:agentensemble-bom:2.1.0')
+    implementation platform('net.agentensemble:agentensemble-bom:{{ae_version}}')
     implementation 'net.agentensemble:agentensemble-core'
     implementation 'net.agentensemble:agentensemble-memory'
     implementation 'net.agentensemble:agentensemble-review'
@@ -82,7 +82,7 @@ dependencies {
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-bom</artifactId>
-            <version>2.1.0</version>
+            <version>{{ae_version}}</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -118,7 +118,7 @@ If you need only the framework core (no memory, no review, no built-in tools):
 
 ```kotlin
 dependencies {
-    implementation("net.agentensemble:agentensemble-core:2.0.0")
+    implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
 }
 ```
@@ -129,8 +129,8 @@ If you want to align just the built-in tool versions without importing the full 
 
 ```kotlin
 dependencies {
-    implementation(platform("net.agentensemble:agentensemble-tools-bom:2.0.0"))
-    implementation("net.agentensemble:agentensemble-core:2.0.0")
+    implementation(platform("net.agentensemble:agentensemble-tools-bom:{{ae_version}}"))
+    implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
 
     // No version needed for tools -- resolved from tools BOM
     implementation("net.agentensemble:agentensemble-tools-calculator")

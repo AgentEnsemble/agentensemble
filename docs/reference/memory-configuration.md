@@ -7,7 +7,7 @@ optional dependency from `agentensemble-core`.
 
 ```kotlin
 // Gradle (Kotlin DSL)
-implementation("net.agentensemble:agentensemble-memory:2.0.0")
+implementation("net.agentensemble:agentensemble-memory:{{ae_version}}")
 ```
 
 ```xml
@@ -15,7 +15,7 @@ implementation("net.agentensemble:agentensemble-memory:2.0.0")
 <dependency>
     <groupId>net.agentensemble</groupId>
     <artifactId>agentensemble-memory</artifactId>
-    <version>2.0.0</version>
+    <version>{{ae_version}}</version>
 </dependency>
 ```
 

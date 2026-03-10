@@ -26,12 +26,12 @@ automatically -- AgentEnsemble does not duplicate that responsibility.
 
     ```kotlin title="build.gradle.kts"
     dependencies {
-        implementation("net.agentensemble:agentensemble-core:1.3.0")
+        implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
         implementation("dev.langchain4j:langchain4j-spring-boot-starter:1.11.0")
         implementation("dev.langchain4j:langchain4j-open-ai-spring-boot-starter:1.11.0")
 
         // Optional: Micrometer metrics exposed via Spring Boot Actuator
-        implementation("net.agentensemble:agentensemble-metrics-micrometer:1.3.0")
+        implementation("net.agentensemble:agentensemble-metrics-micrometer:{{ae_version}}")
     }
     ```
 
@@ -42,7 +42,7 @@ automatically -- AgentEnsemble does not duplicate that responsibility.
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-core</artifactId>
-            <version>1.3.0</version>
+            <version>{{ae_version}}</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -59,7 +59,7 @@ automatically -- AgentEnsemble does not duplicate that responsibility.
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-metrics-micrometer</artifactId>
-            <version>1.3.0</version>
+            <version>{{ae_version}}</version>
         </dependency>
     </dependencies>
     ```
@@ -218,11 +218,11 @@ Micronaut does not have a LangChain4j integration module, so create the
 
     ```kotlin title="build.gradle.kts"
     dependencies {
-        implementation("net.agentensemble:agentensemble-core:1.3.0")
+        implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
         implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
 
         // Optional: Micrometer (Micronaut ships with native Micrometer support)
-        implementation("net.agentensemble:agentensemble-metrics-micrometer:1.3.0")
+        implementation("net.agentensemble:agentensemble-metrics-micrometer:{{ae_version}}")
     }
     ```
 
@@ -233,7 +233,7 @@ Micronaut does not have a LangChain4j integration module, so create the
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-core</artifactId>
-            <version>1.3.0</version>
+            <version>{{ae_version}}</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -322,7 +322,7 @@ which works with Quarkus CDI.
 
     ```kotlin title="build.gradle.kts"
     dependencies {
-        implementation("net.agentensemble:agentensemble-core:1.3.0")
+        implementation("net.agentensemble:agentensemble-core:{{ae_version}}")
         implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
     }
     ```
@@ -334,7 +334,7 @@ which works with Quarkus CDI.
         <dependency>
             <groupId>net.agentensemble</groupId>
             <artifactId>agentensemble-core</artifactId>
-            <version>1.3.0</version>
+            <version>{{ae_version}}</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
