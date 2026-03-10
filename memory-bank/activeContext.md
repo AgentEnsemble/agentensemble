@@ -1,5 +1,22 @@
 # Active Context
 
+## Current Work
+All work on PR #180 (`feat/issue-179-multi-run-support`) is complete including Copilot review feedback. Branch pushed at `cc632ea`.
+
+## Completed in last session
+- Addressed all 12 Copilot inline review comments on PR #180:
+  - `ConnectionManager`: constructor validates `maxRetainedRuns>=1` and `serializer!=null`; `appendToSnapshot` truly drops pre-run messages
+  - `WebDashboard.java`: fixed Javadoc for `traceExportDir` field (`.trace.json` -> `.json`)
+  - `docs/examples/live-dashboard.md`: fixed wrong import (`net.agentensemble.web.OnTimeoutAction` -> `net.agentensemble.review.OnTimeoutAction`)
+  - `live.ts`: updated `CompletedRun.tasks/delegations` docstrings (shallow copy, not deep copy)
+  - `liveReducer.ts`: `applyDelegationCompleted` now derives `endedAt = startedAt + durationMs`
+  - `TimelineView.tsx`: extracted `CompletedRunList` component; `CompletedRunSection` uses `buildLiveLanes` for HIERARCHICAL delegation lanes; `buildLiveLanes` uses a pre-grouped `Map` for O(1) lookup
+  - `FlowView.tsx`: split `displayedState` into `completedRunState` memo + `liveState` fallback to avoid unnecessary DAG re-layouts
+  - Tests: `ConnectionManagerTest` (constructor validation + pre-run drop), `EnsembleDashboardLifecycleTest` (traceExporter auto-wiring), `liveReducer.test.ts` (endedAt assertion), `WebSocketStreamingListenerTest` (snapshot test updated)
+- All 294 TypeScript tests pass; Java BUILD SUCCESSFUL
+
+# Active Context
+
 ## Current Focus
 
 **Issue #179 -- Multi-Run Support + Hierarchical Task Rendering (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented multi-run stacked timelines, per-run trace export, AND fixed hierarchical task rendering in the dashboard.

@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] - 2026-03-10
+### Fixed
+- ConnectionManager constructor now validates `maxRetainedRuns >= 1` and `serializer != null`; `appendToSnapshot` truly drops pre-run messages (no implicit lazy-create)
+- WebDashboard.java Javadoc: `traceExportDir` field now says `{ensembleId}.json` (was `.trace.json`)
+- docs/examples/live-dashboard.md: fixed import for `OnTimeoutAction` (`net.agentensemble.review`, was `net.agentensemble.web`)
+- live.ts: `CompletedRun.tasks/delegations` docstrings reflect shallow-copy semantics
+- liveReducer.ts: `applyDelegationCompleted` derives `endedAt = startedAt + durationMs` for accurate bar positioning
+- TimelineView.tsx: `CompletedRunSection` uses `buildLiveLanes` so HIERARCHICAL archived runs include delegation sub-lanes; `buildLiveLanes` pre-groups delegations by role (O(1) per task instead of O(tasks*delegations))
+- FlowView.tsx: `displayedState` splits into `completedRunState` memo + `liveState` fallback, avoiding DAG re-layouts on every live update while a completed run is selected
+
+### Added
+- TimelineView.tsx: `CompletedRunList` component eliminates duplicated `completedRuns.map()` + divider rendering
+- ConnectionManagerTest: constructor validation tests + pre-run message drop test
+- EnsembleDashboardLifecycleTest: `webDashboard` auto-wires dashboard's `traceExporter`; explicit exporter is not overridden
+
+# Changelog
+
 ## [Unreleased] - Hierarchical task rendering in dashboard -- 2026-03-10
 
 ### Fixed
