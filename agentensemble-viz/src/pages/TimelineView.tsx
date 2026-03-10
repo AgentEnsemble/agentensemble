@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExecutionTrace, TaskTrace, LlmInteraction, ToolCallTrace } from '../types/trace.js';
-import type { CompletedRun, LiveTask } from '../types/live.js';
+import type { CompletedRun, LiveTask, LiveDelegation } from '../types/live.js';
 import { parseDurationMs, formatDuration, formatInstant, formatTokenCount } from '../utils/parser.js';
 import { getAgentColor, withOpacity, getToolOutcomeColor, LLM_CALL_COLOR, seedAgentColors } from '../utils/colors.js';
 import { TaskMetricsBadges, RunSummaryBadges } from '../components/shared/MetricsBadge.js';
@@ -23,6 +23,10 @@ const LABEL_WIDTH = 160;
 const LANE_HEIGHT = 70;
 const LANE_PADDING = 8;
 const HEADER_HEIGHT = 30;
+/** Pixel indentation for child lanes (depth > 0) in hierarchical workflows. */
+const INDENT_PX = 16;
+/** X position of the vertical bracket connector in the label area. */
+const BRACKET_X = 10;
 
 /**
  * Timeline View page: renders a Gantt-chart-style execution timeline.
@@ -235,6 +239,218 @@ function LiveTaskBarGroup({
 }
 
 // ========================
+// Hierarchical lane helpers (shared between historical and live)
+// ========================
+
+/**
+ * A flat lane entry for rendering the historical "By Task" timeline.
+ * For HIERARCHICAL workflow, worker tasks appear at depth 1 beneath the Manager.
+ */
+type HistoricalLane = {
+  trace: TaskTrace;
+  /** 0 = parent (Manager or non-hierarchical task), 1 = child (worker/delegated). */
+  depth: 0 | 1;
+};
+
+/**
+ * Build a flat list of historical lanes for "By Task" mode.
+ *
+ * For HIERARCHICAL workflow, the Manager task (agentRole === 'Manager') is placed
+ * first at depth 0, followed by all worker tasks sorted by start time at depth 1.
+ * For all other workflows, returns the input list unchanged with depth 0.
+ */
+export function buildHistoricalByTaskLanes(
+  sortedTaskTraces: TaskTrace[],
+  workflow: string,
+): HistoricalLane[] {
+  if (workflow !== 'HIERARCHICAL') {
+    return sortedTaskTraces.map((trace) => ({ trace, depth: 0 as const }));
+  }
+  const manager = sortedTaskTraces.find((t) => t.agentRole === 'Manager');
+  if (!manager) {
+    // No Manager found: fall back to flat rendering
+    return sortedTaskTraces.map((trace) => ({ trace, depth: 0 as const }));
+  }
+  const workers = sortedTaskTraces.filter((t) => t.agentRole !== 'Manager');
+  const lanes: HistoricalLane[] = [{ trace: manager, depth: 0 }];
+  for (const worker of workers) {
+    lanes.push({ trace: worker, depth: 1 });
+  }
+  return lanes;
+}
+
+/**
+ * A flat lane entry for rendering the live "By Task" timeline.
+ * Delegation lanes appear at depth 1 beneath the task that owns them.
+ */
+type LiveLane =
+  | { kind: 'task'; task: LiveTask; depth: 0 }
+  | { kind: 'delegation'; delegation: LiveDelegation; depth: 1 };
+
+/**
+ * Build the live lane list for "By Task" mode.
+ *
+ * For HIERARCHICAL workflow with active delegations, each task is followed by its
+ * child delegation lanes (matched by delegatingAgentRole === task.agentRole).
+ * For non-HIERARCHICAL workflow or when there are no delegations, returns a simple
+ * task-only list at depth 0.
+ */
+export function buildLiveLanes(
+  tasks: LiveTask[],
+  delegations: LiveDelegation[],
+  workflow: string | null,
+): LiveLane[] {
+  if (workflow !== 'HIERARCHICAL' || delegations.length === 0) {
+    return tasks.map((task) => ({ kind: 'task' as const, task, depth: 0 as const }));
+  }
+  const lanes: LiveLane[] = [];
+  for (const task of tasks) {
+    lanes.push({ kind: 'task', task, depth: 0 });
+    const children = delegations.filter((d) => d.delegatingAgentRole === task.agentRole);
+    for (const delegation of children) {
+      lanes.push({ kind: 'delegation', delegation, depth: 1 });
+    }
+  }
+  return lanes;
+}
+
+/**
+ * Renders an indented two-line label for a child delegation lane.
+ * Primary line is the truncated worker role. Secondary line is the task description.
+ * An L-shape bracket connector is drawn in the label area to indicate nesting.
+ */
+function DelegationLaneLabel({
+  delegation,
+  y,
+  color,
+}: {
+  delegation: { workerRole: string; taskDescription: string };
+  y: number;
+  color: { bg: string };
+}) {
+  const labelX = LABEL_WIDTH - 8 - INDENT_PX;
+  const midY = y + LANE_HEIGHT / 2;
+  const role =
+    delegation.workerRole.length > 18
+      ? delegation.workerRole.slice(0, 16) + '...'
+      : delegation.workerRole;
+  const desc =
+    delegation.taskDescription.length > 18
+      ? delegation.taskDescription.slice(0, 16) + '...'
+      : delegation.taskDescription;
+  return (
+    <>
+      {/* L-shape bracket: vertical line then horizontal connector */}
+      <line x1={BRACKET_X} y1={y} x2={BRACKET_X} y2={midY} stroke="#CBD5E1" strokeWidth={1} />
+      <line x1={BRACKET_X} y1={midY} x2={BRACKET_X + 12} y2={midY} stroke="#CBD5E1" strokeWidth={1} />
+      {/* Worker role primary label */}
+      <text
+        x={labelX}
+        y={midY - 6}
+        textAnchor="end"
+        dominantBaseline="middle"
+        fontSize={10}
+        fontWeight={600}
+        fill={color.bg}
+        data-testid="timeline-lane-label"
+        data-lane-type="delegation"
+      >
+        {role}
+      </text>
+      {/* Task description secondary label */}
+      <text
+        x={labelX}
+        y={midY + 6}
+        textAnchor="end"
+        dominantBaseline="middle"
+        fontSize={9}
+        fill="#9CA3AF"
+      >
+        {desc}
+      </text>
+    </>
+  );
+}
+
+/**
+ * Renders the delegation bar for a single live delegation in the timeline SVG.
+ *
+ * Uses epoch-ms timestamps from LiveDelegation.startedAt and LiveDelegation.endedAt
+ * for bar positioning. Active delegations show a dashed border and pulsing right edge.
+ */
+function LiveDelegationBarGroup({
+  delegation,
+  barY,
+  barH,
+  nowMs,
+  color,
+  toX,
+}: {
+  delegation: LiveDelegation;
+  barY: number;
+  barH: number;
+  nowMs: number;
+  color: { bg: string };
+  toX: (ms: number) => number;
+}) {
+  const barX = toX(delegation.startedAt);
+  const endMs = delegation.endedAt ?? nowMs;
+  const w = Math.max(4, toX(endMs) - barX);
+  const isFailed = delegation.status === 'failed';
+  const isActive = delegation.status === 'active';
+  const fillColor = isFailed ? '#EF4444' : color.bg;
+  const inlineLabel =
+    w > 50
+      ? delegation.taskDescription.slice(0, Math.floor(w / 6)) +
+        (delegation.taskDescription.length > Math.floor(w / 6) ? '...' : '')
+      : '';
+  return (
+    <g
+      data-testid="live-delegation-bar"
+      data-delegation-id={delegation.delegationId}
+      data-delegation-status={delegation.status}
+    >
+      <rect
+        x={barX}
+        y={barY}
+        width={w}
+        height={barH}
+        rx={4}
+        fill={withOpacity(fillColor, 0.45)}
+        stroke={fillColor}
+        strokeWidth={1}
+        strokeDasharray={isActive ? '5 3' : undefined}
+      />
+      {isActive && (
+        <rect
+          x={barX + w - 3}
+          y={barY}
+          width={3}
+          height={barH}
+          rx={2}
+          fill={fillColor}
+          opacity={0.8}
+          className="ae-pulse"
+          data-testid="live-delegation-bar-active-edge"
+        />
+      )}
+      {inlineLabel && (
+        <text
+          x={barX + 4}
+          y={barY + barH / 2}
+          dominantBaseline="middle"
+          fontSize={9}
+          fill="white"
+          className="pointer-events-none select-none"
+        >
+          {inlineLabel}
+        </text>
+      )}
+    </g>
+  );
+}
+
+// ========================
 // Historical (static) timeline
 // ========================
 
@@ -251,6 +467,12 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
         (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
       ),
     [trace],
+  );
+
+  // Build flat hierarchical lane list (HIERARCHICAL workflow puts workers at depth 1)
+  const lanes = useMemo(
+    () => buildHistoricalByTaskLanes(sortedTaskTraces, trace.workflow),
+    [sortedTaskTraces, trace.workflow],
   );
 
   // Seed agent colors from the trace's agent list
@@ -287,7 +509,8 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
 
   const svgWidth = 900;
   const chartWidth = (svgWidth - LABEL_WIDTH) * zoom;
-  const laneCount = groupBy === 'task' ? sortedTaskTraces.length : agentRoles.length;
+  // For "By Task" mode: use the lane list length (includes depth-1 workers in HIERARCHICAL)
+  const laneCount = groupBy === 'task' ? lanes.length : agentRoles.length;
   const svgHeight = laneCount * LANE_HEIGHT + HEADER_HEIGHT + 10;
 
   const toX = (ms: number) => {
@@ -357,7 +580,8 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
             className="bg-white dark:bg-gray-900"
           >
             {groupBy === 'task'
-              ? sortedTaskTraces.map((task, i) => {
+              ? lanes.map((lane, i) => {
+                  const task = lane.trace;
                   const y = HEADER_HEIGHT + i * LANE_HEIGHT;
                   const color = getAgentColor(task.agentRole);
                   const taskStart = new Date(task.startedAt).getTime();
@@ -368,11 +592,22 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
                   const barH = LANE_HEIGHT - LANE_PADDING * 2;
                   const isSelected = selected?.kind === 'task' && selected.trace === task;
                   return (
-                    <g key={`task-${task.taskDescription}-${task.startedAt}`}>
-                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                    <g
+                      key={`task-${task.taskDescription}-${task.startedAt}`}
+                      data-lane-depth={lane.depth}
+                    >
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, lane.depth === 0 ? 0.08 : 0.04)} stroke="#E5E7EB" strokeWidth={0.5} />
                       <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
                       <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
-                      <TaskLaneLabel task={task} y={y} color={color} />
+                      {lane.depth === 0 ? (
+                        <TaskLaneLabel task={task} y={y} color={color} />
+                      ) : (
+                        <DelegationLaneLabel
+                          delegation={{ workerRole: task.agentRole, taskDescription: task.taskDescription }}
+                          y={y}
+                          color={color}
+                        />
+                      )}
                       <g onClick={() => setSelected({ kind: 'task', trace: task })} className="cursor-pointer">
                         <rect x={x} y={barY} width={w} height={barH} rx={4} fill={withOpacity(color.bg, isSelected ? 0.9 : 0.6)} stroke={isSelected ? color.bg : 'transparent'} strokeWidth={2} />
                         {task.llmInteractions.map((llm) => {
@@ -718,7 +953,7 @@ function CompletedRunSection({
 
 function LiveTimelineView() {
   const { liveState } = useLiveServer();
-  const { tasks, startedAt, workflow, totalTasks, completedRuns } = liveState;
+  const { tasks, delegations, startedAt, workflow, totalTasks, completedRuns } = liveState;
 
   // Use task index as the selected key so the panel always reads from current liveState.tasks
   // (not a stale snapshot). This ensures streaming output updates are reflected live.
@@ -798,9 +1033,16 @@ function LiveTimelineView() {
     return map;
   }, [tasks]);
 
+  // Build hierarchical lane list for "By Task" mode (HIERARCHICAL workflow shows delegation sub-lanes)
+  const liveLanes = useMemo(
+    () => buildLiveLanes(tasks, delegations, workflow),
+    [tasks, delegations, workflow],
+  );
+
   const svgWidth = 900;
   const chartWidth = (svgWidth - LABEL_WIDTH) * 1; // zoom fixed at 1 in live mode
-  const laneCount = groupBy === 'task' ? tasks.length : agentRoles.length;
+  // For "By Task" mode: liveLanes includes delegation child lanes for HIERARCHICAL runs
+  const laneCount = groupBy === 'task' ? liveLanes.length : agentRoles.length;
   const svgHeight = Math.max(1, laneCount) * LANE_HEIGHT + HEADER_HEIGHT + 10;
 
   const toX = useCallback(
@@ -899,15 +1141,46 @@ function LiveTimelineView() {
             className="bg-white dark:bg-gray-900"
           >
             {groupBy === 'task'
-              ? tasks.map((task, i) => {
+              ? liveLanes.map((lane, i) => {
                   const y = HEADER_HEIGHT + i * LANE_HEIGHT;
-                  const color = getAgentColor(task.agentRole);
                   const barY = y + LANE_PADDING;
                   const barH = LANE_HEIGHT - LANE_PADDING * 2;
-                  const isSelected = selectedTask?.taskIndex === task.taskIndex;
 
+                  if (lane.kind === 'delegation') {
+                    // Child delegation lane: indented label + delegation timing bar
+                    const { delegation } = lane;
+                    const color = getAgentColor(delegation.workerRole);
+                    return (
+                      <g key={`del-${delegation.delegationId}`} data-lane-depth={1}>
+                        {/* Lane background (lighter tint for child lanes) */}
+                        <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.04)} stroke="#E5E7EB" strokeWidth={0.5} />
+                        <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                        <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                        {/* Indented delegation label with bracket connector */}
+                        <DelegationLaneLabel
+                          delegation={{ workerRole: delegation.workerRole, taskDescription: delegation.taskDescription }}
+                          y={y}
+                          color={color}
+                        />
+                        {/* Delegation timing bar */}
+                        <LiveDelegationBarGroup
+                          delegation={delegation}
+                          barY={barY}
+                          barH={barH}
+                          nowMs={nowMs}
+                          color={color}
+                          toX={toX}
+                        />
+                      </g>
+                    );
+                  }
+
+                  // Top-level task lane
+                  const { task } = lane;
+                  const color = getAgentColor(task.agentRole);
+                  const isSelected = selectedTask?.taskIndex === task.taskIndex;
                   return (
-                    <g key={`task-${task.taskIndex}`}>
+                    <g key={`task-${task.taskIndex}`} data-lane-depth={0}>
                       {/* Lane background */}
                       <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
                       <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />

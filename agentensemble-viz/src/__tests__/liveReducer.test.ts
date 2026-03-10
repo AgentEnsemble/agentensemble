@@ -865,31 +865,22 @@ describe('liveReducer', () => {
           serverTimeMs: 1741212300000,
         },
       ],
+      // delegation_completed and delegation_failed are no-ops when no matching delegation exists
       [
-        'delegation_started',
-        {
-          type: 'delegation_started' as const,
-          delegationId: 'd1',
-          delegatingAgentRole: 'Lead',
-          workerRole: 'Worker',
-          taskDescription: 'Sub task',
-        },
-      ],
-      [
-        'delegation_completed',
+        'delegation_completed (no match)',
         {
           type: 'delegation_completed' as const,
-          delegationId: 'd1',
+          delegationId: 'unknown-id',
           delegatingAgentRole: 'Lead',
           workerRole: 'Worker',
           durationMs: 5000,
         },
       ],
       [
-        'delegation_failed',
+        'delegation_failed (no match)',
         {
           type: 'delegation_failed' as const,
-          delegationId: 'd1',
+          delegationId: 'unknown-id',
           delegatingAgentRole: 'Lead',
           workerRole: 'Worker',
           reason: 'rejected',
@@ -904,6 +895,202 @@ describe('liveReducer', () => {
     ])('%s returns the same state reference', (_name, msg) => {
       const next = liveReducer(BASE_STATE, msg as ServerMessage);
       expect(next).toBe(BASE_STATE);
+    });
+  });
+
+  // ========================
+  // delegation_started
+  // ========================
+
+  describe('delegation_started', () => {
+    it('appends a new active delegation to the delegations list', () => {
+      const msg = {
+        type: 'delegation_started' as const,
+        delegationId: 'del-abc',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Researcher',
+        taskDescription: 'Research topic X',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.delegations).toHaveLength(1);
+      expect(next.delegations[0]).toMatchObject({
+        delegationId: 'del-abc',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Researcher',
+        taskDescription: 'Research topic X',
+        status: 'active',
+        endedAt: null,
+        durationMs: null,
+        reason: null,
+      });
+      expect(typeof next.delegations[0].startedAt).toBe('number');
+    });
+
+    it('appends multiple delegations in arrival order', () => {
+      const state1 = liveReducer(BASE_STATE, {
+        type: 'delegation_started' as const,
+        delegationId: 'del-1',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Worker A',
+        taskDescription: 'Task A',
+      });
+      const state2 = liveReducer(state1, {
+        type: 'delegation_started' as const,
+        delegationId: 'del-2',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Worker B',
+        taskDescription: 'Task B',
+      });
+      expect(state2.delegations).toHaveLength(2);
+      expect(state2.delegations[0].delegationId).toBe('del-1');
+      expect(state2.delegations[1].delegationId).toBe('del-2');
+    });
+  });
+
+  // ========================
+  // delegation_completed
+  // ========================
+
+  describe('delegation_completed', () => {
+    it('marks the matching active delegation as completed with durationMs', () => {
+      const stateWithDel: LiveState = {
+        ...BASE_STATE,
+        delegations: [
+          {
+            delegationId: 'del-1',
+            delegatingAgentRole: 'Manager',
+            workerRole: 'Researcher',
+            taskDescription: 'Research X',
+            status: 'active',
+            startedAt: Date.now() - 5000,
+            endedAt: null,
+            durationMs: null,
+            reason: null,
+          },
+        ],
+      };
+      const next = liveReducer(stateWithDel, {
+        type: 'delegation_completed' as const,
+        delegationId: 'del-1',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Researcher',
+        durationMs: 4800,
+      });
+      expect(next.delegations[0].status).toBe('completed');
+      expect(next.delegations[0].durationMs).toBe(4800);
+      expect(next.delegations[0].endedAt).not.toBeNull();
+      expect(next.delegations[0].reason).toBeNull();
+    });
+
+    it('is a no-op when delegationId does not match any known delegation', () => {
+      const next = liveReducer(BASE_STATE, {
+        type: 'delegation_completed' as const,
+        delegationId: 'no-such-id',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Worker',
+        durationMs: 1000,
+      });
+      expect(next).toBe(BASE_STATE);
+    });
+  });
+
+  // ========================
+  // delegation_failed
+  // ========================
+
+  describe('delegation_failed', () => {
+    it('marks the matching delegation as failed with a reason', () => {
+      const stateWithDel: LiveState = {
+        ...BASE_STATE,
+        delegations: [
+          {
+            delegationId: 'del-err',
+            delegatingAgentRole: 'Manager',
+            workerRole: 'Worker',
+            taskDescription: 'Doomed task',
+            status: 'active',
+            startedAt: Date.now() - 2000,
+            endedAt: null,
+            durationMs: null,
+            reason: null,
+          },
+        ],
+      };
+      const next = liveReducer(stateWithDel, {
+        type: 'delegation_failed' as const,
+        delegationId: 'del-err',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Worker',
+        reason: 'Worker agent threw an exception',
+      });
+      expect(next.delegations[0].status).toBe('failed');
+      expect(next.delegations[0].reason).toBe('Worker agent threw an exception');
+      expect(next.delegations[0].endedAt).not.toBeNull();
+      expect(next.delegations[0].durationMs).toBeNull();
+    });
+
+    it('is a no-op when delegationId does not match any known delegation', () => {
+      const next = liveReducer(BASE_STATE, {
+        type: 'delegation_failed' as const,
+        delegationId: 'ghost-id',
+        delegatingAgentRole: 'Manager',
+        workerRole: 'Worker',
+        reason: 'Not found',
+      });
+      expect(next).toBe(BASE_STATE);
+    });
+  });
+
+  // ========================
+  // ensemble_started resets delegations
+  // ========================
+
+  describe('ensemble_started resets delegations', () => {
+    it('clears active delegations when a new run starts', () => {
+      const stateWithDel: LiveState = {
+        ...BASE_STATE,
+        tasks: [
+          {
+            taskIndex: 1,
+            taskDescription: 'Prior task',
+            agentRole: 'Manager',
+            status: 'running',
+            startedAt: '2026-03-05T14:00:01Z',
+            completedAt: null,
+            failedAt: null,
+            durationMs: null,
+            tokenCount: null,
+            toolCallCount: null,
+            toolCalls: [],
+            reason: null,
+          },
+        ],
+        delegations: [
+          {
+            delegationId: 'del-prior',
+            delegatingAgentRole: 'Manager',
+            workerRole: 'Worker',
+            taskDescription: 'Prior delegation',
+            status: 'active',
+            startedAt: Date.now() - 5000,
+            endedAt: null,
+            durationMs: null,
+            reason: null,
+          },
+        ],
+      };
+      const next = liveReducer(stateWithDel, {
+        type: 'ensemble_started' as const,
+        ensembleId: 'new-run',
+        startedAt: '2026-03-05T15:00:00Z',
+        totalTasks: 2,
+        workflow: 'HIERARCHICAL',
+      });
+      expect(next.delegations).toHaveLength(0);
+      // Prior delegations are archived into completedRuns
+      expect(next.completedRuns).toHaveLength(1);
+      expect(next.completedRuns[0].delegations).toHaveLength(1);
+      expect(next.completedRuns[0].delegations[0].delegationId).toBe('del-prior');
     });
   });
 });

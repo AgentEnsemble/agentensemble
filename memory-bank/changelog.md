@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased] - Hierarchical task rendering in dashboard -- 2026-03-10
+
+### Fixed
+- **HIERARCHICAL workflow tasks rendered as single line in dashboard**: delegation events
+  were previously ignored; workers are now rendered as indented child lanes beneath the Manager.
+
+### Added (agentensemble-viz)
+- `LiveDelegation` type and `delegations: LiveDelegation[]` on `LiveState` and `CompletedRun`
+- `liveReducer` handles `delegation_started` / `delegation_completed` / `delegation_failed`
+  messages and tracks per-delegation status, timing, and reason
+- `buildHistoricalByTaskLanes()` -- puts Manager at depth 0, workers at depth 1 for
+  `HIERARCHICAL` workflow in the historical timeline "By Task" view
+- `buildLiveLanes()` -- interleaves `LiveDelegation` sub-lanes after their parent task in
+  the live timeline "By Task" view for `HIERARCHICAL` workflow
+- `DelegationLaneLabel` SVG component -- indented two-line label with L-shape bracket connector
+- `LiveDelegationBarGroup` SVG component -- dashed timing bar with active pulse indicator
+- 20 new tests: delegation reducer handlers, `buildHistoricalByTaskLanes`, `buildLiveLanes`,
+  delegation lane rendering in `TimelineView`
+
+---
+
 ## [Unreleased] - "Why AgentEnsemble?" comparison content -- 2026-03-09
 
 ### Added (site, README, docs)

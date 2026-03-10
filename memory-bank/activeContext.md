@@ -2,6 +2,18 @@
 
 ## Current Focus
 
+**Issue #179 -- Multi-Run Support + Hierarchical Task Rendering (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented multi-run stacked timelines, per-run trace export, AND fixed hierarchical task rendering in the dashboard.
+
+### Hierarchical Task Rendering Fix
+- **Problem**: `HIERARCHICAL` workflow only showed a single Manager lane because delegation events were ignored by `liveReducer` and the historical view iterated `taskTraces` flat.
+- **Live reducer**: Added `LiveDelegation` type + `delegations: LiveDelegation[]` to `LiveState`; `liveReducer` now handles `delegation_started`, `delegation_completed`, `delegation_failed` -- each updates `state.delegations`.
+- **Historical timeline**: `buildHistoricalByTaskLanes()` puts Manager at depth 0 and workers at depth 1 for `HIERARCHICAL` workflow; `DelegationLaneLabel` renders L-shaped bracket connector + indented labels.
+- **Live timeline**: `buildLiveLanes()` interleaves `LiveDelegation` sub-lanes after their parent task; `LiveDelegationBarGroup` renders dashed timing bar with active pulse indicator.
+- `CompletedRun` now includes `delegations: LiveDelegation[]` so archived runs preserve delegation data.
+- Tests: 294 TypeScript/React tests all pass (20 new tests for delegation tracking and hierarchical lane helpers).
+
+### Previously in PR #180: Multi-Run Support (Issue #179)
+
 **Issue #179 -- Multi-Run Support (PR #180, branch `feat/issue-179-multi-run-support`)**: Implemented two complementary features for the live dashboard when a single `WebDashboard` is reused across multiple sequential `Ensemble.run()` calls.
 
 ### Feature A: Auto-export per run

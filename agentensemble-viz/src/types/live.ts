@@ -66,6 +66,41 @@ export interface LiveTask {
 }
 
 // ========================
+// Live delegation state
+// ========================
+
+/** Execution status of a single delegation in live mode. */
+export type LiveDelegationStatus = 'active' | 'completed' | 'failed';
+
+/**
+ * Live state for a single agent-to-agent delegation, built from
+ * delegation_started / delegation_completed / delegation_failed messages.
+ *
+ * Used by LiveTimelineView to render indented worker lanes beneath the
+ * parent (delegating) agent lane in HIERARCHICAL workflow runs.
+ */
+export interface LiveDelegation {
+  /** Unique correlation ID shared across start, completed, and failed events. */
+  delegationId: string;
+  /** Role of the agent that initiated the delegation (typically "Manager"). */
+  delegatingAgentRole: string;
+  /** Role of the worker agent receiving the delegated task. */
+  workerRole: string;
+  /** Description of the delegated sub-task. */
+  taskDescription: string;
+  /** Current status of this delegation. */
+  status: LiveDelegationStatus;
+  /** Client-side epoch ms when delegation_started was received. */
+  startedAt: number;
+  /** Client-side epoch ms when delegation_completed or delegation_failed was received. */
+  endedAt: number | null;
+  /** Duration in ms from delegation_completed message. Null until completed. */
+  durationMs: number | null;
+  /** Failure reason from delegation_failed message. Null unless failed. */
+  reason: string | null;
+}
+
+// ========================
 // Completed run (archived from live state when a new run starts)
 // ========================
 
@@ -86,6 +121,8 @@ export interface CompletedRun {
   totalTasks: number;
   /** Deep copy of the tasks at the time the run was archived. */
   tasks: LiveTask[];
+  /** Deep copy of the delegations at the time the run was archived (HIERARCHICAL workflow). */
+  delegations: LiveDelegation[];
 }
 
 // ========================
@@ -128,6 +165,11 @@ export interface LiveState {
   totalTasks: number;
   /** Tasks accumulated in task_started arrival order. */
   tasks: LiveTask[];
+  /**
+   * Delegations accumulated in delegation_started arrival order (HIERARCHICAL workflow).
+   * Each entry tracks one manager-to-worker delegation with live status.
+   */
+  delegations: LiveDelegation[];
   /** Pending review requests not yet answered. */
   pendingReviews: LiveReviewRequest[];
   /** True after ensemble_completed is received. */
