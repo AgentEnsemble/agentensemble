@@ -5,7 +5,6 @@
  * (default) and "By Agent" modes for HistoricalTimelineView.
  */
 
-import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TimelineView from '../pages/TimelineView.js';
