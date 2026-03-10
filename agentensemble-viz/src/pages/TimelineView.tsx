@@ -17,6 +17,8 @@ type SelectedItem =
   | { kind: 'llm'; task: TaskTrace; interaction: LlmInteraction }
   | { kind: 'tool'; task: TaskTrace; llm: LlmInteraction; tool: ToolCallTrace };
 
+type GroupBy = 'task' | 'agent';
+
 const LABEL_WIDTH = 160;
 const LANE_HEIGHT = 70;
 const LANE_PADDING = 8;
@@ -30,6 +32,9 @@ const HEADER_HEIGHT = 30;
  * a "Follow latest" toggle auto-scrolls to the most recent activity.
  *
  * When `isLive` is false (default), renders from the supplied static ExecutionTrace.
+ *
+ * Both modes support a grouping toggle: "By Task" (default, one lane per task) and
+ * "By Agent" (one lane per unique agent role, stacking multiple tasks on the same lane).
  */
 export default function TimelineView({ trace, isLive }: TimelineViewProps) {
   if (isLive) {
@@ -40,13 +45,103 @@ export default function TimelineView({ trace, isLive }: TimelineViewProps) {
 }
 
 // ========================
+// GroupBy toggle button (shared)
+// ========================
+
+function GroupingToggle({
+  groupBy,
+  onToggle,
+}: {
+  groupBy: GroupBy;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      data-testid="grouping-toggle"
+      data-grouping={groupBy}
+      className={[
+        'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+        groupBy === 'task'
+          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+          : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800',
+      ].join(' ')}
+    >
+      {groupBy === 'task' ? 'By Task' : 'By Agent'}
+    </button>
+  );
+}
+
+// ========================
+// Shared lane-label helper
+// ========================
+
+/**
+ * Renders a two-line lane label for "By Task" mode: primary line is the truncated task
+ * description, secondary line is the agent role in muted gray.
+ */
+function TaskLaneLabel({
+  task,
+  y,
+  color,
+}: {
+  task: { taskDescription: string; agentRole: string };
+  y: number;
+  color: { bg: string };
+}) {
+  const desc = task.taskDescription.length > 20
+    ? task.taskDescription.slice(0, 18) + '...'
+    : task.taskDescription;
+  const role = task.agentRole.length > 22
+    ? task.agentRole.slice(0, 20) + '...'
+    : task.agentRole;
+  return (
+    <>
+      <text
+        x={LABEL_WIDTH - 8}
+        y={y + LANE_HEIGHT / 2 - 6}
+        textAnchor="end"
+        dominantBaseline="middle"
+        fontSize={10}
+        fontWeight={600}
+        fill={color.bg}
+        data-testid="timeline-lane-label"
+        data-lane-type="task"
+      >
+        {desc}
+      </text>
+      <text
+        x={LABEL_WIDTH - 8}
+        y={y + LANE_HEIGHT / 2 + 6}
+        textAnchor="end"
+        dominantBaseline="middle"
+        fontSize={9}
+        fill="#9CA3AF"
+      >
+        {role}
+      </text>
+    </>
+  );
+}
+
+// ========================
 // Historical (static) timeline
 // ========================
 
 function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [groupBy, setGroupBy] = useState<GroupBy>('task');
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Sort task traces by start time for "By Task" lane order
+  const sortedTaskTraces = useMemo(
+    () =>
+      [...trace.taskTraces].sort(
+        (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
+      ),
+    [trace],
+  );
 
   // Seed agent colors from the trace's agent list
   useEffect(() => {
@@ -82,7 +177,8 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
 
   const svgWidth = 900;
   const chartWidth = (svgWidth - LABEL_WIDTH) * zoom;
-  const svgHeight = agentRoles.length * LANE_HEIGHT + HEADER_HEIGHT + 10;
+  const laneCount = groupBy === 'task' ? sortedTaskTraces.length : agentRoles.length;
+  const svgHeight = laneCount * LANE_HEIGHT + HEADER_HEIGHT + 10;
 
   const toX = (ms: number) => {
     const fraction = (ms - runStart) / totalMs;
@@ -111,18 +207,24 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
                 {formatInstant(trace.startedAt)}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Zoom:</span>
-              <input
-                type="range"
-                min={0.5}
-                max={5}
-                step={0.1}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="w-24"
+            <div className="flex items-center gap-3">
+              <GroupingToggle
+                groupBy={groupBy}
+                onToggle={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
               />
-              <span className="text-xs text-gray-500">{zoom.toFixed(1)}x</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Zoom:</span>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={5}
+                  step={0.1}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="w-24"
+                />
+                <span className="text-xs text-gray-500">{zoom.toFixed(1)}x</span>
+              </div>
             </div>
           </div>
           <div className="mt-2">
@@ -144,29 +246,24 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
             height={svgHeight}
             className="bg-white dark:bg-gray-900"
           >
-            {agentRoles.map((role, i) => {
-              const y = HEADER_HEIGHT + i * LANE_HEIGHT;
-              const color = getAgentColor(role);
-              return (
-                <g key={role}>
-                  <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
-                  <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
-                  <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
-                  <text x={LABEL_WIDTH - 8} y={y + LANE_HEIGHT / 2} textAnchor="end" dominantBaseline="middle" fontSize={11} fontWeight={600} fill={color.bg}>
-                    {role.length > 18 ? role.slice(0, 16) + '...' : role}
-                  </text>
-
-                  {(tasksByAgent.get(role) ?? []).map((task) => {
-                    const taskStart = new Date(task.startedAt).getTime();
-                    const taskEnd = new Date(task.completedAt).getTime();
-                    const x = toX(taskStart);
-                    const w = Math.max(4, toX(taskEnd) - toX(taskStart));
-                    const barY = y + LANE_PADDING;
-                    const barH = LANE_HEIGHT - LANE_PADDING * 2;
-                    const isSelected = selected?.kind === 'task' && selected.trace === task;
-
-                    return (
-                      <g key={`${task.taskDescription}-${task.startedAt}-${task.completedAt}`} onClick={() => setSelected({ kind: 'task', trace: task })} className="cursor-pointer">
+            {groupBy === 'task'
+              ? sortedTaskTraces.map((task, i) => {
+                  const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                  const color = getAgentColor(task.agentRole);
+                  const taskStart = new Date(task.startedAt).getTime();
+                  const taskEnd = new Date(task.completedAt).getTime();
+                  const x = toX(taskStart);
+                  const w = Math.max(4, toX(taskEnd) - toX(taskStart));
+                  const barY = y + LANE_PADDING;
+                  const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                  const isSelected = selected?.kind === 'task' && selected.trace === task;
+                  return (
+                    <g key={`task-${task.taskDescription}-${task.startedAt}`}>
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                      <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <TaskLaneLabel task={task} y={y} color={color} />
+                      <g onClick={() => setSelected({ kind: 'task', trace: task })} className="cursor-pointer">
                         <rect x={x} y={barY} width={w} height={barH} rx={4} fill={withOpacity(color.bg, isSelected ? 0.9 : 0.6)} stroke={isSelected ? color.bg : 'transparent'} strokeWidth={2} />
                         {task.llmInteractions.map((llm) => {
                           const llmStart = new Date(llm.startedAt).getTime();
@@ -197,11 +294,77 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
                           </text>
                         )}
                       </g>
-                    );
-                  })}
-                </g>
-              );
-            })}
+                    </g>
+                  );
+                })
+              : agentRoles.map((role, i) => {
+                  const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                  const color = getAgentColor(role);
+                  return (
+                    <g key={role}>
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                      <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <text
+                        x={LABEL_WIDTH - 8}
+                        y={y + LANE_HEIGHT / 2}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill={color.bg}
+                        data-testid="timeline-lane-label"
+                        data-lane-type="agent"
+                      >
+                        {role.length > 18 ? role.slice(0, 16) + '...' : role}
+                      </text>
+
+                      {(tasksByAgent.get(role) ?? []).map((task) => {
+                        const taskStart = new Date(task.startedAt).getTime();
+                        const taskEnd = new Date(task.completedAt).getTime();
+                        const x = toX(taskStart);
+                        const w = Math.max(4, toX(taskEnd) - toX(taskStart));
+                        const barY = y + LANE_PADDING;
+                        const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                        const isSelected = selected?.kind === 'task' && selected.trace === task;
+
+                        return (
+                          <g key={`${task.taskDescription}-${task.startedAt}-${task.completedAt}`} onClick={() => setSelected({ kind: 'task', trace: task })} className="cursor-pointer">
+                            <rect x={x} y={barY} width={w} height={barH} rx={4} fill={withOpacity(color.bg, isSelected ? 0.9 : 0.6)} stroke={isSelected ? color.bg : 'transparent'} strokeWidth={2} />
+                            {task.llmInteractions.map((llm) => {
+                              const llmStart = new Date(llm.startedAt).getTime();
+                              const llmEnd = new Date(llm.completedAt).getTime();
+                              const lx = toX(llmStart);
+                              const lw = Math.max(2, toX(llmEnd) - toX(llmStart));
+                              const isLlmSelected = selected?.kind === 'llm' && selected.interaction === llm;
+                              return (
+                                <g key={llm.iterationIndex} onClick={(e) => { e.stopPropagation(); setSelected({ kind: 'llm', task, interaction: llm }); }}>
+                                  <rect x={lx} y={barY + 2} width={lw} height={barH - 4} rx={2} fill={LLM_CALL_COLOR} fillOpacity={isLlmSelected ? 0.9 : 0.6} />
+                                  {llm.toolCalls.map((tool, ti) => {
+                                    const toolStart = new Date(tool.startedAt).getTime();
+                                    const toolEnd = new Date(tool.completedAt).getTime();
+                                    const tx = toX(toolStart);
+                                    const tw = Math.max(2, toX(toolEnd) - toX(toolStart));
+                                    const isToolSelected = selected?.kind === 'tool' && selected.tool === tool;
+                                    return (
+                                      <rect key={ti} x={tx} y={barY + barH - 6} width={tw} height={4} rx={1} fill={getToolOutcomeColor(tool.outcome)} opacity={isToolSelected ? 1 : 0.8}
+                                        onClick={(e) => { e.stopPropagation(); setSelected({ kind: 'tool', task, llm, tool }); }} />
+                                    );
+                                  })}
+                                </g>
+                              );
+                            })}
+                            {w > 50 && (
+                              <text x={x + 4} y={barY + barH / 2} dominantBaseline="middle" fontSize={9} fill="white" className="pointer-events-none select-none">
+                                {task.taskDescription.slice(0, Math.floor(w / 6))}{task.taskDescription.length > Math.floor(w / 6) ? '...' : ''}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })}
 
             <rect x={0} y={0} width={LABEL_WIDTH + chartWidth + 100} height={HEADER_HEIGHT} fill="white" className="dark:fill-gray-900" />
             {ticks.map((tick) => (
@@ -246,6 +409,10 @@ function HistoricalTimelineView({ trace }: { trace: ExecutionTrace }) {
  * The "Follow latest" toggle (default: on) auto-scrolls the time axis to the
  * most recent activity. Clicking the toggle pauses auto-scroll. Scrolling back
  * to the right edge re-engages it.
+ *
+ * The "By Task / By Agent" toggle controls lane grouping. "By Task" (default) gives
+ * one lane per task -- useful for task-first workflows where multiple tasks share a
+ * synthesized agent role. "By Agent" groups tasks under their agent role lane.
  */
 function LiveTimelineView() {
   const { liveState } = useLiveServer();
@@ -258,6 +425,7 @@ function LiveTimelineView() {
     ? (tasks.find((t) => t.taskIndex === selectedTaskIndex) ?? null)
     : null;
   const [followLatest, setFollowLatest] = useState(true);
+  const [groupBy, setGroupBy] = useState<GroupBy>('task');
   const [nowMs, setNowMs] = useState(Date.now());
   const animFrameRef = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -298,7 +466,7 @@ function LiveTimelineView() {
   const runEnd = Math.max(nowMs, runStart + 1);
   const totalMs = runEnd - runStart;
 
-  // Collect unique agent roles in task arrival order
+  // Collect unique agent roles in task arrival order (for "By Agent" mode)
   const agentRoles = useMemo(() => {
     const seen = new Set<string>();
     const roles: string[] = [];
@@ -330,7 +498,8 @@ function LiveTimelineView() {
 
   const svgWidth = 900;
   const chartWidth = (svgWidth - LABEL_WIDTH) * 1; // zoom fixed at 1 in live mode
-  const svgHeight = Math.max(1, agentRoles.length) * LANE_HEIGHT + HEADER_HEIGHT + 10;
+  const laneCount = groupBy === 'task' ? tasks.length : agentRoles.length;
+  const svgHeight = Math.max(1, laneCount) * LANE_HEIGHT + HEADER_HEIGHT + 10;
 
   const toX = useCallback(
     (ms: number) => {
@@ -363,6 +532,8 @@ function LiveTimelineView() {
           runningCount={runningCount}
           followLatest={followLatest}
           onToggleFollowLatest={() => setFollowLatest((v) => !v)}
+          groupBy={groupBy}
+          onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
         <div className="flex flex-1 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
           Waiting for tasks to start...
@@ -381,6 +552,8 @@ function LiveTimelineView() {
           runningCount={runningCount}
           followLatest={followLatest}
           onToggleFollowLatest={() => setFollowLatest((v) => !v)}
+          groupBy={groupBy}
+          onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
 
         {/* Scrollable SVG */}
@@ -395,55 +568,46 @@ function LiveTimelineView() {
             height={svgHeight}
             className="bg-white dark:bg-gray-900"
           >
-            {agentRoles.map((role, i) => {
-              const y = HEADER_HEIGHT + i * LANE_HEIGHT;
-              const color = getAgentColor(role);
-              const agentTasks = tasksByAgent.get(role) ?? [];
+            {groupBy === 'task'
+              ? tasks.map((task, i) => {
+                  const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                  const color = getAgentColor(task.agentRole);
+                  const taskStartMs = new Date(task.startedAt).getTime();
+                  const barX = toX(taskStartMs);
+                  const barY = y + LANE_PADDING;
+                  const barH = LANE_HEIGHT - LANE_PADDING * 2;
 
-              return (
-                <g key={role}>
-                  {/* Lane background */}
-                  <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
-                  <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
-                  <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+                  let taskEndMs: number;
+                  if (task.status === 'completed' && task.completedAt) {
+                    taskEndMs = new Date(task.completedAt).getTime();
+                  } else if (task.status === 'failed' && task.failedAt) {
+                    taskEndMs = new Date(task.failedAt).getTime();
+                  } else {
+                    taskEndMs = nowMs;
+                  }
+                  const w = Math.max(4, toX(taskEndMs) - toX(taskStartMs));
 
-                  {/* Agent label */}
-                  <text x={LABEL_WIDTH - 8} y={y + LANE_HEIGHT / 2} textAnchor="end" dominantBaseline="middle" fontSize={11} fontWeight={600} fill={color.bg}>
-                    {role.length > 18 ? role.slice(0, 16) + '...' : role}
-                  </text>
+                  const isFailed = task.status === 'failed';
+                  const isRunning = task.status === 'running';
+                  const isSelected = selectedTask?.taskIndex === task.taskIndex;
+                  const fillColor = isFailed ? '#EF4444' : color.bg;
+                  const fillOpacity = isSelected ? 0.9 : 0.6;
 
-                  {/* Task bars */}
-                  {agentTasks.map((task) => {
-                    const taskStartMs = new Date(task.startedAt).getTime();
-                    const barX = toX(taskStartMs);
-                    const barY = y + LANE_PADDING;
-                    const barH = LANE_HEIGHT - LANE_PADDING * 2;
+                  return (
+                    <g key={`task-${task.taskIndex}`}>
+                      {/* Lane background */}
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                      <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
 
-                    // Compute bar right edge based on status
-                    let taskEndMs: number;
-                    if (task.status === 'completed' && task.completedAt) {
-                      taskEndMs = new Date(task.completedAt).getTime();
-                    } else if (task.status === 'failed' && task.failedAt) {
-                      taskEndMs = new Date(task.failedAt).getTime();
-                    } else {
-                      // Running: right edge grows in real-time
-                      taskEndMs = nowMs;
-                    }
-                    const w = Math.max(4, toX(taskEndMs) - toX(taskStartMs));
+                      {/* Two-line label: task description + agent role */}
+                      <TaskLaneLabel task={task} y={y} color={color} />
 
-                    const isFailed = task.status === 'failed';
-                    const isRunning = task.status === 'running';
-                    const isSelected = selectedTask?.taskIndex === task.taskIndex;
-                    const fillColor = isFailed ? '#EF4444' : color.bg;
-                    const fillOpacity = isSelected ? 0.9 : 0.6;
-
-                    return (
+                      {/* Task bar */}
                       <g
-                        key={`task-${task.taskIndex}`}
                         onClick={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
                         className="cursor-pointer"
                       >
-                        {/* Task bar */}
                         <rect
                           x={barX}
                           y={barY}
@@ -500,11 +664,127 @@ function LiveTimelineView() {
                           </text>
                         )}
                       </g>
-                    );
-                  })}
-                </g>
-              );
-            })}
+                    </g>
+                  );
+                })
+              : agentRoles.map((role, i) => {
+                  const y = HEADER_HEIGHT + i * LANE_HEIGHT;
+                  const color = getAgentColor(role);
+                  const agentTasks = tasksByAgent.get(role) ?? [];
+
+                  return (
+                    <g key={role}>
+                      {/* Lane background */}
+                      <rect x={0} y={y} width={LABEL_WIDTH} height={LANE_HEIGHT} fill={withOpacity(color.bg, 0.08)} stroke="#E5E7EB" strokeWidth={0.5} />
+                      <rect x={LABEL_WIDTH} y={y} width={chartWidth + 100} height={LANE_HEIGHT} fill={i % 2 === 0 ? '#FAFAFA' : '#F5F7FA'} className="dark:fill-gray-900" />
+                      <line x1={0} y1={y + LANE_HEIGHT} x2={LABEL_WIDTH + chartWidth + 100} y2={y + LANE_HEIGHT} stroke="#E5E7EB" strokeWidth={0.5} />
+
+                      {/* Agent label */}
+                      <text
+                        x={LABEL_WIDTH - 8}
+                        y={y + LANE_HEIGHT / 2}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill={color.bg}
+                        data-testid="timeline-lane-label"
+                        data-lane-type="agent"
+                      >
+                        {role.length > 18 ? role.slice(0, 16) + '...' : role}
+                      </text>
+
+                      {/* Task bars */}
+                      {agentTasks.map((task) => {
+                        const taskStartMs = new Date(task.startedAt).getTime();
+                        const barX = toX(taskStartMs);
+                        const barY = y + LANE_PADDING;
+                        const barH = LANE_HEIGHT - LANE_PADDING * 2;
+
+                        let taskEndMs: number;
+                        if (task.status === 'completed' && task.completedAt) {
+                          taskEndMs = new Date(task.completedAt).getTime();
+                        } else if (task.status === 'failed' && task.failedAt) {
+                          taskEndMs = new Date(task.failedAt).getTime();
+                        } else {
+                          taskEndMs = nowMs;
+                        }
+                        const w = Math.max(4, toX(taskEndMs) - toX(taskStartMs));
+
+                        const isFailed = task.status === 'failed';
+                        const isRunning = task.status === 'running';
+                        const isSelected = selectedTask?.taskIndex === task.taskIndex;
+                        const fillColor = isFailed ? '#EF4444' : color.bg;
+                        const fillOpacity = isSelected ? 0.9 : 0.6;
+
+                        return (
+                          <g
+                            key={`task-${task.taskIndex}`}
+                            onClick={() => setSelectedTaskIndex(isSelected ? null : task.taskIndex)}
+                            className="cursor-pointer"
+                          >
+                            {/* Task bar */}
+                            <rect
+                              x={barX}
+                              y={barY}
+                              width={w}
+                              height={barH}
+                              rx={4}
+                              fill={withOpacity(fillColor, fillOpacity)}
+                              stroke={isSelected ? fillColor : 'transparent'}
+                              strokeWidth={2}
+                              data-testid="live-task-bar"
+                              data-task-index={task.taskIndex}
+                              data-task-status={task.status}
+                            />
+
+                            {/* Animated right-edge indicator for running bars */}
+                            {isRunning && (
+                              <rect
+                                x={barX + w - 3}
+                                y={barY}
+                                width={3}
+                                height={barH}
+                                rx={2}
+                                fill={fillColor}
+                                opacity={0.9}
+                                className="ae-pulse"
+                                data-testid="live-task-bar-running-edge"
+                              />
+                            )}
+
+                            {/* Tool call markers */}
+                            {task.toolCalls.map((tool, ti) => {
+                              const toolX = toX(tool.receivedAt);
+                              return (
+                                <rect
+                                  key={ti}
+                                  x={toolX - 1}
+                                  y={barY + barH - 6}
+                                  width={3}
+                                  height={6}
+                                  rx={1}
+                                  fill={getToolOutcomeColor(tool.outcome)}
+                                  opacity={0.9}
+                                  data-testid="live-tool-marker"
+                                  data-task-index={task.taskIndex}
+                                  data-tool-name={tool.toolName}
+                                />
+                              );
+                            })}
+
+                            {/* Task label */}
+                            {w > 50 && (
+                              <text x={barX + 4} y={barY + barH / 2} dominantBaseline="middle" fontSize={9} fill="white" className="pointer-events-none select-none">
+                                {task.taskDescription.slice(0, Math.floor(w / 6))}{task.taskDescription.length > Math.floor(w / 6) ? '...' : ''}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })}
 
             {/* Time axis */}
             <rect x={0} y={0} width={LABEL_WIDTH + chartWidth + 100} height={HEADER_HEIGHT} fill="white" className="dark:fill-gray-900" />
@@ -547,6 +827,8 @@ function LiveTimelineHeader({
   runningCount,
   followLatest,
   onToggleFollowLatest,
+  groupBy,
+  onToggleGroupBy,
 }: {
   workflow: string | null;
   totalTasks: number;
@@ -554,6 +836,8 @@ function LiveTimelineHeader({
   runningCount: number;
   followLatest: boolean;
   onToggleFollowLatest: () => void;
+  groupBy: GroupBy;
+  onToggleGroupBy: () => void;
 }) {
   return (
     <div className="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
@@ -576,19 +860,22 @@ function LiveTimelineHeader({
             </span>
           )}
         </div>
-        <button
-          onClick={onToggleFollowLatest}
-          data-testid="follow-latest-toggle"
-          data-follow-latest={followLatest}
-          className={[
-            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            followLatest
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-              : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800',
-          ].join(' ')}
-        >
-          {followLatest ? 'Following latest' : 'Follow latest'}
-        </button>
+        <div className="flex items-center gap-2">
+          <GroupingToggle groupBy={groupBy} onToggle={onToggleGroupBy} />
+          <button
+            onClick={onToggleFollowLatest}
+            data-testid="follow-latest-toggle"
+            data-follow-latest={followLatest}
+            className={[
+              'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+              followLatest
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800',
+            ].join(' ')}
+          >
+            {followLatest ? 'Following latest' : 'Follow latest'}
+          </button>
+        </div>
       </div>
     </div>
   );
