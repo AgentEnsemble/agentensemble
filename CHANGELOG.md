@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.3.0...v2.4.0) (2026-03-10)
+
+
+### Features
+
+* **viz:** Timeline view By Task / By Agent grouping toggle ([#177](https://github.com/AgentEnsemble/agentensemble/issues/177)) ([ea3c4d4](https://github.com/AgentEnsemble/agentensemble/commit/ea3c4d4ba477f8817926b07736c210bfdc022a97))
+
 ## [2.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.2.2...v2.3.0) (2026-03-09)
 
 
