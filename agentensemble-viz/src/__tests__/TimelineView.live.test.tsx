@@ -350,4 +350,106 @@ describe('TimelineView live mode', () => {
       expect(screen.getByText('1 / 3 tasks')).toBeInTheDocument();
     });
   });
+
+  describe('grouping toggle', () => {
+    it('defaults to "By Task" grouping', () => {
+      const state = makeLiveState({ tasks: [makeRunningTask(0)] });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const toggle = screen.getByTestId('grouping-toggle');
+      expect(toggle).toHaveAttribute('data-grouping', 'task');
+      expect(toggle).toHaveTextContent('By Task');
+    });
+
+    it('grouping toggle is present when waiting for tasks', () => {
+      mockLiveServer(makeLiveState({ tasks: [] }));
+      renderLiveTimeline();
+      expect(screen.getByTestId('grouping-toggle')).toBeInTheDocument();
+    });
+
+    it('shows one lane label per task in "By Task" mode even when roles repeat', () => {
+      const state = makeLiveState({
+        tasks: [
+          makeRunningTask(0, 'Researcher'),
+          makeRunningTask(1, 'Researcher'),
+          makeRunningTask(2, 'Agent'),
+        ],
+        totalTasks: 3,
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      // Default is "By Task" -- 3 tasks means 3 lane labels
+      const labels = screen.getAllByTestId('timeline-lane-label');
+      expect(labels).toHaveLength(3);
+      labels.forEach((label) => expect(label).toHaveAttribute('data-lane-type', 'task'));
+    });
+
+    it('switches to "By Agent" grouping when toggle is clicked', () => {
+      const state = makeLiveState({ tasks: [makeRunningTask(0)] });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const toggle = screen.getByTestId('grouping-toggle');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('data-grouping', 'agent');
+      expect(toggle).toHaveTextContent('By Agent');
+    });
+
+    it('shows one lane label per unique agent role in "By Agent" mode', () => {
+      const state = makeLiveState({
+        tasks: [
+          makeRunningTask(0, 'Researcher'),
+          makeRunningTask(1, 'Researcher'),
+          makeRunningTask(2, 'Agent'),
+        ],
+        totalTasks: 3,
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const toggle = screen.getByTestId('grouping-toggle');
+      fireEvent.click(toggle); // switch to By Agent
+      const labels = screen.getAllByTestId('timeline-lane-label');
+      // 2 unique roles: Researcher and Agent
+      expect(labels).toHaveLength(2);
+      labels.forEach((label) => expect(label).toHaveAttribute('data-lane-type', 'agent'));
+    });
+
+    it('switching back from "By Agent" to "By Task" restores per-task lanes', () => {
+      const state = makeLiveState({
+        tasks: [
+          makeRunningTask(0, 'Researcher'),
+          makeRunningTask(1, 'Researcher'),
+        ],
+        totalTasks: 2,
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const toggle = screen.getByTestId('grouping-toggle');
+
+      fireEvent.click(toggle); // switch to By Agent -- 1 unique role
+      expect(screen.getAllByTestId('timeline-lane-label')).toHaveLength(1);
+
+      fireEvent.click(toggle); // switch back to By Task -- 2 tasks
+      expect(screen.getAllByTestId('timeline-lane-label')).toHaveLength(2);
+    });
+
+    it('all task bars are rendered in both grouping modes', () => {
+      const state = makeLiveState({
+        tasks: [
+          makeRunningTask(0, 'Researcher'),
+          makeCompletedTask(1, 'Researcher'),
+          makeRunningTask(2, 'Agent'),
+        ],
+        totalTasks: 3,
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+
+      // By Task mode: 3 bars
+      expect(screen.getAllByTestId('live-task-bar')).toHaveLength(3);
+
+      // By Agent mode: still 3 bars
+      fireEvent.click(screen.getByTestId('grouping-toggle'));
+      expect(screen.getAllByTestId('live-task-bar')).toHaveLength(3);
+    });
+  });
 });
