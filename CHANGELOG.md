@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.6.0...v2.6.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* shut down heartbeat scheduler in WebDashboard.stop() to prevent JVM hang ([#184](https://github.com/AgentEnsemble/agentensemble/issues/184)) ([5c4f1a2](https://github.com/AgentEnsemble/agentensemble/commit/5c4f1a2a5e0aee08de1e95452594a26df91294e6))
+
 ## [2.6.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.5.0...v2.6.0) (2026-03-11)
 
 
