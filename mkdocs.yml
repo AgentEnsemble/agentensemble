@@ -113,6 +113,7 @@ nav:
     - CaptureMode: examples/capture-mode.md
     - Visualization: examples/visualization.md
     - Tool Pipeline: examples/tool-pipeline.md
+    - Deterministic Tasks: examples/deterministic-tasks.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
   - Migration:
@@ -135,3 +136,4 @@ nav:
     - v2.0.0 Architecture: design/15-v2-architecture.md
     - Live Execution Dashboard: design/16-live-dashboard.md
     - Tool Pipeline: design/17-tool-pipeline.md
+    - Deterministic Tasks: design/18-deterministic-tasks.md

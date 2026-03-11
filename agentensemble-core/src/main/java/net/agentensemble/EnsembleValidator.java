@@ -65,6 +65,7 @@ class EnsembleValidator {
         validateParallelErrorStrategy(effective);
         validateHierarchicalRoles(effective);
         validateHierarchicalConstraints(effective);
+        validateHandlerTasksNotInHierarchical(effective);
         validateNoCircularContextDependencies();
         validateContextOrdering(effective);
     }
@@ -83,16 +84,47 @@ class EnsembleValidator {
      *   <li>The ensemble has a {@code chatLanguageModel} (used for synthesis)</li>
      * </ol>
      *
+     * <p>Tasks with a {@code handler} configured are deterministic and do not need an LLM;
+     * they are skipped by this validation.
+     *
      * <p>If none of the above are present for a task, a {@link ValidationException} is thrown.
      */
     private void validateTasksHaveLlm() {
         for (Task task : tasks) {
+            // Deterministic handler tasks require no LLM.
+            if (task.getHandler() != null) {
+                continue;
+            }
             boolean hasLlm =
                     (task.getAgent() != null) || (task.getChatLanguageModel() != null) || (ensembleLlm != null);
             if (!hasLlm) {
                 throw new ValidationException("Task '" + task.getDescription() + "' has no LLM available. "
                         + "Provide an explicit agent, a task-level chatLanguageModel, "
-                        + "or an ensemble-level chatLanguageModel.");
+                        + "an ensemble-level chatLanguageModel, or configure a deterministic handler.");
+            }
+        }
+    }
+
+    /**
+     * Validate that deterministic handler tasks are not used in HIERARCHICAL workflow.
+     *
+     * <p>In HIERARCHICAL workflow, a virtual Manager agent delegates tasks to worker agents
+     * via the LLM tool-calling loop. Deterministic tasks have no agent, so the Manager
+     * cannot delegate to them. Use SEQUENTIAL or PARALLEL workflow when mixing AI-backed
+     * and deterministic tasks.
+     */
+    private void validateHandlerTasksNotInHierarchical(Workflow effective) {
+        if (effective != Workflow.HIERARCHICAL) {
+            return;
+        }
+        for (Task task : tasks) {
+            if (task.getHandler() != null) {
+                throw new ValidationException("Deterministic handler tasks are not supported in HIERARCHICAL workflow. "
+                        + "Task '"
+                        + task.getDescription()
+                        + "' has a handler configured. "
+                        + "Use SEQUENTIAL or PARALLEL workflow when mixing AI-backed and "
+                        + "deterministic tasks.");
             }
         }
     }

@@ -14,6 +14,7 @@ import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.ratelimit.RateLimitedChatModel;
 import net.agentensemble.review.Review;
+import net.agentensemble.task.TaskHandler;
 import net.agentensemble.tool.AgentTool;
 
 /**
@@ -284,9 +285,32 @@ public class Task {
      * <p>Ignored when {@link #agent} is set explicitly (configure rate limiting via
      * {@code Agent.builder().rateLimit()} instead).
      *
+     * <p>Mutually exclusive with {@link #handler}.
+     *
      * <p>Default: null (no task-level rate limiting).
      */
     RateLimit rateLimit;
+
+    /**
+     * Handler for deterministic (non-AI) task execution.
+     *
+     * <p>When set, workflow executors invoke this handler directly instead of routing
+     * through the LLM and the ReAct tool-calling loop. The handler receives a
+     * {@link net.agentensemble.task.TaskHandlerContext} and returns a
+     * {@link net.agentensemble.tool.ToolResult}.
+     *
+     * <p>Use the builder's {@link TaskBuilder#handler(TaskHandler)} overload for full
+     * context access (description, expected output, prior task outputs), or the
+     * {@link TaskBuilder#handler(AgentTool)} overload to wrap any existing {@link AgentTool}
+     * or {@link net.agentensemble.tool.ToolPipeline} directly.
+     *
+     * <p>Mutually exclusive with {@link #agent}, {@link #chatLanguageModel},
+     * {@link #streamingChatLanguageModel}, {@link #tools}, {@link #maxIterations},
+     * and {@link #rateLimit}.
+     *
+     * <p>Default: null (AI-backed execution).
+     */
+    TaskHandler handler;
 
     // ========================
     // Static convenience factories
@@ -355,6 +379,7 @@ public class Task {
         private Review review = null;
         private Review beforeReview = null;
         private RateLimit rateLimit = null;
+        private TaskHandler handler = null;
 
         /**
          * Declare a single named memory scope for this task.
@@ -431,6 +456,73 @@ public class Task {
             return this;
         }
 
+        /**
+         * Configure a deterministic handler for this task.
+         *
+         * <p>When set, the workflow executors bypass the LLM entirely and call this handler
+         * directly. The handler receives a
+         * {@link net.agentensemble.task.TaskHandlerContext} with the resolved description,
+         * expected output, and prior task outputs, and must return a
+         * {@link net.agentensemble.tool.ToolResult}.
+         *
+         * <p>Mutually exclusive with {@link #agent}, {@link #chatLanguageModel},
+         * {@code streamingChatLanguageModel}, {@link #tools},
+         * {@link #maxIterations}, and {@link #rateLimit}.
+         *
+         * <p>Passing {@code null} is valid and is equivalent to not configuring a handler
+         * (the task will be executed by an AI agent). This allows {@code toBuilder()}
+         * to correctly copy AI-backed tasks that have no handler.
+         *
+         * @param handler the handler to invoke; null means no handler (AI-backed execution)
+         * @return this builder
+         */
+        public TaskBuilder handler(TaskHandler handler) {
+            this.handler = handler;
+            return this;
+        }
+
+        /**
+         * Wrap an existing {@link AgentTool} as a deterministic handler for this task.
+         *
+         * <p>When this overload is used, the tool is invoked with a single string input:
+         * <ul>
+         *   <li>If the task has context outputs, the last context output's raw text
+         *       is used as the input.</li>
+         *   <li>Otherwise, the task description is used as the input.</li>
+         * </ul>
+         *
+         * <p>This makes it easy to chain an existing {@code AgentTool} or
+         * {@link net.agentensemble.tool.ToolPipeline} without an LLM:
+         * <pre>
+         * Task fetch = Task.builder()
+         *     .description("https://api.example.com/data")
+         *     .expectedOutput("JSON response")
+         *     .handler(httpTool)
+         *     .build();
+         *
+         * Task pipeline = Task.builder()
+         *     .description("https://api.example.com/data")
+         *     .expectedOutput("Parsed result")
+         *     .handler(ToolPipeline.of(httpTool, jsonParserTool))
+         *     .build();
+         * </pre>
+         *
+         * @param tool the tool to wrap as a handler; must not be null
+         * @return this builder
+         */
+        public TaskBuilder handler(AgentTool tool) {
+            if (tool == null) {
+                throw new IllegalArgumentException("Task handler tool must not be null");
+            }
+            this.handler = ctx -> {
+                String input = ctx.contextOutputs().isEmpty()
+                        ? ctx.description()
+                        : ctx.contextOutputs().getLast().getRaw();
+                return tool.execute(input);
+            };
+            return this;
+        }
+
         public Task build() {
             validateDescription();
             validateExpectedOutput();
@@ -441,6 +533,7 @@ public class Task {
             validateContext(effectiveContext);
             validateOutputType();
             validateMaxOutputRetries();
+            validateHandlerExclusivity(effectiveTools);
             applyRateLimit();
             tools = List.copyOf(effectiveTools);
             context = List.copyOf(effectiveContext);
@@ -465,7 +558,8 @@ public class Task {
                     List.copyOf(effectiveMemoryScopes),
                     review,
                     beforeReview,
-                    rateLimit);
+                    rateLimit,
+                    handler);
         }
 
         /**
@@ -566,6 +660,46 @@ public class Task {
         private void validateMaxOutputRetries() {
             if (maxOutputRetries < 0) {
                 throw new ValidationException("Task maxOutputRetries must be >= 0, got: " + maxOutputRetries);
+            }
+        }
+
+        /**
+         * Validate that {@code handler} is not combined with fields that are only meaningful
+         * for AI-backed tasks.
+         *
+         * <p>When a handler is configured, the task is executed deterministically and no LLM
+         * is needed. Setting LLM-related fields alongside a handler is a misconfiguration that
+         * would be silently ignored at runtime, so we reject it at build time instead.
+         */
+        private void validateHandlerExclusivity(List<Object> effectiveTools) {
+            if (handler == null) {
+                return;
+            }
+            if (agent != null) {
+                throw new ValidationException("Task cannot have both a handler and an explicit agent. "
+                        + "A handler runs deterministically without an LLM; remove the agent.");
+            }
+            if (chatLanguageModel != null) {
+                throw new ValidationException("Task cannot have both a handler and a chatLanguageModel. "
+                        + "A handler runs deterministically without an LLM; remove the chatLanguageModel.");
+            }
+            if (streamingChatLanguageModel != null) {
+                throw new ValidationException("Task cannot have both a handler and a streamingChatLanguageModel. "
+                        + "A handler runs deterministically without an LLM; "
+                        + "remove the streamingChatLanguageModel.");
+            }
+            if (!effectiveTools.isEmpty()) {
+                throw new ValidationException("Task cannot have both a handler and tools. "
+                        + "A handler runs deterministically; configure tools inside the handler instead.");
+            }
+            if (maxIterations != null) {
+                throw new ValidationException("Task cannot have both a handler and maxIterations. "
+                        + "A handler runs deterministically without an iteration loop; "
+                        + "remove the maxIterations.");
+            }
+            if (rateLimit != null) {
+                throw new ValidationException("Task cannot have both a handler and a rateLimit. "
+                        + "A handler runs deterministically without an LLM; remove the rateLimit.");
             }
         }
     }

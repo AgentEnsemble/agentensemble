@@ -1,6 +1,30 @@
 # Active Context
 
 ## Current Work
+Branch `feature/deterministic-tasks` is complete and ready for PR. Implements deterministic (non-AI) task execution via `Task.builder().handler(...)`. Full build + all tests pass.
+
+## Completed in Last Session (Deterministic Tasks)
+
+- New `TaskHandler` `@FunctionalInterface` returning `ToolResult` (`net.agentensemble.task`)
+- New `TaskHandlerContext` record with `description`, `expectedOutput`, `contextOutputs`
+- New `DeterministicTaskExecutor` class: runs handler lifecycle (guardrails, memory, callbacks)
+  without any LLM call; `agentRole = "(deterministic)"`, `toolCallCount = 0`
+- `Task.java`: added `handler` field + `handler(TaskHandler)` + `handler(AgentTool)` builder
+  overloads; `validateHandlerExclusivity()` rejects LLM-specific fields alongside handler
+- `EnsembleValidator`: `validateTasksHaveLlm()` skips handler tasks;
+  `validateHandlerTasksNotInHierarchical()` blocks HIERARCHICAL+handler combos
+- `Ensemble.resolveAgents()`: skips agent synthesis for handler tasks
+- `SequentialWorkflowExecutor` + `ParallelTaskCoordinator` + `ParallelWorkflowExecutor`:
+  branch on `task.getHandler() != null` to invoke `DeterministicTaskExecutor`; all
+  `task.getAgent().getRole()` call sites guarded via updated `agentRole()` helper
+- Tests: `TaskHandlerContextTest`, `DeterministicTaskExecutorTest`, `TaskTest` additions,
+  `TaskValidationTest` additions, `DeterministicTaskIntegrationTest` (sequential/parallel/mixed)
+- Docs: `docs/design/18-deterministic-tasks.md`, `docs/examples/deterministic-tasks.md`
+- Example: `DeterministicTaskExample.java` + `runDeterministicTask` Gradle task
+- `mkdocs.yml`: added examples + design nav entries
+
+## Previously Completed
+
 All work on PR #180 (`feat/issue-179-multi-run-support`) is complete including Copilot review feedback. Branch pushed at `cc632ea`.
 
 ## Completed in last session

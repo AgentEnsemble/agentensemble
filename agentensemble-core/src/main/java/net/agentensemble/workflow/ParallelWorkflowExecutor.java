@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.agent.DeterministicTaskExecutor;
 import net.agentensemble.delegation.DelegationContext;
 import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -86,6 +87,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
     private final List<DelegationPolicy> delegationPolicies;
     private final ParallelErrorStrategy errorStrategy;
     private final AgentExecutor agentExecutor;
+    private final DeterministicTaskExecutor deterministicExecutor;
 
     /**
      * Create a ParallelWorkflowExecutor with no delegation policies.
@@ -118,6 +120,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.errorStrategy = errorStrategy != null ? errorStrategy : ParallelErrorStrategy.FAIL_FAST;
         this.agentExecutor = new AgentExecutor();
+        this.deterministicExecutor = new DeterministicTaskExecutor();
     }
 
     @Override
@@ -207,7 +210,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     completionOrder,
                     taskIndexMap,
                     errorStrategy,
-                    agentExecutor);
+                    agentExecutor,
+                    deterministicExecutor);
 
             // Submit all root tasks (no in-graph dependencies) immediately
             for (Task root : graph.getRoots()) {

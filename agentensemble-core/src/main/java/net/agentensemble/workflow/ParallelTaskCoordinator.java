@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.agent.DeterministicTaskExecutor;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
@@ -73,6 +74,7 @@ class ParallelTaskCoordinator {
     private final Map<Task, Integer> taskIndexMap;
     private final ParallelErrorStrategy errorStrategy;
     private final AgentExecutor agentExecutor;
+    private final DeterministicTaskExecutor deterministicExecutor;
 
     /**
      * Mutex for the after-execution review gate.
@@ -103,7 +105,8 @@ class ParallelTaskCoordinator {
             List<TaskOutput> completionOrder,
             Map<Task, Integer> taskIndexMap,
             ParallelErrorStrategy errorStrategy,
-            AgentExecutor agentExecutor) {
+            AgentExecutor agentExecutor,
+            DeterministicTaskExecutor deterministicExecutor) {
         this.graph = graph;
         this.callerMdc = callerMdc;
         this.completedOutputs = completedOutputs;
@@ -121,6 +124,7 @@ class ParallelTaskCoordinator {
         this.taskIndexMap = taskIndexMap;
         this.errorStrategy = errorStrategy;
         this.agentExecutor = agentExecutor;
+        this.deterministicExecutor = deterministicExecutor;
     }
 
     /**
@@ -156,9 +160,9 @@ class ParallelTaskCoordinator {
                 executionContext.fireTaskStart(
                         new TaskStartEvent(task.getDescription(), agentRole(task), taskIndex, totalTasks));
 
-                // Inject ReviewHandler into HumanInputTool instances before execution
+                // Inject ReviewHandler into HumanInputTool instances (AI tasks only)
                 ReviewHandler reviewHandler = executionContext.reviewHandler();
-                if (reviewHandler != null) {
+                if (reviewHandler != null && task.getAgent() != null) {
                     injectReviewHandlerIntoTools(task, reviewHandler);
                 }
 
@@ -173,7 +177,13 @@ class ParallelTaskCoordinator {
                     }
                 }
 
-                TaskOutput output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                // Execute the task -- deterministic handler tasks bypass AgentExecutor entirely
+                TaskOutput output;
+                if (task.getHandler() != null) {
+                    output = deterministicExecutor.execute(task, contextOutputs, executionContext);
+                } else {
+                    output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                }
 
                 // === After-execution review gate ===
                 // Outer check avoids acquiring the lock when no gate is needed.
@@ -413,12 +423,24 @@ class ParallelTaskCoordinator {
     }
 
     /**
-     * Returns the agent role for a task, falling back to {@code "(synthesized)"} when the
-     * task's agent is null. Defensive guard for direct callers of the executor and for
-     * error-handling paths (issue #148).
+     * Returns the agent role for a task.
+     *
+     * <ul>
+     *   <li>If the task has an explicit agent, returns the agent's role.</li>
+     *   <li>If the task has a handler configured (deterministic task), returns
+     *       {@link DeterministicTaskExecutor#DETERMINISTIC_ROLE}.</li>
+     *   <li>Otherwise returns {@code "(synthesized)"} -- guards against NPEs in error paths
+     *       where a task may not yet have a resolved agent (issue #148).</li>
+     * </ul>
      */
     private static String agentRole(Task task) {
-        return task.getAgent() != null ? task.getAgent().getRole() : "(synthesized)";
+        if (task.getAgent() != null) {
+            return task.getAgent().getRole();
+        }
+        if (task.getHandler() != null) {
+            return DeterministicTaskExecutor.DETERMINISTIC_ROLE;
+        }
+        return "(synthesized)";
     }
 
     private static String truncate(String text, int maxLength) {

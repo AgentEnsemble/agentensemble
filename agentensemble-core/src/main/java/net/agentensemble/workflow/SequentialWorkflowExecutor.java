@@ -9,6 +9,7 @@ import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
 import net.agentensemble.agent.AgentExecutor;
+import net.agentensemble.agent.DeterministicTaskExecutor;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
@@ -77,6 +78,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     private final int maxDelegationDepth;
     private final List<DelegationPolicy> delegationPolicies;
     private final AgentExecutor agentExecutor;
+    private final DeterministicTaskExecutor deterministicExecutor;
 
     /**
      * Create a SequentialWorkflowExecutor with delegation support but no delegation policies.
@@ -102,6 +104,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
         this.maxDelegationDepth = maxDelegationDepth;
         this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.agentExecutor = new AgentExecutor();
+        this.deterministicExecutor = new DeterministicTaskExecutor();
     }
 
     @Override
@@ -122,7 +125,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             String indexLabel = taskIndex + "/" + totalTasks;
 
             MDC.put(MDC_TASK_INDEX, indexLabel);
-            MDC.put(MDC_AGENT_ROLE, task.getAgent().getRole());
+            MDC.put(MDC_AGENT_ROLE, agentRole(task));
 
             Instant taskStart = Instant.now();
             try {
@@ -158,8 +161,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                     // Continue or Edit (Edit before execution is treated as Continue)
                 }
 
-                // === Inject ReviewHandler into HumanInputTool instances ===
-                if (reviewHandler != null) {
+                // === Inject ReviewHandler into HumanInputTool instances (AI tasks only) ===
+                if (reviewHandler != null && task.getAgent() != null) {
                     injectReviewHandlerIntoTools(task, reviewHandler);
                 }
 
@@ -168,19 +171,23 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         taskIndex,
                         totalTasks,
                         truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
-                        task.getAgent().getRole());
+                        agentRole(task));
 
                 // Fire TaskStartEvent
-                executionContext.fireTaskStart(new TaskStartEvent(
-                        task.getDescription(), task.getAgent().getRole(), taskIndex, totalTasks));
+                executionContext.fireTaskStart(
+                        new TaskStartEvent(task.getDescription(), agentRole(task), taskIndex, totalTasks));
 
                 // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
                 log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
 
-                // Execute the task
-                TaskOutput taskOutput =
-                        agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                // Execute the task -- deterministic handler tasks bypass AgentExecutor entirely
+                TaskOutput taskOutput;
+                if (task.getHandler() != null) {
+                    taskOutput = deterministicExecutor.execute(task, contextOutputs, executionContext);
+                } else {
+                    taskOutput = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                }
 
                 // === After-execution review gate ===
                 if (shouldApplyAfterReview(task, taskIndex, totalTasks, executionContext)) {
@@ -241,10 +248,10 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
                 }
 
-                // Fire TaskCompleteEvent
+                // Fire TaskCompleteEvent -- use the role reported in the output (set by the executor)
                 executionContext.fireTaskComplete(new TaskCompleteEvent(
                         task.getDescription(),
-                        task.getAgent().getRole(),
+                        taskOutput.getAgentRole(),
                         taskOutput,
                         taskOutput.getDuration(),
                         taskIndex,
@@ -267,12 +274,12 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
                 // Fire TaskFailedEvent before propagating
                 executionContext.fireTaskFailed(new TaskFailedEvent(
-                        task.getDescription(), task.getAgent().getRole(), e, taskDuration, taskIndex, totalTasks));
+                        task.getDescription(), agentRole(task), e, taskDuration, taskIndex, totalTasks));
 
                 throw new TaskExecutionException(
                         "Task failed: " + task.getDescription(),
                         task.getDescription(),
-                        task.getAgent().getRole(),
+                        agentRole(task),
                         List.copyOf(completedOutputs.values()),
                         e);
             } finally {
@@ -453,12 +460,24 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     // ========================
 
     /**
-     * Returns the agent role for a task, falling back to {@code "(synthesized)"} when the
-     * task's agent is null. This guards against NPEs at call sites that run before or during
-     * error-handling where a task might not yet have a resolved agent (issue #148).
+     * Returns the agent role for a task.
+     *
+     * <ul>
+     *   <li>If the task has an explicit agent, returns the agent's role.</li>
+     *   <li>If the task has a handler configured (deterministic task), returns
+     *       {@link DeterministicTaskExecutor#DETERMINISTIC_ROLE}.</li>
+     *   <li>Otherwise returns {@code "(synthesized)"} -- guards against NPEs in error paths
+     *       where a task may not yet have a resolved agent (issue #148).</li>
+     * </ul>
      */
     private static String agentRole(Task task) {
-        return task.getAgent() != null ? task.getAgent().getRole() : "(synthesized)";
+        if (task.getAgent() != null) {
+            return task.getAgent().getRole();
+        }
+        if (task.getHandler() != null) {
+            return DeterministicTaskExecutor.DETERMINISTIC_ROLE;
+        }
+        return "(synthesized)";
     }
 
     private List<TaskOutput> gatherContextOutputs(Task task, Map<Task, TaskOutput> completedOutputs) {
