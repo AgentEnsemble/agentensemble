@@ -207,6 +207,79 @@ class WebDashboardTest {
         assertThat(asCloseable).isNotNull();
     }
 
+    @Test
+    void stop_terminatesHeartbeatScheduler() {
+        // The heartbeat scheduler must be terminated when stop() returns so that
+        // no lingering thread is left running after the dashboard has been stopped.
+        // The heartbeat thread is a daemon thread and does not block JVM exit on its
+        // own, but terminating the scheduler ensures clean lifecycle semantics and
+        // avoids resource leaks in long-running processes that create multiple dashboards.
+        dashboard = WebDashboard.onPort(0);
+        dashboard.start();
+
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("scheduler should not be terminated while running")
+                .isFalse();
+
+        dashboard.stop();
+
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("heartbeat scheduler must be terminated after stop()")
+                .isTrue();
+    }
+
+    @Test
+    void stop_isIdempotent_doesNotThrowOnDoubleStop() {
+        // stop() must be safe to call more than once. The scheduler is shut down on
+        // the first stop() (when the server was running). The second stop() is a true
+        // no-op: server.stop() is a no-op because the server is already stopped, and
+        // the wasRunning guard prevents a second shutdownNow() call.
+        dashboard = WebDashboard.onPort(0);
+        dashboard.start();
+        dashboard.stop();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated()).isTrue();
+        // Second stop() must not throw.
+        dashboard.stop();
+        assertThat(dashboard.isRunning()).isFalse();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated()).isTrue();
+    }
+
+    @Test
+    void close_terminatesHeartbeatScheduler() {
+        // AutoCloseable.close() delegates to stop(), so it must also terminate the
+        // heartbeat scheduler. Verifies the close() path applies the same resource
+        // cleanup as stop().
+        WebDashboard local = WebDashboard.onPort(0);
+        local.start();
+
+        assertThat(local.isHeartbeatSchedulerTerminated())
+                .as("scheduler should not be terminated while running")
+                .isFalse();
+
+        local.close();
+
+        assertThat(local.isHeartbeatSchedulerTerminated())
+                .as("heartbeat scheduler must be terminated after close()")
+                .isTrue();
+    }
+
+    @Test
+    void stop_onNeverStartedDashboard_doesNotTerminateScheduler() {
+        // When stop() is called on a dashboard that was never started, it is a true
+        // no-op: the server was not running, so the scheduler should NOT be shut down.
+        // This preserves the idempotency contract and avoids breaking a potential
+        // future restart after a stop-before-start sequence.
+        dashboard = WebDashboard.onPort(0);
+        assertThat(dashboard.isRunning()).isFalse();
+
+        dashboard.stop();
+
+        assertThat(dashboard.isRunning()).isFalse();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("scheduler must NOT be terminated when stop() is called on a never-started dashboard")
+                .isFalse();
+    }
+
     // ========================
     // Component accessors
     // ========================

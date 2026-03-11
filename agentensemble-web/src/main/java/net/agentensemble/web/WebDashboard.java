@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
@@ -210,12 +211,35 @@ public final class WebDashboard implements EnsembleDashboard {
     }
 
     /**
-     * Stops the embedded WebSocket server. If the server is not running, this is a no-op
-     * (idempotent).
+     * Stops the embedded WebSocket server and releases the internal heartbeat scheduler.
+     * If the server is not running, this is a no-op (idempotent).
+     *
+     * <p>When the server was running, {@code stop()} shuts down the heartbeat
+     * {@code ScheduledExecutorService} and awaits termination of its worker thread (up to
+     * 2 seconds) to prevent resource leaks in long-running processes that create and stop
+     * multiple dashboards. The heartbeat thread is a daemon thread and therefore does not
+     * block JVM exit on its own, but releasing the executor ensures clean lifecycle
+     * semantics.
+     *
+     * <p><strong>Note:</strong> Once stopped, this {@code WebDashboard} instance should not
+     * be restarted. The scheduler is terminated on the first {@code stop()} call when the
+     * server was running; a subsequent {@code start()} would attempt to reschedule the
+     * heartbeat on a terminated executor.
      */
     @Override
     public void stop() {
+        boolean wasRunning = server.isRunning();
         server.stop();
+        if (wasRunning) {
+            heartbeatScheduler.shutdownNow();
+            try {
+                if (!heartbeatScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                    log.warn("Heartbeat scheduler did not terminate within 2 seconds");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     /**
@@ -383,6 +407,15 @@ public final class WebDashboard implements EnsembleDashboard {
     @Override
     public ExecutionTraceExporter traceExporter() {
         return configuredTraceExporter;
+    }
+
+    /**
+     * Package-private for testing: returns {@code true} once the heartbeat scheduler has
+     * been shut down and all its tasks have completed. Becomes {@code true} after
+     * {@link #stop()} is called on a dashboard that was running.
+     */
+    boolean isHeartbeatSchedulerTerminated() {
+        return heartbeatScheduler.isTerminated();
     }
 
     /**
