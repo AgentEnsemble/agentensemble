@@ -1,6 +1,19 @@
 # Active Context
 
 ## Current Work
+Branch `fix/web-dashboard-heartbeat-scheduler-leak` (PR #184) fixes a JVM hang caused by the heartbeat scheduler not being shut down in `WebDashboard.stop()`.
+
+## Completed in Last Session (Heartbeat Scheduler Leak Fix)
+
+- **Root cause**: `WebSocketServer.stop()` cancelled the scheduled heartbeat `Future` but never called `heartbeatScheduler.shutdown()` or `shutdownNow()`. The executor's core thread remained parked in `ScheduledThreadPoolExecutor$DelayedWorkQueue.take()`, keeping the JVM alive.
+- **Fix**: `WebDashboard.stop()` now calls `heartbeatScheduler.shutdownNow()` + `awaitTermination(2s)` after `server.stop()`. Ownership is correct -- `WebDashboard` creates the scheduler, so it shuts it down.
+- **Tests added** to `WebDashboardTest`:
+  - `stop_shutsDownHeartbeatSchedulerThread`: verifies `agentensemble-web-heartbeat` thread is TERMINATED after `stop()`.
+  - `stop_isIdempotent_doesNotThrowOnDoubleStop`: verifies double-`stop()` does not throw.
+  - `close_shutsDownHeartbeatSchedulerThread`: verifies `AutoCloseable.close()` path also terminates the thread.
+- All 171 tests pass; BUILD SUCCESSFUL.
+
+## Previously Completed (Deterministic Tasks)
 Branch `feature/deterministic-tasks` is complete and ready for PR. Implements deterministic (non-AI) task execution via `Task.builder().handler(...)`. Full build + all tests pass.
 
 ## Completed in Last Session (Deterministic Tasks)

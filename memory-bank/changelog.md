@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] - fix/web-dashboard-heartbeat-scheduler-leak (PR #184) - 2026-03-11
+
+### Fixed
+- `WebDashboard.stop()` now calls `heartbeatScheduler.shutdownNow()` + `awaitTermination(2s)`
+  after stopping the server. Previously, `WebSocketServer.stop()` cancelled the heartbeat
+  `ScheduledFuture` but never shut down the executor itself, leaving its core worker thread
+  parked in `ScheduledThreadPoolExecutor$DelayedWorkQueue.take()` and preventing JVM exit.
+  `WebDashboard` owns the scheduler (creates it in its constructor), so it is responsible
+  for the shutdown.
+
+### Tests Added (WebDashboardTest)
+- `stop_shutsDownHeartbeatSchedulerThread`: verifies `agentensemble-web-heartbeat` thread
+  is TERMINATED after `stop()` returns.
+- `stop_isIdempotent_doesNotThrowOnDoubleStop`: verifies calling `stop()` twice does not
+  throw (`shutdownNow` on a terminated executor is a no-op).
+- `close_shutsDownHeartbeatSchedulerThread`: verifies the `AutoCloseable.close()` path also
+  terminates the scheduler thread.
+
+---
+
 ## [Unreleased] - 2026-03-11
 ### Added
 - Deterministic tasks: `Task.builder().handler(TaskHandler)` and `.handler(AgentTool)` overloads
