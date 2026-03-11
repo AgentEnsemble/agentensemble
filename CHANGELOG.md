@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.5.0...v2.6.0) (2026-03-11)
+
+
+### Features
+
+* deterministic tasks - Task.builder().handler() for non-AI task execution ([#182](https://github.com/AgentEnsemble/agentensemble/issues/182)) ([93e6c47](https://github.com/AgentEnsemble/agentensemble/commit/93e6c478cffa8a83e9ac57c7a1138154a7d8d387))
+
 ## [2.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.4.0...v2.5.0) (2026-03-10)
 
 
