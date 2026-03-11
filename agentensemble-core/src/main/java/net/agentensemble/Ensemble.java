@@ -58,6 +58,7 @@ import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
 import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.ParallelWorkflowExecutor;
+import net.agentensemble.workflow.Phase;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
 import net.agentensemble.workflow.WorkflowExecutor;
@@ -111,6 +112,23 @@ public class Ensemble {
     /** All tasks to execute. */
     @Singular
     private final List<Task> tasks;
+
+    /**
+     * Named task-group workstreams with a dependency DAG.
+     *
+     * <p>Independent phases run in parallel; a phase starts only when all phases declared in
+     * its {@code after()} list have completed. Cannot be combined with {@code tasks} -- use
+     * one style per ensemble.
+     *
+     * <p>Default: empty (flat task list is used instead).
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we need to
+     * provide both {@code phase(Phase)} and {@code phase(String, Task...)} methods in the custom
+     * {@code EnsembleBuilder}; Lombok annotations would conflict with those names. The
+     * {@code EnsembleBuilder} initialises this field to a new mutable list and accumulates
+     * phases via its custom methods; the result is wrapped in {@code List.copyOf()} at build time.
+     */
+    private final List<Phase> phases;
 
     /**
      * Default LLM for all tasks that do not carry their own {@code chatLanguageModel}
@@ -999,6 +1017,27 @@ public class Ensemble {
      */
     public static class EnsembleBuilder {
 
+        // Phases accumulator. Declared here (not in the main class field annotations) so that
+        // we can provide both phase(Phase) and phase(String, Task...) without conflicting with
+        // Lombok's @Singular-generated methods. Initialized to a mutable list so phase() calls
+        // accumulate cleanly; wrapped in List.copyOf() by the Lombok-generated build() method via
+        // the phases(List<Phase>) setter call in the terminal phase() overloads.
+        // Lombok sees this plain List<Phase> field and generates phases(List<Phase>) which
+        // replaces the list -- that setter is NOT called by our phase() accumulator methods.
+        private List<Phase> phases = new ArrayList<>();
+
+        /**
+         * Add a single phase to this ensemble.
+         *
+         * @param phase the phase to add; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder phase(Phase phase) {
+            Objects.requireNonNull(phase, "phase must not be null");
+            this.phases.add(phase);
+            return this;
+        }
+
         /**
          * Register a lambda that is called immediately before each task starts.
          */
@@ -1105,6 +1144,19 @@ public class Ensemble {
                     handler.accept(event);
                 }
             });
+        }
+
+        /**
+         * Add a named phase with the given tasks (no workflow override, no dependencies).
+         *
+         * <p>Convenience method equivalent to {@code phase(Phase.of(name, tasks))}.
+         *
+         * @param name  unique phase name within the ensemble; must not be null or blank
+         * @param tasks tasks for this phase; at least one required
+         * @return this builder
+         */
+        public EnsembleBuilder phase(String name, Task... tasks) {
+            return phase(Phase.of(name, tasks));
         }
 
         /**
