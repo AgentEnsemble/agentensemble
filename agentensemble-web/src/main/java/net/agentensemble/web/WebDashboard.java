@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
@@ -210,12 +211,24 @@ public final class WebDashboard implements EnsembleDashboard {
     }
 
     /**
-     * Stops the embedded WebSocket server. If the server is not running, this is a no-op
-     * (idempotent).
+     * Stops the embedded WebSocket server and shuts down the internal heartbeat scheduler.
+     * If the server is not running, this is a no-op (idempotent).
+     *
+     * <p>Calling {@code stop()} releases all internal threads, including the
+     * {@code agentensemble-web-heartbeat} scheduler thread, so that no non-daemon threads
+     * remain after this method returns and the JVM can exit normally.
      */
     @Override
     public void stop() {
         server.stop();
+        heartbeatScheduler.shutdownNow();
+        try {
+            if (!heartbeatScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                log.warn("Heartbeat scheduler did not terminate within 2 seconds");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
