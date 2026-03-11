@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] - feature/186-phases (Issue #186) - 2026-03-11
+
+### Added (docs/design pass -- implementation pending)
+- Design doc `docs/design/19-phases.md`: full spec covering Phase domain model, DAG execution
+  model, PhaseDagExecutor algorithm, Ensemble changes, EnsembleOutput/ExecutionTrace changes,
+  validation rules, edge cases, package/class structure, and testing requirements
+- Guide `docs/guides/phases.md`: when to use phases, declaring phases, cross-phase context,
+  per-phase workflow override, error handling, comparison table
+- Example page `docs/examples/phases.md`: six code examples covering sequential, parallel,
+  kitchen convergent, per-phase workflow, diamond dependency, deterministic handler phases
+- Reference update `docs/reference/ensemble-configuration.md`: `phases` field in builder table,
+  new Phase Configuration section with field table and validation rules
+- Runnable example `PhasesExample.java`: three patterns (sequential deterministic, kitchen
+  parallel convergent, AI-backed parallel); `runPhases` Gradle task registered
+- Navigation `mkdocs.yml`: Phases added to Guides, Examples, and Design nav sections
+
+---
+
 ## [Unreleased] - fix/web-dashboard-heartbeat-scheduler-leak (PR #184) - 2026-03-11
 
 ### Fixed
