@@ -208,78 +208,76 @@ class WebDashboardTest {
     }
 
     @Test
-    void stop_shutsDownHeartbeatSchedulerThread() throws InterruptedException {
-        // The heartbeat scheduler must be fully shut down when stop() returns so that
-        // no lingering thread prevents JVM exit. The "agentensemble-web-heartbeat" thread
-        // is the scheduler's worker; it must be TERMINATED after stop().
+    void stop_terminatesHeartbeatScheduler() {
+        // The heartbeat scheduler must be terminated when stop() returns so that
+        // no lingering thread is left running after the dashboard has been stopped.
+        // The heartbeat thread is a daemon thread and does not block JVM exit on its
+        // own, but terminating the scheduler ensures clean lifecycle semantics and
+        // avoids resource leaks in long-running processes that create multiple dashboards.
         dashboard = WebDashboard.onPort(0);
         dashboard.start();
 
-        // Verify the heartbeat worker thread is alive while running.
-        Thread heartbeatThread = findThreadByName("agentensemble-web-heartbeat");
-        assertThat(heartbeatThread)
-                .as("heartbeat thread should be alive after start()")
-                .isNotNull();
-        assertThat(heartbeatThread.isAlive()).isTrue();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("scheduler should not be terminated while running")
+                .isFalse();
 
         dashboard.stop();
 
-        // After stop(), awaitTermination(2s) has already been called inside stop().
-        // The thread must be terminated by now; poll briefly to account for
-        // any OS scheduling jitter after the executor's worker exits its loop.
-        long deadline = System.currentTimeMillis() + 3_000;
-        while (heartbeatThread.isAlive() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(20);
-        }
-        assertThat(heartbeatThread.isAlive())
-                .as("heartbeat scheduler thread must be terminated after stop()")
-                .isFalse();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("heartbeat scheduler must be terminated after stop()")
+                .isTrue();
     }
 
     @Test
     void stop_isIdempotent_doesNotThrowOnDoubleStop() {
-        // stop() must be safe to call more than once -- even after the scheduler has
-        // already been shut down (shutdownNow() on a terminated executor is a no-op).
+        // stop() must be safe to call more than once. The scheduler is shut down on
+        // the first stop() (when the server was running). The second stop() is a true
+        // no-op: server.stop() is a no-op because the server is already stopped, and
+        // the wasRunning guard prevents a second shutdownNow() call.
         dashboard = WebDashboard.onPort(0);
         dashboard.start();
         dashboard.stop();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated()).isTrue();
         // Second stop() must not throw.
         dashboard.stop();
         assertThat(dashboard.isRunning()).isFalse();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated()).isTrue();
     }
 
     @Test
-    void close_shutsDownHeartbeatSchedulerThread() throws InterruptedException {
+    void close_terminatesHeartbeatScheduler() {
         // AutoCloseable.close() delegates to stop(), so it must also terminate the
-        // heartbeat scheduler thread. Verifies the close() path is not missing the fix.
+        // heartbeat scheduler. Verifies the close() path applies the same resource
+        // cleanup as stop().
         WebDashboard local = WebDashboard.onPort(0);
         local.start();
 
-        Thread heartbeatThread = findThreadByName("agentensemble-web-heartbeat");
-        assertThat(heartbeatThread)
-                .as("heartbeat thread should be alive after start()")
-                .isNotNull();
+        assertThat(local.isHeartbeatSchedulerTerminated())
+                .as("scheduler should not be terminated while running")
+                .isFalse();
 
         local.close();
 
-        long deadline = System.currentTimeMillis() + 3_000;
-        while (heartbeatThread.isAlive() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(20);
-        }
-        assertThat(heartbeatThread.isAlive())
-                .as("heartbeat scheduler thread must be terminated after close()")
-                .isFalse();
+        assertThat(local.isHeartbeatSchedulerTerminated())
+                .as("heartbeat scheduler must be terminated after close()")
+                .isTrue();
     }
 
-    /**
-     * Returns the first live thread whose name equals {@code name}, or {@code null} if
-     * no such thread is currently running.
-     */
-    private static Thread findThreadByName(String name) {
-        return Thread.getAllStackTraces().keySet().stream()
-                .filter(t -> name.equals(t.getName()))
-                .findFirst()
-                .orElse(null);
+    @Test
+    void stop_onNeverStartedDashboard_doesNotTerminateScheduler() {
+        // When stop() is called on a dashboard that was never started, it is a true
+        // no-op: the server was not running, so the scheduler should NOT be shut down.
+        // This preserves the idempotency contract and avoids breaking a potential
+        // future restart after a stop-before-start sequence.
+        dashboard = WebDashboard.onPort(0);
+        assertThat(dashboard.isRunning()).isFalse();
+
+        dashboard.stop();
+
+        assertThat(dashboard.isRunning()).isFalse();
+        assertThat(dashboard.isHeartbeatSchedulerTerminated())
+                .as("scheduler must NOT be terminated when stop() is called on a never-started dashboard")
+                .isFalse();
     }
 
     // ========================
