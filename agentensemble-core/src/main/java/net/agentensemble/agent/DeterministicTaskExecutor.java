@@ -16,6 +16,7 @@ import net.agentensemble.guardrail.GuardrailViolationException.GuardrailType;
 import net.agentensemble.guardrail.InputGuardrail;
 import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryEntry;
+import net.agentensemble.memory.MemoryRecord;
 import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.TaskMetrics;
@@ -86,9 +87,12 @@ public class DeterministicTaskExecutor {
 
         log.info("Deterministic task starting | Description: {}", truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
+        // Capture startTime before guardrails so duration includes guardrail evaluation time,
+        // matching AgentExecutor semantics.
+        Instant startTime = Instant.now();
+
         runInputGuardrails(task, contextOutputs);
 
-        Instant startTime = Instant.now();
         TaskHandlerContext context =
                 new TaskHandlerContext(task.getDescription(), task.getExpectedOutput(), contextOutputs);
 
@@ -153,6 +157,14 @@ public class DeterministicTaskExecutor {
                 && !task.getMemoryScopes().isEmpty()) {
             storeInDeclaredScopes(task, output, memStore);
         }
+
+        // Legacy record call: no-op when MemoryContext is disabled (default in v2.0.0).
+        // Ensures deterministic task outputs are visible to legacy STM/LTM memory so that
+        // subsequent AI tasks see them in the agent prompt (matching AgentExecutor behaviour).
+        executionContext
+                .memoryContext()
+                .record(new MemoryRecord(
+                        output.getRaw(), output.getAgentRole(), output.getTaskDescription(), output.getCompletedAt()));
 
         return output;
     }
