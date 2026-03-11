@@ -628,4 +628,193 @@ class TaskTest {
         var copy = original.toBuilder().description("Updated task").build();
         assertThat(copy.getRateLimit()).isEqualTo(RateLimit.perMinute(10));
     }
+
+    // ========================
+    // handler field (deterministic tasks)
+    // ========================
+
+    @Test
+    void testBuild_withLambdaHandler_stored() {
+        var task = Task.builder()
+                .description("Fetch data")
+                .expectedOutput("JSON")
+                .handler(ctx -> net.agentensemble.tool.ToolResult.success("data"))
+                .build();
+
+        assertThat(task.getHandler()).isNotNull();
+        assertThat(task.getAgent()).isNull();
+        assertThat(task.getChatLanguageModel()).isNull();
+    }
+
+    @Test
+    void testBuild_withAgentToolHandler_wrapsToolAsHandler() {
+        AgentTool tool = new AgentTool() {
+            @Override
+            public String name() {
+                return "echo";
+            }
+
+            @Override
+            public String description() {
+                return "Echoes input";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                return ToolResult.success(input);
+            }
+        };
+
+        var task = Task.builder()
+                .description("Echo task")
+                .expectedOutput("Echoed output")
+                .handler(tool)
+                .build();
+
+        assertThat(task.getHandler()).isNotNull();
+        assertThat(task.getAgent()).isNull();
+    }
+
+    @Test
+    void testBuild_agentToolHandler_usesDescriptionAsInput_whenNoContext() {
+        String[] capturedInput = new String[1];
+        AgentTool tool = new AgentTool() {
+            @Override
+            public String name() {
+                return "cap";
+            }
+
+            @Override
+            public String description() {
+                return "Captures input";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                capturedInput[0] = input;
+                return ToolResult.success(input);
+            }
+        };
+
+        var task = Task.builder()
+                .description("my-url://example.com")
+                .expectedOutput("Response body")
+                .handler(tool)
+                .build();
+
+        // Execute with no context outputs -- input should be the task description
+        var ctx = new net.agentensemble.task.TaskHandlerContext(
+                task.getDescription(), task.getExpectedOutput(), List.of());
+        task.getHandler().execute(ctx);
+
+        assertThat(capturedInput[0]).isEqualTo("my-url://example.com");
+    }
+
+    @Test
+    void testBuild_agentToolHandler_usesLastContextOutput_whenContextPresent() {
+        String[] capturedInput = new String[1];
+        AgentTool tool = new AgentTool() {
+            @Override
+            public String name() {
+                return "cap";
+            }
+
+            @Override
+            public String description() {
+                return "Captures input";
+            }
+
+            @Override
+            public ToolResult execute(String input) {
+                capturedInput[0] = input;
+                return ToolResult.success(input);
+            }
+        };
+
+        var priorOutput = net.agentensemble.task.TaskOutput.builder()
+                .raw("prior-raw-text")
+                .taskDescription("Prior")
+                .agentRole("(deterministic)")
+                .completedAt(java.time.Instant.now())
+                .duration(java.time.Duration.ofMillis(1))
+                .toolCallCount(0)
+                .build();
+
+        var task = Task.builder()
+                .description("Next step")
+                .expectedOutput("Processed result")
+                .handler(tool)
+                .build();
+
+        var ctx = new net.agentensemble.task.TaskHandlerContext(
+                task.getDescription(), task.getExpectedOutput(), List.of(priorOutput));
+        task.getHandler().execute(ctx);
+
+        assertThat(capturedInput[0]).isEqualTo("prior-raw-text");
+    }
+
+    @Test
+    void testBuild_defaultHandler_isNull() {
+        var task = Task.of("Regular AI task");
+        assertThat(task.getHandler()).isNull();
+    }
+
+    @Test
+    void testToBuilder_onHandlerTask_preservesHandler() {
+        var original = Task.builder()
+                .description("Fetch prices")
+                .expectedOutput("JSON prices")
+                .handler(ctx -> net.agentensemble.tool.ToolResult.success("prices"))
+                .build();
+
+        var copy = original.toBuilder().expectedOutput("Updated output").build();
+
+        assertThat(copy.getHandler()).isSameAs(original.getHandler());
+        assertThat(copy.getExpectedOutput()).isEqualTo("Updated output");
+    }
+
+    @Test
+    void testToBuilder_onAiTask_handlerRemainsNull() {
+        var original = Task.of("Regular AI task");
+        var copy = original.toBuilder().description("Updated AI task").build();
+
+        assertThat(copy.getHandler()).isNull();
+        assertThat(copy.getDescription()).isEqualTo("Updated AI task");
+    }
+
+    @Test
+    void testBuild_handlerWithContext_succeeds() {
+        // Handler tasks may have context (prior task outputs)
+        var contextTask = Task.builder()
+                .description("Context task")
+                .expectedOutput("Context output")
+                .handler(ctx -> net.agentensemble.tool.ToolResult.success("context"))
+                .build();
+
+        var dependent = Task.builder()
+                .description("Dependent task")
+                .expectedOutput("Dependent output")
+                .context(List.of(contextTask))
+                .handler(ctx -> net.agentensemble.tool.ToolResult.success("result"))
+                .build();
+
+        assertThat(dependent.getHandler()).isNotNull();
+        assertThat(dependent.getContext()).containsExactly(contextTask);
+    }
+
+    @Test
+    void testBuild_handlerWithGuardrails_succeeds() {
+        // Handler tasks may have guardrails
+        var task = Task.builder()
+                .description("Guarded task")
+                .expectedOutput("Output")
+                .inputGuardrails(List.of(input -> net.agentensemble.guardrail.GuardrailResult.success()))
+                .outputGuardrails(List.of(out -> net.agentensemble.guardrail.GuardrailResult.success()))
+                .handler(ctx -> net.agentensemble.tool.ToolResult.success("result"))
+                .build();
+
+        assertThat(task.getHandler()).isNotNull();
+        assertThat(task.getInputGuardrails()).hasSize(1);
+        assertThat(task.getOutputGuardrails()).hasSize(1);
+    }
 }

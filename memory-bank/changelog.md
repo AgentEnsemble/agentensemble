@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] - 2026-03-11
+### Added
+- Deterministic tasks: `Task.builder().handler(TaskHandler)` and `.handler(AgentTool)` overloads
+  let any task step run without an LLM call, using a Java function or `ToolPipeline` directly
+- `TaskHandler` `@FunctionalInterface` returning `ToolResult` (`net.agentensemble.task`)
+- `TaskHandlerContext` record with `description`, `expectedOutput`, `contextOutputs`
+- `DeterministicTaskExecutor`: full lifecycle (guardrails, memory, callbacks) without LLM;
+  `agentRole = "(deterministic)"`, `toolCallCount = 0`, `metrics = TaskMetrics.EMPTY`
+- `EnsembleValidator.validateHandlerTasksNotInHierarchical()`: rejects handler tasks in
+  HIERARCHICAL workflow with a clear `ValidationException`
+- Handler-only ensembles do not require `chatLanguageModel` (validated by skipping LLM check)
+- Design doc: `docs/design/18-deterministic-tasks.md`
+- Example doc: `docs/examples/deterministic-tasks.md`
+- Example class: `DeterministicTaskExample.java` + `runDeterministicTask` Gradle task
+- mkdocs.yml nav entries for new example and design doc
+
 ## [Unreleased] - 2026-03-10
 ### Fixed
 - ConnectionManager constructor now validates `maxRetainedRuns >= 1` and `serializer != null`; `appendToSnapshot` truly drops pre-run messages (no implicit lazy-create)

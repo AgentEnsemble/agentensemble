@@ -71,6 +71,7 @@ mapOf(
     "runHumanInTheLoop" to "net.agentensemble.examples.HumanInTheLoopExample",
     "runCrossRunMemory" to "net.agentensemble.examples.CrossRunMemoryExample",
     "runToolPipeline" to "net.agentensemble.examples.ToolPipelineExample",
+    "runDeterministicTask" to "net.agentensemble.examples.DeterministicTaskExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

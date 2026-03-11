@@ -272,4 +272,120 @@ class TaskValidationTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("AgentTool");
     }
+
+    // ========================
+    // Validation: handler exclusivity
+    // ========================
+
+    @Test
+    void testBuild_handlerWithAgent_throwsValidation() {
+        var agent = Agent.builder()
+                .role("Researcher")
+                .goal("Find info")
+                .llm(mock(dev.langchain4j.model.chat.ChatModel.class))
+                .build();
+
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .agent(agent)
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("agent");
+    }
+
+    @Test
+    void testBuild_handlerWithChatLanguageModel_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .chatLanguageModel(mock(dev.langchain4j.model.chat.ChatModel.class))
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("chatLanguageModel");
+    }
+
+    @Test
+    void testBuild_handlerWithStreamingChatLanguageModel_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .streamingChatLanguageModel(mock(dev.langchain4j.model.chat.StreamingChatModel.class))
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("streamingChatLanguageModel");
+    }
+
+    @Test
+    void testBuild_handlerWithTools_throwsValidation() {
+        var tool = new net.agentensemble.tool.AgentTool() {
+            @Override
+            public String name() {
+                return "t";
+            }
+
+            @Override
+            public String description() {
+                return "a tool";
+            }
+
+            @Override
+            public net.agentensemble.tool.ToolResult execute(String input) {
+                return net.agentensemble.tool.ToolResult.success("ok");
+            }
+        };
+
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .tools(List.of(tool))
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("tools");
+    }
+
+    @Test
+    void testBuild_handlerWithMaxIterations_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .maxIterations(10)
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("maxIterations");
+    }
+
+    @Test
+    void testBuild_handlerWithRateLimit_throwsValidation() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .rateLimit(net.agentensemble.ratelimit.RateLimit.perMinute(10))
+                        .handler(ctx -> net.agentensemble.tool.ToolResult.success("x"))
+                        .build())
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("handler")
+                .hasMessageContaining("rateLimit");
+    }
+
+    @Test
+    void testBuild_handlerWithNullAgentTool_throwsIllegalArgument() {
+        assertThatThrownBy(() -> Task.builder()
+                        .description("Task")
+                        .expectedOutput("Output")
+                        .handler((net.agentensemble.tool.AgentTool) null)
+                        .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("handler tool must not be null");
+    }
 }

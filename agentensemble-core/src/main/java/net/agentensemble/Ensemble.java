@@ -737,6 +737,11 @@ public class Ensemble {
             if (task.getAgent() != null) {
                 // Explicit agent: use as-is (power-user escape hatch)
                 agentResolved = task;
+            } else if (task.getHandler() != null) {
+                // Deterministic task -- no agent synthesis needed.
+                // The workflow executor invokes the handler directly, bypassing the LLM.
+                agentResolved = task;
+                log.debug("Skipping agent synthesis for deterministic task '{}'", truncate(task.getDescription(), 80));
             } else {
                 // LLM resolution order:
                 // 1. Task has its own chatLanguageModel (already rate-limited at Task.build() time
