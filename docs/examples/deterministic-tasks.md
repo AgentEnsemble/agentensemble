@@ -237,3 +237,74 @@ for (TaskOutput taskOutput : output.getTaskOutputs()) {
 ```
 
 Source: [`DeterministicTaskExample.java`](https://github.com/AgentEnsemble/agentensemble/blob/main/agentensemble-examples/src/main/java/net/agentensemble/examples/DeterministicTaskExample.java)
+
+---
+
+## Deterministic-Only Pipeline (no AI at all)
+
+When **every** task in the ensemble has a handler, no `ChatModel` is needed at any level.
+Use the `Ensemble.run(Task...)` zero-ceremony factory for the most concise form:
+
+```java
+Task fetchTask = Task.builder()
+    .description("Fetch product data from API")
+    .expectedOutput("JSON product data")
+    .handler(ctx -> ToolResult.success(apiClient.fetchProducts()))
+    .build();
+
+Task parseTask = Task.builder()
+    .description("Parse JSON into structured records")
+    .expectedOutput("Parsed product list")
+    .context(List.of(fetchTask))
+    .handler(ctx -> {
+        String json = ctx.contextOutputs().get(0).getRaw();
+        return ToolResult.success(jsonParser.parse(json));
+    })
+    .build();
+
+Task storeTask = Task.builder()
+    .description("Write records to data warehouse")
+    .expectedOutput("Row count written")
+    .context(List.of(parseTask))
+    .handler(ctx -> {
+        String data = ctx.contextOutputs().get(0).getRaw();
+        int rows = warehouse.insert(data);
+        return ToolResult.success(rows + " rows inserted");
+    })
+    .build();
+
+// No ChatModel required -- all tasks are deterministic
+EnsembleOutput output = Ensemble.run(fetchTask, parseTask, storeTask);
+System.out.println(output.getRaw()); // "1234 rows inserted"
+```
+
+Parallel fan-out (three independent service calls, then merge) is inferred automatically
+from `context()` dependencies -- no explicit `workflow(Workflow.PARALLEL)` needed:
+
+```java
+Task serviceA = Task.builder().description("Fetch from A").handler(ctx -> ToolResult.success(a.fetch())).build();
+Task serviceB = Task.builder().description("Fetch from B").handler(ctx -> ToolResult.success(b.fetch())).build();
+Task merge    = Task.builder()
+    .description("Merge A and B")
+    .context(List.of(serviceA, serviceB))
+    .handler(ctx -> {
+        String a = ctx.contextOutputs().get(0).getRaw();
+        String b = ctx.contextOutputs().get(1).getRaw();
+        return ToolResult.success(merge(a, b));
+    })
+    .build();
+
+// serviceA and serviceB run concurrently; merge waits for both
+EnsembleOutput output = Ensemble.builder().task(serviceA).task(serviceB).task(merge).build().run();
+```
+
+See the [Deterministic Orchestration guide](../guides/deterministic-orchestration.md) for
+the full reference including phases, callbacks, guardrails, and failure handling.
+
+## Runnable Example (no-API-key required)
+
+```bash
+./gradlew :agentensemble-examples:runDeterministicOnlyPipeline
+```
+
+Source: [`DeterministicOnlyPipelineExample.java`](https://github.com/AgentEnsemble/agentensemble/blob/main/agentensemble-examples/src/main/java/net/agentensemble/examples/DeterministicOnlyPipelineExample.java)

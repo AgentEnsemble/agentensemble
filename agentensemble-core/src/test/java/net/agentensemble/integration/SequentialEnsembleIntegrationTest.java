@@ -328,7 +328,7 @@ class SequentialEnsembleIntegrationTest {
     @Test
     void testStaticFactory_nullModel_throwsIllegalArgument() {
         var task = Task.of("Some task");
-        assertThatThrownBy(() -> Ensemble.run(null, task))
+        assertThatThrownBy(() -> Ensemble.run((ChatModel) null, task))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("model must not be null");
     }

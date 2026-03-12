@@ -54,6 +54,7 @@ application {
 //   ./gradlew :agentensemble-examples:runCrossRunMemory --args="renewable energy"
 //   ./gradlew :agentensemble-examples:runToolPipeline
 //   ./gradlew :agentensemble-examples:runDeterministicTask
+//   ./gradlew :agentensemble-examples:runDeterministicOnlyPipeline
 //   ./gradlew :agentensemble-examples:runPhases
 
 mapOf(
@@ -74,6 +75,7 @@ mapOf(
     "runCrossRunMemory" to "net.agentensemble.examples.CrossRunMemoryExample",
     "runToolPipeline" to "net.agentensemble.examples.ToolPipelineExample",
     "runDeterministicTask" to "net.agentensemble.examples.DeterministicTaskExample",
+    "runDeterministicOnlyPipeline" to "net.agentensemble.examples.DeterministicOnlyPipelineExample",
     "runPhases" to "net.agentensemble.examples.PhasesExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {

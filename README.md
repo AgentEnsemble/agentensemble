@@ -46,14 +46,19 @@ Frameworks like LangChain and CrewAI are excellent in their ecosystem. Bringing 
 | Concept | Description |
 |---|---|
 | **Agent** | An AI entity with a role, goal, background, and optional tools |
-| **Task** | A unit of work assigned to an agent, with a description and expected output |
-| **Ensemble** | A group of agents working together on a sequence of tasks |
+| **Task** | A unit of work. Can be assigned to an AI agent or run deterministically via a `handler` (a Java lambda) with no LLM call |
+| **Ensemble** | A group of agents and tasks working together on a pipeline |
 | **Tool** | A capability an agent can invoke (e.g., search, calculate) |
 | **Tool Pipeline** | A chain of tools that execute sequentially inside a single LLM tool call, with no round-trips between steps |
 | **Workflow** | How tasks are executed: `SEQUENTIAL`, `HIERARCHICAL` (manager delegates to workers), or `PARALLEL` (concurrent DAG-based execution) |
 | **Memory** | Optional per-run and cross-run context: short-term, long-term (vector store), and entity memory |
 
 **Full documentation:** [Core Concepts](https://agentensemble.net/getting-started/concepts/) | [Getting Started](https://agentensemble.net/getting-started/quickstart/)
+
+> **Not AI-exclusive.** When all tasks use handlers, no `ChatModel` is required at all.
+> AgentEnsemble works equally well as a general-purpose Java workflow orchestrator for
+> ETL pipelines, API chaining, data transformation, or any multi-step deterministic
+> workflow. See [Deterministic Orchestration](https://agentensemble.net/guides/deterministic-orchestration/).
 
 ---
 

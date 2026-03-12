@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] - feature/189-deterministic-only-orchestration (Issue #189) - 2026-03-12
+
+### Added
+- `Ensemble.run(Task...)` zero-ceremony static factory for deterministic-only (no-model) pipelines;
+  validates all tasks have handlers; throws `IllegalArgumentException` pointing to offending task
+- 15 integration tests in `DeterministicOnlyEnsembleIntegrationTest` covering: sequential pipeline
+  with data passing, three-step chained pipeline, parallel workflow, parallel fan-out inference,
+  phase DAG (no LLM), cross-phase context passing, factory happy/error paths, callbacks, failures
+- `DeterministicOnlyPipelineExample.java` runnable example (no API key required): three patterns
+  (sequential ETL, parallel fan-out, phase-based pipeline)
+- `runDeterministicOnlyPipeline` Gradle task in `agentensemble-examples/build.gradle.kts`
+- `docs/design/20-deterministic-only.md` -- new design doc for non-AI orchestration
+- `docs/guides/deterministic-orchestration.md` -- comprehensive guide
+- `mkdocs.yml` nav entries for the new guide and design doc
+
+### Fixed
+- `EnsembleOutput.getPhaseOutputs()` was always empty on the `EnsembleOutput` returned from `run()`
+  because `phaseOutputs` was not propagated when building `outputWithTrace` in `runWithInputs()`;
+  this affected all phase-based ensembles (AI and deterministic) -- the existing `PhaseIntegrationTest`
+  did not assert on `getPhaseOutputs()` so the bug was silent until this PR
+
+### Changed
+- `SequentialEnsembleIntegrationTest.testStaticFactory_nullModel_throwsIllegalArgument`: cast `null`
+  to `(ChatModel)` to resolve overload ambiguity introduced by the new `run(Task...)` overload
+- `docs/design/18-deterministic-tasks.md`: updated "No LLM Required for Handler-Only Ensembles"
+  section to mention `Ensemble.run(Task...)` factory and link to design doc 20
+- `docs/examples/deterministic-tasks.md`: added "Deterministic-Only Pipeline" section
+- `README.md`: broadened `Task` concept description; added non-AI-exclusive callout paragraph
+
+---
+
 ## [Unreleased] - feature/186-phases (Issue #186) - 2026-03-11
 
 ### Added (complete implementation)
