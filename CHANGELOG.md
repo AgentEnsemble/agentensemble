@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.6.1...v2.7.0) (2026-03-12)
+
+
+### Features
+
+* Phase-level workflow grouping and parallel phase execution ([#186](https://github.com/AgentEnsemble/agentensemble/issues/186)) ([#187](https://github.com/AgentEnsemble/agentensemble/issues/187)) ([6d1938c](https://github.com/AgentEnsemble/agentensemble/commit/6d1938cf8621a1cda044076b81ef372ae47403ce))
+
+
+### Bug Fixes
+
+* eliminate double-submission race condition in PhaseDagExecutor ([dc27f91](https://github.com/AgentEnsemble/agentensemble/commit/dc27f91c4262eefd6722e9fca5dcae18f3f8b2fb))
+
 ## [2.6.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.6.0...v2.6.1) (2026-03-11)
 
 
