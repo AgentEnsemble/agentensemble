@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.8.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.7.0...v2.8.0) (2026-03-12)
+
+
+### Features
+
+* deterministic-only orchestration as a first-class pattern ([#189](https://github.com/AgentEnsemble/agentensemble/issues/189)) ([#190](https://github.com/AgentEnsemble/agentensemble/issues/190)) ([2640464](https://github.com/AgentEnsemble/agentensemble/commit/26404642520d978fcd1bef4243c2eba3cd6b1026))
+* phase-level review and retry with feedback injection ([#192](https://github.com/AgentEnsemble/agentensemble/issues/192)) ([240fd9d](https://github.com/AgentEnsemble/agentensemble/commit/240fd9dc521a04453fb9b5a0ad9e3dd035006fd6))
+* task reflection -- self-optimizing prompt loop via persistent reflection store ([#193](https://github.com/AgentEnsemble/agentensemble/issues/193)) ([#194](https://github.com/AgentEnsemble/agentensemble/issues/194)) ([fe5f8bc](https://github.com/AgentEnsemble/agentensemble/commit/fe5f8bc3f349e6b27a587ba35ff33fa0e23afe3f))
+
 ## [2.7.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.6.1...v2.7.0) (2026-03-12)
 
 
