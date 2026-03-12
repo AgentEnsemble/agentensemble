@@ -45,7 +45,6 @@ import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.reflection.TaskIdentity;
 import net.agentensemble.reflection.TaskReflection;
-import net.agentensemble.reflection.TaskReflector;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.ToolResult;
 import net.agentensemble.trace.CaptureMode;
@@ -325,9 +324,6 @@ public class AgentExecutor {
                             output.getAgentRole(),
                             output.getTaskDescription(),
                             output.getCompletedAt()));
-
-            // Run reflection if enabled on this task -- non-fatal, runs after all reviews pass
-            TaskReflector.reflect(task, finalResponse, agent.getLlm(), executionContext);
 
             return output;
 

@@ -41,6 +41,7 @@ import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.ratelimit.RateLimitedChatModel;
+import net.agentensemble.reflection.InMemoryReflectionStore;
 import net.agentensemble.reflection.ReflectionStore;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
@@ -649,6 +650,18 @@ public class Ensemble {
                 log.info("MemoryStore enabled for task-scoped memory");
             }
 
+            // Provision a default InMemoryReflectionStore when tasks have reflection enabled
+            // but no explicit store is configured. A single instance is used for the entire
+            // run so that prior-reflection retrieval works correctly across tasks.
+            ReflectionStore effectiveReflectionStore = reflectionStore;
+            if (effectiveReflectionStore == null && hasReflectionEnabled(agentResolvedTasks)) {
+                effectiveReflectionStore = new InMemoryReflectionStore();
+                log.warn("One or more tasks have reflection enabled but no ReflectionStore is configured "
+                        + "on the Ensemble. Using an ephemeral InMemoryReflectionStore for this run "
+                        + "-- reflections will not persist across JVM restarts. "
+                        + "Configure a durable store via Ensemble.builder().reflectionStore(...).");
+            }
+
             // Step 6: Build execution context
             ExecutionContext executionContext = ExecutionContext.of(
                     memoryContext,
@@ -662,15 +675,15 @@ public class Ensemble {
                     reviewHandler,
                     reviewPolicy,
                     streamingChatLanguageModel,
-                    reflectionStore);
+                    effectiveReflectionStore);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
             }
-            if (reflectionStore != null) {
+            if (effectiveReflectionStore != null) {
                 log.info(
                         "ReflectionStore enabled for cross-run task reflection | Type: {}",
-                        reflectionStore.getClass().getSimpleName());
+                        effectiveReflectionStore.getClass().getSimpleName());
             }
 
             // Step 7: Notify dashboard that execution is about to begin.
@@ -1251,6 +1264,20 @@ public class Ensemble {
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";
         return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
+    }
+
+    /**
+     * Returns true when at least one task in the given list has a non-null
+     * {@link net.agentensemble.reflection.ReflectionConfig}.
+     *
+     * <p>Used to decide whether to auto-provision a default {@link InMemoryReflectionStore}
+     * when none is explicitly configured on the Ensemble.
+     *
+     * @param tasks the agent-resolved task list
+     * @return true if any task has reflection enabled
+     */
+    private static boolean hasReflectionEnabled(List<Task> tasks) {
+        return tasks.stream().anyMatch(t -> t.getReflectionConfig() != null);
     }
 
     // ========================

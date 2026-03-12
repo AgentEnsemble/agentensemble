@@ -145,8 +145,8 @@ class TaskReflectionIntegrationTest {
     }
 
     @Test
-    void taskReflector_withNoStore_createsEphemeralFallback() {
-        // Context without a reflection store
+    void taskReflector_withNoStore_skipsReflection() {
+        // Context without a reflection store -- reflection should be skipped, not throw
         ExecutionContext noStoreContext = ExecutionContext.of(
                 net.agentensemble.memory.MemoryContext.disabled(),
                 false,
@@ -163,9 +163,12 @@ class TaskReflectionIntegrationTest {
 
         Task task = buildTaskWithStubStrategy("Refined description", "Refined output");
 
-        // Should not throw -- creates an ephemeral store and continues
+        // Reflection should be skipped non-fatally -- no exception, nothing stored
         TaskReflector.reflect(task, TASK_OUTPUT, null, noStoreContext);
-        // No assertion needed: just verify no exception is thrown
+
+        // The main store (contextWithListener) must still be empty
+        assertThat(store.size()).isZero();
+        assertThat(eventCount.get()).isZero();
     }
 
     @Test

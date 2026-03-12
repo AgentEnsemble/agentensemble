@@ -217,11 +217,17 @@ class ParallelTaskCoordinator {
                                     truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
 
                             if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
-                                // Include this task output, then stop the pipeline
+                                // Include this task output, then stop the pipeline.
+                                // Run reflection on the accepted output before recording and returning early.
                                 ExitReason afterReason = afterExitEarlyDecision.timedOut()
                                         ? ExitReason.TIMEOUT
                                         : ExitReason.USER_EXIT_EARLY;
                                 exitEarlyReasonRef.compareAndSet(null, afterReason);
+                                dev.langchain4j.model.chat.ChatModel reflectionModel = task.getAgent() != null
+                                        ? task.getAgent().getLlm()
+                                        : null;
+                                net.agentensemble.reflection.TaskReflector.reflect(
+                                        task, output.getRaw(), reflectionModel, executionContext);
                                 completedOutputs.put(task, output);
                                 completionOrder.add(output);
                                 log.info(
@@ -249,6 +255,13 @@ class ParallelTaskCoordinator {
                         }
                     }
                 }
+
+                // Run reflection on the final accepted output -- after all review gates pass
+                // and after any reviewer edits are applied.
+                dev.langchain4j.model.chat.ChatModel reflectionModel =
+                        task.getAgent() != null ? task.getAgent().getLlm() : null;
+                net.agentensemble.reflection.TaskReflector.reflect(
+                        task, output.getRaw(), reflectionModel, executionContext);
 
                 completedOutputs.put(task, output);
                 completionOrder.add(output);

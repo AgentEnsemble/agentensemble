@@ -102,24 +102,23 @@ public final class TaskReflector {
     }
 
     /**
-     * Resolves the {@link ReflectionStore} to use, creating an {@link InMemoryReflectionStore}
-     * fallback if no store is configured on the context but reflection is enabled.
+     * Resolves the {@link ReflectionStore} to use from the execution context.
      *
-     * <p>Logs a WARN when falling back to an in-memory store to alert users that reflections
-     * will not persist across JVM restarts.
+     * <p>Returns {@code null} (skipping reflection) when no store is present. A store is
+     * auto-provisioned by {@link net.agentensemble.Ensemble} at run time when any task has
+     * reflection enabled but no explicit store is configured, so this path is only hit when
+     * {@code TaskReflector.reflect()} is invoked outside of the standard Ensemble lifecycle
+     * (e.g., in tests that build an {@link ExecutionContext} manually without a store).
      */
     private static ReflectionStore resolveStore(ExecutionContext context, Task task) {
         ReflectionStore store = context.reflectionStore();
         if (store == null) {
             log.warn(
-                    "Task '{}' has reflection enabled but no ReflectionStore is configured on the Ensemble. "
-                            + "Creating an ephemeral InMemoryReflectionStore — reflections will not persist "
-                            + "across JVM restarts. Configure a durable store via Ensemble.builder().reflectionStore(...).",
+                    "Task '{}' has reflection enabled but no ReflectionStore is available in the "
+                            + "ExecutionContext. Reflection will be skipped for this task. "
+                            + "Configure a store via Ensemble.builder().reflectionStore(...).",
                     abbreviate(task.getDescription(), 60));
-            // This is a fallback — not ideal but non-fatal
-            // Note: a new store per-task means no cross-run persistence, which partially defeats the purpose.
-            // This is an intentional warning to encourage proper configuration.
-            return new InMemoryReflectionStore();
+            return null;
         }
         return store;
     }

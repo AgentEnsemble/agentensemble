@@ -30,8 +30,10 @@ tasks.named("check") {
 }
 
 dependencies {
-    // Logging facade - no implementation, users bring their own
-    implementation(libs.slf4j.api)
+    // Logging facade - no implementation, users bring their own.
+    // compileOnly: keeps the published artifact's dependency surface minimal;
+    // callers and the agentensemble-core module provide the runtime binding.
+    compileOnly(libs.slf4j.api)
 
     // Test dependencies
     testImplementation(libs.junit.jupiter)

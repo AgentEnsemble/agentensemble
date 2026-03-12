@@ -279,7 +279,7 @@ public interface ReflectionStrategy {
 
 ```java
 Ensemble.builder()
-    .model(model)
+    .chatLanguageModel(model)
     .reflectionStore(new InMemoryReflectionStore())  // use same store across runs
     .build()
     .run(taskWithReflection);
@@ -319,18 +319,28 @@ The reflection SPI lives in a new module following the same pattern as
 agentensemble-reflection/
   src/main/java/net/agentensemble/reflection/
     ReflectionStore.java          -- SPI interface
-    ReflectionStrategy.java       -- strategy SPI
-    ReflectionConfig.java         -- configuration value object
-    ReflectionInput.java          -- input bundle for strategies
     TaskReflection.java           -- data record
     InMemoryReflectionStore.java  -- default in-memory implementation
 ```
 
-`agentensemble-core` depends on `agentensemble-reflection` and contributes:
-- `LlmReflectionStrategy` — default LLM-based implementation
-- `ReflectionPromptBuilder` — builds the meta-prompt
+`agentensemble-core` depends on `agentensemble-reflection` and contributes additional
+types in the same `net.agentensemble.reflection` package:
+
+```
+agentensemble-core/src/main/java/net/agentensemble/reflection/
+    ReflectionStrategy.java       -- strategy SPI
+    ReflectionConfig.java         -- configuration value object
+    ReflectionInput.java          -- input bundle for strategies
+    LlmReflectionStrategy.java    -- default LLM-based implementation
+    ReflectionPromptBuilder.java  -- builds the meta-prompt
+    TaskReflector.java            -- lifecycle orchestrator (post-acceptance step)
+    TaskIdentity.java             -- stable SHA-256 task key derivation
+```
+
+Core also contributes:
 - `TaskReflectedEvent` — callback event
-- Integration into `AgentExecutor`, `AgentPromptBuilder`, `ExecutionContext`, `Ensemble`
+- Integration into `SequentialWorkflowExecutor`, `ParallelTaskCoordinator`,
+  `AgentPromptBuilder`, `ExecutionContext`, `Ensemble`
 
 ---
 

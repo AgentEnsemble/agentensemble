@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * ReflectionStore store = new InMemoryReflectionStore();
  *
  * Ensemble ensemble = Ensemble.builder()
- *     .model(model)
+ *     .chatLanguageModel(model)
  *     .reflectionStore(store)
  *     .build();
  *
