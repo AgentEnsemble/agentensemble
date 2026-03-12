@@ -237,6 +237,25 @@ public final class AgentPromptBuilder {
             }
         }
 
+        // Revision instructions section -- only present when this task is part of a phase retry
+        if (task.getRevisionFeedback() != null && !task.getRevisionFeedback().isBlank()) {
+            sb.append("## Revision Instructions");
+            if (task.getAttemptNumber() > 0) {
+                sb.append(" (Attempt ").append(task.getAttemptNumber() + 1).append(")");
+            }
+            sb.append("\n");
+            sb.append("This task is being re-executed based on reviewer feedback. "
+                    + "Incorporate the feedback below into your response.\n\n");
+            sb.append("### Feedback\n");
+            sb.append(task.getRevisionFeedback());
+            if (task.getPriorAttemptOutput() != null
+                    && !task.getPriorAttemptOutput().isBlank()) {
+                sb.append("\n\n### Previous Output\n");
+                sb.append(task.getPriorAttemptOutput());
+            }
+            sb.append("\n\n");
+        }
+
         // Task section
         sb.append("## Task\n");
         sb.append(task.getDescription());

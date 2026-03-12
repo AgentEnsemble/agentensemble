@@ -17,13 +17,15 @@ import java.util.function.BiFunction;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.TaskExecutionException;
+import net.agentensemble.review.PhaseReviewDecision;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
- * Executes a list of {@link Phase} objects according to their dependency DAG.
+ * Executes a list of {@link Phase} objects according to their dependency DAG, with optional
+ * per-phase review gates that can trigger phase retries or predecessor retries.
  *
  * <p>Phases with no predecessors ({@code Phase.getAfter()} is empty) start immediately in
  * parallel. When a phase completes, any successor phase whose remaining predecessor count
@@ -33,6 +35,23 @@ import org.slf4j.MDC;
  * <h2>Parallelism</h2>
  * Each phase executes on its own Java 21 virtual thread. Multiple independent phases
  * therefore run concurrently with zero OS-thread overhead.
+ *
+ * <h2>Phase review and retry</h2>
+ * When a {@link Phase} has a {@link PhaseReview} attached, the review task fires after all
+ * tasks in the phase complete. The review task's output is parsed into a
+ * {@link PhaseReviewDecision}:
+ * <ul>
+ *   <li>{@code Approve} -- successors are unlocked normally.</li>
+ *   <li>{@code Retry(feedback)} -- the phase's tasks are re-executed with the feedback
+ *       injected as a {@code ## Revision Instructions} prompt section. Up to
+ *       {@code PhaseReview.maxRetries} self-retries are allowed; when exhausted the
+ *       last output is accepted.</li>
+ *   <li>{@code RetryPredecessor(phaseName, feedback)} -- the named direct predecessor phase
+ *       is re-executed with feedback, then the current phase is re-executed with the updated
+ *       predecessor outputs. Up to {@code PhaseReview.maxPredecessorRetries} predecessor
+ *       retries are allowed per predecessor.</li>
+ *   <li>{@code Reject(reason)} -- the phase fails and all successors are skipped.</li>
+ * </ul>
  *
  * <h2>Error handling</h2>
  * When a phase fails:
@@ -111,33 +130,28 @@ public class PhaseDagExecutor {
 
         // --- Shared state for in-flight execution ---
 
-        // Stores outputs produced by each completed phase (identity-keyed, ConcurrentHashMap
-        // for safe concurrent writes from different phase threads).
+        // Stores the final approved output for each completed phase (identity-keyed,
+        // ConcurrentHashMap for safe concurrent writes).
         Map<Phase, EnsembleOutput> phaseOutputMap = new ConcurrentHashMap<>();
 
-        // Flat map of all completed task outputs keyed by identity -- passed to the phaseRunner
+        // Flat map of all committed task outputs keyed by identity -- passed to the phaseRunner
         // as "prior outputs" so cross-phase context() references resolve correctly.
         // Synchronized identity map for concurrent writes.
         Map<Task, TaskOutput> globalTaskOutputs = Collections.synchronizedMap(new IdentityHashMap<>());
 
-        // All task outputs in completion order (across all phases), for building the final output.
+        // All committed task outputs in completion order (across all phases).
         List<TaskOutput> allTaskOutputs = Collections.synchronizedList(new ArrayList<>());
 
-        // First failure seen across all phases
+        // First failure seen across all phases.
         AtomicReference<Throwable> firstFailure = new AtomicReference<>();
 
         // Settle-once map for atomic submission vs. skip decisions.
-        // When onPhaseCompleted claims a phase with value "submitted", it submits it.
-        // When skipTransitiveDependents claims a phase with value "skipped", it decrements the latch.
-        // Using ConcurrentHashMap.putIfAbsent ensures only one thread can settle each phase,
-        // eliminating the race condition where a completing predecessor and a failing predecessor
-        // could both attempt to settle the same successor concurrently (double-latch countdown).
         Map<Phase, String> settledPhases = new ConcurrentHashMap<>();
 
         // Each phase decrements this latch exactly once when it reaches a terminal state.
         CountDownLatch latch = new CountDownLatch(totalPhases);
 
-        // Capture caller's MDC for propagation into virtual threads
+        // Capture caller's MDC for propagation into virtual threads.
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
         if (callerMdc == null) {
             callerMdc = Map.of();
@@ -146,12 +160,6 @@ public class PhaseDagExecutor {
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
-            // Submit all root phases (those with no predecessor) to seed the execution.
-            // Use putIfAbsent so that if a previously-submitted root phase completes and
-            // its onPhaseCompleted() decrements a successor's counter to zero -- and
-            // submits that successor -- BEFORE this loop reaches it, we do NOT
-            // double-submit the successor. On Linux, virtual threads are scheduled
-            // immediately after submission, so this race is real and reproducible.
             for (Phase phase : phases) {
                 if (remainingPredecessors.get(phase).get() == 0
                         && settledPhases.putIfAbsent(phase, "submitted") == null) {
@@ -160,6 +168,7 @@ public class PhaseDagExecutor {
                             executor,
                             frozenMdc,
                             phaseRunner,
+                            phases,
                             successorMap,
                             remainingPredecessors,
                             phaseOutputMap,
@@ -171,7 +180,7 @@ public class PhaseDagExecutor {
                 }
             }
 
-            // Block until all phases have reached a terminal state
+            // Block until all phases have reached a terminal state.
             latch.await();
 
         } catch (InterruptedException e) {
@@ -180,7 +189,7 @@ public class PhaseDagExecutor {
                     "Phase DAG interrupted", "phase-dag", "multiple", List.copyOf(allTaskOutputs), e);
         }
 
-        // Re-throw first recorded failure
+        // Re-throw first recorded failure.
         Throwable failure = firstFailure.get();
         if (failure != null) {
             if (failure instanceof TaskExecutionException tee) {
@@ -194,7 +203,7 @@ public class PhaseDagExecutor {
                     failure);
         }
 
-        // All phases completed successfully -- assemble final output
+        // All phases completed successfully -- assemble final output.
         List<TaskOutput> outputs = List.copyOf(allTaskOutputs);
         Duration totalDuration = Duration.between(startTime, Instant.now());
         String finalOutput = outputs.isEmpty() ? "" : outputs.getLast().getRaw();
@@ -219,15 +228,17 @@ public class PhaseDagExecutor {
     /**
      * Submit a single phase to the virtual-thread pool.
      *
-     * <p>The submitted task captures a snapshot of {@code globalTaskOutputs} at the moment
-     * of submission. This snapshot represents the outputs from all phases that completed
-     * before this phase started, ensuring cross-phase context references resolve correctly.
+     * <p>Captures a snapshot of {@code globalTaskOutputs} at the moment of submission as the
+     * prior-outputs baseline. Delegates to {@link #runPhaseWithRetry} for the actual execution
+     * (which may iterate multiple times when a {@link PhaseReview} is attached), then commits
+     * the final approved output to global shared state and unblocks successors.
      */
     private void submitOnePhase(
             Phase phase,
             ExecutorService threadPool,
             Map<String, String> frozenMdc,
             BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
+            List<Phase> allPhases,
             Map<Phase, List<Phase>> successorMap,
             Map<Phase, AtomicInteger> remainingPredecessors,
             Map<Phase, EnsembleOutput> phaseOutputMap,
@@ -238,8 +249,6 @@ public class PhaseDagExecutor {
             CountDownLatch latch) {
 
         // Snapshot prior outputs at the time this phase is submitted.
-        // The snapshot is an immutable copy so the running phase is not affected by
-        // concurrent writes from other phases running in parallel.
         final Map<Task, TaskOutput> priorOutputsSnapshot;
         synchronized (globalTaskOutputs) {
             priorOutputsSnapshot = new IdentityHashMap<>(globalTaskOutputs);
@@ -252,29 +261,37 @@ public class PhaseDagExecutor {
 
             log.info("Phase '{}' starting", phase.getName());
             try {
-                EnsembleOutput phaseOutput = phaseRunner.apply(phase, priorOutputsSnapshot);
-                phaseOutputMap.put(phase, phaseOutput);
+                // Run phase with review/retry loop -- returns final approved output.
+                EnsembleOutput finalOutput = runPhaseWithRetry(
+                        phase,
+                        priorOutputsSnapshot,
+                        phaseRunner,
+                        allPhases,
+                        phaseOutputMap,
+                        globalTaskOutputs,
+                        allTaskOutputs);
 
-                // Record this phase's outputs into the global lists/maps
-                allTaskOutputs.addAll(phaseOutput.getTaskOutputs());
-                // Seed global task outputs from the phase output's task-output index so that
-                // successor phases can resolve cross-phase context() references.
-                if (phaseOutput.getTaskOutputIndex() != null) {
-                    globalTaskOutputs.putAll(phaseOutput.getTaskOutputIndex());
+                // Commit final (approved) output to global shared state.
+                phaseOutputMap.put(phase, finalOutput);
+                allTaskOutputs.addAll(finalOutput.getTaskOutputs());
+                if (finalOutput.getTaskOutputIndex() != null) {
+                    globalTaskOutputs.putAll(finalOutput.getTaskOutputIndex());
                 }
 
                 log.info(
-                        "Phase '{}' completed | Tasks: {} | Duration: {}",
+                        "Phase '{}' completed | Tasks: {} | Duration: {} | Tool calls: {}",
                         phase.getName(),
-                        phaseOutput.getTaskOutputs().size(),
-                        phaseOutput.getTotalDuration());
+                        finalOutput.getTaskOutputs().size(),
+                        finalOutput.getTotalDuration(),
+                        finalOutput.getTotalToolCalls());
 
-                // Unblock successors
+                // Unblock successors.
                 onPhaseCompleted(
                         phase,
                         threadPool,
                         frozenMdc,
                         phaseRunner,
+                        allPhases,
                         successorMap,
                         remainingPredecessors,
                         phaseOutputMap,
@@ -288,12 +305,336 @@ public class PhaseDagExecutor {
                 log.error("Phase '{}' failed: {}", phase.getName(), e.getMessage(), e);
                 firstFailure.compareAndSet(null, e);
                 skipTransitiveDependents(phase, successorMap, settledPhases, latch);
-
             } finally {
                 latch.countDown();
                 MDC.clear();
             }
         });
+    }
+
+    /**
+     * Execute a phase, running the optional review gate after each attempt and retrying
+     * as directed until the review approves (or retry limits are exhausted).
+     *
+     * <p>Three retry paths are supported:
+     * <ul>
+     *   <li><b>Self-retry</b> ({@link PhaseReviewDecision.Retry}) -- the phase's tasks are
+     *       rebuilt with reviewer feedback and re-executed up to
+     *       {@code PhaseReview.maxRetries} times.</li>
+     *   <li><b>Predecessor retry</b> ({@link PhaseReviewDecision.RetryPredecessor}) -- the
+     *       named direct predecessor phase is re-run with feedback, global state is updated,
+     *       and then the current phase is re-run from scratch (attempt 0) with the refreshed
+     *       predecessor outputs.</li>
+     *   <li><b>Reject</b> ({@link PhaseReviewDecision.Reject}) -- a
+     *       {@link TaskExecutionException} is thrown, which the calling thread records as a
+     *       phase failure and uses to skip transitive dependents.</li>
+     * </ul>
+     *
+     * @return the final approved {@link EnsembleOutput} for this phase
+     */
+    private EnsembleOutput runPhaseWithRetry(
+            Phase phase,
+            Map<Task, TaskOutput> initialPriorOutputs,
+            BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
+            List<Phase> allPhases,
+            Map<Phase, EnsembleOutput> phaseOutputMap,
+            Map<Task, TaskOutput> globalTaskOutputs,
+            List<TaskOutput> allTaskOutputs) {
+
+        PhaseReview review = phase.getReview();
+
+        if (review == null) {
+            // No review gate: execute once and return.
+            EnsembleOutput output = phaseRunner.apply(phase, initialPriorOutputs);
+            log.debug(
+                    "Phase '{}' executed (no review) | Tasks: {}",
+                    phase.getName(),
+                    output.getTaskOutputs().size());
+            return output;
+        }
+
+        int maxRetries = review.getMaxRetries();
+        int maxPredRetries = review.getMaxPredecessorRetries();
+
+        Phase currentPhase = phase;
+        Map<Task, TaskOutput> currentPrior = initialPriorOutputs;
+        // Tracks how many times each predecessor has been retried for this phase's review.
+        Map<Phase, Integer> predecessorRetryCounts = new IdentityHashMap<>();
+
+        for (int attempt = 0; ; attempt++) {
+            log.info("Phase '{}' attempt {} starting", phase.getName(), attempt + 1);
+            EnsembleOutput output = phaseRunner.apply(currentPhase, currentPrior);
+            log.info(
+                    "Phase '{}' attempt {} completed | Tasks: {} | Duration: {}",
+                    phase.getName(),
+                    attempt + 1,
+                    output.getTaskOutputs().size(),
+                    output.getTotalDuration());
+
+            // Run the review task and parse its decision.
+            PhaseReviewDecision decision =
+                    executeReviewTask(review, phase, currentPhase, output, currentPrior, phaseRunner);
+            log.info(
+                    "Phase '{}' review decision on attempt {}: [{}]",
+                    phase.getName(),
+                    attempt + 1,
+                    truncate(decision.toText(), 120));
+
+            switch (decision) {
+                case PhaseReviewDecision.Approve ignored -> {
+                    return output;
+                }
+
+                case PhaseReviewDecision.Retry r -> {
+                    if (attempt >= maxRetries) {
+                        log.warn(
+                                "Phase '{}' reached max self-retries ({}), accepting last output",
+                                phase.getName(),
+                                maxRetries);
+                        return output;
+                    }
+                    log.info(
+                            "Phase '{}' self-retry {} with feedback: [{}]",
+                            phase.getName(),
+                            attempt + 1,
+                            truncate(r.feedback(), 200));
+                    currentPhase = rebuildPhaseWithFeedback(phase, currentPhase, r.feedback(), output, attempt + 1);
+                    // currentPrior stays the same -- self-retry re-runs the same phase
+                }
+
+                case PhaseReviewDecision.RetryPredecessor rp -> {
+                    Phase predPhase = findDirectPredecessorByName(rp.phaseName(), phase);
+                    if (predPhase == null) {
+                        log.warn(
+                                "Phase '{}' review requested retry of '{}' which is not a recognized "
+                                        + "direct predecessor; treating as Approve.",
+                                phase.getName(),
+                                rp.phaseName());
+                        return output;
+                    }
+
+                    int predRetries = predecessorRetryCounts.getOrDefault(predPhase, 0);
+                    if (predRetries >= maxPredRetries) {
+                        log.warn(
+                                "Phase '{}' predecessor '{}' reached max retries ({}), " + "accepting current outputs",
+                                phase.getName(),
+                                rp.phaseName(),
+                                maxPredRetries);
+                        return output;
+                    }
+                    predecessorRetryCounts.put(predPhase, predRetries + 1);
+                    log.info(
+                            "Phase '{}' requesting predecessor '{}' retry {} with feedback: [{}]",
+                            phase.getName(),
+                            rp.phaseName(),
+                            predRetries + 1,
+                            truncate(rp.feedback(), 200));
+
+                    // Locate the predecessor's last committed output.
+                    EnsembleOutput predOldOutput = phaseOutputMap.get(predPhase);
+                    if (predOldOutput == null) {
+                        log.warn(
+                                "Phase '{}' could not find committed output for predecessor '{}'; "
+                                        + "treating as Approve.",
+                                phase.getName(),
+                                rp.phaseName());
+                        return output;
+                    }
+
+                    // Remove the predecessor's stale outputs from global shared state.
+                    removePhaseOutputsFromGlobal(predPhase, predOldOutput, allTaskOutputs, globalTaskOutputs);
+
+                    // Rebuild predecessor with feedback and re-execute.
+                    Phase rebuiltPred = rebuildPhaseWithFeedback(
+                            predPhase, predPhase, rp.feedback(), predOldOutput, predRetries + 1);
+                    log.info("Re-executing predecessor phase '{}' (retry {})", predPhase.getName(), predRetries + 1);
+                    EnsembleOutput newPredOutput = phaseRunner.apply(rebuiltPred, initialPriorOutputs);
+                    log.info(
+                            "Predecessor phase '{}' retry {} completed | Tasks: {}",
+                            predPhase.getName(),
+                            predRetries + 1,
+                            newPredOutput.getTaskOutputs().size());
+
+                    // Commit new predecessor outputs to global shared state.
+                    phaseOutputMap.put(predPhase, newPredOutput);
+                    allTaskOutputs.addAll(newPredOutput.getTaskOutputs());
+                    if (newPredOutput.getTaskOutputIndex() != null) {
+                        globalTaskOutputs.putAll(newPredOutput.getTaskOutputIndex());
+                    }
+
+                    // Rebuild the prior snapshot to include updated predecessor outputs.
+                    synchronized (globalTaskOutputs) {
+                        currentPrior = new IdentityHashMap<>(globalTaskOutputs);
+                    }
+
+                    // Reset current phase to original tasks (fresh run with updated inputs).
+                    currentPhase = phase;
+                    // Set attempt to -1: the for-loop increment will advance it to 0.
+                    attempt = -1;
+                }
+
+                case PhaseReviewDecision.Reject r -> {
+                    throw new TaskExecutionException(
+                            "Phase '" + phase.getName() + "' was rejected by review: " + r.reason(),
+                            "phase-review",
+                            phase.getName(),
+                            List.copyOf(output.getTaskOutputs()));
+                }
+            }
+        }
+    }
+
+    /**
+     * Execute the review task and parse its output into a {@link PhaseReviewDecision}.
+     *
+     * <p>The review task is wrapped in a single-task synthetic phase and run through the
+     * same {@code phaseRunner} used for normal phases. The prior-outputs map passed to the
+     * runner combines the caller's current prior with both the original and current-attempt
+     * task identities mapped to their outputs, so the review task's {@code context()}
+     * declarations resolve correctly on every attempt (including retries where task objects
+     * differ from the original due to feedback injection).
+     *
+     * @param review         the review configuration (supplies the review task)
+     * @param originalPhase  the phase as originally defined (original task identity mapping)
+     * @param currentPhase   the phase as it was executed in this attempt (may have rebuilt tasks)
+     * @param phaseOutput    outputs from the current attempt
+     * @param currentPrior   outputs from all prior phases (for the current attempt's context)
+     * @param phaseRunner    the runner to use for executing the review task
+     * @return the parsed decision; never null
+     */
+    private PhaseReviewDecision executeReviewTask(
+            PhaseReview review,
+            Phase originalPhase,
+            Phase currentPhase,
+            EnsembleOutput phaseOutput,
+            Map<Task, TaskOutput> currentPrior,
+            BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner) {
+
+        // Build the review prior: current prior outputs + current-attempt phase outputs.
+        // Map both original and current task identities to their outputs so the review
+        // task's context() references resolve on all attempts.
+        Map<Task, TaskOutput> reviewPrior = new IdentityHashMap<>(currentPrior);
+        if (phaseOutput.getTaskOutputIndex() != null) {
+            // Map by current-attempt task identity.
+            reviewPrior.putAll(phaseOutput.getTaskOutputIndex());
+
+            // Map by original task identity as well (handles retries where task objects differ).
+            List<Task> originalTasks = originalPhase.getTasks();
+            List<Task> currentTasks = currentPhase.getTasks();
+            Map<Task, TaskOutput> currentIndex = phaseOutput.getTaskOutputIndex();
+            for (int i = 0; i < originalTasks.size() && i < currentTasks.size(); i++) {
+                TaskOutput out = currentIndex.get(currentTasks.get(i));
+                if (out != null) {
+                    reviewPrior.put(originalTasks.get(i), out);
+                }
+            }
+        }
+
+        // Wrap the review task in a single-task synthetic phase and run it.
+        Phase reviewPhase = Phase.builder()
+                .name("__review__" + originalPhase.getName())
+                .task(review.getTask())
+                .build();
+
+        EnsembleOutput reviewOutput = phaseRunner.apply(reviewPhase, reviewPrior);
+
+        String raw = reviewOutput.getTaskOutputs().isEmpty()
+                ? ""
+                : reviewOutput.getTaskOutputs().get(0).getRaw();
+
+        log.debug("Phase '{}' review task raw output: [{}]", originalPhase.getName(), truncate(raw, 200));
+
+        return PhaseReviewDecision.parse(raw);
+    }
+
+    /**
+     * Create a copy of {@code currentPhase} with reviewer feedback injected into each task.
+     *
+     * <p>Each task in the returned phase has the same configuration as in {@code currentPhase}
+     * except that {@link Task#withRevisionFeedback(String, String, int)} has been applied,
+     * injecting the feedback text and the task's prior-attempt raw output.
+     *
+     * <p>The returned phase has the same name, workflow, and {@code after()} dependencies as
+     * {@code originalPhase} but carries no {@link PhaseReview} (the retry loop manages reviews
+     * externally to prevent double-review of rebuilt phases).
+     *
+     * @param originalPhase the phase as originally defined (used for name and dependencies)
+     * @param currentPhase  the phase as executed in the current attempt (source of tasks)
+     * @param feedback      reviewer feedback to inject into each task prompt
+     * @param priorOutput   outputs from the current attempt (per-task prior output text)
+     * @param attempt       retry attempt number (1 = first retry, 2 = second, ...)
+     * @return a new phase with feedback-enhanced tasks
+     */
+    private Phase rebuildPhaseWithFeedback(
+            Phase originalPhase, Phase currentPhase, String feedback, EnsembleOutput priorOutput, int attempt) {
+
+        Phase.PhaseBuilder builder =
+                Phase.builder().name(originalPhase.getName()).workflow(originalPhase.getWorkflow());
+        for (Phase pred : originalPhase.getAfter()) {
+            builder.after(pred);
+        }
+        // No review on the rebuilt phase -- the retry loop manages reviews externally.
+
+        List<Task> currentTasks = currentPhase.getTasks();
+        Map<Task, TaskOutput> taskIndex = priorOutput.getTaskOutputIndex();
+        for (Task task : currentTasks) {
+            String priorTaskOutput = null;
+            if (taskIndex != null) {
+                TaskOutput to = taskIndex.get(task);
+                if (to != null) {
+                    priorTaskOutput = to.getRaw();
+                }
+            }
+            builder.task(task.withRevisionFeedback(feedback, priorTaskOutput, attempt));
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Remove the outputs produced by {@code phase} from the global shared collections.
+     *
+     * <p>Used during predecessor retry to clear stale outputs before re-running the
+     * predecessor. Removes all task outputs from both {@code allTaskOutputs} (by reference
+     * equality) and {@code globalTaskOutputs} (by task identity for both the phase's declared
+     * tasks and the output index keys).
+     */
+    private void removePhaseOutputsFromGlobal(
+            Phase phase,
+            EnsembleOutput output,
+            List<TaskOutput> allTaskOutputs,
+            Map<Task, TaskOutput> globalTaskOutputs) {
+
+        // Remove from the ordered list by reference equality.
+        allTaskOutputs.removeAll(output.getTaskOutputs());
+
+        // Remove from the identity map using the phase's declared task objects as keys.
+        for (Task task : phase.getTasks()) {
+            globalTaskOutputs.remove(task);
+        }
+        // Also remove any rebuilt-task keys in the output index (covers retry attempts
+        // where the phase tasks were rebuilt with feedback).
+        if (output.getTaskOutputIndex() != null) {
+            for (Task task : output.getTaskOutputIndex().keySet()) {
+                globalTaskOutputs.remove(task);
+            }
+        }
+    }
+
+    /**
+     * Find a direct predecessor of {@code phase} by name.
+     *
+     * @param phaseName       the name to look for
+     * @param requestingPhase the phase whose direct predecessors are searched
+     * @return the matching predecessor phase, or {@code null} if not found
+     */
+    private Phase findDirectPredecessorByName(String phaseName, Phase requestingPhase) {
+        for (Phase pred : requestingPhase.getAfter()) {
+            if (pred.getName().equals(phaseName)) {
+                return pred;
+            }
+        }
+        return null;
     }
 
     /**
@@ -305,6 +646,7 @@ public class PhaseDagExecutor {
             ExecutorService threadPool,
             Map<String, String> frozenMdc,
             BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
+            List<Phase> allPhases,
             Map<Phase, List<Phase>> successorMap,
             Map<Phase, AtomicInteger> remainingPredecessors,
             Map<Phase, EnsembleOutput> phaseOutputMap,
@@ -317,15 +659,13 @@ public class PhaseDagExecutor {
         List<Phase> successors = successorMap.getOrDefault(completedPhase, List.of());
         for (Phase successor : successors) {
             int remaining = remainingPredecessors.get(successor).decrementAndGet();
-            // Atomically claim this successor for submission. putIfAbsent returns null only if
-            // the key was absent, meaning we won the race against skipTransitiveDependents which
-            // could also be trying to claim the same successor for skipping concurrently.
             if (remaining == 0 && settledPhases.putIfAbsent(successor, "submitted") == null) {
                 submitOnePhase(
                         successor,
                         threadPool,
                         frozenMdc,
                         phaseRunner,
+                        allPhases,
                         successorMap,
                         remainingPredecessors,
                         phaseOutputMap,
@@ -350,9 +690,6 @@ public class PhaseDagExecutor {
 
         List<Phase> successors = successorMap.getOrDefault(failedPhase, List.of());
         for (Phase successor : successors) {
-            // Atomically claim this successor for skipping. putIfAbsent returns null only if the
-            // key was absent, meaning we won the race against onPhaseCompleted which could also
-            // be trying to claim the same successor for submission concurrently.
             if (settledPhases.putIfAbsent(successor, "skipped") == null) {
                 log.warn(
                         "Phase '{}' skipped (predecessor '{}' failed or was skipped)",
@@ -362,5 +699,12 @@ public class PhaseDagExecutor {
                 skipTransitiveDependents(successor, successorMap, settledPhases, latch);
             }
         }
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null) {
+            return "(null)";
+        }
+        return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
     }
 }
