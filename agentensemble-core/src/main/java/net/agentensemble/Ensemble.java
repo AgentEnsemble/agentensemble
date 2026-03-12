@@ -438,6 +438,74 @@ public class Ensemble {
         return builder.build().run();
     }
 
+    /**
+     * Zero-ceremony static factory for deterministic-only pipelines: run the given handler
+     * tasks without any AI model or LLM configuration.
+     *
+     * <p>Use this to orchestrate deterministic (non-AI) steps such as REST API calls,
+     * data transformation, JSON parsing, file processing, or any Java function -- with the
+     * same sequential execution, DAG support, guardrails, callbacks, and metrics that
+     * AI-backed ensembles provide.
+     *
+     * <p>The output of one task is accessible to downstream tasks via
+     * {@code Task.builder().context(List.of(upstreamTask))} and read inside the handler
+     * through {@link net.agentensemble.task.TaskHandlerContext#contextOutputs()}:
+     *
+     * <pre>
+     * Task fetchTask = Task.builder()
+     *     .description("Fetch product data from API")
+     *     .expectedOutput("JSON response")
+     *     .handler(ctx -> ToolResult.success(apiClient.fetchProduct()))
+     *     .build();
+     *
+     * Task transformTask = Task.builder()
+     *     .description("Transform product data into display format")
+     *     .expectedOutput("Formatted product line")
+     *     .context(List.of(fetchTask))
+     *     .handler(ctx -> {
+     *         String json = ctx.contextOutputs().get(0).getRaw();
+     *         return ToolResult.success(format(json));
+     *     })
+     *     .build();
+     *
+     * EnsembleOutput result = Ensemble.run(fetchTask, transformTask);
+     * </pre>
+     *
+     * <p>All tasks must have a {@link net.agentensemble.task.TaskHandler} configured. To
+     * run AI-backed tasks, use {@link #run(ChatModel, Task...)} or the builder.
+     *
+     * @param tasks the deterministic tasks to execute; must not be null or empty; all must
+     *              have a handler configured
+     * @return the execution output
+     * @throws IllegalArgumentException if {@code tasks} is null, empty, or any task has no
+     *                                  handler -- use {@link #run(ChatModel, Task...)} or the
+     *                                  builder with {@code chatLanguageModel(model)} for AI tasks
+     */
+    public static EnsembleOutput run(Task... tasks) {
+        if (tasks == null || tasks.length == 0) {
+            throw new IllegalArgumentException("tasks must not be null or empty");
+        }
+        for (int i = 0; i < tasks.length; i++) {
+            if (tasks[i] == null) {
+                throw new IllegalArgumentException("tasks[" + i + "] must not be null");
+            }
+            if (tasks[i].getHandler() == null) {
+                throw new IllegalArgumentException("Task '"
+                        + tasks[i].getDescription()
+                        + "' has no handler configured. "
+                        + "Ensemble.run(Task...) requires all tasks to have a handler. "
+                        + "Provide a handler via Task.builder().handler(...), or use "
+                        + "Ensemble.run(ChatModel, Task...) for AI-backed tasks, or "
+                        + "configure chatLanguageModel(model) on the Ensemble builder.");
+            }
+        }
+        EnsembleBuilder builder = Ensemble.builder();
+        for (Task task : tasks) {
+            builder.task(task);
+        }
+        return builder.build().run();
+    }
+
     // ========================
     // Run methods
     // ========================
@@ -673,6 +741,7 @@ public class Ensemble {
                     .trace(trace)
                     .exitReason(output.getExitReason())
                     .taskOutputIndex(originalIndex)
+                    .phaseOutputs(output.getPhaseOutputs())
                     .build();
 
             // Step 12: Export trace
