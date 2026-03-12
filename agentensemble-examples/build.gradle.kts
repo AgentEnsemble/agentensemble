@@ -53,6 +53,8 @@ application {
 //   ./gradlew :agentensemble-examples:runHumanInTheLoop --args="AgentEnsemble v2"
 //   ./gradlew :agentensemble-examples:runCrossRunMemory --args="renewable energy"
 //   ./gradlew :agentensemble-examples:runToolPipeline
+//   ./gradlew :agentensemble-examples:runDeterministicTask
+//   ./gradlew :agentensemble-examples:runPhases
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -72,6 +74,7 @@ mapOf(
     "runCrossRunMemory" to "net.agentensemble.examples.CrossRunMemoryExample",
     "runToolPipeline" to "net.agentensemble.examples.ToolPipelineExample",
     "runDeterministicTask" to "net.agentensemble.examples.DeterministicTaskExample",
+    "runPhases" to "net.agentensemble.examples.PhasesExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

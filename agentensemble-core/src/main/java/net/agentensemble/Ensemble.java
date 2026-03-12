@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -44,6 +45,8 @@ import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
 import net.agentensemble.synthesis.SynthesisContext;
+import net.agentensemble.task.TaskOutput;
+import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.trace.AgentSummary;
@@ -58,6 +61,8 @@ import net.agentensemble.workflow.HierarchicalWorkflowExecutor;
 import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.ParallelWorkflowExecutor;
+import net.agentensemble.workflow.Phase;
+import net.agentensemble.workflow.PhaseDagExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
 import net.agentensemble.workflow.WorkflowExecutor;
@@ -111,6 +116,23 @@ public class Ensemble {
     /** All tasks to execute. */
     @Singular
     private final List<Task> tasks;
+
+    /**
+     * Named task-group workstreams with a dependency DAG.
+     *
+     * <p>Independent phases run in parallel; a phase starts only when all phases declared in
+     * its {@code after()} list have completed. Cannot be combined with {@code tasks} -- use
+     * one style per ensemble.
+     *
+     * <p>Default: empty (flat task list is used instead).
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we need to
+     * provide both {@code phase(Phase)} and {@code phase(String, Task...)} methods in the custom
+     * {@code EnsembleBuilder}; Lombok annotations would conflict with those names. The custom
+     * {@code phase()} methods each produce an immutable snapshot so that the list assigned to
+     * this field by Lombok's generated {@code build()} is already immutable.
+     */
+    private final List<Phase> phases;
 
     /**
      * Default LLM for all tasks that do not carry their own {@code chatLanguageModel}
@@ -570,9 +592,17 @@ public class Ensemble {
                 }
             }
 
-            // Step 8: Select and execute WorkflowExecutor
-            WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
-            EnsembleOutput output = executor.execute(agentResolvedTasks, executionContext);
+            // Step 8: Select and execute WorkflowExecutor (flat tasks) or PhaseDagExecutor (phases)
+            EnsembleOutput output;
+            if (phases != null && !phases.isEmpty()) {
+                // Phase-based execution: PhaseDagExecutor handles the DAG; each phase
+                // runner resolves template vars and agents independently.
+                log.info("Ensemble run using Phase DAG | Phases: {}", phases.size());
+                output = executePhases(phases, resolvedInputs, buildEffectiveChatModel(), executionContext);
+            } else {
+                WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
+                output = executor.execute(agentResolvedTasks, executionContext);
+            }
 
             Instant runCompletedAt = Instant.now();
 
@@ -619,14 +649,14 @@ public class Ensemble {
             // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
-            java.util.Map<Task, net.agentensemble.task.TaskOutput> executorIndex = output.getTaskOutputIndex();
-            java.util.Map<Task, net.agentensemble.task.TaskOutput> originalIndex = null;
+            Map<Task, TaskOutput> executorIndex = output.getTaskOutputIndex();
+            Map<Task, TaskOutput> originalIndex = null;
             if (executorIndex != null) {
-                IdentityHashMap<Task, net.agentensemble.task.TaskOutput> idx = new IdentityHashMap<>();
+                IdentityHashMap<Task, TaskOutput> idx = new IdentityHashMap<>();
                 for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
                     Task original = tasks.get(i);
                     Task agentResolved = agentResolvedTasks.get(i);
-                    net.agentensemble.task.TaskOutput taskOut = executorIndex.get(agentResolved);
+                    TaskOutput taskOut = executorIndex.get(agentResolved);
                     if (taskOut != null) {
                         idx.put(original, taskOut);
                     }
@@ -857,15 +887,15 @@ public class Ensemble {
                         .goal(agent.getGoal())
                         .background(agent.getBackground())
                         .toolNames(agent.getTools().stream()
-                                .filter(t -> t instanceof net.agentensemble.tool.AgentTool)
-                                .map(t -> ((net.agentensemble.tool.AgentTool) t).name())
+                                .filter(t -> t instanceof AgentTool)
+                                .map(t -> ((AgentTool) t).name())
                                 .collect(Collectors.toList()))
                         .allowDelegation(agent.isAllowDelegation())
                         .build())
                 .collect(Collectors.toList());
 
         List<TaskTrace> taskTraces = output.getTaskOutputs().stream()
-                .map(net.agentensemble.task.TaskOutput::getTrace)
+                .map(TaskOutput::getTrace)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
@@ -959,6 +989,147 @@ public class Ensemble {
         return Workflow.SEQUENTIAL;
     }
 
+    /**
+     * Execute the ensemble phases via the {@link PhaseDagExecutor}.
+     *
+     * <p>Builds a per-phase runner that:
+     * <ol>
+     *   <li>Resolves template variables in the phase's task descriptions.</li>
+     *   <li>Synthesizes agents for agentless tasks.</li>
+     *   <li>Selects the per-phase workflow (phase override or ensemble default).</li>
+     *   <li>Calls {@link SequentialWorkflowExecutor#executeSeeded} so cross-phase
+     *       {@code context()} references resolve correctly via the prior-outputs map.</li>
+     * </ol>
+     *
+     * @param phases          all phases declared on the ensemble
+     * @param resolvedInputs  template variable map
+     * @param effectiveChatModel  ensemble-level chat model (already rate-limited if configured)
+     * @param executionContext execution context shared across all phases
+     * @return combined output from all completed phases
+     */
+    private EnsembleOutput executePhases(
+            List<Phase> phases,
+            Map<String, String> resolvedInputs,
+            ChatModel effectiveChatModel,
+            ExecutionContext executionContext) {
+
+        // Determine the ensemble-level effective workflow for phases without a per-phase override.
+        // For phases, SEQUENTIAL is the safe default when no context deps are declared.
+        Workflow ensembleEffectiveWorkflow = workflow != null ? workflow : Workflow.SEQUENTIAL;
+
+        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
+
+        // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
+        ConcurrentHashMap<String, List<TaskOutput>> phaseResultsMap = new ConcurrentHashMap<>();
+
+        PhaseDagExecutor dagExecutor = new PhaseDagExecutor();
+
+        EnsembleOutput dagOutput = dagExecutor.execute(phases, (phase, priorOutputs) -> {
+            // 1. Resolve template variables in this phase's tasks
+            List<Task> templateResolved = resolveTasksFromList(phase.getTasks(), resolvedInputs);
+
+            // 2. Resolve agents (synthesize where needed)
+            List<Task> agentResolved = resolveAgents(templateResolved, effectiveChatModel, chatLanguageModel);
+
+            // 3. Derive agents for delegation context
+            List<Agent> phaseAgents = deriveAgents(agentResolved);
+
+            // 4. Determine the per-phase workflow
+            Workflow phaseWorkflow = phase.getWorkflow() != null ? phase.getWorkflow() : ensembleEffectiveWorkflow;
+
+            log.debug(
+                    "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {}",
+                    phase.getName(),
+                    phaseWorkflow,
+                    agentResolved.size(),
+                    priorOutputs.size());
+
+            // 5. Execute with appropriate executor, seeding prior outputs for cross-phase context
+            EnsembleOutput phaseOutput =
+                    switch (phaseWorkflow) {
+                        case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
+                                .executeSeeded(agentResolved, executionContext, priorOutputs);
+                        case PARALLEL -> new ParallelWorkflowExecutor(
+                                        phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
+                                .executeSeeded(agentResolved, executionContext, priorOutputs);
+                        case HIERARCHICAL -> throw new ValidationException("Phase '"
+                                + phase.getName()
+                                + "': Workflow.HIERARCHICAL is not supported at the phase "
+                                + "level. Use HIERARCHICAL at the ensemble level (without phases).");
+                    };
+
+            // 6. Record phase outputs for EnsembleOutput.getPhaseOutputs()
+            phaseResultsMap.put(phase.getName(), phaseOutput.getTaskOutputs());
+
+            return phaseOutput;
+        });
+
+        // Augment the dag output with the per-phase output map
+        return EnsembleOutput.builder()
+                .raw(dagOutput.getRaw())
+                .taskOutputs(dagOutput.getTaskOutputs())
+                .totalDuration(dagOutput.getTotalDuration())
+                .totalToolCalls(dagOutput.getTotalToolCalls())
+                .phaseOutputs(Collections.unmodifiableMap(phaseResultsMap))
+                .build();
+    }
+
+    /**
+     * Resolve template variables in a given task list.
+     *
+     * <p>Equivalent to {@link #resolveTasks(Map)} but operates on an arbitrary task list
+     * instead of {@link #tasks}. Used by the per-phase runner in {@link #executePhases}.
+     *
+     * @param inputTasks        the task list to resolve
+     * @param resolvedInputsMap template variable map
+     * @return list of resolved tasks with context references remapped to resolved instances
+     */
+    private static List<Task> resolveTasksFromList(List<Task> inputTasks, Map<String, String> resolvedInputsMap) {
+        // Pass 1: resolve description and expectedOutput.
+        // Preserve the original task identity when nothing changed -- this is critical for
+        // cross-phase context() references, which hold the original task identity. If we
+        // always create new Task objects, the identity-based completedOutputs lookup in
+        // subsequent phases would fail to find the prior phase's outputs.
+        IdentityHashMap<Task, Task> originalToResolved = new IdentityHashMap<>();
+        for (Task task : inputTasks) {
+            String resolvedDesc = TemplateResolver.resolve(task.getDescription(), resolvedInputsMap);
+            String resolvedExpected = TemplateResolver.resolve(task.getExpectedOutput(), resolvedInputsMap);
+            // Preserve original identity when nothing changed (no template substitution occurred)
+            Task resolved =
+                    resolvedDesc.equals(task.getDescription()) && resolvedExpected.equals(task.getExpectedOutput())
+                            ? task
+                            : task.toBuilder()
+                                    .description(resolvedDesc)
+                                    .expectedOutput(resolvedExpected)
+                                    .build();
+            originalToResolved.put(task, resolved);
+        }
+
+        // Pass 2: rewrite context lists to reference resolved instances
+        List<Task> result = new ArrayList<>(inputTasks.size());
+        for (Task original : inputTasks) {
+            Task resolvedBase = originalToResolved.get(original);
+            List<Task> originalContext = original.getContext();
+            if (originalContext.isEmpty()) {
+                result.add(resolvedBase);
+            } else {
+                List<Task> resolvedContext = new ArrayList<>(originalContext.size());
+                for (Task ctxTask : originalContext) {
+                    // Context tasks may be from THIS phase OR from a prior phase.
+                    // For within-phase refs: remap to the resolved instance.
+                    // For cross-phase refs: keep the original identity (priorOutputs lookup
+                    // uses the original task instances from the prior phase's execution).
+                    resolvedContext.add(originalToResolved.getOrDefault(ctxTask, ctxTask));
+                }
+                Task finalTask =
+                        resolvedBase.toBuilder().context(resolvedContext).build();
+                originalToResolved.put(original, finalTask);
+                result.add(finalTask);
+            }
+        }
+        return result;
+    }
+
     private WorkflowExecutor selectExecutor(Workflow effectiveWorkflow, List<Agent> derivedAgents) {
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         return switch (effectiveWorkflow) {
@@ -998,6 +1169,27 @@ public class Ensemble {
      * event listeners without implementing the full {@link EnsembleListener} interface.
      */
     public static class EnsembleBuilder {
+
+        // Phases accumulator. Kept as a plain List<Phase> field (not @Singular, not
+        // @Builder.Default) so that both phase(Phase) and phase(String, Task...) methods can
+        // be declared without conflicting with Lombok-generated names. The field starts as
+        // an empty immutable list; each phase() call creates a new immutable copy so that
+        // Lombok's generated build() always receives an immutable list.
+        private List<Phase> phases = List.of();
+
+        /**
+         * Add a single phase to this ensemble.
+         *
+         * @param phase the phase to add; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder phase(Phase phase) {
+            Objects.requireNonNull(phase, "phase must not be null");
+            List<Phase> updated = new ArrayList<>(this.phases);
+            updated.add(phase);
+            this.phases = List.copyOf(updated);
+            return this;
+        }
 
         /**
          * Register a lambda that is called immediately before each task starts.
@@ -1105,6 +1297,19 @@ public class Ensemble {
                     handler.accept(event);
                 }
             });
+        }
+
+        /**
+         * Add a named phase with the given tasks (no workflow override, no dependencies).
+         *
+         * <p>Convenience method equivalent to {@code phase(Phase.of(name, tasks))}.
+         *
+         * @param name  unique phase name within the ensemble; must not be null or blank
+         * @param tasks tasks for this phase; at least one required
+         * @return this builder
+         */
+        public EnsembleBuilder phase(String name, Task... tasks) {
+            return phase(Phase.of(name, tasks));
         }
 
         /**

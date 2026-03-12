@@ -166,14 +166,16 @@ class ParallelTaskCoordinator {
                     injectReviewHandlerIntoTools(task, reviewHandler);
                 }
 
-                // Collect outputs from completed in-graph dependencies as context
+                // Collect outputs from completed dependencies as context.
+                // For in-graph deps: tasks within this phase that the parallel executor tracked.
+                // For out-of-graph deps: cross-phase references whose outputs were pre-seeded
+                // into completedOutputs by ParallelWorkflowExecutor.executeSeeded(). In both
+                // cases, completedOutputs.get(dep) returns the output when available.
                 List<TaskOutput> contextOutputs = new ArrayList<>();
                 for (Task dep : task.getContext()) {
-                    if (graph.isInGraph(dep)) {
-                        TaskOutput out = completedOutputs.get(dep);
-                        if (out != null) {
-                            contextOutputs.add(out);
-                        }
+                    TaskOutput out = completedOutputs.get(dep);
+                    if (out != null) {
+                        contextOutputs.add(out);
                     }
                 }
 

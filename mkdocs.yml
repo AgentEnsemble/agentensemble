@@ -74,6 +74,7 @@ nav:
     - Agents: guides/agents.md
     - Tasks: guides/tasks.md
     - Workflows: guides/workflows.md
+    - Phases: guides/phases.md
     - MapReduceEnsemble: guides/map-reduce.md
     - Tools: guides/tools.md
     - Built-in Tools: guides/built-in-tools.md
@@ -114,6 +115,7 @@ nav:
     - Visualization: examples/visualization.md
     - Tool Pipeline: examples/tool-pipeline.md
     - Deterministic Tasks: examples/deterministic-tasks.md
+    - Phases: examples/phases.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
   - Migration:
@@ -137,3 +139,4 @@ nav:
     - Live Execution Dashboard: design/16-live-dashboard.md
     - Tool Pipeline: design/17-tool-pipeline.md
     - Deterministic Tasks: design/18-deterministic-tasks.md
+    - Phases: design/19-phases.md

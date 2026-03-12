@@ -125,6 +125,25 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
     @Override
     public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
+        return executeSeeded(resolvedTasks, executionContext, Map.of());
+    }
+
+    /**
+     * Execute with a pre-seeded completed-outputs map.
+     *
+     * <p>Used by {@link PhaseDagExecutor} to inject outputs from previously-completed phases
+     * so that cross-phase {@code context()} references resolve correctly in this phase's tasks.
+     * Tasks whose cross-phase dependencies were satisfied in a prior phase will find their
+     * context outputs present in {@code seedOutputs} without blocking on non-existent
+     * in-graph predecessors.
+     *
+     * @param resolvedTasks    tasks to execute (with template vars resolved, agents synthesized)
+     * @param executionContext execution context
+     * @param seedOutputs      outputs from prior phases, keyed by task identity
+     * @return the ensemble output for this phase's tasks only (excludes seed outputs)
+     */
+    public EnsembleOutput executeSeeded(
+            List<Task> resolvedTasks, ExecutionContext executionContext, Map<Task, TaskOutput> seedOutputs) {
         if (resolvedTasks.isEmpty()) {
             return EnsembleOutput.builder()
                     .raw("")
@@ -144,7 +163,8 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Thread-safe shared state -- IdentityHashMap for identity-based task lookup,
         // wrapped with Collections.synchronizedMap to allow concurrent access.
-        Map<Task, TaskOutput> completedOutputs = Collections.synchronizedMap(new IdentityHashMap<>());
+        // Pre-seed with prior phase outputs so cross-phase context() references resolve correctly.
+        Map<Task, TaskOutput> completedOutputs = Collections.synchronizedMap(new IdentityHashMap<>(seedOutputs));
         Map<Task, Throwable> failedTaskCauses = Collections.synchronizedMap(new IdentityHashMap<>());
 
         // Tasks that were skipped (CONTINUE_ON_ERROR: dep failed or dep was skipped).
@@ -251,7 +271,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     .totalDuration(partialDuration)
                     .totalToolCalls(partialToolCalls)
                     .exitReason(exitEarlyReason)
-                    .taskOutputIndex(completedOutputs) // identity-based index for getOutput(Task)
+                    .taskOutputIndex(buildPhaseOnlyIndex(resolvedTasks, completedOutputs))
                     .build();
         }
 
@@ -300,7 +320,31 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                 .taskOutputs(allOutputs)
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
-                .taskOutputIndex(completedOutputs) // identity-based index for getOutput(Task)
+                .taskOutputIndex(buildPhaseOnlyIndex(resolvedTasks, completedOutputs))
                 .build();
+    }
+
+    /**
+     * Build an identity-based task-to-output index containing only the tasks from the
+     * current execution phase (excludes any seed outputs injected from prior phases).
+     *
+     * <p>This ensures that when {@link PhaseDagExecutor} merges each phase's
+     * {@code taskOutputIndex} into the global output map, it does not redundantly
+     * re-add prior-phase outputs that are already present.
+     *
+     * @param resolvedTasks    the tasks that belong to the current phase
+     * @param completedOutputs the shared completed-outputs map (may include seed entries)
+     * @return a new {@link IdentityHashMap} containing only current-phase task outputs
+     */
+    private static Map<Task, TaskOutput> buildPhaseOnlyIndex(
+            List<Task> resolvedTasks, Map<Task, TaskOutput> completedOutputs) {
+        IdentityHashMap<Task, TaskOutput> index = new IdentityHashMap<>();
+        for (Task task : resolvedTasks) {
+            TaskOutput to = completedOutputs.get(task);
+            if (to != null) {
+                index.put(task, to);
+            }
+        }
+        return index;
     }
 }

@@ -13,6 +13,7 @@ import net.agentensemble.exception.ValidationException;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.workflow.HierarchicalConstraints;
 import net.agentensemble.workflow.ParallelErrorStrategy;
+import net.agentensemble.workflow.Phase;
 import net.agentensemble.workflow.Workflow;
 
 /**
@@ -31,10 +32,19 @@ import net.agentensemble.workflow.Workflow;
  *   <li>Any context dependency between ensemble tasks -> PARALLEL</li>
  *   <li>No such dependency -> SEQUENTIAL</li>
  * </ul>
+ *
+ * <p>When phases are used instead of a flat task list, the phase-specific rules are:
+ * <ul>
+ *   <li>Cannot mix {@code task()} and {@code phase()} on the same ensemble.</li>
+ *   <li>Phase names must be unique within the ensemble (case-sensitive).</li>
+ *   <li>The phase dependency DAG must be acyclic.</li>
+ *   <li>Each phase's tasks must have an LLM source (same rules as flat tasks).</li>
+ * </ul>
  */
 class EnsembleValidator {
 
     private final List<Task> tasks;
+    private final List<Phase> phases;
     private final ChatModel ensembleLlm;
     private final RateLimit rateLimit;
     private final Workflow workflow;
@@ -45,6 +55,7 @@ class EnsembleValidator {
 
     EnsembleValidator(Ensemble ensemble) {
         this.tasks = ensemble.getTasks();
+        this.phases = ensemble.getPhases();
         this.ensembleLlm = ensemble.getChatLanguageModel();
         this.rateLimit = ensemble.getRateLimit();
         this.workflow = ensemble.getWorkflow();
@@ -55,24 +66,120 @@ class EnsembleValidator {
     }
 
     void validate() {
-        validateTasksNotEmpty();
-        validateRateLimitConfiguration();
-        validateTasksHaveLlm();
-        validateMaxDelegationDepth();
-        // Workflow-specific validations use the resolved (possibly inferred) workflow
-        Workflow effective = resolveWorkflow();
-        validateManagerMaxIterations(effective);
-        validateParallelErrorStrategy(effective);
-        validateHierarchicalRoles(effective);
-        validateHierarchicalConstraints(effective);
-        validateHandlerTasksNotInHierarchical(effective);
-        validateNoCircularContextDependencies();
-        validateContextOrdering(effective);
+        boolean usingPhases = phases != null && !phases.isEmpty();
+        boolean usingTasks = tasks != null && !tasks.isEmpty();
+
+        // Reject mixed use of tasks and phases
+        if (usingTasks && usingPhases) {
+            throw new ValidationException("Cannot mix task() and phase() on the same Ensemble. "
+                    + "Use flat tasks for simple pipelines, or phases for named workstreams with "
+                    + "parallel execution -- but not both on the same ensemble.");
+        }
+
+        if (usingPhases) {
+            // Phase-based validation path
+            validatePhaseNamesUnique();
+            validatePhaseDagAcyclic();
+            validatePhaseTasksHaveLlm();
+            validateMaxDelegationDepth();
+            validateRateLimitConfiguration();
+            // Workflow-specific validations
+            Workflow effective = resolveWorkflow();
+            validateParallelErrorStrategy(effective);
+        } else {
+            // Flat task validation path (existing logic)
+            validateTasksNotEmpty();
+            validateRateLimitConfiguration();
+            validateTasksHaveLlm();
+            validateMaxDelegationDepth();
+            Workflow effective = resolveWorkflow();
+            validateManagerMaxIterations(effective);
+            validateParallelErrorStrategy(effective);
+            validateHierarchicalRoles(effective);
+            validateHierarchicalConstraints(effective);
+            validateHandlerTasksNotInHierarchical(effective);
+            validateNoCircularContextDependencies();
+            validateContextOrdering(effective);
+        }
     }
+
+    // ========================
+    // Phase-specific validation
+    // ========================
+
+    /**
+     * Validate that phase names are unique within this ensemble.
+     */
+    private void validatePhaseNamesUnique() {
+        Set<String> seen = new HashSet<>();
+        for (Phase phase : phases) {
+            if (!seen.add(phase.getName())) {
+                throw new ValidationException("Duplicate phase name '" + phase.getName() + "' detected. "
+                        + "Phase names must be unique within an ensemble.");
+            }
+        }
+    }
+
+    /**
+     * Validate that the phase dependency DAG is acyclic using DFS.
+     */
+    private void validatePhaseDagAcyclic() {
+        // DFS-based cycle detection using identity-based visited/in-stack sets
+        Set<Phase> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Phase> inStack = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        for (Phase phase : phases) {
+            if (!visited.contains(phase)) {
+                detectPhaseCycle(phase, visited, inStack);
+            }
+        }
+    }
+
+    private void detectPhaseCycle(Phase phase, Set<Phase> visited, Set<Phase> inStack) {
+        visited.add(phase);
+        inStack.add(phase);
+
+        for (Phase predecessor : phase.getAfter()) {
+            if (!visited.contains(predecessor)) {
+                detectPhaseCycle(predecessor, visited, inStack);
+            } else if (inStack.contains(predecessor)) {
+                throw new ValidationException("Circular phase dependency detected involving phase '" + phase.getName()
+                        + "'. " + "Phase dependencies must form a directed acyclic graph (DAG).");
+            }
+        }
+
+        inStack.remove(phase);
+    }
+
+    /**
+     * Validate that every task within each phase has an LLM source.
+     * Handler tasks (deterministic) are exempt.
+     */
+    private void validatePhaseTasksHaveLlm() {
+        for (Phase phase : phases) {
+            for (Task task : phase.getTasks()) {
+                if (task.getHandler() != null) {
+                    continue; // deterministic tasks need no LLM
+                }
+                boolean hasLlm =
+                        (task.getAgent() != null) || (task.getChatLanguageModel() != null) || (ensembleLlm != null);
+                if (!hasLlm) {
+                    throw new ValidationException("Task '" + task.getDescription() + "' in phase '" + phase.getName()
+                            + "' has no LLM available. "
+                            + "Provide an explicit agent, a task-level chatLanguageModel, "
+                            + "an ensemble-level chatLanguageModel, or configure a deterministic handler.");
+                }
+            }
+        }
+    }
+
+    // ========================
+    // Flat-task validation (unchanged from before)
+    // ========================
 
     private void validateTasksNotEmpty() {
         if (tasks == null || tasks.isEmpty()) {
-            throw new ValidationException("Ensemble must have at least one task");
+            throw new ValidationException("Ensemble must have at least one task (or at least one phase with tasks)");
         }
     }
 
@@ -362,6 +469,11 @@ class EnsembleValidator {
     private Workflow resolveWorkflow() {
         if (workflow != null) {
             return workflow;
+        }
+        // For phase-based ensembles, use SEQUENTIAL as a safe default for workflow-specific validation.
+        // Phase-level parallelism is handled by PhaseDagExecutor, not the workflow enum.
+        if (phases != null && !phases.isEmpty()) {
+            return Workflow.SEQUENTIAL;
         }
         Set<Task> taskSet = Collections.newSetFromMap(new IdentityHashMap<>());
         taskSet.addAll(tasks);
