@@ -2,74 +2,96 @@
 
 ## Current Work
 
-Branch: `feature/189-deterministic-only-orchestration` (Issue #189)
+Branch: `feature/phase-review-retry`
 
-Deterministic-only orchestration as a first-class pattern: AgentEnsemble can be used
-without any AI/LLM to orchestrate purely deterministic (non-AI) task pipelines with the
-same DAG execution, parallel phases, callbacks, guardrails, and metrics.
+Phase-level review and retry with feedback injection. Phases can now have a quality gate
+that evaluates output and optionally re-runs the phase (with reviewer feedback injected
+into task prompts) or requests a predecessor phase re-run.
 
 ## Completed This Session
 
-### Implementation (commit b83bed7)
+### Implementation (commit afd1279)
 
-**Core change: `Ensemble.run(Task...)` static factory (no-model overload)**
-- New zero-ceremony API for handler-only pipelines: `Ensemble.run(fetchTask, parseTask, storeTask)`
-- Validates all tasks have handlers; throws `IllegalArgumentException` with clear message pointing
-  to the offending task and suggesting `Ensemble.run(ChatModel, Task...)` for AI tasks
-- Resolves overload ambiguity in existing test: `Ensemble.run((ChatModel) null, task)`
+**New types:**
+- `PhaseReviewDecision` (agentensemble-review): sealed interface with four record
+  implementations -- Approve, Retry(feedback), RetryPredecessor(phaseName, feedback),
+  Reject(reason). `parse(String)` handles text format; `toText()` serialises back.
+- `PhaseReview` (agentensemble-core/workflow): configuration object with `task`,
+  `maxRetries` (default 2), `maxPredecessorRetries` (default 2). Hand-written builder
+  (avoids Lombok @Builder.Default scoping issue with custom build() methods).
 
-**Bug fix: `phaseOutputs` not propagated in `outputWithTrace`**
-- In `Ensemble.runWithInputs()`, the final `outputWithTrace` EnsembleOutput build was missing
-  `.phaseOutputs(output.getPhaseOutputs())` -- the per-phase results map was silently dropped
-- This was a pre-existing bug exposed by the new phase tests that assert on `getPhaseOutputs()`
+**Task changes:**
+- Three new phase-retry fields: `revisionFeedback`, `priorAttemptOutput`, `attemptNumber`
+  (all default null/0, framework-internal).
+- `withRevisionFeedback(feedback, priorOutput, attempt)` copy factory uses `toBuilder()`.
 
-### Tests: `DeterministicOnlyEnsembleIntegrationTest` (15 new integration tests)
-- Sequential pipeline: all handler tasks, no model, runs successfully
-- Data passing: output of task A flows into task B via `context()` and `contextOutputs()`
-- Three-step chained pipeline: each step reads prior step output
-- Parallel workflow with handler tasks (no model)
-- Parallel fan-out with context-dependency inference (PARALLEL inferred automatically)
-- Phase DAG with deterministic tasks only (no LLM)
-- Cross-phase context passing between deterministic tasks
-- `Ensemble.run(Task...)` factory: happy paths and error paths (null, empty, no-handler task)
-- Callbacks fire for handler tasks
-- Handler failure propagates as `TaskExecutionException`
-- Mixed handler + non-handler without model fails validation with clear error
+**AgentPromptBuilder:**
+- `## Revision Instructions (Attempt N)` section injected before `## Task` when
+  `task.getRevisionFeedback()` is non-blank. Includes `### Feedback` and optionally
+  `### Previous Output` subsections.
 
-### Documentation
-- `docs/design/20-deterministic-only.md` -- new design doc
-- `docs/guides/deterministic-orchestration.md` -- new guide
-- `docs/design/18-deterministic-tasks.md` -- updated with `Ensemble.run(Task...)` factory
-- `docs/examples/deterministic-tasks.md` -- added deterministic-only pipeline section
-- `README.md` -- broadened Task concept, added non-AI-exclusive callout
-- `mkdocs.yml` -- added new guide and design doc to nav
+**Phase:**
+- New optional `review` field (PhaseReview, default null).
 
-### Example
-- `DeterministicOnlyPipelineExample.java` -- three patterns (sequential ETL, parallel fan-out,
-  phase-based pipeline)
-- `agentensemble-examples/build.gradle.kts` -- `runDeterministicOnlyPipeline` task
+**PhaseDagExecutor:**
+- `runPhaseWithRetry()`: loop around phase execution. After each attempt, runs the
+  review task as a synthetic single-task phase (`__review__<phaseName>`). Parses the
+  decision and either approves, self-retries (rebuilds tasks with feedback), handles
+  predecessor retry, or throws.
+- Global state committed only after review approves. Intermediate outputs discarded.
+- Predecessor retry: removes stale predecessor outputs from globalTaskOutputs and
+  allTaskOutputs, re-runs predecessor with feedback, commits new outputs, rebuilds
+  priorOutputsSnapshot, resets current phase to original tasks.
+- Context resolution on retries: reviewPrior maps BOTH original and current-attempt
+  task identities to current outputs, so review task context() refs resolve correctly
+  even when task objects were rebuilt with feedback (different identity).
+
+**Tests (72 new):**
+- `PhaseReviewDecisionTest` (31 tests): factories, toText, parse, round-trips
+- `PhaseReviewTest` (11 tests): builder, static factories, validation
+- `TaskRevisionFeedbackTest` (12 tests): withRevisionFeedback, defaults, immutability
+- `AgentPromptBuilderRevisionTest` (9 tests): revision section present/absent, ordering
+- `PhaseReviewIntegrationTest` (9 tests): self-retry, max-retry exhaustion, predecessor
+  retry, rejection, successor execution after approval
+
+**Documentation:**
+- `docs/design/21-phase-review.md`: design doc covering all components
+- `docs/guides/phase-review.md`: user guide with three reviewer types
+- `docs/examples/phase-review.md`: runnable code examples
+- `PhaseReviewExample.java` in agentensemble-examples (3 patterns, no API key for 1+2)
+- `mkdocs.yml` updated (guide, example, design doc entries)
 
 ## Status
-- Full CI build: PASSING (`./gradlew build`)
-- All 15 new integration tests: PASSING
-- Branch: `feature/189-deterministic-only-orchestration`
+- Full CI build: PASSING (`./gradlew build :agentensemble-core:javadoc :agentensemble-review:javadoc`)
+- All 72 new tests: PASSING
+- Branch: `feature/phase-review-retry`
 - Ready for PR
 
 ## Key Design Decisions
 
-### No new framework code required for validation
-The existing `EnsembleValidator` already correctly skips handler tasks in `validateTasksHaveLlm()`
-and `validatePhaseTasksHaveLlm()`. All-handler ensembles pass validation without a `chatLanguageModel`.
+### Review-as-task
+The reviewer is just a Task (AI, deterministic, or human-review). No parallel reviewer
+SPI needed. The review task type determines the reviewer behaviour.
 
-### Factory API design
-`Ensemble.run(Task...)` is a separate overload (not replacing `Ensemble.run(ChatModel, Task...)`).
-Java resolves `Ensemble.run((ChatModel)null, task)` unambiguously to the model overload.
+### Text decision format
+Review tasks output text (`APPROVE`, `RETRY: feedback`, `RETRY_PREDECESSOR name: feedback`,
+`REJECT: reason`). `PhaseReviewDecision.parse(String)` handles case-insensitive matching.
+Unrecognised text defaults to APPROVE (safe).
 
-### phaseOutputs bug fix scope
-The missing `.phaseOutputs()` propagation affected all phase-based ensembles (AI and deterministic),
-not just the new deterministic case. The existing `PhaseIntegrationTest` did not assert on
-`getPhaseOutputs()` so the bug was previously silent.
+### Delayed global state commit
+Intermediate attempt outputs are NOT written to globalTaskOutputs/allTaskOutputs until
+review approves. This avoids polluting the global state with discarded attempts and makes
+the retry loop clean.
+
+### Scoped predecessor retry
+Only the predecessor and the reviewing phase re-run. Other successors of the predecessor
+that already completed are NOT re-run. This is documented as a known limitation.
+
+### PhaseReview hand-written builder
+Lombok @Builder.Default generates `$set` fields in the builder. When combined with a
+custom `build()` method, javac cannot find those fields (annotation processing order).
+Solution: hand-write the builder class entirely.
 
 ## Next Steps
-- Open PR for feature/189-deterministic-only-orchestration
-- Consider: Ensemble.run(Phase...) zero-ceremony factory for phase-based pipelines
+- Open PR for feature/phase-review-retry
+- Consider: Ensemble.run(Phase...) zero-ceremony factory for phase pipelines
