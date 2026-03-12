@@ -230,7 +230,7 @@ For each phase, `PhaseDagExecutor` selects the appropriate `WorkflowExecutor` an
 
 ```java
 WorkflowExecutor executor = selectExecutor(phase, ensemble);
-List<Task> resolved = resolveTemplatVariables(phase.getTasks(), inputVariables);
+List<Task> resolved = resolveTemplateVariables(phase.getTasks(), inputVariables);
 EnsembleOutput phaseOutput = executor.execute(resolved, executionContext);
 ```
 

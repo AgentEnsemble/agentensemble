@@ -1049,7 +1049,7 @@ public class Ensemble {
                                 .executeSeeded(agentResolved, executionContext, priorOutputs);
                         case PARALLEL -> new ParallelWorkflowExecutor(
                                         phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
-                                .execute(agentResolved, executionContext);
+                                .executeSeeded(agentResolved, executionContext, priorOutputs);
                         case HIERARCHICAL -> throw new ValidationException("Phase '"
                                 + phase.getName()
                                 + "': Workflow.HIERARCHICAL is not supported at the phase "

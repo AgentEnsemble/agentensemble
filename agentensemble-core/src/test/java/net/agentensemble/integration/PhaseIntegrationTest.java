@@ -367,6 +367,46 @@ class PhaseIntegrationTest {
         assertThat(bothStarted.getCount()).isEqualTo(0); // both tasks started
     }
 
+    @Test
+    void parallelPhaseWorkflow_crossPhaseContext_resolvesFromPriorPhase() {
+        // Verifies that ParallelWorkflowExecutor.executeSeeded() correctly injects
+        // prior-phase outputs so that a task in a PARALLEL phase can reference a task
+        // from an earlier (SEQUENTIAL) phase via context().
+        Task sourceTask = Task.builder()
+                .description("Produce source value")
+                .expectedOutput("source output")
+                .handler(ctx -> ToolResult.success("source-42"))
+                .build();
+
+        Phase firstPhase = Phase.of("first", sourceTask);
+
+        String[] capturedContext = {null};
+        Task consumingTask = Task.builder()
+                .description("Consume source value")
+                .expectedOutput("consumed output")
+                .context(List.of(sourceTask)) // cross-phase reference into firstPhase
+                .handler(ctx -> {
+                    capturedContext[0] = ctx.contextOutputs().get(0).getRaw();
+                    return ToolResult.success("consumed-" + capturedContext[0]);
+                })
+                .build();
+
+        Phase secondPhase = Phase.builder()
+                .name("second")
+                .workflow(Workflow.PARALLEL)
+                .after(firstPhase)
+                .task(consumingTask)
+                .build();
+
+        EnsembleOutput output =
+                Ensemble.builder().phase(firstPhase).phase(secondPhase).build().run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(2);
+        assertThat(capturedContext[0]).isEqualTo("source-42");
+        assertThat(output.getRaw()).isEqualTo("consumed-source-42");
+    }
+
     // ========================
     // Convenience builder methods
     // ========================

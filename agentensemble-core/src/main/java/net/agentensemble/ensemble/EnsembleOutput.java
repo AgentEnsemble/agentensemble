@@ -295,6 +295,12 @@ public class EnsembleOutput {
             return this;
         }
 
+        /** Set the phase-keyed output map. */
+        public Builder phaseOutputs(Map<String, List<TaskOutput>> phaseOutputs) {
+            this.phaseOutputs = phaseOutputs;
+            return this;
+        }
+
         /**
          * Set the identity-based task-to-output index for {@link EnsembleOutput#getOutput(Task)}.
          *
@@ -304,12 +310,6 @@ public class EnsembleOutput {
          * @param taskOutputIndex map from task to its output; may be null (disables getOutput)
          * @return this builder
          */
-        /** Set the phase-keyed output map. */
-        public Builder phaseOutputs(Map<String, List<TaskOutput>> phaseOutputs) {
-            this.phaseOutputs = phaseOutputs;
-            return this;
-        }
-
         public Builder taskOutputIndex(Map<Task, TaskOutput> taskOutputIndex) {
             this.taskOutputIndex = taskOutputIndex;
             return this;

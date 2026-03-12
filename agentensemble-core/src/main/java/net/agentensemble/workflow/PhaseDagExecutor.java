@@ -52,7 +52,7 @@ import org.slf4j.MDC;
  * internal executor with these outputs to enable cross-phase {@code context()} references.
  * The runner must be thread-safe because multiple phases may be submitted concurrently.
  *
- * <p>Package-private. Instantiated by {@link net.agentensemble.Ensemble}.
+ * <p>Public API, typically instantiated and used by {@link net.agentensemble.Ensemble}.
  */
 public class PhaseDagExecutor {
 
