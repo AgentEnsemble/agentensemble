@@ -347,6 +347,18 @@ v2.0.0 implementation status:
 - Group F (BOM, migration guide, examples): COMPLETE (#114, #115, branch feat/bom-and-migration-guide)
 - Issue #126 (Tool-level approval gates): COMPLETE (branch feat/126-tool-level-approval-gates)
 
+## What Works (Issue #189 -- Deterministic-Only Orchestration)
+
+- `Ensemble.run(Task...)` zero-ceremony static factory -- runs all-handler ensembles with no ChatModel
+- All-deterministic ensembles pass validation cleanly (sequential, parallel, phase-based DAG)
+- Data flows between handler tasks via `context()` / `TaskHandlerContext.contextOutputs()`
+- Parallel fan-out: context dependencies cause PARALLEL workflow to be inferred automatically
+- Phase DAG with deterministic tasks, including cross-phase context passing
+- `phaseOutputs` now correctly propagated in `outputWithTrace` (bug fix for all phase ensembles)
+- 15 new integration tests in `DeterministicOnlyEnsembleIntegrationTest`
+- `DeterministicOnlyPipelineExample.java` example (no API key required)
+- Full design and guide documentation (docs/design/20, docs/guides/deterministic-orchestration.md)
+
 ## Known Issues
 
 None at this time.

@@ -2,90 +2,74 @@
 
 ## Current Work
 
-Branch `feature/186-phases` -- Phase-level workflow grouping and parallel phase execution
-(Issue #186). Implementation complete, full CI build passing. Ready for PR review.
+Branch: `feature/189-deterministic-only-orchestration` (Issue #189)
 
-## Completed This Session (Phases -- complete implementation)
+Deterministic-only orchestration as a first-class pattern: AgentEnsemble can be used
+without any AI/LLM to orchestrate purely deterministic (non-AI) task pipelines with the
+same DAG execution, parallel phases, callbacks, guardrails, and metrics.
 
-**7 commits on `feature/186-phases`:**
+## Completed This Session
 
-### Docs pass (commits 1-3):
-- GitHub issue #186 created with full acceptance criteria
-- Design doc `docs/design/19-phases.md`
-- Guide `docs/guides/phases.md`
-- Example page `docs/examples/phases.md`
-- Reference update `docs/reference/ensemble-configuration.md`
-- `PhasesExample.java` + `runPhases` Gradle task
-- `mkdocs.yml` navigation updated
+### Implementation (commit b83bed7)
 
-### Implementation pass (commits 4-7):
-- **`Phase`** domain object (`net.agentensemble.workflow.Phase`) -- `@Builder @Getter`
-  with `name`, `tasks` (`@Singular`), `workflow` (optional), `after` (predecessors, managed
-  manually to avoid Lombok conflict). `Phase.of(String, Task...)` and
-  `Phase.of(String, List<Task>)` static factories. `PhaseBuilder.build()` validates name,
-  tasks, and rejects HIERARCHICAL workflow.
-- **`Ensemble.phase(Phase)`** and **`Ensemble.phase(String, Task...)`** builder methods.
-  `phases` field managed by `EnsembleBuilder` (not `@Singular` to avoid Lombok naming
-  conflict with the varargs convenience method).
-- **`EnsembleValidator`** phase rules: rejects mixed task+phase, unique names,
-  acyclic DAG (DFS), tasks-have-LLM per phase.
-- **`PhaseDagExecutor`** (`public class`, `net.agentensemble.workflow`): BiFunction-based
-  phaseRunner API; ConcurrentHashMap + CountDownLatch + virtual threads; prior-outputs
-  snapshot passed to each phase runner for cross-phase context() resolution; failure
-  cascades transitively to dependents; global task output map updated after each phase.
-- **`Ensemble.executePhases()`** per-phase runner: resolves template vars
-  (`resolveTasksFromList` with identity-preservation when no templates change),
-  synthesizes agents, selects workflow executor, calls `executeSeeded()`.
-- **`SequentialWorkflowExecutor.executeSeeded()`**: public method that pre-seeds
-  `completedOutputs` from prior phase outputs; returns only current-phase task outputs
-  (not seed outputs) to prevent duplicates in the aggregated list.
-- **`EnsembleOutput.phaseOutputs`**: `Map<String, List<TaskOutput>>` field populated
-  by `executePhases`; `getPhaseOutputs()` returns empty map for flat-task ensembles.
-- **`PhaseTest`**: 24 unit tests for Phase builder validation and static factories.
-- **`PhaseIntegrationTest`**: 12 integration tests (all pass with deterministic handlers,
-  no LLM needed): sequential phases, parallel phases, kitchen convergent scenario,
-  cross-phase context, failure propagation, per-phase workflow override, callbacks,
-  validation errors.
+**Core change: `Ensemble.run(Task...)` static factory (no-model overload)**
+- New zero-ceremony API for handler-only pipelines: `Ensemble.run(fetchTask, parseTask, storeTask)`
+- Validates all tasks have handlers; throws `IllegalArgumentException` with clear message pointing
+  to the offending task and suggesting `Ensemble.run(ChatModel, Task...)` for AI tasks
+- Resolves overload ambiguity in existing test: `Ensemble.run((ChatModel) null, task)`
 
-**Key bugs found and fixed during testing:**
-- `SequentialWorkflowExecutor.executeSeeded()` incorrectly included seed outputs in
-  the returned task list, causing duplicates in PhaseDagExecutor's aggregated list.
-  Fixed: only tasks in `resolvedTasks` are included in the returned output.
-- `resolveTasksFromList()` was creating new Task objects even when no template vars
-  were substituted, breaking identity-based cross-phase context lookup. Fixed: preserve
-  original task identity when description/expectedOutput are unchanged.
+**Bug fix: `phaseOutputs` not propagated in `outputWithTrace`**
+- In `Ensemble.runWithInputs()`, the final `outputWithTrace` EnsembleOutput build was missing
+  `.phaseOutputs(output.getPhaseOutputs())` -- the per-phase results map was silently dropped
+- This was a pre-existing bug exposed by the new phase tests that assert on `getPhaseOutputs()`
 
-## Previously Completed (Heartbeat Scheduler Leak Fix)
+### Tests: `DeterministicOnlyEnsembleIntegrationTest` (15 new integration tests)
+- Sequential pipeline: all handler tasks, no model, runs successfully
+- Data passing: output of task A flows into task B via `context()` and `contextOutputs()`
+- Three-step chained pipeline: each step reads prior step output
+- Parallel workflow with handler tasks (no model)
+- Parallel fan-out with context-dependency inference (PARALLEL inferred automatically)
+- Phase DAG with deterministic tasks only (no LLM)
+- Cross-phase context passing between deterministic tasks
+- `Ensemble.run(Task...)` factory: happy paths and error paths (null, empty, no-handler task)
+- Callbacks fire for handler tasks
+- Handler failure propagates as `TaskExecutionException`
+- Mixed handler + non-handler without model fails validation with clear error
 
-Branch `fix/web-dashboard-heartbeat-scheduler-leak` (PR #184) -- all merged to main.
+### Documentation
+- `docs/design/20-deterministic-only.md` -- new design doc
+- `docs/guides/deterministic-orchestration.md` -- new guide
+- `docs/design/18-deterministic-tasks.md` -- updated with `Ensemble.run(Task...)` factory
+- `docs/examples/deterministic-tasks.md` -- added deterministic-only pipeline section
+- `README.md` -- broadened Task concept, added non-AI-exclusive callout
+- `mkdocs.yml` -- added new guide and design doc to nav
 
-## Key Design Decisions (Phases, Issue #186)
+### Example
+- `DeterministicOnlyPipelineExample.java` -- three patterns (sequential ETL, parallel fan-out,
+  phase-based pipeline)
+- `agentensemble-examples/build.gradle.kts` -- `runDeterministicOnlyPipeline` task
 
-- **Phase** is a named group of tasks; it does NOT modify Task
-- **Phase DAG**: phases declare dependencies via `.after(otherPhase)`. Independent
-  phases run in parallel; dependents wait for all predecessors to complete
-- **Backward compatible**: flat `.task()` ensembles are unchanged; cannot mix tasks and phases
-- **Per-phase workflow**: each phase can override the ensemble-level workflow strategy
-  (HIERARCHICAL not permitted per-phase in v1)
-- **Cross-phase context**: tasks in later phases may reference tasks in predecessor phases
-  via existing `Task.context()` mechanism; resolved by seeding completedOutputs map
-- **Identity preservation**: `resolveTasksFromList()` preserves original Task identity when
-  no templates change -- critical for identity-based cross-phase context lookup
-- **PhaseDagExecutor**: reuses existing workflow executors per phase via BiFunction API;
-  same virtual-thread pattern as ParallelWorkflowExecutor
+## Status
+- Full CI build: PASSING (`./gradlew build`)
+- All 15 new integration tests: PASSING
+- Branch: `feature/189-deterministic-only-orchestration`
+- Ready for PR
+
+## Key Design Decisions
+
+### No new framework code required for validation
+The existing `EnsembleValidator` already correctly skips handler tasks in `validateTasksHaveLlm()`
+and `validatePhaseTasksHaveLlm()`. All-handler ensembles pass validation without a `chatLanguageModel`.
+
+### Factory API design
+`Ensemble.run(Task...)` is a separate overload (not replacing `Ensemble.run(ChatModel, Task...)`).
+Java resolves `Ensemble.run((ChatModel)null, task)` unambiguously to the model overload.
+
+### phaseOutputs bug fix scope
+The missing `.phaseOutputs()` propagation affected all phase-based ensembles (AI and deterministic),
+not just the new deterministic case. The existing `PhaseIntegrationTest` did not assert on
+`getPhaseOutputs()` so the bug was previously silent.
 
 ## Next Steps
-
-- Open PR for `feature/186-phases` branch
-- After merge, update `docs/reference/ensemble-configuration.md` with `getPhaseOutputs()`
-  in the EnsembleOutput accessor table
-
-## Important Patterns and Preferences
-
-### Phases (Issue #186)
-- `Phase.of("name", task1, task2)` -- static factory
-- `Phase.builder().name(...).task(...).after(otherPhase).workflow(Workflow.PARALLEL).build()`
-- `Ensemble.builder().phase(p1).phase(p2).build()` -- registers phases, cannot mix with `.task()`
-- `EnsembleOutput.getPhaseOutputs()` returns `Map<String, List<TaskOutput>>` -- empty for flat tasks
-- `SequentialWorkflowExecutor.executeSeeded(tasks, ctx, priorOutputs)` -- cross-phase seeding
-- Package: `net.agentensemble.workflow` for Phase, PhaseDagExecutor; `net.agentensemble.ensemble` for EnsembleOutput
+- Open PR for feature/189-deterministic-only-orchestration
+- Consider: Ensemble.run(Phase...) zero-ceremony factory for phase-based pipelines
