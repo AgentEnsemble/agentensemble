@@ -146,11 +146,15 @@ public class PhaseDagExecutor {
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
-            // Submit all root phases (those with no predecessor) to seed the execution
+            // Submit all root phases (those with no predecessor) to seed the execution.
+            // Use putIfAbsent so that if a previously-submitted root phase completes and
+            // its onPhaseCompleted() decrements a successor's counter to zero -- and
+            // submits that successor -- BEFORE this loop reaches it, we do NOT
+            // double-submit the successor. On Linux, virtual threads are scheduled
+            // immediately after submission, so this race is real and reproducible.
             for (Phase phase : phases) {
-                if (remainingPredecessors.get(phase).get() == 0) {
-                    // Claim root phases for submission atomically before submitting
-                    settledPhases.put(phase, "submitted");
+                if (remainingPredecessors.get(phase).get() == 0
+                        && settledPhases.putIfAbsent(phase, "submitted") == null) {
                     submitOnePhase(
                             phase,
                             executor,
