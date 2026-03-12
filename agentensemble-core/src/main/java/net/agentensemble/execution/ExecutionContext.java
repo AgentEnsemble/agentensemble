@@ -10,12 +10,14 @@ import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskReflectedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
+import net.agentensemble.reflection.ReflectionStore;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.tool.NoOpToolMetrics;
@@ -79,6 +81,7 @@ public final class ExecutionContext {
     private final ReviewHandler reviewHandler;
     private final ReviewPolicy reviewPolicy;
     private final StreamingChatModel streamingChatModel;
+    private final ReflectionStore reflectionStore;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -91,7 +94,8 @@ public final class ExecutionContext {
             MemoryStore memoryStore,
             ReviewHandler reviewHandler,
             ReviewPolicy reviewPolicy,
-            StreamingChatModel streamingChatModel) {
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -103,6 +107,7 @@ public final class ExecutionContext {
         this.reviewHandler = reviewHandler;
         this.reviewPolicy = reviewPolicy != null ? reviewPolicy : ReviewPolicy.NEVER;
         this.streamingChatModel = streamingChatModel;
+        this.reflectionStore = reflectionStore;
     }
 
     // ========================
@@ -198,6 +203,7 @@ public final class ExecutionContext {
                 memoryStore,
                 reviewHandler,
                 reviewPolicy,
+                null,
                 null);
     }
 
@@ -257,7 +263,68 @@ public final class ExecutionContext {
                 memoryStore,
                 reviewHandler,
                 reviewPolicy,
-                streamingChatModel);
+                streamingChatModel,
+                null);
+    }
+
+    /**
+     * Create an ExecutionContext with all fields including review handler, policy, streaming
+     * model, and an optional reflection store for task reflection.
+     *
+     * <p>This is the primary factory used by {@code Ensemble} when reflection is configured.
+     *
+     * @param memoryContext      runtime memory state for this run; must not be null
+     * @param verbose            when true, elevates execution logging to INFO level
+     * @param listeners          event listeners to notify; must not be null
+     * @param toolExecutor       executor for parallel tool calls; must not be null
+     * @param toolMetrics        metrics backend for tool execution; must not be null
+     * @param costConfiguration  optional per-token cost rates; may be {@code null}
+     * @param captureMode        depth of data collection; defaults to {@link CaptureMode#OFF}
+     * @param memoryStore        optional scoped memory store; may be {@code null}
+     * @param reviewHandler      optional review handler; may be {@code null}
+     * @param reviewPolicy       ensemble-level review policy; defaults to {@link ReviewPolicy#NEVER}
+     * @param streamingChatModel optional streaming model; may be {@code null}
+     * @param reflectionStore    optional reflection store; may be {@code null}
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore) {
+        if (memoryContext == null) {
+            throw new IllegalArgumentException("memoryContext must not be null");
+        }
+        if (listeners == null) {
+            throw new IllegalArgumentException("listeners must not be null");
+        }
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(
+                memoryContext,
+                verbose,
+                List.copyOf(listeners),
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel,
+                reflectionStore);
     }
 
     /**
@@ -365,6 +432,7 @@ public final class ExecutionContext {
                 NoOpToolMetrics.INSTANCE,
                 null,
                 CaptureMode.OFF,
+                null,
                 null,
                 null,
                 null,
@@ -489,6 +557,19 @@ public final class ExecutionContext {
         return streamingChatModel;
     }
 
+    /**
+     * The optional reflection store for persisting and retrieving task reflections.
+     *
+     * <p>When non-null, tasks with {@code .reflect(true)} or {@code .reflect(ReflectionConfig)}
+     * configured will have their post-execution reflection analysis stored here and retrieved
+     * on subsequent runs to inject improvement notes into the prompt.
+     *
+     * @return the reflection store, or {@code null} when reflection is not configured
+     */
+    public ReflectionStore reflectionStore() {
+        return reflectionStore;
+    }
+
     // ========================
     // Event dispatch
     // ========================
@@ -609,6 +690,24 @@ public final class ExecutionContext {
                 listener.onDelegationFailed(event);
             } catch (Exception e) {
                 log.warn("EnsembleListener threw exception in onDelegationFailed: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link TaskReflectedEvent} to all registered listeners.
+     *
+     * <p>Called after a task reflection completes and the result is stored. Exceptions
+     * from individual listeners are caught and logged.
+     *
+     * @param event the task reflected event to fire; must not be null
+     */
+    public void fireTaskReflected(TaskReflectedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onTaskReflected(event);
+            } catch (Exception e) {
+                log.warn("EnsembleListener threw exception in onTaskReflected: {}", e.getMessage(), e);
             }
         }
     }

@@ -1,5 +1,62 @@
 # Changelog
 
+## [Unreleased] - feature/193-task-reflection (PR #194 Copilot review fixes) - 2026-03-12
+
+### Fixed (commit 0c281b6)
+- Reflection timing: moved `TaskReflector.reflect()` from `AgentExecutor` and
+  `DeterministicTaskExecutor` to the workflow layer (`SequentialWorkflowExecutor` and
+  `ParallelTaskCoordinator`). Reflection now runs after the after-execution review gate
+  (including both the normal Continue path and ExitEarly path), using the final accepted
+  output. Previously, reflection ran before the review gate, which could store reflection
+  data for outputs that were later edited or rejected by reviewers.
+- Ephemeral store lifecycle: `TaskReflector.resolveStore()` was creating a new
+  `InMemoryReflectionStore()` on every reflection call when no store was configured,
+  making prior-reflection retrieval impossible. `Ensemble.runWithInputs()` now provisions a
+  single `InMemoryReflectionStore` for the run when tasks have reflection enabled and no
+  explicit store is configured. `TaskReflector.resolveStore()` now returns null (skipping
+  reflection) when no store is in context.
+- Design doc module structure (Section 13): `ReflectionStrategy`, `ReflectionConfig`, and
+  `ReflectionInput` were listed under `agentensemble-reflection` but actually live in
+  `agentensemble-core`. Corrected and expanded the module structure table.
+- Javadoc in `InMemoryReflectionStore`: `.model(model)` -> `.chatLanguageModel(model)`.
+- Design doc Ensemble integration example: `.model(model)` -> `.chatLanguageModel(model)`.
+- `agentensemble-reflection/build.gradle.kts`: `implementation(libs.slf4j.api)` changed
+  to `compileOnly(libs.slf4j.api)` since the SPI module sources do not use SLF4J directly.
+
+### Changed
+- `TaskReflectionIntegrationTest.taskReflector_withNoStore_createsEphemeralFallback`
+  renamed to `taskReflector_withNoStore_skipsReflection`; updated assertions to verify
+  nothing is stored and no event fired when no store is in context.
+
+---
+
+## [Unreleased] - feature/193-task-reflection - 2026-03-12
+
+### Added
+- New module `agentensemble-reflection` with `ReflectionStore` SPI, `TaskReflection` record,
+  and `InMemoryReflectionStore` default implementation. Enables pluggable persistent storage
+  of task reflection data (RDBMS, SQLite, REST API, or any custom backend).
+- `Task.reflect(boolean)` / `Task.reflect(ReflectionConfig)` builder methods to enable the
+  self-optimizing prompt loop on any task.
+- `ReflectionConfig` value object: optional model override and custom `ReflectionStrategy`.
+- `ReflectionStrategy` functional SPI for domain-specific reflection analysis.
+- `LlmReflectionStrategy` default implementation: sends structured meta-prompt, parses response
+  into `TaskReflection`. Falls back gracefully on LLM failure or parse failure.
+- `TaskReflector` utility orchestrating the full reflection lifecycle: load prior →
+  build input → resolve strategy → reflect → store → fire event.
+- `AgentPromptBuilder.buildUserPrompt` 5-arg overload injecting `## Task Improvement Notes`
+  section before `## Task` when a stored reflection exists.
+- `AgentExecutor` and `DeterministicTaskExecutor`: post-completion reflection step.
+- `EnsembleListener.onTaskReflected(TaskReflectedEvent)` callback (default no-op).
+- `TaskReflectedEvent` record: taskDescription, reflection, isFirstReflection.
+- `ExecutionContext.reflectionStore()` accessor + `fireTaskReflected()` dispatch.
+- `Ensemble.reflectionStore(ReflectionStore)` builder method.
+- 39 new tests across reflection module and core.
+- Design doc `docs/design/22-task-reflection.md`, guide `docs/guides/task-reflection.md`,
+  examples `docs/examples/task-reflection.md`, `mkdocs.yml` navigation entries.
+
+---
+
 ## [Unreleased] - feature/phase-review-retry - 2026-03-12
 
 ### Added

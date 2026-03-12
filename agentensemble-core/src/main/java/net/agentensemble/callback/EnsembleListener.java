@@ -103,6 +103,18 @@ public interface EnsembleListener {
     default void onDelegationFailed(DelegationFailedEvent event) {}
 
     /**
+     * Called after a task's reflection analysis completes and the result is stored.
+     *
+     * <p>Reflection runs after all reviews pass — on accepted output — and produces
+     * improvement notes for the task's instructions that will be injected into future
+     * prompts. Only fired when a task has {@code .reflect(true)} or
+     * {@code .reflect(ReflectionConfig)} configured.
+     *
+     * @param event the task reflected event
+     */
+    default void onTaskReflected(TaskReflectedEvent event) {}
+
+    /**
      * Called for each token received during streaming generation of the final agent response.
      *
      * <p>This method is only invoked when a {@code dev.langchain4j.model.chat.StreamingChatModel}

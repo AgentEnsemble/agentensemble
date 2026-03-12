@@ -9,6 +9,7 @@ import net.agentensemble.memory.MemoryEntry;
 import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.output.JsonSchemaGenerator;
+import net.agentensemble.reflection.TaskReflection;
 import net.agentensemble.task.TaskOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,6 +124,38 @@ public final class AgentPromptBuilder {
     }
 
     /**
+     * Build the user prompt for a task, injecting task-scoped memory entries, reflection
+     * notes from prior runs, and legacy memory sections as applicable.
+     *
+     * <p>For each scope declared on the task (via {@code Task.builder().memory(...)}), up to
+     * {@value #DEFAULT_SCOPE_MAX_RESULTS} entries are retrieved from the {@code memoryStore}
+     * and injected as a {@code ## Memory: {scope}} section before the task description.
+     * Legacy short-term, long-term, and entity memory sections follow when active.
+     *
+     * <p>When {@code priorReflection} is non-null (a stored reflection from a previous run),
+     * a {@code ## Task Improvement Notes} section is injected before the task description.
+     * This provides the agent with learned improvements to the task's instructions, creating
+     * a self-optimizing prompt loop across separate {@code Ensemble.run()} invocations.
+     *
+     * @param task           the task to build the prompt for
+     * @param contextOutputs outputs from prior tasks to include as context
+     *                       (used only when short-term memory is not active)
+     * @param memoryContext  runtime legacy memory state; use {@link MemoryContext#disabled()}
+     *                       when memory is not configured
+     * @param memoryStore    optional v2.0.0 scoped memory store; may be {@code null}
+     * @param priorReflection optional reflection from the previous run; may be {@code null}
+     * @return the user prompt string
+     */
+    public static String buildUserPrompt(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            MemoryContext memoryContext,
+            MemoryStore memoryStore,
+            TaskReflection priorReflection) {
+        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, priorReflection);
+    }
+
+    /**
      * Build the user prompt for a task, injecting task-scoped memory entries and legacy
      * memory sections as applicable.
      *
@@ -141,6 +174,15 @@ public final class AgentPromptBuilder {
      */
     public static String buildUserPrompt(
             Task task, List<TaskOutput> contextOutputs, MemoryContext memoryContext, MemoryStore memoryStore) {
+        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, null);
+    }
+
+    private static String buildUserPromptInternal(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            MemoryContext memoryContext,
+            MemoryStore memoryStore,
+            TaskReflection priorReflection) {
         StringBuilder sb = new StringBuilder();
 
         // Task-scoped memory sections (v2.0.0 MemoryStore API)
@@ -235,6 +277,31 @@ public final class AgentPromptBuilder {
                 }
                 sb.append("\n");
             }
+        }
+
+        // Task improvement notes section -- injected from stored reflection of prior runs
+        if (priorReflection != null) {
+            sb.append("## Task Improvement Notes (from prior executions)\n");
+            sb.append("The following refinements were identified by analyzing previous runs of this task.\n");
+            sb.append(
+                    "Apply them to improve your approach while still fulfilling the original requirements below.\n\n");
+            sb.append("### Refined Instructions\n");
+            sb.append(priorReflection.refinedDescription()).append("\n\n");
+            sb.append("### Output Guidance\n");
+            sb.append(priorReflection.refinedExpectedOutput()).append("\n");
+            if (!priorReflection.observations().isEmpty()) {
+                sb.append("\n### Observations\n");
+                for (String obs : priorReflection.observations()) {
+                    sb.append("- ").append(obs).append("\n");
+                }
+            }
+            if (!priorReflection.suggestions().isEmpty()) {
+                sb.append("\n### Suggestions\n");
+                for (String sug : priorReflection.suggestions()) {
+                    sb.append("- ").append(sug).append("\n");
+                }
+            }
+            sb.append("\n---\n\n");
         }
 
         // Revision instructions section -- only present when this task is part of a phase retry
