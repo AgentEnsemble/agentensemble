@@ -1016,9 +1016,13 @@ public class Ensemble {
 
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
 
+        // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
+        java.util.concurrent.ConcurrentHashMap<String, List<net.agentensemble.task.TaskOutput>> phaseResultsMap =
+                new java.util.concurrent.ConcurrentHashMap<>();
+
         PhaseDagExecutor dagExecutor = new PhaseDagExecutor();
 
-        return dagExecutor.execute(phases, (phase, priorOutputs) -> {
+        EnsembleOutput dagOutput = dagExecutor.execute(phases, (phase, priorOutputs) -> {
             // 1. Resolve template variables in this phase's tasks
             List<Task> templateResolved = resolveTasksFromList(phase.getTasks(), resolvedInputs);
 
@@ -1039,17 +1043,33 @@ public class Ensemble {
                     priorOutputs.size());
 
             // 5. Execute with appropriate executor, seeding prior outputs for cross-phase context
-            return switch (phaseWorkflow) {
-                case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
-                        .executeSeeded(agentResolved, executionContext, priorOutputs);
-                case PARALLEL -> new ParallelWorkflowExecutor(
-                                phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
-                        .execute(agentResolved, executionContext);
-                case HIERARCHICAL -> throw new ValidationException(
-                        "Phase '" + phase.getName() + "': Workflow.HIERARCHICAL is not supported at the phase "
+            EnsembleOutput phaseOutput =
+                    switch (phaseWorkflow) {
+                        case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
+                                .executeSeeded(agentResolved, executionContext, priorOutputs);
+                        case PARALLEL -> new ParallelWorkflowExecutor(
+                                        phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
+                                .execute(agentResolved, executionContext);
+                        case HIERARCHICAL -> throw new ValidationException("Phase '"
+                                + phase.getName()
+                                + "': Workflow.HIERARCHICAL is not supported at the phase "
                                 + "level. Use HIERARCHICAL at the ensemble level (without phases).");
-            };
+                    };
+
+            // 6. Record phase outputs for EnsembleOutput.getPhaseOutputs()
+            phaseResultsMap.put(phase.getName(), phaseOutput.getTaskOutputs());
+
+            return phaseOutput;
         });
+
+        // Augment the dag output with the per-phase output map
+        return EnsembleOutput.builder()
+                .raw(dagOutput.getRaw())
+                .taskOutputs(dagOutput.getTaskOutputs())
+                .totalDuration(dagOutput.getTotalDuration())
+                .totalToolCalls(dagOutput.getTotalToolCalls())
+                .phaseOutputs(java.util.Collections.unmodifiableMap(phaseResultsMap))
+                .build();
     }
 
     /**
