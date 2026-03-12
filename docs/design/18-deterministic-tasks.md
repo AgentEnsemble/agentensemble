@@ -234,18 +234,48 @@ The following fields **may** be used alongside `handler`:
 ## No LLM Required for Handler-Only Ensembles
 
 An ensemble composed entirely of deterministic tasks does not require a
-`chatLanguageModel`:
+`chatLanguageModel`. Use the zero-ceremony `Ensemble.run(Task...)` factory:
 
 ```java
-// No ChatModel needed
+// No ChatModel needed -- all tasks are deterministic
+EnsembleOutput output = Ensemble.run(fetchTask, parseTask, formatTask);
+```
+
+Or use the builder for full control over workflow, callbacks, and guardrails:
+
+```java
 EnsembleOutput output = Ensemble.builder()
     .task(fetchTask)
     .task(parseTask)
     .task(formatTask)
     .workflow(Workflow.SEQUENTIAL)
+    .onTaskComplete(e -> log.info("Done: {}", e.getTaskDescription()))
     .build()
     .run();
 ```
+
+The `Ensemble.run(Task...)` factory validates that all supplied tasks have handlers;
+if any task lacks a handler and an LLM source, a descriptive `IllegalArgumentException`
+is thrown.
+
+Phase-based deterministic pipelines also require no LLM:
+
+```java
+Phase ingest   = Phase.of("ingest", ingestTask);
+Phase process  = Phase.builder().name("process").task(processTask).after(ingest).build();
+Phase publish  = Phase.builder().name("publish").task(publishTask).after(process).build();
+
+EnsembleOutput output = Ensemble.builder()
+    .phase(ingest)
+    .phase(process)
+    .phase(publish)
+    .build()
+    .run();
+```
+
+For a full treatment of this pattern (including data sharing between tasks, parallel
+fan-out, and phase-based pipelines), see
+[design doc 20 -- Deterministic-Only Orchestration](20-deterministic-only.md).
 
 ---
 

@@ -95,6 +95,7 @@ nav:
     - Template Variables: guides/template-variables.md
     - Framework Integration: guides/framework-integration.md
     - Testing: guides/testing.md
+    - Deterministic Orchestration: guides/deterministic-orchestration.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
@@ -140,3 +141,4 @@ nav:
     - Tool Pipeline: design/17-tool-pipeline.md
     - Deterministic Tasks: design/18-deterministic-tasks.md
     - Phases: design/19-phases.md
+    - Deterministic-Only Orchestration: design/20-deterministic-only.md
