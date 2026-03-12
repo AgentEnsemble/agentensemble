@@ -77,11 +77,52 @@ compile-time task definition.
 - `docs/examples/task-reflection.md` — code examples for 6 use cases
 - `mkdocs.yml` — navigation entries added to Guides, Examples, and Design sections
 
+## PR #194 Copilot Review Response (commit 0c281b6)
+
+### Comment 2+3 — Reflection timing (most significant)
+Reflection was running inside `AgentExecutor.execute()` and `DeterministicTaskExecutor.execute()`
+BEFORE the after-execution review gate. This violated the documented contract of
+"after all reviews pass on accepted output".
+
+**Fix:** Removed `TaskReflector.reflect()` from both executors. Added to the workflow layer:
+- `SequentialWorkflowExecutor.executeSeeded()` — after the after-review gate (including both
+  normal Continue flow and ExitEarly path)
+- `ParallelTaskCoordinator.submitTask()` — same; uses fully-qualified class names to avoid
+  adding imports
+
+### Comment 4 — Ephemeral store per reflection call
+`TaskReflector.resolveStore()` was creating `new InMemoryReflectionStore()` on every
+reflection call when no store was configured. This prevented prior-reflection retrieval
+because each call got a fresh empty store.
+
+**Fix:** `Ensemble.runWithInputs()` now provisions a single `InMemoryReflectionStore` at
+run-start time when tasks have reflection enabled and no explicit store is configured.
+`TaskReflector.resolveStore()` now returns `null` (skips reflection) when no store is in
+context, rather than creating a throwaway store. Added `hasReflectionEnabled(List<Task>)` helper.
+
+### Comments 1, 5, 6 — Doc and Javadoc corrections
+- Design doc section 13: moved `ReflectionStrategy`, `ReflectionConfig`, `ReflectionInput`
+  to `agentensemble-core` section (they were listed under `agentensemble-reflection`)
+- `InMemoryReflectionStore` Javadoc: `.model(model)` → `.chatLanguageModel(model)`
+- Design doc Ensemble integration example: same fix
+- Design doc now also lists `SequentialWorkflowExecutor`, `ParallelTaskCoordinator` as
+  integration points
+
+### Comment 7 — slf4j dependency
+Changed `agentensemble-reflection/build.gradle.kts` from `implementation(libs.slf4j.api)`
+to `compileOnly(libs.slf4j.api)`. The SPI module sources don't use SLF4J directly; this
+keeps the published artifact's dependency surface minimal.
+
+### Test update
+`TaskReflectionIntegrationTest.taskReflector_withNoStore_createsEphemeralFallback` renamed
+to `taskReflector_withNoStore_skipsReflection` with assertions verifying nothing is stored
+and no event is fired when no store is in context.
+
 ## Status
-- Full build: PASSING (both modules)
-- All new tests: PASSING (28 reflection module + core tests)
-- Branch: `feature/193-task-reflection`
-- Ready for PR
+- Full build: PASSING (both modules, build `0c281b6`)
+- All tests: PASSING
+- Branch: `feature/193-task-reflection` pushed to origin
+- PR #194 open; 7 Copilot comments addressed
 
 ## Key Design Decisions
 
