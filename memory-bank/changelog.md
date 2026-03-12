@@ -1,5 +1,39 @@
 # Changelog
 
+## [Unreleased] - feature/phase-review-retry - 2026-03-12
+
+### Added
+- `PhaseReviewDecision` (agentensemble-review): sealed interface with four record implementations:
+  `Approve`, `Retry(feedback)`, `RetryPredecessor(phaseName, feedback)`, `Reject(reason)`.
+  `parse(String)` case-insensitive text parsing; `toText()` serialises to canonical text.
+- `PhaseReview` (agentensemble-core/workflow): configuration object for phase review gate.
+  Fields: `task` (required), `maxRetries` (default 2), `maxPredecessorRetries` (default 2).
+  Static factories `PhaseReview.of(task)` and `PhaseReview.of(task, maxRetries)`. Hand-written
+  builder (avoids Lombok @Builder.Default scoping issue with custom build() methods).
+- `Task` revision fields: `revisionFeedback`, `priorAttemptOutput`, `attemptNumber`
+  (framework-internal, default null/null/0). `Task.withRevisionFeedback(feedback, priorOutput,
+  attempt)` copy-factory for phase retry use.
+- `AgentPromptBuilder`: `## Revision Instructions (Attempt N)` section injected before `## Task`
+  when `task.getRevisionFeedback()` is non-blank. Includes `### Feedback` and optional
+  `### Previous Output` subsections.
+- `Phase.review` field: optional `PhaseReview` attached to any phase (default null, backward compatible).
+- `PhaseDagExecutor.runPhaseWithRetry()`: loop around phase execution. After each attempt, runs
+  review task as synthetic single-task phase, parses the decision, and either approves, self-retries
+  (rebuilds tasks with feedback-enhanced copies), handles predecessor retry, or throws on rejection.
+  Global state committed only after review approves.
+- Predecessor retry: removes stale predecessor outputs from globalTaskOutputs/allTaskOutputs,
+  re-runs predecessor with feedback, commits new outputs, rebuilds priorOutputsSnapshot,
+  resets current phase to original tasks.
+- Context resolution on retries: reviewPrior maps both original and current-attempt task identities
+  to current outputs, so review task context() refs resolve correctly when task objects differ.
+- 72 new tests: PhaseReviewDecisionTest (31), PhaseReviewTest (11), TaskRevisionFeedbackTest (12),
+  AgentPromptBuilderRevisionTest (9), PhaseReviewIntegrationTest (9).
+- `docs/design/21-phase-review.md`, `docs/guides/phase-review.md`, `docs/examples/phase-review.md`.
+- `PhaseReviewExample.java` (runnable, no API key required for patterns 1 and 2).
+- `mkdocs.yml` updated with new guide, example, and design doc entries.
+
+---
+
 ## [Unreleased] - feature/189-deterministic-only-orchestration (Issue #189) - 2026-03-12
 
 ### Added

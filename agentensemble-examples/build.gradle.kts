@@ -56,6 +56,7 @@ application {
 //   ./gradlew :agentensemble-examples:runDeterministicTask
 //   ./gradlew :agentensemble-examples:runDeterministicOnlyPipeline
 //   ./gradlew :agentensemble-examples:runPhases
+//   ./gradlew :agentensemble-examples:runPhaseReview
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -77,6 +78,7 @@ mapOf(
     "runDeterministicTask" to "net.agentensemble.examples.DeterministicTaskExample",
     "runDeterministicOnlyPipeline" to "net.agentensemble.examples.DeterministicOnlyPipelineExample",
     "runPhases" to "net.agentensemble.examples.PhasesExample",
+    "runPhaseReview" to "net.agentensemble.examples.PhaseReviewExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"
