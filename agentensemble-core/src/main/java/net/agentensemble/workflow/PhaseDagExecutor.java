@@ -26,7 +26,7 @@ import org.slf4j.MDC;
 /**
  * Executes a list of {@link Phase} objects according to their dependency DAG.
  *
- * <p>Phases with no predecessors ({@link Phase#getAfter()} is empty) start immediately in
+ * <p>Phases with no predecessors ({@code Phase.getAfter()} is empty) start immediately in
  * parallel. When a phase completes, any successor phase whose remaining predecessor count
  * drops to zero is submitted for execution. The executor blocks until all phases have
  * reached a terminal state: COMPLETED, FAILED, or SKIPPED.

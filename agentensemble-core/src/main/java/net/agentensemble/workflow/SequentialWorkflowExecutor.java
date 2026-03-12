@@ -308,19 +308,36 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             }
         }
 
-        // Assemble EnsembleOutput for a fully completed run
+        // Assemble EnsembleOutput for the tasks executed in THIS invocation only.
+        // The completedOutputs map may contain seed outputs from prior phases; those must
+        // NOT be included in the returned task list to prevent duplicates when the phase
+        // DAG executor aggregates outputs across phases.
+        List<TaskOutput> thisRunOutputs = resolvedTasks.stream()
+                .map(completedOutputs::get)
+                .filter(to -> to != null)
+                .collect(java.util.stream.Collectors.toUnmodifiableList());
+
+        // Build a phase-only taskOutputIndex (excludes seed outputs from prior phases).
+        java.util.IdentityHashMap<Task, TaskOutput> phaseOnlyIndex = new java.util.IdentityHashMap<>();
+        for (Task task : resolvedTasks) {
+            TaskOutput to = completedOutputs.get(task);
+            if (to != null) {
+                phaseOnlyIndex.put(task, to);
+            }
+        }
+
         Duration totalDuration = Duration.between(ensembleStartTime, Instant.now());
-        List<TaskOutput> allOutputs = List.copyOf(completedOutputs.values());
-        String finalOutput = allOutputs.isEmpty() ? "" : allOutputs.getLast().getRaw();
+        String finalOutput =
+                thisRunOutputs.isEmpty() ? "" : thisRunOutputs.getLast().getRaw();
         int totalToolCalls =
-                allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+                thisRunOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)
-                .taskOutputs(allOutputs)
+                .taskOutputs(thisRunOutputs)
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
-                .taskOutputIndex(completedOutputs) // identity-based Task -> TaskOutput index
+                .taskOutputIndex(phaseOnlyIndex) // identity-based Task -> TaskOutput index (this phase only)
                 .build(); // exitReason defaults to COMPLETED
     }
 

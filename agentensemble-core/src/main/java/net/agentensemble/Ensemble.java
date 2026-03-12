@@ -1063,13 +1063,23 @@ public class Ensemble {
      * @return list of resolved tasks with context references remapped to resolved instances
      */
     private static List<Task> resolveTasksFromList(List<Task> inputTasks, Map<String, String> resolvedInputsMap) {
-        // Pass 1: resolve description and expectedOutput
+        // Pass 1: resolve description and expectedOutput.
+        // Preserve the original task identity when nothing changed -- this is critical for
+        // cross-phase context() references, which hold the original task identity. If we
+        // always create new Task objects, the identity-based completedOutputs lookup in
+        // subsequent phases would fail to find the prior phase's outputs.
         IdentityHashMap<Task, Task> originalToResolved = new IdentityHashMap<>();
         for (Task task : inputTasks) {
-            Task resolved = task.toBuilder()
-                    .description(TemplateResolver.resolve(task.getDescription(), resolvedInputsMap))
-                    .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), resolvedInputsMap))
-                    .build();
+            String resolvedDesc = TemplateResolver.resolve(task.getDescription(), resolvedInputsMap);
+            String resolvedExpected = TemplateResolver.resolve(task.getExpectedOutput(), resolvedInputsMap);
+            // Preserve original identity when nothing changed (no template substitution occurred)
+            Task resolved =
+                    resolvedDesc.equals(task.getDescription()) && resolvedExpected.equals(task.getExpectedOutput())
+                            ? task
+                            : task.toBuilder()
+                                    .description(resolvedDesc)
+                                    .expectedOutput(resolvedExpected)
+                                    .build();
             originalToResolved.put(task, resolved);
         }
 
