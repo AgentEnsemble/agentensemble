@@ -45,6 +45,12 @@ dependencies {
     // ParallelTaskCoordinator, AbstractAgentTool, and Ensemble. Fix for issue #147.
     api(project(":agentensemble-review"))
 
+    // Reflection module - api so ReflectionStore, TaskReflection, InMemoryReflectionStore,
+    // ReflectionConfig, ReflectionStrategy, and ReflectionInput are shipped transitively
+    // to consumers. Core references these types in Task, Ensemble, ExecutionContext,
+    // AgentExecutor, and AgentPromptBuilder.
+    api(project(":agentensemble-reflection"))
+
     // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
 

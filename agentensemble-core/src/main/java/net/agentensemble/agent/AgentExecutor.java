@@ -43,6 +43,8 @@ import net.agentensemble.memory.MemoryOperationListener;
 import net.agentensemble.memory.MemoryRecord;
 import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.memory.MemoryStore;
+import net.agentensemble.reflection.TaskIdentity;
+import net.agentensemble.reflection.TaskReflection;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.ToolResult;
 import net.agentensemble.trace.CaptureMode;
@@ -176,11 +178,25 @@ public class AgentExecutor {
         try {
             runInputGuardrails(task, contextOutputs);
 
+            // Load prior reflection if reflection is enabled on this task.
+            // Done before prompt building so it can be injected into the user prompt.
+            TaskReflection priorReflection = null;
+            if (task.getReflectionConfig() != null && executionContext.reflectionStore() != null) {
+                priorReflection = executionContext
+                        .reflectionStore()
+                        .retrieve(TaskIdentity.of(task))
+                        .orElse(null);
+            }
+
             // Time prompt building
             Instant promptStart = Instant.now();
             String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
             String userPrompt = AgentPromptBuilder.buildUserPrompt(
-                    task, contextOutputs, executionContext.memoryContext(), executionContext.memoryStore());
+                    task,
+                    contextOutputs,
+                    executionContext.memoryContext(),
+                    executionContext.memoryStore(),
+                    priorReflection);
             Duration promptBuildTime = Duration.between(promptStart, Instant.now());
             accumulator.recordPrompts(systemPrompt, userPrompt, promptBuildTime);
 

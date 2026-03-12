@@ -13,6 +13,7 @@ import net.agentensemble.guardrail.OutputGuardrail;
 import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.ratelimit.RateLimitedChatModel;
+import net.agentensemble.reflection.ReflectionConfig;
 import net.agentensemble.review.Review;
 import net.agentensemble.task.TaskHandler;
 import net.agentensemble.tool.AgentTool;
@@ -312,6 +313,25 @@ public class Task {
      */
     TaskHandler handler;
 
+    /**
+     * Configuration for post-execution reflection analysis.
+     *
+     * <p>When set, a reflection step runs after the task completes and all reviews pass.
+     * The reflection LLM analyzes the task's definition and output, then produces
+     * improvement notes that are stored in the ensemble's {@code ReflectionStore} and
+     * injected into the prompt on future runs, creating a self-optimizing prompt loop.
+     *
+     * <p>Use {@link TaskBuilder#reflect(boolean)} for simple opt-in with all defaults,
+     * or {@link TaskBuilder#reflect(ReflectionConfig)} for fine-grained control over
+     * the model and strategy used.
+     *
+     * <p>Reflection is a cross-run learning mechanism; unlike phase review (which retries
+     * within a single run), reflection improves future runs. Both can be used together.
+     *
+     * <p>Default: null (no reflection).
+     */
+    ReflectionConfig reflectionConfig;
+
     // ========================
     // Phase-retry fields (framework-internal)
     // ========================
@@ -446,6 +466,7 @@ public class Task {
         private Review beforeReview = null;
         private RateLimit rateLimit = null;
         private TaskHandler handler = null;
+        private ReflectionConfig reflectionConfig = null;
         // Phase-retry fields -- framework-internal, not for direct use in application code
         private String revisionFeedback = null;
         private String priorAttemptOutput = null;
@@ -593,6 +614,51 @@ public class Task {
             return this;
         }
 
+        /**
+         * Enable post-execution reflection with all default settings.
+         *
+         * <p>When {@code true}, a reflection step runs after the task completes and all
+         * reviews pass. The framework uses the task's own LLM (or the ensemble-level model)
+         * to analyze the output and produce improvement notes stored in the
+         * {@code ReflectionStore}.
+         *
+         * <p>Equivalent to {@code .reflect(ReflectionConfig.DEFAULT)}.
+         *
+         * @param enable when {@code true}, enables reflection; {@code false} disables it (default)
+         * @return this builder
+         */
+        public TaskBuilder reflect(boolean enable) {
+            this.reflectionConfig = enable ? ReflectionConfig.DEFAULT : null;
+            return this;
+        }
+
+        /**
+         * Enable post-execution reflection with fine-grained configuration.
+         *
+         * <p>Allows specifying a custom model (e.g., a cheaper model for reflection calls)
+         * and/or a custom {@link net.agentensemble.reflection.ReflectionStrategy} for domain-specific reflection logic.
+         *
+         * <pre>
+         * Task.builder()
+         *     .description("Analyse trends")
+         *     .expectedOutput("A report")
+         *     .reflect(ReflectionConfig.builder()
+         *         .model(cheapReflectionModel)
+         *         .build())
+         *     .build();
+         * </pre>
+         *
+         * @param config the reflection configuration; must not be null
+         * @return this builder
+         */
+        public TaskBuilder reflect(ReflectionConfig config) {
+            if (config == null) {
+                throw new IllegalArgumentException("ReflectionConfig must not be null");
+            }
+            this.reflectionConfig = config;
+            return this;
+        }
+
         public Task build() {
             validateDescription();
             validateExpectedOutput();
@@ -630,6 +696,7 @@ public class Task {
                     beforeReview,
                     rateLimit,
                     handler,
+                    reflectionConfig,
                     revisionFeedback,
                     priorAttemptOutput,
                     attemptNumber);

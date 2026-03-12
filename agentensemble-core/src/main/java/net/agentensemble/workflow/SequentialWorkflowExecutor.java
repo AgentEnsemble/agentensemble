@@ -1,5 +1,6 @@
 package net.agentensemble.workflow;
 
+import dev.langchain4j.model.chat.ChatModel;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.guardrail.GuardrailViolationException;
 import net.agentensemble.memory.MemoryEntry;
 import net.agentensemble.memory.MemoryStore;
+import net.agentensemble.reflection.TaskReflector;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.Review;
 import net.agentensemble.review.ReviewDecision;
@@ -236,7 +238,11 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                         taskOutput = applyEdit(taskOutput, edit.revisedOutput(), task, executionContext);
                         log.info("Task {}/{} output replaced by reviewer", taskIndex, totalTasks);
                     } else if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
-                        // Include this task in output, then stop
+                        // Include this task in output, then stop.
+                        // Run reflection on the accepted output before recording and returning early.
+                        ChatModel reflectionModel =
+                                task.getAgent() != null ? task.getAgent().getLlm() : null;
+                        TaskReflector.reflect(task, taskOutput.getRaw(), reflectionModel, executionContext);
                         completedOutputs.put(task, taskOutput);
                         ExitReason afterExitReason =
                                 afterExitEarlyDecision.timedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
@@ -249,6 +255,12 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                     }
                     // Continue: pass output forward unchanged
                 }
+
+                // Run reflection on the final accepted output -- after all review gates pass
+                // and after any reviewer edits are applied.
+                ChatModel reflectionModel =
+                        task.getAgent() != null ? task.getAgent().getLlm() : null;
+                TaskReflector.reflect(task, taskOutput.getRaw(), reflectionModel, executionContext);
 
                 completedOutputs.put(task, taskOutput);
 

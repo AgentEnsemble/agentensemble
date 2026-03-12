@@ -97,6 +97,7 @@ nav:
     - Framework Integration: guides/framework-integration.md
     - Testing: guides/testing.md
     - Deterministic Orchestration: guides/deterministic-orchestration.md
+    - Task Reflection: guides/task-reflection.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
@@ -119,6 +120,7 @@ nav:
     - Deterministic Tasks: examples/deterministic-tasks.md
     - Phases: examples/phases.md
     - Phase Review: examples/phase-review.md
+    - Task Reflection: examples/task-reflection.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
   - Migration:
@@ -145,3 +147,4 @@ nav:
     - Phases: design/19-phases.md
     - Deterministic-Only Orchestration: design/20-deterministic-only.md
     - Phase Review and Retry: design/21-phase-review.md
+    - Task Reflection: design/22-task-reflection.md

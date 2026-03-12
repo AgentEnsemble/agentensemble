@@ -19,6 +19,7 @@ include("agentensemble-bom")
 include("agentensemble-core")
 include("agentensemble-memory")
 include("agentensemble-review")
+include("agentensemble-reflection")
 
 // Per-tool modules nested under agentensemble-tools/
 include("agentensemble-tools:calculator")
