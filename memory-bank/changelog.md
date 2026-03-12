@@ -2,19 +2,54 @@
 
 ## [Unreleased] - feature/186-phases (Issue #186) - 2026-03-11
 
-### Added (docs/design pass -- implementation pending)
-- Design doc `docs/design/19-phases.md`: full spec covering Phase domain model, DAG execution
-  model, PhaseDagExecutor algorithm, Ensemble changes, EnsembleOutput/ExecutionTrace changes,
-  validation rules, edge cases, package/class structure, and testing requirements
-- Guide `docs/guides/phases.md`: when to use phases, declaring phases, cross-phase context,
-  per-phase workflow override, error handling, comparison table
-- Example page `docs/examples/phases.md`: six code examples covering sequential, parallel,
-  kitchen convergent, per-phase workflow, diamond dependency, deterministic handler phases
-- Reference update `docs/reference/ensemble-configuration.md`: `phases` field in builder table,
-  new Phase Configuration section with field table and validation rules
-- Runnable example `PhasesExample.java`: three patterns (sequential deterministic, kitchen
-  parallel convergent, AI-backed parallel); `runPhases` Gradle task registered
-- Navigation `mkdocs.yml`: Phases added to Guides, Examples, and Design nav sections
+### Added (complete implementation)
+
+**Domain model:**
+- `Phase` (`net.agentensemble.workflow.Phase`) -- `@Builder @Getter` value object with
+  `name`, `tasks` (@Singular), `workflow` (optional, null=inherit), `after` (predecessors,
+  manually managed to avoid Lombok conflict). Static factories `Phase.of(String, Task...)`
+  and `Phase.of(String, List<Task>)`. `PhaseBuilder.build()` validates name non-blank,
+  at least one task, HIERARCHICAL workflow rejected.
+- `PhaseDagExecutor` (public class, `net.agentensemble.workflow`) -- BiFunction-based API;
+  ConcurrentHashMap + CountDownLatch + Java 21 virtual threads; prior-outputs snapshot
+  passed to phaseRunner for cross-phase `context()` resolution; failure cascades
+  transitively to dependents; global task output map accumulated across phases.
+- `EnsembleOutput.phaseOutputs` (`Map<String, List<TaskOutput>>`) -- populated by
+  `Ensemble.executePhases()`; `getPhaseOutputs()` returns empty map for flat-task runs.
+
+**Ensemble integration:**
+- `Ensemble.phase(Phase)` and `Ensemble.phase(String, Task...)` builder methods;
+  `phases` field is a plain `List<Phase>` managed in `EnsembleBuilder` to avoid
+  Lombok `@Singular` conflict with the varargs convenience method.
+- `Ensemble.executePhases()` -- per-phase runner that resolves template vars, synthesizes
+  agents, selects per-phase workflow executor, calls `executeSeeded()` for cross-phase context.
+- `Ensemble.resolveTasksFromList()` -- static helper for per-phase template resolution with
+  identity-preservation: preserves original Task identity when no template vars change,
+  which is critical for identity-based cross-phase `context()` lookup.
+- `SequentialWorkflowExecutor.executeSeeded()` -- public method pre-seeding `completedOutputs`
+  from prior phase outputs; returns only current-phase task outputs (not seed outputs) to
+  prevent duplication in PhaseDagExecutor's aggregated list.
+
+**Validation:**
+- `EnsembleValidator` phase path: rejects mixed task+phase, unique names, acyclic DAG (DFS),
+  tasks-have-LLM per phase, HIERARCHICAL per-phase rejected.
+
+**Tests:**
+- `PhaseTest`: 24 unit tests for Phase builder validation, static factories, after() varargs
+- `PhaseIntegrationTest`: 12 integration tests (all deterministic, no LLM required):
+  sequential phases, parallel independent phases, kitchen convergent scenario,
+  cross-phase context, phase failure stops dependents/not independent, per-phase workflow
+  override, convenience builder, validation errors (mixed/duplicate/cyclic), callbacks
+
+**Docs:**
+- Design doc `docs/design/19-phases.md`, guide `docs/guides/phases.md`,
+  example page `docs/examples/phases.md`, reference update, `PhasesExample.java`,
+  `mkdocs.yml` navigation updated
+
+**Key bugs fixed during implementation:**
+- `executeSeeded()` included seed outputs in returned task list causing duplicates
+- `resolveTasksFromList()` created new Task objects unconditionally breaking
+  identity-based cross-phase context lookup
 
 ---
 

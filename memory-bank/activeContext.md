@@ -3,74 +3,82 @@
 ## Current Work
 
 Branch `feature/186-phases` -- Phase-level workflow grouping and parallel phase execution
-(Issue #186). Design, documentation, and example complete. Implementation work in progress.
+(Issue #186). Implementation complete, full CI build passing. Ready for PR review.
 
-## Completed This Session (Phases -- docs/design pass)
+## Completed This Session (Phases -- complete implementation)
 
-- **GitHub issue #186** created with full acceptance criteria
-- **Branch** `feature/186-phases` created from `main`
-- **Design doc** `docs/design/19-phases.md` -- complete spec covering Phase domain model,
-  Phase DAG execution model, PhaseDagExecutor algorithm, Ensemble changes, EnsembleOutput
-  changes, ExecutionTrace changes, validation rules, edge cases, package/class structure,
-  and testing requirements
-- **Guide** `docs/guides/phases.md` -- when to use, declaring phases, dependencies,
-  cross-phase context, per-phase workflow override, error handling, comparison table
-- **Example page** `docs/examples/phases.md` -- six runnable code examples covering
-  sequential phases, parallel phases, kitchen scenario, per-phase workflow, diamond
-  dependency, deterministic handler phases, and reading phase outputs
-- **Reference update** `docs/reference/ensemble-configuration.md` -- added `phases` field
-  to builder table, new Phase Configuration section with field table, validation rules,
-  and static factory docs
-- **Navigation** `mkdocs.yml` -- added Phases to Guides, Examples, and Design nav sections
-- **Runnable example** `agentensemble-examples/src/main/java/.../PhasesExample.java` with
-  three patterns (sequential deterministic, kitchen parallel, AI-backed parallel)
-- **Gradle task** `runPhases` registered in `agentensemble-examples/build.gradle.kts`
+**7 commits on `feature/186-phases`:**
 
-## What Still Needs to Be Implemented (Phase Execution)
+### Docs pass (commits 1-3):
+- GitHub issue #186 created with full acceptance criteria
+- Design doc `docs/design/19-phases.md`
+- Guide `docs/guides/phases.md`
+- Example page `docs/examples/phases.md`
+- Reference update `docs/reference/ensemble-configuration.md`
+- `PhasesExample.java` + `runPhases` Gradle task
+- `mkdocs.yml` navigation updated
 
-The following implementation work is planned on this branch:
+### Implementation pass (commits 4-7):
+- **`Phase`** domain object (`net.agentensemble.workflow.Phase`) -- `@Builder @Getter`
+  with `name`, `tasks` (`@Singular`), `workflow` (optional), `after` (predecessors, managed
+  manually to avoid Lombok conflict). `Phase.of(String, Task...)` and
+  `Phase.of(String, List<Task>)` static factories. `PhaseBuilder.build()` validates name,
+  tasks, and rejects HIERARCHICAL workflow.
+- **`Ensemble.phase(Phase)`** and **`Ensemble.phase(String, Task...)`** builder methods.
+  `phases` field managed by `EnsembleBuilder` (not `@Singular` to avoid Lombok naming
+  conflict with the varargs convenience method).
+- **`EnsembleValidator`** phase rules: rejects mixed task+phase, unique names,
+  acyclic DAG (DFS), tasks-have-LLM per phase.
+- **`PhaseDagExecutor`** (`public class`, `net.agentensemble.workflow`): BiFunction-based
+  phaseRunner API; ConcurrentHashMap + CountDownLatch + virtual threads; prior-outputs
+  snapshot passed to each phase runner for cross-phase context() resolution; failure
+  cascades transitively to dependents; global task output map updated after each phase.
+- **`Ensemble.executePhases()`** per-phase runner: resolves template vars
+  (`resolveTasksFromList` with identity-preservation when no templates change),
+  synthesizes agents, selects workflow executor, calls `executeSeeded()`.
+- **`SequentialWorkflowExecutor.executeSeeded()`**: public method that pre-seeds
+  `completedOutputs` from prior phase outputs; returns only current-phase task outputs
+  (not seed outputs) to prevent duplicates in the aggregated list.
+- **`EnsembleOutput.phaseOutputs`**: `Map<String, List<TaskOutput>>` field populated
+  by `executePhases`; `getPhaseOutputs()` returns empty map for flat-task ensembles.
+- **`PhaseTest`**: 24 unit tests for Phase builder validation and static factories.
+- **`PhaseIntegrationTest`**: 12 integration tests (all pass with deterministic handlers,
+  no LLM needed): sequential phases, parallel phases, kitchen convergent scenario,
+  cross-phase context, failure propagation, per-phase workflow override, callbacks,
+  validation errors.
 
-1. `Phase` value object (`net.agentensemble.workflow.Phase`) -- `@Value @Builder` with
-   `name`, `tasks`, `workflow` (optional), `after` (predecessor phases)
-2. `PhaseStatus` enum (`COMPLETED`, `FAILED`, `SKIPPED`)
-3. `PhaseTrace` value object
-4. `Ensemble` -- add `phases` field + `phase()` builder methods; mutually-exclusive
-   with `.task()`; dispatch to PhaseDagExecutor when phases present
-5. `EnsembleValidator` -- phase rules: unique names, non-empty tasks, no mixed task+phase,
-   acyclic DAG, no HIERARCHICAL per-phase, cross-phase context predecessor validation
-6. `PhaseDagExecutor` -- phase-level DAG execution using virtual threads, CountDownLatch,
-   ConcurrentHashMap; delegates to existing workflow executors per phase
-7. `EnsembleOutput` -- add `phaseOutputs: Map<String, List<TaskOutput>>` field
-8. `ExecutionTrace` -- add `phases: List<PhaseTrace>` field
-9. Unit tests, integration tests, E2E tests per design doc section 14
+**Key bugs found and fixed during testing:**
+- `SequentialWorkflowExecutor.executeSeeded()` incorrectly included seed outputs in
+  the returned task list, causing duplicates in PhaseDagExecutor's aggregated list.
+  Fixed: only tasks in `resolvedTasks` are included in the returned output.
+- `resolveTasksFromList()` was creating new Task objects even when no template vars
+  were substituted, breaking identity-based cross-phase context lookup. Fixed: preserve
+  original task identity when description/expectedOutput are unchanged.
 
 ## Previously Completed (Heartbeat Scheduler Leak Fix)
 
-Branch `fix/web-dashboard-heartbeat-scheduler-leak` (PR #184) fixes a JVM hang caused
-by the heartbeat scheduler not being shut down in `WebDashboard.stop()`.
-
-- `WebDashboard.stop()` now calls `heartbeatScheduler.shutdownNow()` + `awaitTermination(2s)`
-- Tests: `stop_shutsDownHeartbeatSchedulerThread`, `stop_isIdempotent_doesNotThrowOnDoubleStop`,
-  `close_shutsDownHeartbeatSchedulerThread`
-- All 171 tests pass; BUILD SUCCESSFUL
-
-## Previously Completed (Deterministic Tasks)
-
-Branch `feature/deterministic-tasks` implements deterministic (non-AI) task execution via
-`Task.builder().handler(...)`. Full build + all tests pass.
+Branch `fix/web-dashboard-heartbeat-scheduler-leak` (PR #184) -- all merged to main.
 
 ## Key Design Decisions (Phases, Issue #186)
 
-- **Phase** is a named group of tasks forming a workstream; it does NOT modify Task
-- **Phase DAG**: phases declare dependencies via `.after(otherPhase)`. Independent phases
-  run in parallel; dependents wait for all predecessors to complete
+- **Phase** is a named group of tasks; it does NOT modify Task
+- **Phase DAG**: phases declare dependencies via `.after(otherPhase)`. Independent
+  phases run in parallel; dependents wait for all predecessors to complete
 - **Backward compatible**: flat `.task()` ensembles are unchanged; cannot mix tasks and phases
 - **Per-phase workflow**: each phase can override the ensemble-level workflow strategy
   (HIERARCHICAL not permitted per-phase in v1)
 - **Cross-phase context**: tasks in later phases may reference tasks in predecessor phases
-  via existing `Task.context()` mechanism; validated at build time
-- **PhaseDagExecutor**: reuses existing WorkflowExecutors per phase; same virtual-thread
-  pattern as ParallelWorkflowExecutor
+  via existing `Task.context()` mechanism; resolved by seeding completedOutputs map
+- **Identity preservation**: `resolveTasksFromList()` preserves original Task identity when
+  no templates change -- critical for identity-based cross-phase context lookup
+- **PhaseDagExecutor**: reuses existing workflow executors per phase via BiFunction API;
+  same virtual-thread pattern as ParallelWorkflowExecutor
+
+## Next Steps
+
+- Open PR for `feature/186-phases` branch
+- After merge, update `docs/reference/ensemble-configuration.md` with `getPhaseOutputs()`
+  in the EnsembleOutput accessor table
 
 ## Important Patterns and Preferences
 
@@ -78,33 +86,6 @@ Branch `feature/deterministic-tasks` implements deterministic (non-AI) task exec
 - `Phase.of("name", task1, task2)` -- static factory
 - `Phase.builder().name(...).task(...).after(otherPhase).workflow(Workflow.PARALLEL).build()`
 - `Ensemble.builder().phase(p1).phase(p2).build()` -- registers phases, cannot mix with `.task()`
-- `EnsembleOutput.getPhaseOutputs()` returns `Map<String, List<TaskOutput>>`
-- Package: `net.agentensemble.workflow` for Phase, PhaseStatus, PhaseTrace, PhaseDagExecutor
-
-### Rate Limiting (Issue #59, v0.8.0)
-- `RateLimit.perMinute(60)` / `perSecond(2)` / `of(N, Duration)`
-- `RateLimitedChatModel.of(model, rateLimit)` -- manual decorator for shared buckets
-- Builder shortcut: `.rateLimit()` on Ensemble, Task, Agent builders
-- `RateLimitTimeoutException extends AgentEnsembleException`
-- `RateLimitInterruptedException extends AgentEnsembleException`
-- Package: `net.agentensemble.ratelimit`
-
-### agentensemble-web module (v2.1.0)
-- `WebDashboard.onPort(port)` -- zero-config; `WebDashboard.builder()` for full config
-- `Ensemble.builder().webDashboard(dashboard)` -- single call wires listener + review
-  handler + lifecycle hooks
-
-### v2 Task-First API (Issues #104/#105)
-- Task.of(description) -- zero-ceremony, default expectedOutput, no agent required
-- Ensemble.run(model, tasks...) -- static factory, single-line ensemble execution
-- Ensemble.builder().chatLanguageModel(model) -- ensemble-level LLM for synthesis
-
-## Next Steps
-
-1. Implement Phase domain object and Ensemble builder changes
-2. Implement EnsembleValidator phase rules
-3. Write unit tests (TDD) before implementing PhaseDagExecutor
-4. Implement PhaseDagExecutor + Ensemble dispatch
-5. Update EnsembleOutput and ExecutionTrace
-6. Run full build and all tests
-7. Update memory bank and merge
+- `EnsembleOutput.getPhaseOutputs()` returns `Map<String, List<TaskOutput>>` -- empty for flat tasks
+- `SequentialWorkflowExecutor.executeSeeded(tasks, ctx, priorOutputs)` -- cross-phase seeding
+- Package: `net.agentensemble.workflow` for Phase, PhaseDagExecutor; `net.agentensemble.ensemble` for EnsembleOutput
