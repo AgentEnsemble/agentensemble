@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -44,6 +45,8 @@ import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
 import net.agentensemble.synthesis.SynthesisContext;
+import net.agentensemble.task.TaskOutput;
+import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolMetrics;
 import net.agentensemble.trace.AgentSummary;
@@ -125,9 +128,9 @@ public class Ensemble {
      *
      * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we need to
      * provide both {@code phase(Phase)} and {@code phase(String, Task...)} methods in the custom
-     * {@code EnsembleBuilder}; Lombok annotations would conflict with those names. The
-     * {@code EnsembleBuilder} initialises this field to a new mutable list and accumulates
-     * phases via its custom methods; the result is wrapped in {@code List.copyOf()} at build time.
+     * {@code EnsembleBuilder}; Lombok annotations would conflict with those names. The custom
+     * {@code phase()} methods each produce an immutable snapshot so that the list assigned to
+     * this field by Lombok's generated {@code build()} is already immutable.
      */
     private final List<Phase> phases;
 
@@ -646,14 +649,14 @@ public class Ensemble {
             // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
-            java.util.Map<Task, net.agentensemble.task.TaskOutput> executorIndex = output.getTaskOutputIndex();
-            java.util.Map<Task, net.agentensemble.task.TaskOutput> originalIndex = null;
+            Map<Task, TaskOutput> executorIndex = output.getTaskOutputIndex();
+            Map<Task, TaskOutput> originalIndex = null;
             if (executorIndex != null) {
-                IdentityHashMap<Task, net.agentensemble.task.TaskOutput> idx = new IdentityHashMap<>();
+                IdentityHashMap<Task, TaskOutput> idx = new IdentityHashMap<>();
                 for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
                     Task original = tasks.get(i);
                     Task agentResolved = agentResolvedTasks.get(i);
-                    net.agentensemble.task.TaskOutput taskOut = executorIndex.get(agentResolved);
+                    TaskOutput taskOut = executorIndex.get(agentResolved);
                     if (taskOut != null) {
                         idx.put(original, taskOut);
                     }
@@ -884,15 +887,15 @@ public class Ensemble {
                         .goal(agent.getGoal())
                         .background(agent.getBackground())
                         .toolNames(agent.getTools().stream()
-                                .filter(t -> t instanceof net.agentensemble.tool.AgentTool)
-                                .map(t -> ((net.agentensemble.tool.AgentTool) t).name())
+                                .filter(t -> t instanceof AgentTool)
+                                .map(t -> ((AgentTool) t).name())
                                 .collect(Collectors.toList()))
                         .allowDelegation(agent.isAllowDelegation())
                         .build())
                 .collect(Collectors.toList());
 
         List<TaskTrace> taskTraces = output.getTaskOutputs().stream()
-                .map(net.agentensemble.task.TaskOutput::getTrace)
+                .map(TaskOutput::getTrace)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
@@ -1017,8 +1020,7 @@ public class Ensemble {
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
 
         // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
-        java.util.concurrent.ConcurrentHashMap<String, List<net.agentensemble.task.TaskOutput>> phaseResultsMap =
-                new java.util.concurrent.ConcurrentHashMap<>();
+        ConcurrentHashMap<String, List<TaskOutput>> phaseResultsMap = new ConcurrentHashMap<>();
 
         PhaseDagExecutor dagExecutor = new PhaseDagExecutor();
 
@@ -1068,7 +1070,7 @@ public class Ensemble {
                 .taskOutputs(dagOutput.getTaskOutputs())
                 .totalDuration(dagOutput.getTotalDuration())
                 .totalToolCalls(dagOutput.getTotalToolCalls())
-                .phaseOutputs(java.util.Collections.unmodifiableMap(phaseResultsMap))
+                .phaseOutputs(Collections.unmodifiableMap(phaseResultsMap))
                 .build();
     }
 
@@ -1168,14 +1170,12 @@ public class Ensemble {
      */
     public static class EnsembleBuilder {
 
-        // Phases accumulator. Declared here (not in the main class field annotations) so that
-        // we can provide both phase(Phase) and phase(String, Task...) without conflicting with
-        // Lombok's @Singular-generated methods. Initialized to a mutable list so phase() calls
-        // accumulate cleanly; wrapped in List.copyOf() by the Lombok-generated build() method via
-        // the phases(List<Phase>) setter call in the terminal phase() overloads.
-        // Lombok sees this plain List<Phase> field and generates phases(List<Phase>) which
-        // replaces the list -- that setter is NOT called by our phase() accumulator methods.
-        private List<Phase> phases = new ArrayList<>();
+        // Phases accumulator. Kept as a plain List<Phase> field (not @Singular, not
+        // @Builder.Default) so that both phase(Phase) and phase(String, Task...) methods can
+        // be declared without conflicting with Lombok-generated names. The field starts as
+        // an empty immutable list; each phase() call creates a new immutable copy so that
+        // Lombok's generated build() always receives an immutable list.
+        private List<Phase> phases = List.of();
 
         /**
          * Add a single phase to this ensemble.
@@ -1185,7 +1185,9 @@ public class Ensemble {
          */
         public EnsembleBuilder phase(Phase phase) {
             Objects.requireNonNull(phase, "phase must not be null");
-            this.phases.add(phase);
+            List<Phase> updated = new ArrayList<>(this.phases);
+            updated.add(phase);
+            this.phases = List.copyOf(updated);
             return this;
         }
 

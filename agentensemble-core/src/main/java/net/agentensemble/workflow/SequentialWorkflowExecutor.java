@@ -115,9 +115,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
     /**
      * Execute with a pre-seeded completed-outputs map.
      *
-     * <p>Package-private; used by {@link PhaseDagExecutor} to inject outputs from
-     * previously-completed phases so that cross-phase {@code context()} references
-     * resolve correctly in this phase's tasks.
+     * <p>Used by {@link PhaseDagExecutor} to inject outputs from previously-completed phases
+     * so that cross-phase {@code context()} references resolve correctly in this phase's tasks.
      *
      * @param resolvedTasks    tasks to execute (with template vars resolved, agents synthesized)
      * @param executionContext execution context

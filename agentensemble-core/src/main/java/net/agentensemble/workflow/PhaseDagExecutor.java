@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -127,8 +126,13 @@ public class PhaseDagExecutor {
         // First failure seen across all phases
         AtomicReference<Throwable> firstFailure = new AtomicReference<>();
 
-        // Phases that were skipped due to a predecessor failure (identity-based set)
-        Set<Phase> skippedPhases = Collections.newSetFromMap(new ConcurrentHashMap<>());
+        // Settle-once map for atomic submission vs. skip decisions.
+        // When onPhaseCompleted claims a phase with value "submitted", it submits it.
+        // When skipTransitiveDependents claims a phase with value "skipped", it decrements the latch.
+        // Using ConcurrentHashMap.putIfAbsent ensures only one thread can settle each phase,
+        // eliminating the race condition where a completing predecessor and a failing predecessor
+        // could both attempt to settle the same successor concurrently (double-latch countdown).
+        Map<Phase, String> settledPhases = new ConcurrentHashMap<>();
 
         // Each phase decrements this latch exactly once when it reaches a terminal state.
         CountDownLatch latch = new CountDownLatch(totalPhases);
@@ -145,6 +149,8 @@ public class PhaseDagExecutor {
             // Submit all root phases (those with no predecessor) to seed the execution
             for (Phase phase : phases) {
                 if (remainingPredecessors.get(phase).get() == 0) {
+                    // Claim root phases for submission atomically before submitting
+                    settledPhases.put(phase, "submitted");
                     submitOnePhase(
                             phase,
                             executor,
@@ -156,7 +162,7 @@ public class PhaseDagExecutor {
                             globalTaskOutputs,
                             allTaskOutputs,
                             firstFailure,
-                            skippedPhases,
+                            settledPhases,
                             latch);
                 }
             }
@@ -224,7 +230,7 @@ public class PhaseDagExecutor {
             Map<Task, TaskOutput> globalTaskOutputs,
             List<TaskOutput> allTaskOutputs,
             AtomicReference<Throwable> firstFailure,
-            Set<Phase> skippedPhases,
+            Map<Phase, String> settledPhases,
             CountDownLatch latch) {
 
         // Snapshot prior outputs at the time this phase is submitted.
@@ -271,13 +277,13 @@ public class PhaseDagExecutor {
                         globalTaskOutputs,
                         allTaskOutputs,
                         firstFailure,
-                        skippedPhases,
+                        settledPhases,
                         latch);
 
             } catch (Exception e) {
                 log.error("Phase '{}' failed: {}", phase.getName(), e.getMessage(), e);
                 firstFailure.compareAndSet(null, e);
-                skipTransitiveDependents(phase, successorMap, skippedPhases, latch);
+                skipTransitiveDependents(phase, successorMap, settledPhases, latch);
 
             } finally {
                 latch.countDown();
@@ -301,13 +307,16 @@ public class PhaseDagExecutor {
             Map<Task, TaskOutput> globalTaskOutputs,
             List<TaskOutput> allTaskOutputs,
             AtomicReference<Throwable> firstFailure,
-            Set<Phase> skippedPhases,
+            Map<Phase, String> settledPhases,
             CountDownLatch latch) {
 
         List<Phase> successors = successorMap.getOrDefault(completedPhase, List.of());
         for (Phase successor : successors) {
             int remaining = remainingPredecessors.get(successor).decrementAndGet();
-            if (remaining == 0 && !skippedPhases.contains(successor)) {
+            // Atomically claim this successor for submission. putIfAbsent returns null only if
+            // the key was absent, meaning we won the race against skipTransitiveDependents which
+            // could also be trying to claim the same successor for skipping concurrently.
+            if (remaining == 0 && settledPhases.putIfAbsent(successor, "submitted") == null) {
                 submitOnePhase(
                         successor,
                         threadPool,
@@ -319,7 +328,7 @@ public class PhaseDagExecutor {
                         globalTaskOutputs,
                         allTaskOutputs,
                         firstFailure,
-                        skippedPhases,
+                        settledPhases,
                         latch);
             }
         }
@@ -330,17 +339,23 @@ public class PhaseDagExecutor {
      * SKIPPED and decrement the latch for each.
      */
     private void skipTransitiveDependents(
-            Phase failedPhase, Map<Phase, List<Phase>> successorMap, Set<Phase> skippedPhases, CountDownLatch latch) {
+            Phase failedPhase,
+            Map<Phase, List<Phase>> successorMap,
+            Map<Phase, String> settledPhases,
+            CountDownLatch latch) {
 
         List<Phase> successors = successorMap.getOrDefault(failedPhase, List.of());
         for (Phase successor : successors) {
-            if (skippedPhases.add(successor)) {
+            // Atomically claim this successor for skipping. putIfAbsent returns null only if the
+            // key was absent, meaning we won the race against onPhaseCompleted which could also
+            // be trying to claim the same successor for submission concurrently.
+            if (settledPhases.putIfAbsent(successor, "skipped") == null) {
                 log.warn(
                         "Phase '{}' skipped (predecessor '{}' failed or was skipped)",
                         successor.getName(),
                         failedPhase.getName());
                 latch.countDown();
-                skipTransitiveDependents(successor, successorMap, skippedPhases, latch);
+                skipTransitiveDependents(successor, successorMap, settledPhases, latch);
             }
         }
     }

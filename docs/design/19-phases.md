@@ -204,7 +204,7 @@ exits. This is the same behavior as today's parallel workflow executor.
 
 ## 7. PhaseDagExecutor
 
-A new `PhaseDagExecutor` class handles phase-level orchestration. It is `package-private`
+A new `PhaseDagExecutor` class handles phase-level orchestration. It is a `public` class
 within `net.agentensemble.workflow`.
 
 ### 7.1 Algorithm
