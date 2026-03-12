@@ -14,7 +14,8 @@ All fields available on `Ensemble.builder()`.
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `tasks` | `List<Task>` | Yes | -- | All tasks to execute. Add with `.task(t)` (singular) or `.tasks(list)`. |
+| `tasks` | `List<Task>` | Yes* | -- | All tasks to execute. Add with `.task(t)` (singular) or `.tasks(list)`. *Required when not using phases. Cannot be combined with `phases`. |
+| `phases` | `List<Phase>` | Yes* | -- | Named task-group workstreams with a dependency DAG. Add with `.phase(phase)` (singular). Independent phases run in parallel; a phase starts only when all its `after()` predecessors have completed. *Required when not using tasks. Cannot be combined with `tasks`. See [Phases guide](../guides/phases.md). |
 | `chatLanguageModel` | `ChatModel` | No | `null` | Default LLM for all tasks without an explicit agent or task-level LLM. Required when any task lacks an explicit agent and does not set its own `chatLanguageModel`. Also used as the Manager LLM in hierarchical workflow if `managerLlm` is not set. |
 | `rateLimit` | `RateLimit` | No | `null` | Ensemble-level request rate limit applied to `chatLanguageModel`. When set, all synthesized agents that inherit the ensemble model share one token bucket, capping requests per time window across the entire run. The model is wrapped with `RateLimitedChatModel` once per `run()` call. Tasks with their own `chatLanguageModel` or `rateLimit` are unaffected. See [Rate Limiting guide](../guides/rate-limiting.md). |
 | `agentSynthesizer` | `AgentSynthesizer` | No | `AgentSynthesizer.template()` | Strategy for synthesizing agents for agentless tasks. `AgentSynthesizer.template()` (default) derives role, goal, and backstory from the task description deterministically. `AgentSynthesizer.llmBased()` invokes the LLM once per agentless task for a higher-quality persona. |
@@ -37,11 +38,45 @@ All fields available on `Ensemble.builder()`.
 
 ---
 
+## Phase Configuration
+
+`Phase` is declared separately and registered with `Ensemble.builder().phase(phase)`.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | `String` | Yes | -- | Unique name within the ensemble. Used in logs, traces, and `phaseOutputs` map keys. Must not be null or blank. |
+| `tasks` | `List<Task>` | Yes | -- | Tasks to execute within this phase. Must contain at least one task. Add with `.task(t)`. |
+| `workflow` | `Workflow` | No | `null` (inherits) | Workflow strategy for internal task execution. When `null`, inherits the ensemble-level `workflow`. `HIERARCHICAL` is not permitted at the phase level. |
+| `after` | `List<Phase>` | No | `[]` | Predecessor phases. This phase will not start until all declared predecessors have completed. A phase with no `after()` declarations is a root phase and starts immediately. Declare with `.after(phase)` (single) or `.after(phaseA, phaseB, ...)` (varargs). |
+
+### Static Factory
+
+```java
+Phase.of(String name, Task... tasks)
+Phase.of(String name, List<Task> tasks)
+```
+
+### Validation
+
+At `Ensemble.build()` time (when phases are used):
+
+| Rule | Error |
+|---|---|
+| Cannot mix `.task()` and `.phase()` on same builder | `ValidationException` |
+| Phase name must not be null or blank | `ValidationException` |
+| Phase name must be unique within ensemble | `ValidationException` |
+| Each phase must contain at least one task | `ValidationException` |
+| Phase DAG must be acyclic | `ValidationException` |
+| Phase `workflow` must not be `HIERARCHICAL` | `ValidationException` |
+| Cross-phase `context()` reference must point to a task in a predecessor phase | `ValidationException` |
+
+---
+
 ## Validation
 
 At `Ensemble.run()` time:
 
-- At least one task must be registered
+- At least one task or phase must be registered
 - Every task must have an LLM source: explicit `agent`, task-level `chatLanguageModel`, or ensemble-level `chatLanguageModel`
 - No circular context dependencies
 - Context task ordering is valid (sequential workflow only)

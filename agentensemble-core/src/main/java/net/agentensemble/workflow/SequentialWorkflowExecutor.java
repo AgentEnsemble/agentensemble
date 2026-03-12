@@ -109,9 +109,28 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
     @Override
     public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
+        return executeSeeded(resolvedTasks, executionContext, new LinkedHashMap<>());
+    }
+
+    /**
+     * Execute with a pre-seeded completed-outputs map.
+     *
+     * <p>Used by {@link PhaseDagExecutor} to inject outputs from previously-completed phases
+     * so that cross-phase {@code context()} references resolve correctly in this phase's tasks.
+     *
+     * @param resolvedTasks    tasks to execute (with template vars resolved, agents synthesized)
+     * @param executionContext execution context
+     * @param seedOutputs      outputs from prior phases, keyed by identity; the executor
+     *                         pre-populates its completedOutputs map from these entries
+     * @return the ensemble output for this phase's tasks
+     */
+    public EnsembleOutput executeSeeded(
+            List<Task> resolvedTasks, ExecutionContext executionContext, Map<Task, TaskOutput> seedOutputs) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
-        Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
+        // Pre-seed with prior outputs so cross-phase context() references resolve correctly.
+        // Uses LinkedHashMap to preserve insertion order for the flat task output list.
+        Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>(seedOutputs);
 
         // Create the delegation context once for the entire run; all agents share it.
         DelegationContext delegationContext = DelegationContext.create(
@@ -288,19 +307,36 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
             }
         }
 
-        // Assemble EnsembleOutput for a fully completed run
+        // Assemble EnsembleOutput for the tasks executed in THIS invocation only.
+        // The completedOutputs map may contain seed outputs from prior phases; those must
+        // NOT be included in the returned task list to prevent duplicates when the phase
+        // DAG executor aggregates outputs across phases.
+        List<TaskOutput> thisRunOutputs = resolvedTasks.stream()
+                .map(completedOutputs::get)
+                .filter(to -> to != null)
+                .collect(java.util.stream.Collectors.toUnmodifiableList());
+
+        // Build a phase-only taskOutputIndex (excludes seed outputs from prior phases).
+        java.util.IdentityHashMap<Task, TaskOutput> phaseOnlyIndex = new java.util.IdentityHashMap<>();
+        for (Task task : resolvedTasks) {
+            TaskOutput to = completedOutputs.get(task);
+            if (to != null) {
+                phaseOnlyIndex.put(task, to);
+            }
+        }
+
         Duration totalDuration = Duration.between(ensembleStartTime, Instant.now());
-        List<TaskOutput> allOutputs = List.copyOf(completedOutputs.values());
-        String finalOutput = allOutputs.isEmpty() ? "" : allOutputs.getLast().getRaw();
+        String finalOutput =
+                thisRunOutputs.isEmpty() ? "" : thisRunOutputs.getLast().getRaw();
         int totalToolCalls =
-                allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+                thisRunOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)
-                .taskOutputs(allOutputs)
+                .taskOutputs(thisRunOutputs)
                 .totalDuration(totalDuration)
                 .totalToolCalls(totalToolCalls)
-                .taskOutputIndex(completedOutputs) // identity-based Task -> TaskOutput index
+                .taskOutputIndex(phaseOnlyIndex) // identity-based Task -> TaskOutput index (this phase only)
                 .build(); // exitReason defaults to COMPLETED
     }
 

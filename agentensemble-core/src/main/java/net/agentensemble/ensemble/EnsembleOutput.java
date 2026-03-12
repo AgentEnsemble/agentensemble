@@ -98,6 +98,29 @@ public class EnsembleOutput {
     ExitReason exitReason;
 
     /**
+     * Phase-keyed task output map, populated when the ensemble was run with phases.
+     *
+     * <p>Maps each phase name to the list of task outputs produced by that phase.
+     * Returns an empty map when the ensemble used a flat task list (no phases).
+     *
+     * <p>Excluded from {@code equals()}, {@code hashCode()}, and {@code toString()}.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    Map<String, List<TaskOutput>> phaseOutputs;
+
+    /**
+     * Returns the phase-keyed task output map.
+     *
+     * <p>Maps each phase name to its task outputs. Empty when phases were not used.
+     *
+     * @return phase outputs map; never null
+     */
+    public Map<String, List<TaskOutput>> getPhaseOutputs() {
+        return phaseOutputs != null ? phaseOutputs : Map.of();
+    }
+
+    /**
      * Identity-based index from {@link Task} to its {@link TaskOutput}, populated by
      * workflow executors to support {@link #getOutput(Task)}.
      *
@@ -208,7 +231,7 @@ public class EnsembleOutput {
         List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
         ExecutionMetrics metrics = ExecutionMetrics.from(immutable);
         return new EnsembleOutput(
-                raw, immutable, totalDuration, totalToolCalls, metrics, null, ExitReason.COMPLETED, null);
+                raw, immutable, totalDuration, totalToolCalls, metrics, null, ExitReason.COMPLETED, null, null);
     }
 
     /**
@@ -228,6 +251,7 @@ public class EnsembleOutput {
         private ExecutionMetrics metrics;
         private ExecutionTrace trace;
         private ExitReason exitReason;
+        private Map<String, List<TaskOutput>> phaseOutputs;
         private Map<Task, TaskOutput> taskOutputIndex;
 
         public Builder raw(String raw) {
@@ -271,6 +295,12 @@ public class EnsembleOutput {
             return this;
         }
 
+        /** Set the phase-keyed output map. */
+        public Builder phaseOutputs(Map<String, List<TaskOutput>> phaseOutputs) {
+            this.phaseOutputs = phaseOutputs;
+            return this;
+        }
+
         /**
          * Set the identity-based task-to-output index for {@link EnsembleOutput#getOutput(Task)}.
          *
@@ -308,6 +338,7 @@ public class EnsembleOutput {
                     resolvedMetrics,
                     trace,
                     resolvedExitReason,
+                    phaseOutputs,
                     resolvedIndex);
         }
     }
