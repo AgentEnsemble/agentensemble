@@ -109,9 +109,29 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
     @Override
     public EnsembleOutput execute(List<Task> resolvedTasks, ExecutionContext executionContext) {
+        return executeSeeded(resolvedTasks, executionContext, new LinkedHashMap<>());
+    }
+
+    /**
+     * Execute with a pre-seeded completed-outputs map.
+     *
+     * <p>Package-private; used by {@link PhaseDagExecutor} to inject outputs from
+     * previously-completed phases so that cross-phase {@code context()} references
+     * resolve correctly in this phase's tasks.
+     *
+     * @param resolvedTasks    tasks to execute (with template vars resolved, agents synthesized)
+     * @param executionContext execution context
+     * @param seedOutputs      outputs from prior phases, keyed by identity; the executor
+     *                         pre-populates its completedOutputs map from these entries
+     * @return the ensemble output for this phase's tasks
+     */
+    public EnsembleOutput executeSeeded(
+            List<Task> resolvedTasks, ExecutionContext executionContext, Map<Task, TaskOutput> seedOutputs) {
         Instant ensembleStartTime = Instant.now();
         int totalTasks = resolvedTasks.size();
-        Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>();
+        // Pre-seed with prior outputs so cross-phase context() references resolve correctly.
+        // Uses LinkedHashMap to preserve insertion order for the flat task output list.
+        Map<Task, TaskOutput> completedOutputs = new LinkedHashMap<>(seedOutputs);
 
         // Create the delegation context once for the entire run; all agents share it.
         DelegationContext delegationContext = DelegationContext.create(

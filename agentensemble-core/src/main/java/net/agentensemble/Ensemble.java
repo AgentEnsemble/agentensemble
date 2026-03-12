@@ -59,6 +59,7 @@ import net.agentensemble.workflow.ManagerPromptStrategy;
 import net.agentensemble.workflow.ParallelErrorStrategy;
 import net.agentensemble.workflow.ParallelWorkflowExecutor;
 import net.agentensemble.workflow.Phase;
+import net.agentensemble.workflow.PhaseDagExecutor;
 import net.agentensemble.workflow.SequentialWorkflowExecutor;
 import net.agentensemble.workflow.Workflow;
 import net.agentensemble.workflow.WorkflowExecutor;
@@ -588,9 +589,17 @@ public class Ensemble {
                 }
             }
 
-            // Step 8: Select and execute WorkflowExecutor
-            WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
-            EnsembleOutput output = executor.execute(agentResolvedTasks, executionContext);
+            // Step 8: Select and execute WorkflowExecutor (flat tasks) or PhaseDagExecutor (phases)
+            EnsembleOutput output;
+            if (phases != null && !phases.isEmpty()) {
+                // Phase-based execution: PhaseDagExecutor handles the DAG; each phase
+                // runner resolves template vars and agents independently.
+                log.info("Ensemble run using Phase DAG | Phases: {}", phases.size());
+                output = executePhases(phases, resolvedInputs, buildEffectiveChatModel(), executionContext);
+            } else {
+                WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
+                output = executor.execute(agentResolvedTasks, executionContext);
+            }
 
             Instant runCompletedAt = Instant.now();
 
@@ -975,6 +984,118 @@ public class Ensemble {
             }
         }
         return Workflow.SEQUENTIAL;
+    }
+
+    /**
+     * Execute the ensemble phases via the {@link PhaseDagExecutor}.
+     *
+     * <p>Builds a per-phase runner that:
+     * <ol>
+     *   <li>Resolves template variables in the phase's task descriptions.</li>
+     *   <li>Synthesizes agents for agentless tasks.</li>
+     *   <li>Selects the per-phase workflow (phase override or ensemble default).</li>
+     *   <li>Calls {@link SequentialWorkflowExecutor#executeSeeded} so cross-phase
+     *       {@code context()} references resolve correctly via the prior-outputs map.</li>
+     * </ol>
+     *
+     * @param phases          all phases declared on the ensemble
+     * @param resolvedInputs  template variable map
+     * @param effectiveChatModel  ensemble-level chat model (already rate-limited if configured)
+     * @param executionContext execution context shared across all phases
+     * @return combined output from all completed phases
+     */
+    private EnsembleOutput executePhases(
+            List<Phase> phases,
+            Map<String, String> resolvedInputs,
+            ChatModel effectiveChatModel,
+            ExecutionContext executionContext) {
+
+        // Determine the ensemble-level effective workflow for phases without a per-phase override.
+        // For phases, SEQUENTIAL is the safe default when no context deps are declared.
+        Workflow ensembleEffectiveWorkflow = workflow != null ? workflow : Workflow.SEQUENTIAL;
+
+        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
+
+        PhaseDagExecutor dagExecutor = new PhaseDagExecutor();
+
+        return dagExecutor.execute(phases, (phase, priorOutputs) -> {
+            // 1. Resolve template variables in this phase's tasks
+            List<Task> templateResolved = resolveTasksFromList(phase.getTasks(), resolvedInputs);
+
+            // 2. Resolve agents (synthesize where needed)
+            List<Task> agentResolved = resolveAgents(templateResolved, effectiveChatModel, chatLanguageModel);
+
+            // 3. Derive agents for delegation context
+            List<Agent> phaseAgents = deriveAgents(agentResolved);
+
+            // 4. Determine the per-phase workflow
+            Workflow phaseWorkflow = phase.getWorkflow() != null ? phase.getWorkflow() : ensembleEffectiveWorkflow;
+
+            log.debug(
+                    "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {}",
+                    phase.getName(),
+                    phaseWorkflow,
+                    agentResolved.size(),
+                    priorOutputs.size());
+
+            // 5. Execute with appropriate executor, seeding prior outputs for cross-phase context
+            return switch (phaseWorkflow) {
+                case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
+                        .executeSeeded(agentResolved, executionContext, priorOutputs);
+                case PARALLEL -> new ParallelWorkflowExecutor(
+                                phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
+                        .execute(agentResolved, executionContext);
+                case HIERARCHICAL -> throw new ValidationException(
+                        "Phase '" + phase.getName() + "': Workflow.HIERARCHICAL is not supported at the phase "
+                                + "level. Use HIERARCHICAL at the ensemble level (without phases).");
+            };
+        });
+    }
+
+    /**
+     * Resolve template variables in a given task list.
+     *
+     * <p>Equivalent to {@link #resolveTasks(Map)} but operates on an arbitrary task list
+     * instead of {@link #tasks}. Used by the per-phase runner in {@link #executePhases}.
+     *
+     * @param inputTasks        the task list to resolve
+     * @param resolvedInputsMap template variable map
+     * @return list of resolved tasks with context references remapped to resolved instances
+     */
+    private static List<Task> resolveTasksFromList(List<Task> inputTasks, Map<String, String> resolvedInputsMap) {
+        // Pass 1: resolve description and expectedOutput
+        IdentityHashMap<Task, Task> originalToResolved = new IdentityHashMap<>();
+        for (Task task : inputTasks) {
+            Task resolved = task.toBuilder()
+                    .description(TemplateResolver.resolve(task.getDescription(), resolvedInputsMap))
+                    .expectedOutput(TemplateResolver.resolve(task.getExpectedOutput(), resolvedInputsMap))
+                    .build();
+            originalToResolved.put(task, resolved);
+        }
+
+        // Pass 2: rewrite context lists to reference resolved instances
+        List<Task> result = new ArrayList<>(inputTasks.size());
+        for (Task original : inputTasks) {
+            Task resolvedBase = originalToResolved.get(original);
+            List<Task> originalContext = original.getContext();
+            if (originalContext.isEmpty()) {
+                result.add(resolvedBase);
+            } else {
+                List<Task> resolvedContext = new ArrayList<>(originalContext.size());
+                for (Task ctxTask : originalContext) {
+                    // Context tasks may be from THIS phase OR from a prior phase.
+                    // For within-phase refs: remap to the resolved instance.
+                    // For cross-phase refs: keep the original identity (priorOutputs lookup
+                    // uses the original task instances from the prior phase's execution).
+                    resolvedContext.add(originalToResolved.getOrDefault(ctxTask, ctxTask));
+                }
+                Task finalTask =
+                        resolvedBase.toBuilder().context(resolvedContext).build();
+                originalToResolved.put(original, finalTask);
+                result.add(finalTask);
+            }
+        }
+        return result;
     }
 
     private WorkflowExecutor selectExecutor(Workflow effectiveWorkflow, List<Agent> derivedAgents) {
