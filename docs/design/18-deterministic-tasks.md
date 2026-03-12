@@ -249,7 +249,7 @@ EnsembleOutput output = Ensemble.builder()
     .task(parseTask)
     .task(formatTask)
     .workflow(Workflow.SEQUENTIAL)
-    .onTaskComplete(e -> log.info("Done: {}", e.getTaskDescription()))
+    .onTaskComplete(e -> log.info("Done: {}", e.taskDescription()))
     .build()
     .run();
 ```

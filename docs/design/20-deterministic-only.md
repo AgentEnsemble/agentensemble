@@ -199,8 +199,8 @@ EnsembleOutput output = Ensemble.builder()
     .task(fetchTask)
     .task(transformTask)
     .workflow(Workflow.SEQUENTIAL)
-    .onTaskStart(e -> log.info("Starting: {}", e.getTaskDescription()))
-    .onTaskComplete(e -> metrics.record(e.getDuration()))
+    .onTaskStart(e -> log.info("Starting: {}", e.taskDescription()))
+    .onTaskComplete(e -> metrics.record(e.duration()))
     .build()
     .run();
 ```

@@ -348,6 +348,19 @@ class DeterministicOnlyEnsembleIntegrationTest {
         assertThatThrownBy(() -> Ensemble.run(new Task[0])).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void runFactory_nullTaskElement_throwsIllegalArgumentException() {
+        Task validTask = Task.builder()
+                .description("Valid handler task")
+                .expectedOutput("Output")
+                .handler(ctx -> ToolResult.success("done"))
+                .build();
+
+        assertThatThrownBy(() -> Ensemble.run(validTask, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tasks[1]");
+    }
+
     // ========================
     // Callbacks fire on deterministic-only ensembles
     // ========================

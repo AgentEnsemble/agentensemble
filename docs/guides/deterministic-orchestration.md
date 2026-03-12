@@ -214,10 +214,10 @@ All task lifecycle callbacks work on deterministic tasks exactly as they do for 
 EnsembleOutput output = Ensemble.builder()
     .task(fetchTask)
     .task(transformTask)
-    .onTaskStart(e -> log.info("Starting: {}", e.getTaskDescription()))
+    .onTaskStart(e -> log.info("Starting: {}", e.taskDescription()))
     .onTaskComplete(e -> log.info("Completed: {} in {}",
-        e.getTaskDescription(), e.getDuration()))
-    .onTaskFailed(e -> log.error("Failed: {}", e.getTaskDescription(), e.getException()))
+        e.taskDescription(), e.duration()))
+    .onTaskFailed(e -> log.error("Failed: {}", e.taskDescription(), e.cause()))
     .build()
     .run();
 ```

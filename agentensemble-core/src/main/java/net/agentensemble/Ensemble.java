@@ -485,10 +485,13 @@ public class Ensemble {
         if (tasks == null || tasks.length == 0) {
             throw new IllegalArgumentException("tasks must not be null or empty");
         }
-        for (Task task : tasks) {
-            if (task.getHandler() == null) {
+        for (int i = 0; i < tasks.length; i++) {
+            if (tasks[i] == null) {
+                throw new IllegalArgumentException("tasks[" + i + "] must not be null");
+            }
+            if (tasks[i].getHandler() == null) {
                 throw new IllegalArgumentException("Task '"
-                        + task.getDescription()
+                        + tasks[i].getDescription()
                         + "' has no handler configured. "
                         + "Ensemble.run(Task...) requires all tasks to have a handler. "
                         + "Provide a handler via Task.builder().handler(...), or use "
