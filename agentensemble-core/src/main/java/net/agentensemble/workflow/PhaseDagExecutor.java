@@ -168,7 +168,6 @@ public class PhaseDagExecutor {
                             executor,
                             frozenMdc,
                             phaseRunner,
-                            phases,
                             successorMap,
                             remainingPredecessors,
                             phaseOutputMap,
@@ -238,7 +237,6 @@ public class PhaseDagExecutor {
             ExecutorService threadPool,
             Map<String, String> frozenMdc,
             BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
-            List<Phase> allPhases,
             Map<Phase, List<Phase>> successorMap,
             Map<Phase, AtomicInteger> remainingPredecessors,
             Map<Phase, EnsembleOutput> phaseOutputMap,
@@ -263,13 +261,7 @@ public class PhaseDagExecutor {
             try {
                 // Run phase with review/retry loop -- returns final approved output.
                 EnsembleOutput finalOutput = runPhaseWithRetry(
-                        phase,
-                        priorOutputsSnapshot,
-                        phaseRunner,
-                        allPhases,
-                        phaseOutputMap,
-                        globalTaskOutputs,
-                        allTaskOutputs);
+                        phase, priorOutputsSnapshot, phaseRunner, phaseOutputMap, globalTaskOutputs, allTaskOutputs);
 
                 // Commit final (approved) output to global shared state.
                 phaseOutputMap.put(phase, finalOutput);
@@ -291,7 +283,6 @@ public class PhaseDagExecutor {
                         threadPool,
                         frozenMdc,
                         phaseRunner,
-                        allPhases,
                         successorMap,
                         remainingPredecessors,
                         phaseOutputMap,
@@ -336,7 +327,6 @@ public class PhaseDagExecutor {
             Phase phase,
             Map<Task, TaskOutput> initialPriorOutputs,
             BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
-            List<Phase> allPhases,
             Map<Phase, EnsembleOutput> phaseOutputMap,
             Map<Task, TaskOutput> globalTaskOutputs,
             List<TaskOutput> allTaskOutputs) {
@@ -646,7 +636,6 @@ public class PhaseDagExecutor {
             ExecutorService threadPool,
             Map<String, String> frozenMdc,
             BiFunction<Phase, Map<Task, TaskOutput>, EnsembleOutput> phaseRunner,
-            List<Phase> allPhases,
             Map<Phase, List<Phase>> successorMap,
             Map<Phase, AtomicInteger> remainingPredecessors,
             Map<Phase, EnsembleOutput> phaseOutputMap,
@@ -665,7 +654,6 @@ public class PhaseDagExecutor {
                         threadPool,
                         frozenMdc,
                         phaseRunner,
-                        allPhases,
                         successorMap,
                         remainingPredecessors,
                         phaseOutputMap,

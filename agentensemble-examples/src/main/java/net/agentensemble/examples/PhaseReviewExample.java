@@ -1,6 +1,7 @@
 package net.agentensemble.examples;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -16,18 +17,22 @@ import org.slf4j.LoggerFactory;
  * Demonstrates phase-level review and retry with three patterns:
  *
  * <p>Pattern 1 -- Deterministic self-retry (no LLM required):
- * A research phase retries until its output passes a programmatic quality gate. On each
- * retry, the reviewer's feedback is injected into the task prompt so the task can improve.
+ * A research phase retries until its output passes a programmatic quality gate. The review
+ * task uses {@code .context()} to read the phase task output, and feedback is injected into
+ * the task prompt on each retry.
  *
  * <p>Pattern 2 -- Deterministic predecessor retry (no LLM required):
  * A writing phase detects that the upstream research phase was insufficient and requests a
- * research redo before continuing.
+ * research redo before continuing. The writing review task uses {@code .context()} to read
+ * the draft and evaluate whether the research backing is sufficient.
  *
  * <p>Pattern 3 -- AI-backed review (requires OpenAI API key):
  * An LLM evaluates the research output against defined criteria and either approves it or
- * provides specific actionable feedback for improvement.
+ * provides specific actionable feedback for improvement. The AI review task uses
+ * {@code .context()} so the LLM sees the research output in its prompt.
  *
  * <p>Usage:
+ *
  * <pre>
  * ./gradlew :agentensemble-examples:runPhaseReview
  * </pre>
@@ -78,13 +83,15 @@ public class PhaseReviewExample {
                 })
                 .build();
 
-        // Review task: rejects short outputs and asks for more detail.
+        // Review task: declares .context() to read the research task output, then checks length.
+        // The review task MUST declare .context() to access phase task outputs via ctx.contextOutputs().
         Task reviewTask = Task.builder()
                 .description("Quality gate: check output quality")
+                .context(List.of(researchTask)) // required: read the research task output
                 .handler(ctx -> {
                     String output = ctx.contextOutputs().isEmpty()
                             ? ""
-                            : ctx.contextOutputs().getLast().getRaw();
+                            : ctx.contextOutputs().getFirst().getRaw();
                     if (output.length() < 100) {
                         String feedback = "Output too short (" + output.length()
                                 + " chars). Expand to cover: key algorithms, "
@@ -148,9 +155,11 @@ public class PhaseReviewExample {
                 })
                 .build();
 
-        // Writing review: first call requests predecessor retry; second call approves.
+        // Writing review: declares .context() to read the draft, then decides whether
+        // research needs to be re-done or the draft is acceptable.
         Task writingReviewTask = Task.builder()
                 .description("Review the writing quality and check whether research backing is sufficient")
+                .context(List.of(draftTask)) // required: read the draft to evaluate
                 .handler(ctx -> {
                     int n = writingReviewCount.incrementAndGet();
                     if (n == 1) {
@@ -206,15 +215,18 @@ public class PhaseReviewExample {
                 .chatLanguageModel(model)
                 .build();
 
-        // AI reviewer: evaluates research quality and returns APPROVE or RETRY: <feedback>
+        // AI reviewer: declares .context() so the LLM sees the research output in its prompt
+        // under "## Context from Previous Tasks". The LLM evaluates it against criteria
+        // and responds with APPROVE or RETRY: <feedback>.
         Task aiReviewTask = Task.builder()
-                .description("Evaluate the research output.\n\n"
+                .description("Evaluate the research output provided above.\n\n"
                         + "Criteria:\n"
                         + "- At least 3 distinct sources or studies cited\n"
                         + "- Quantitative data (numbers, percentages) for energy and carbon claims\n"
                         + "- Mitigation strategies mentioned\n\n"
                         + "If ALL criteria are met, respond with exactly: APPROVE\n"
                         + "Otherwise, respond with: RETRY: <specific actionable feedback on what is missing>")
+                .context(List.of(researchTask)) // required: LLM sees research output in its prompt
                 .chatLanguageModel(model)
                 .build();
 

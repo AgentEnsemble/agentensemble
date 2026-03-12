@@ -12,14 +12,28 @@ infrastructure as every other task in the framework.
 ## Quick start
 
 ```java
-// 1. Define the review task
-Task reviewTask = Task.builder()
-    .description("Evaluate the research output. "
-        + "If sufficient, respond with: APPROVE\n"
-        + "If insufficient, respond with: RETRY: <specific feedback>")
+// 1. Define the work tasks
+Task gatherTask = Task.builder()
+    .description("Gather research data on the topic")
+    .expectedOutput("Research findings")
     .build();
 
-// 2. Attach a PhaseReview to the phase
+Task summarizeTask = Task.builder()
+    .description("Summarize the gathered research")
+    .expectedOutput("Research summary")
+    .context(List.of(gatherTask))
+    .build();
+
+// 2. Define the review task
+//    Use .context() to reference the phase tasks so the reviewer can read their output.
+Task reviewTask = Task.builder()
+    .description("Evaluate the research summary. "
+        + "If sufficient, respond with: APPROVE\n"
+        + "If insufficient, respond with: RETRY: <specific feedback>")
+    .context(List.of(summarizeTask))   // gives the reviewer access to the phase output
+    .build();
+
+// 3. Attach PhaseReview to the phase
 Phase research = Phase.builder()
     .name("research")
     .task(gatherTask)
@@ -50,34 +64,85 @@ If the reviewer returns `RETRY: Need more depth`, the framework:
 
 ---
 
-## Three reviewer types
+## How the review task reads phase outputs
 
-### AI reviewer
-
-Use a task with an LLM-backed agent. Instruct the LLM on the expected output format in
-the task description:
+The review task is a standard task. To access the outputs of the reviewed phase's tasks,
+declare them in the review task's `.context()` list. The framework makes all prior
+phase task outputs available as context for the review task, including outputs from retried
+attempts (both original and rebuilt task object identities are mapped, so context resolution
+works correctly across retries).
 
 ```java
+Task gatherTask  = Task.builder().description("Gather data")...build();
+Task analyzeTask = Task.builder().description("Analyze data")
+    .context(List.of(gatherTask)).build();
+
+// Review task declares context to read the phase outputs
 Task reviewTask = Task.builder()
-    .description("Evaluate the research output.\n"
-        + "Criteria:\n"
-        + "- At least 5 distinct sources cited\n"
-        + "- Quantitative data for every major claim\n\n"
-        + "If the output meets all criteria, respond with exactly: APPROVE\n"
-        + "Otherwise, respond with: RETRY: <specific actionable feedback>")
+    .description("Quality gate")
+    .context(List.of(gatherTask, analyzeTask))   // read both task outputs
+    .handler(ctx -> {
+        // ctx.contextOutputs() contains gatherTask and analyzeTask outputs in order
+        String analysisOutput = ctx.contextOutputs().getLast().getRaw();
+        if (analysisOutput.length() < 300) {
+            return ToolResult.success(
+                PhaseReviewDecision.retry("Analysis too brief. Expand all sections.").toText());
+        }
+        return ToolResult.success(PhaseReviewDecision.approve().toText());
+    })
     .build();
 ```
 
-### Deterministic reviewer
-
-Use a task with a `handler` for programmatic quality checks:
+When only the final phase output matters, reference only the last task:
 
 ```java
 Task reviewTask = Task.builder()
     .description("Quality gate")
+    .context(List.of(summarizeTask))   // only need the summary
     .handler(ctx -> {
-        String output = ctx.contextOutputs().isEmpty()
-            ? "" : ctx.contextOutputs().getLast().getRaw();
+        String output = ctx.contextOutputs().getFirst().getRaw();
+        // evaluate output...
+    })
+    .build();
+```
+
+---
+
+## Three reviewer types
+
+### AI reviewer
+
+Use a task with an LLM-backed agent. Declare `.context()` so the LLM sees the phase
+output in its `## Context from Previous Tasks` prompt section. Instruct the LLM on the
+expected response format:
+
+```java
+Task reviewTask = Task.builder()
+    .description("Evaluate the research summary below.\n\n"
+        + "Criteria:\n"
+        + "- At least 5 distinct sources cited\n"
+        + "- Quantitative data for every major claim\n\n"
+        + "If ALL criteria are met, respond with exactly: APPROVE\n"
+        + "Otherwise, respond with: RETRY: <specific actionable feedback>")
+    .context(List.of(summarizeTask))   // LLM sees the summary in its prompt
+    .build();
+```
+
+The LLM receives the phase output as a prior-task context section and evaluates it
+against the stated criteria. Its response (`APPROVE` or `RETRY: <feedback>`) is parsed
+into a `PhaseReviewDecision`.
+
+### Deterministic reviewer
+
+Use a task with a `handler` for programmatic quality checks. Declare `.context()` to
+access the phase outputs inside the handler:
+
+```java
+Task reviewTask = Task.builder()
+    .description("Quality gate")
+    .context(List.of(summarizeTask))   // provides output via ctx.contextOutputs()
+    .handler(ctx -> {
+        String output = ctx.contextOutputs().getFirst().getRaw();
 
         if (output.length() < 500) {
             return ToolResult.success(
@@ -94,42 +159,112 @@ Task reviewTask = Task.builder()
 
 ### Human reviewer
 
-Use a task with a `Review` gate that pauses for console input:
+Use a task with a `Review` gate that pauses for console input. Declare `.context()` and
+echo the output so the human can read it before deciding:
 
 ```java
 Task reviewTask = Task.builder()
-    .description("Review the research output above.")
-    .handler(ctx -> ctx.contextOutputs().isEmpty()
-        ? ToolResult.success("")
-        : ToolResult.success(ctx.contextOutputs().getLast().getRaw()))
+    .description("Review the research output below and decide on quality.")
+    .context(List.of(summarizeTask))
+    .handler(ctx -> {
+        // Echo the phase output for the human to see during the review gate
+        String output = ctx.contextOutputs().getFirst().getRaw();
+        return ToolResult.success(output);
+    })
     .review(Review.required(
         "Type APPROVE, RETRY: <feedback>, or REJECT: <reason>"))
     .build();
 ```
 
+The human sees the phase output displayed in the console review gate, then types their
+decision. The typed response is parsed as a `PhaseReviewDecision`.
+
 ---
 
 ## Feedback injection
 
-On each retry, the reviewer's feedback is injected into every task in the phase as a
-`## Revision Instructions` section in the LLM prompt. The LLM sees:
+When a retry is requested, the reviewer's feedback text is injected into every task in
+the phase as a `## Revision Instructions` section in the LLM prompt, **before** the
+`## Task` section:
 
 ```
 ## Revision Instructions (Attempt 2)
 This task is being re-executed based on reviewer feedback.
+Incorporate the feedback below into your response.
 
 ### Feedback
 Need more depth on quantum computing applications. Include at least 3 peer-reviewed sources.
 
 ### Previous Output
-[prior attempt output]
+[the raw output from the prior attempt]
 
 ## Task
 Research the latest developments in quantum computing...
 ```
 
-The original task description is unchanged. The LLM uses the feedback to improve its
-next response.
+The original task description is unchanged. The LLM sees the feedback and its prior
+output, enabling targeted improvement. Deterministic handler tasks receive the feedback
+in the task prompt (visible in logs) but not in `ctx.description()` — for deterministic
+tasks the handler makes its own decisions programmatically.
+
+---
+
+## What is and isn't controllable in the feedback prompt
+
+### Controllable: the feedback content
+
+The **text inside `### Feedback`** is 100% controlled by the reviewer — it is exactly
+the string the review task returns after `RETRY:`:
+
+```java
+// Whatever you write here becomes the ### Feedback content
+PhaseReviewDecision.retry("Need more depth on section 3. Add quantitative data.").toText()
+// -> "RETRY: Need more depth on section 3. Add quantitative data."
+```
+
+You can write short one-liners or structured multi-point instructions:
+
+```java
+PhaseReviewDecision.retry("""
+    The output is missing two key elements:
+    1. Quantitative data -- add numbers/percentages for every major claim.
+    2. Source citations -- cite at least 3 peer-reviewed papers.
+    Keep the structure otherwise intact.
+""").toText()
+```
+
+### Fixed: the prompt structure
+
+The surrounding structure is determined by the framework:
+
+| Element | Value | Controllable? |
+|---|---|---|
+| Section header | `## Revision Instructions (Attempt N)` | No |
+| Preamble | "This task is being re-executed based on reviewer feedback. Incorporate the feedback below into your response." | No |
+| Feedback label | `### Feedback` | No |
+| Feedback content | _whatever the reviewer returns_ | **Yes** |
+| Prior output label | `### Previous Output` | No |
+| Prior output content | The task's raw output from the previous attempt | No |
+
+### Full control via feedback text
+
+If you need to change the framing (e.g. different tone or instructions for the LLM),
+embed your custom instruction directly at the start of the feedback text:
+
+```java
+PhaseReviewDecision.retry("""
+    IMPORTANT: Discard your previous approach entirely.
+
+    The task requires a completely different structure:
+    - Start with an executive summary (2 sentences)
+    - Follow with detailed sections for each sub-topic
+    - End with a bullet-point action list
+
+    Specific gaps to address: the current output lacks quantitative data.
+""").toText()
+```
+
+The LLM receives this text verbatim under `### Feedback` and will incorporate it.
 
 ---
 
@@ -166,10 +301,14 @@ A phase can request that a **direct predecessor** be re-run when it discovers th
 predecessor's output was insufficient:
 
 ```java
-// Writing review: if research was lacking, request research redo
+// Writing review: if research was lacking, request research redo.
+// Declare context on the review task to see the draft and evaluate research quality.
 Task writingReviewTask = Task.builder()
-    .description("Evaluate the draft. If the research backing is weak, "
-        + "respond with: RETRY_PREDECESSOR research: <feedback for the research phase>")
+    .description("Evaluate the draft. "
+        + "If the research backing is weak or missing quantitative data, respond with:\n"
+        + "RETRY_PREDECESSOR research: <feedback for the research phase>\n"
+        + "If the draft quality is acceptable, respond with: APPROVE")
+    .context(List.of(draftTask))   // read the draft to evaluate research backing
     .build();
 
 Phase writing = Phase.builder()
@@ -205,6 +344,8 @@ named phase is not a direct predecessor, the decision is treated as `APPROVE`.
 | `REJECT: <reason>` | Fail this phase and stop downstream phases |
 
 Parsing is case-insensitive. Unrecognised text is treated as `APPROVE`.
+The colon split for `RETRY` and `REJECT` is on the **first** colon only, so feedback
+text may contain additional colons (`RETRY: issue: too brief` → feedback = `issue: too brief`).
 
 ---
 
@@ -227,6 +368,6 @@ PhaseReview.builder()
 
 | Field | Default | Description |
 |---|---|---|
-| `task` | required | The review task |
-| `maxRetries` | 2 | Maximum self-retries (0 = no retries, just review) |
+| `task` | required | The review task; use `.context()` to access phase outputs |
+| `maxRetries` | 2 | Maximum self-retries (0 = review once, no retries) |
 | `maxPredecessorRetries` | 2 | Maximum predecessor retries per predecessor |
