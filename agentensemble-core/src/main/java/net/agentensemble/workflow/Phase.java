@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Singular;
 import net.agentensemble.Task;
 import net.agentensemble.exception.ValidationException;
+import net.agentensemble.review.PhaseReviewDecision;
 
 /**
  * A named group of tasks that forms a logical workstream within an ensemble.
@@ -19,19 +20,25 @@ import net.agentensemble.exception.ValidationException;
  * <p>Within each phase, tasks execute according to that phase's {@link #workflow} override, or the
  * ensemble-level workflow when no override is set.
  *
+ * <p>An optional {@link PhaseReview} gate fires after all tasks in the phase complete. The review
+ * task evaluates the phase outputs and returns a {@link PhaseReviewDecision}. Based on the
+ * decision, the phase may be approved (successors unlocked), retried with feedback, have a
+ * predecessor retried, or rejected (pipeline stopped).
+ *
  * <h2>Quick start</h2>
  *
  * <pre>
- * // Static factory -- no dependencies, no workflow override
+ * // Static factory -- no dependencies, no workflow override, no review
  * Phase research = Phase.of("research", gatherTask, summarizeTask);
  *
- * // Full builder -- with dependency and per-phase workflow
+ * // Full builder -- with dependency, per-phase workflow, and review gate
  * Phase writing = Phase.builder()
  *     .name("writing")
  *     .after(research)
  *     .task(outlineTask)
  *     .task(draftTask)
  *     .workflow(Workflow.SEQUENTIAL)
+ *     .review(PhaseReview.of(writingReviewTask))
  *     .build();
  *
  * // Register phases on the ensemble
@@ -52,6 +59,9 @@ import net.agentensemble.exception.ValidationException;
  *   <li>Phase dependencies must form a DAG (no cycles); validated at
  *       {@code Ensemble.build()} time.</li>
  * </ul>
+ *
+ * @see PhaseReview
+ * @see PhaseReviewDecision
  */
 @Builder
 @Getter
@@ -88,6 +98,27 @@ public class Phase {
      * </pre>
      */
     private final List<Phase> after;
+
+    /**
+     * Optional review gate that fires after all tasks in this phase complete.
+     *
+     * <p>When set, the review task is executed with this phase's task outputs available as
+     * prior context. The review task's output is parsed into a {@link PhaseReviewDecision}:
+     *
+     * <ul>
+     *   <li>{@link PhaseReviewDecision.Approve} -- unlock downstream phases.</li>
+     *   <li>{@link PhaseReviewDecision.Retry} -- re-execute this phase with the feedback
+     *       injected into each task prompt as a {@code ## Revision Instructions} section.</li>
+     *   <li>{@link PhaseReviewDecision.RetryPredecessor} -- re-execute a named direct
+     *       predecessor phase with feedback, then re-execute this phase.</li>
+     *   <li>{@link PhaseReviewDecision.Reject} -- fail this phase and skip all successors.</li>
+     * </ul>
+     *
+     * <p>Default: null (no review gate; phase output accepted immediately).
+     *
+     * @see PhaseReview
+     */
+    private final PhaseReview review;
 
     // ========================
     // Static factories
@@ -222,7 +253,7 @@ public class Phase {
 
             List<Task> immutableTasks = List.copyOf(tasks);
             List<Phase> immutableAfter = List.copyOf(after);
-            return new Phase(name, immutableTasks, workflow, immutableAfter);
+            return new Phase(name, immutableTasks, workflow, immutableAfter, review);
         }
     }
 }

@@ -75,6 +75,7 @@ nav:
     - Tasks: guides/tasks.md
     - Workflows: guides/workflows.md
     - Phases: guides/phases.md
+    - Phase Review: guides/phase-review.md
     - MapReduceEnsemble: guides/map-reduce.md
     - Tools: guides/tools.md
     - Built-in Tools: guides/built-in-tools.md
@@ -117,6 +118,7 @@ nav:
     - Tool Pipeline: examples/tool-pipeline.md
     - Deterministic Tasks: examples/deterministic-tasks.md
     - Phases: examples/phases.md
+    - Phase Review: examples/phase-review.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
   - Migration:
@@ -142,3 +144,4 @@ nav:
     - Deterministic Tasks: design/18-deterministic-tasks.md
     - Phases: design/19-phases.md
     - Deterministic-Only Orchestration: design/20-deterministic-only.md
+    - Phase Review and Retry: design/21-phase-review.md

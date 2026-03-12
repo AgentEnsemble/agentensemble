@@ -313,6 +313,45 @@ public class Task {
     TaskHandler handler;
 
     // ========================
+    // Phase-retry fields (framework-internal)
+    // ========================
+
+    /**
+     * Reviewer feedback injected into the prompt when this task is part of a phase retry.
+     *
+     * <p>When non-null, {@link net.agentensemble.agent.AgentPromptBuilder} inserts a
+     * {@code ## Revision Instructions} section into the user prompt so the LLM can
+     * incorporate reviewer feedback in its next attempt.
+     *
+     * <p>Set automatically by {@link #withRevisionFeedback(String, String, int)} when
+     * {@link net.agentensemble.workflow.PhaseDagExecutor} retries a phase. Not intended
+     * for direct use in application code.
+     *
+     * <p>Default: null (no revision feedback; first attempt).
+     */
+    String revisionFeedback;
+
+    /**
+     * Raw output from the previous attempt of this task, included in the revision prompt.
+     *
+     * <p>Giving the LLM visibility into its prior output helps it understand what was
+     * attempted before and how to improve it.
+     *
+     * <p>Default: null.
+     */
+    String priorAttemptOutput;
+
+    /**
+     * The attempt number for this task instance (0 = first attempt, 1 = first retry, etc.).
+     *
+     * <p>Shown in the {@code ## Revision Instructions} prompt header so the LLM knows
+     * how many attempts have been made.
+     *
+     * <p>Default: 0.
+     */
+    int attemptNumber;
+
+    // ========================
     // Static convenience factories
     // ========================
 
@@ -359,6 +398,33 @@ public class Task {
                 .build();
     }
 
+    // ========================
+    // Phase-retry copy factory
+    // ========================
+
+    /**
+     * Return a copy of this task with phase-retry context injected.
+     *
+     * <p>Used internally by {@link net.agentensemble.workflow.PhaseDagExecutor} when a
+     * phase is retried after a {@link net.agentensemble.review.PhaseReviewDecision.Retry}
+     * or {@link net.agentensemble.review.PhaseReviewDecision.RetryPredecessor} decision.
+     * The returned task is identical to {@code this} in all application-facing fields;
+     * only the phase-retry fields differ.
+     *
+     * @param feedback         reviewer feedback to inject into the prompt;
+     *                         null is treated as empty string
+     * @param priorOutput      raw output from the previous attempt; may be null
+     * @param attempt          attempt number for the new task (1 = first retry, 2 = second, ...)
+     * @return a new Task with the revision fields set; all other fields copied unchanged
+     */
+    public Task withRevisionFeedback(String feedback, String priorOutput, int attempt) {
+        return this.toBuilder()
+                .revisionFeedback(feedback != null ? feedback : "")
+                .priorAttemptOutput(priorOutput)
+                .attemptNumber(attempt)
+                .build();
+    }
+
     /**
      * Custom builder that sets defaults and validates the Task configuration.
      */
@@ -380,6 +446,10 @@ public class Task {
         private Review beforeReview = null;
         private RateLimit rateLimit = null;
         private TaskHandler handler = null;
+        // Phase-retry fields -- framework-internal, not for direct use in application code
+        private String revisionFeedback = null;
+        private String priorAttemptOutput = null;
+        private int attemptNumber = 0;
 
         /**
          * Declare a single named memory scope for this task.
@@ -559,7 +629,10 @@ public class Task {
                     review,
                     beforeReview,
                     rateLimit,
-                    handler);
+                    handler,
+                    revisionFeedback,
+                    priorAttemptOutput,
+                    attemptNumber);
         }
 
         /**
