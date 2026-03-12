@@ -20,6 +20,7 @@ import net.agentensemble.memory.MemoryRecord;
 import net.agentensemble.memory.MemoryScope;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.TaskMetrics;
+import net.agentensemble.reflection.TaskReflector;
 import net.agentensemble.task.TaskHandler;
 import net.agentensemble.task.TaskHandlerContext;
 import net.agentensemble.task.TaskOutput;
@@ -165,6 +166,11 @@ public class DeterministicTaskExecutor {
                 .memoryContext()
                 .record(new MemoryRecord(
                         output.getRaw(), output.getAgentRole(), output.getTaskDescription(), output.getCompletedAt()));
+
+        // Run reflection if enabled on this task -- non-fatal, runs after all guardrails pass.
+        // For deterministic tasks, no ensemble model is available; users must configure a model
+        // via ReflectionConfig.builder().model(myModel) or task.chatLanguageModel(myModel).
+        TaskReflector.reflect(task, raw, null, executionContext);
 
         return output;
     }

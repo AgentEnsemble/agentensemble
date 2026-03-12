@@ -41,6 +41,7 @@ import net.agentensemble.metrics.CostConfiguration;
 import net.agentensemble.metrics.ExecutionMetrics;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.ratelimit.RateLimitedChatModel;
+import net.agentensemble.reflection.ReflectionStore;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.review.ReviewPolicy;
 import net.agentensemble.synthesis.AgentSynthesizer;
@@ -336,6 +337,23 @@ public class Ensemble {
      * <p>Default: null (treated as {@code ReviewPolicy.NEVER} by the execution engine).
      */
     private final ReviewPolicy reviewPolicy;
+
+    /**
+     * Optional store for persisting task reflections across separate {@link #run()} invocations.
+     *
+     * <p>When set, tasks with {@code .reflect(true)} or {@code .reflect(ReflectionConfig)}
+     * configured will have their post-execution reflection analysis stored here and retrieved
+     * on subsequent runs to inject improvement notes into the prompt — creating a self-optimizing
+     * prompt loop without changing the compile-time task definition.
+     *
+     * <p>The framework ships {@link net.agentensemble.reflection.InMemoryReflectionStore} as the
+     * default (if a task has reflection enabled but no store is configured here, a warn is logged
+     * and an ephemeral in-memory store is used). For persistence across JVM restarts, provide a
+     * custom implementation backed by a database, SQLite, or REST API.
+     *
+     * <p>Default: null (ephemeral in-memory fallback when reflection is enabled on any task).
+     */
+    private final ReflectionStore reflectionStore;
 
     /**
      * Optional live execution dashboard registered via
@@ -643,10 +661,16 @@ public class Ensemble {
                     memoryStore,
                     reviewHandler,
                     reviewPolicy,
-                    streamingChatLanguageModel);
+                    streamingChatLanguageModel,
+                    reflectionStore);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
+            }
+            if (reflectionStore != null) {
+                log.info(
+                        "ReflectionStore enabled for cross-run task reflection | Type: {}",
+                        reflectionStore.getClass().getSimpleName());
             }
 
             // Step 7: Notify dashboard that execution is about to begin.
