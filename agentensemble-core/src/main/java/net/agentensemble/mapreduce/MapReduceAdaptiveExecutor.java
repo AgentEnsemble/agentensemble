@@ -647,7 +647,8 @@ final class MapReduceAdaptiveExecutor<T> {
      * <p>The aggregated output uses:
      * <ul>
      *   <li>{@code raw} = the final level's last task output raw text</li>
-     *   <li>{@code taskOutputs} = the map phase outputs (the original item-level outputs)</li>
+     *   <li>{@code taskOutputs} = all non-carrier task outputs from all levels (map, intermediate
+     *       reduce, and final reduce); carrier tasks are excluded</li>
      *   <li>{@code trace.workflow} = {@code "MAP_REDUCE_ADAPTIVE"}</li>
      *   <li>{@code trace.mapReduceLevels} = per-level summaries</li>
      *   <li>{@code trace.taskTraces} = all task traces annotated with level/nodeType</li>

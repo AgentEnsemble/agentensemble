@@ -182,14 +182,14 @@ public final class ProcessAgentTool extends AbstractAgentTool {
             try {
                 process.getInputStream().transferTo(stdoutCapture);
             } catch (IOException e) {
-                log().debug("Exception draining stdout from subprocess: {}", e.getMessage());
+                log().debug("Exception draining stdout from subprocess", e);
             }
         });
         Thread stderrDrain = Thread.ofVirtual().start(() -> {
             try {
                 process.getErrorStream().transferTo(stderrCapture);
             } catch (IOException e) {
-                log().debug("Exception draining stderr from subprocess: {}", e.getMessage());
+                log().debug("Exception draining stderr from subprocess", e);
             }
         });
 
