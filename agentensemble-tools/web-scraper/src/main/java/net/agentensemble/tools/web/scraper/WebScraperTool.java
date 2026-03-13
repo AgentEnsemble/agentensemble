@@ -35,7 +35,7 @@ public final class WebScraperTool extends AbstractTypedAgentTool<WebScraperInput
 
     /** Creates a WebScraperTool with default settings (5000 chars, 10s timeout). */
     public WebScraperTool() {
-        this(DEFAULT_MAX_CONTENT_LENGTH, DEFAULT_TIMEOUT_SECONDS, new HttpUrlFetcher(DEFAULT_TIMEOUT_SECONDS));
+        this(DEFAULT_MAX_CONTENT_LENGTH, new HttpUrlFetcher(DEFAULT_TIMEOUT_SECONDS));
     }
 
     /**
@@ -45,12 +45,11 @@ public final class WebScraperTool extends AbstractTypedAgentTool<WebScraperInput
      * @return a new WebScraperTool
      */
     public static WebScraperTool withMaxContentLength(int maxContentLength) {
-        return new WebScraperTool(
-                maxContentLength, DEFAULT_TIMEOUT_SECONDS, new HttpUrlFetcher(DEFAULT_TIMEOUT_SECONDS));
+        return new WebScraperTool(maxContentLength, new HttpUrlFetcher(DEFAULT_TIMEOUT_SECONDS));
     }
 
     /** Package-private constructor for testing with a controllable URL fetcher. */
-    WebScraperTool(int maxContentLength, int timeoutSeconds, UrlFetcher fetcher) {
+    WebScraperTool(int maxContentLength, UrlFetcher fetcher) {
         this.maxContentLength = maxContentLength;
         this.fetcher = fetcher;
     }

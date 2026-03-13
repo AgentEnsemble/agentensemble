@@ -56,13 +56,6 @@ public sealed interface PhaseReviewDecision
                 PhaseReviewDecision.Reject {
 
     // ========================
-    // Shared singleton
-    // ========================
-
-    /** Shared singleton for the approve decision (no allocation needed). */
-    Approve APPROVE_INSTANCE = new Approve();
-
-    // ========================
     // Static factories
     // ========================
 
@@ -72,7 +65,7 @@ public sealed interface PhaseReviewDecision
      * @return the approve decision
      */
     static Approve approve() {
-        return APPROVE_INSTANCE;
+        return new Approve();
     }
 
     /**
@@ -158,7 +151,7 @@ public sealed interface PhaseReviewDecision
      */
     static PhaseReviewDecision parse(String text) {
         if (text == null || text.isBlank()) {
-            return APPROVE_INSTANCE;
+            return new Approve();
         }
         String trimmed = text.trim();
         String upper = trimmed.toUpperCase(Locale.ROOT);
@@ -192,7 +185,7 @@ public sealed interface PhaseReviewDecision
         }
 
         // APPROVE or unrecognised input -- treat as approval
-        return APPROVE_INSTANCE;
+        return new Approve();
     }
 
     // ========================

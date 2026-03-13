@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import net.agentensemble.exception.ToolConfigurationException;
@@ -106,7 +107,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
         this.toolName = builder.name;
         this.toolDescription = builder.description;
         this.url = builder.url;
-        this.method = builder.method.toUpperCase();
+        this.method = builder.method.toUpperCase(Locale.ROOT);
         this.headers = Collections.unmodifiableMap(new LinkedHashMap<>(builder.headers));
         this.timeout = builder.timeout;
         this.httpClient = httpClient;

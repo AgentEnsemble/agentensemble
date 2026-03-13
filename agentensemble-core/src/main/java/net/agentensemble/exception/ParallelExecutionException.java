@@ -26,6 +26,8 @@ import net.agentensemble.task.TaskOutput;
  */
 public class ParallelExecutionException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final List<TaskOutput> completedTaskOutputs;
     private final Map<String, Throwable> failedTaskCauses;
 

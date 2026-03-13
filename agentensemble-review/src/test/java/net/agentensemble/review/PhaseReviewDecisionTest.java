@@ -15,8 +15,50 @@ class PhaseReviewDecisionTest {
     // ========================
 
     @Test
-    void approve_returnsSingletonInstance() {
-        assertThat(PhaseReviewDecision.approve()).isSameAs(PhaseReviewDecision.APPROVE_INSTANCE);
+    void approve_returnsApproveInstance() {
+        assertThat(PhaseReviewDecision.approve()).isInstanceOf(PhaseReviewDecision.Approve.class);
+    }
+
+    @Test
+    void approve_returnsNewInstanceEachCall() {
+        // After removing the static singleton, each call returns a fresh Approve instance.
+        // Identity comparison must not be used to test equality; value equality is sufficient.
+        PhaseReviewDecision a1 = PhaseReviewDecision.approve();
+        PhaseReviewDecision a2 = PhaseReviewDecision.approve();
+        assertThat(a1).isNotSameAs(a2);
+        assertThat(a1).isEqualTo(a2); // record equality
+    }
+
+    @Test
+    void approve_concurrentAccess_neverDeadlocks() throws Exception {
+        // Regression test for ClassInitializationDeadlock: concurrent access to
+        // approve() and parse() must complete without deadlock.
+        int threads = 20;
+        var latch = new java.util.concurrent.CountDownLatch(threads);
+        var errors = new java.util.concurrent.CopyOnWriteArrayList<Throwable>();
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            for (int i = 0; i < threads; i++) {
+                final int idx = i;
+                executor.submit(() -> {
+                    try {
+                        if (idx % 2 == 0) {
+                            PhaseReviewDecision.approve();
+                        } else {
+                            PhaseReviewDecision.parse("APPROVE");
+                        }
+                    } catch (Throwable t) {
+                        errors.add(t);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            assertThat(latch.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(errors).isEmpty();
     }
 
     @Test

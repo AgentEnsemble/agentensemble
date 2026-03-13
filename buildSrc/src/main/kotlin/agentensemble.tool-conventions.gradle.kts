@@ -7,6 +7,7 @@ plugins {
     id("com.vanniktech.maven.publish")
     id("com.diffplug.spotless")
     id("net.ltgt.errorprone")
+    pmd
     jacoco
 }
 
@@ -79,6 +80,13 @@ tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
 
 tasks.named("check") {
     dependsOn(tasks.named("jacocoTestCoverageVerification"))
+}
+
+pmd {
+    toolVersion = "7.9.0"
+    isConsoleOutput = true
+    isIgnoreFailures = true
+    ruleSetConfig = resources.text.fromFile("${rootProject.projectDir}/config/pmd/ruleset.xml")
 }
 
 // Common tool module dependencies

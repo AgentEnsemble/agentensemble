@@ -18,6 +18,8 @@ import net.agentensemble.exception.AgentEnsembleException;
  */
 public class RateLimitTimeoutException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final RateLimit rateLimit;
     private final Duration waitTimeout;
 

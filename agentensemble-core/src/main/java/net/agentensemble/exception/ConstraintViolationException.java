@@ -25,6 +25,8 @@ import net.agentensemble.task.TaskOutput;
  */
 public class ConstraintViolationException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final List<String> violations;
     private final List<TaskOutput> completedTaskOutputs;
 

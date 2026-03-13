@@ -15,6 +15,8 @@ import net.agentensemble.exception.AgentEnsembleException;
  */
 public class GuardrailViolationException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * Identifies whether the violation was detected on input (before execution) or
      * output (after execution).

@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.function.BiFunction;
@@ -208,9 +207,9 @@ final class MapReduceAdaptiveExecutor<T> {
             // All outputs fit within budget: run a single final reduce
             log.info("Adaptive MapReduce: total tokens within budget, running single final reduce");
             int finalLevel = 1;
-            EnsembleOutput finalOutput = runFinalReducePhase(currentOutputs, inputs, finalLevel);
+            EnsembleOutput finalOutput = runFinalReducePhase(currentOutputs, inputs);
             levelRuns.add(new LevelRun(finalLevel, MapReduceEnsemble.NODE_TYPE_FINAL_REDUCE, finalOutput));
-            return aggregate(ensembleId, levelRuns, inputs, mapOutput.getTaskOutputs());
+            return aggregate(ensembleId, levelRuns, inputs);
         }
 
         // STEP 3: Adaptive reduce loop
@@ -224,7 +223,7 @@ final class MapReduceAdaptiveExecutor<T> {
 
             List<List<TaskOutput>> bins = MapReduceBinPacker.pack(currentOutputs, targetTokenBudget, tokenEstimator);
 
-            EnsembleOutput reduceOutput = runIntermediateReducePhase(bins, inputs, reduceLevel);
+            EnsembleOutput reduceOutput = runIntermediateReducePhase(bins, inputs);
             levelRuns.add(new LevelRun(reduceLevel, MapReduceEnsemble.NODE_TYPE_REDUCE, reduceOutput));
 
             currentOutputs = new ArrayList<>(reduceOutput.getTaskOutputs());
@@ -243,11 +242,11 @@ final class MapReduceAdaptiveExecutor<T> {
 
         // STEP 4: Final reduce
         log.info("Adaptive MapReduce: running final reduce at level {}", reduceLevel);
-        EnsembleOutput finalOutput = runFinalReducePhase(currentOutputs, inputs, reduceLevel);
+        EnsembleOutput finalOutput = runFinalReducePhase(currentOutputs, inputs);
         levelRuns.add(new LevelRun(reduceLevel, MapReduceEnsemble.NODE_TYPE_FINAL_REDUCE, finalOutput));
 
         // STEP 5: Aggregate
-        return aggregate(ensembleId, levelRuns, inputs, mapOutput.getTaskOutputs());
+        return aggregate(ensembleId, levelRuns, inputs);
     }
 
     // ========================
@@ -425,17 +424,12 @@ final class MapReduceAdaptiveExecutor<T> {
      *
      * @param bins       the bin-packed groups from the previous level
      * @param inputs     template variable inputs
-     * @param levelIndex the current reduce level index (1-based)
      * @return the {@link EnsembleOutput} from the reduce Ensemble; the {@code taskOutputs}
      *         list contains ONLY the reduce task outputs (carriers are filtered)
      */
-    private EnsembleOutput runIntermediateReducePhase(
-            List<List<TaskOutput>> bins, Map<String, String> inputs, int levelIndex) {
+    private EnsembleOutput runIntermediateReducePhase(List<List<TaskOutput>> bins, Map<String, String> inputs) {
 
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
-
-        // Track which Task objects are carriers so we can filter their outputs later
-        Set<Task> carrierTasks = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
         for (List<TaskOutput> bin : bins) {
             // Create carrier agents/tasks for each item in the bin
@@ -452,7 +446,6 @@ final class MapReduceAdaptiveExecutor<T> {
                         .agent(carrierAgent)
                         .build();
                 builder.task(carrierTask);
-                carrierTasks.add(carrierTask);
                 chunkTasks.add(carrierTask);
             }
 
@@ -463,8 +456,8 @@ final class MapReduceAdaptiveExecutor<T> {
 
         EnsembleOutput raw = build(builder).run(inputs);
 
-        // Filter out carrier task outputs - retain only real reduce task outputs
-        List<TaskOutput> reduceOnlyOutputs = filterCarrierOutputs(raw.getTaskOutputs(), carrierTasks);
+        // Filter out carrier task outputs by role prefix - retain only real reduce task outputs
+        List<TaskOutput> reduceOnlyOutputs = filterCarrierOutputs(raw.getTaskOutputs());
         return rebuildOutput(raw, reduceOnlyOutputs);
     }
 
@@ -477,15 +470,11 @@ final class MapReduceAdaptiveExecutor<T> {
      *
      * @param currentOutputs the outputs from the last intermediate reduce (or map phase)
      * @param inputs         template variable inputs
-     * @param levelIndex     the final reduce level index
      * @return the {@link EnsembleOutput} from the final reduce Ensemble
      */
-    private EnsembleOutput runFinalReducePhase(
-            List<TaskOutput> currentOutputs, Map<String, String> inputs, int levelIndex) {
+    private EnsembleOutput runFinalReducePhase(List<TaskOutput> currentOutputs, Map<String, String> inputs) {
 
         Ensemble.EnsembleBuilder builder = newEnsembleBuilder();
-
-        Set<Task> carrierTasks = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
         List<Task> chunkTasks = new ArrayList<>(currentOutputs.size());
         for (TaskOutput prevOutput : currentOutputs) {
@@ -500,7 +489,6 @@ final class MapReduceAdaptiveExecutor<T> {
                     .agent(carrierAgent)
                     .build();
             builder.task(carrierTask);
-            carrierTasks.add(carrierTask);
             chunkTasks.add(carrierTask);
         }
 
@@ -509,8 +497,8 @@ final class MapReduceAdaptiveExecutor<T> {
 
         EnsembleOutput raw = build(builder).run(inputs);
 
-        // Filter out carrier task outputs
-        List<TaskOutput> finalOnlyOutputs = filterCarrierOutputs(raw.getTaskOutputs(), carrierTasks);
+        // Filter out carrier task outputs by role prefix
+        List<TaskOutput> finalOnlyOutputs = filterCarrierOutputs(raw.getTaskOutputs());
         return rebuildOutput(raw, finalOnlyOutputs);
     }
 
@@ -564,8 +552,8 @@ final class MapReduceAdaptiveExecutor<T> {
      * by role prefix rather than Task identity because the rebuild uses the agentRole
      * on TaskOutput (which is set by AgentExecutor from Agent.getRole()).
      */
-    private static List<TaskOutput> filterCarrierOutputs(List<TaskOutput> outputs, Set<Task> carriers) {
-        // Use the carrier role prefix as a secondary filter (in case identity tracking is imperfect)
+    private static List<TaskOutput> filterCarrierOutputs(List<TaskOutput> outputs) {
+        // Filter carrier tasks by role prefix -- carrier agent roles are prefixed with "__carry__:"
         return outputs.stream()
                 .filter(o -> !o.getAgentRole().startsWith("__carry__:"))
                 .collect(Collectors.toList());
@@ -659,15 +647,15 @@ final class MapReduceAdaptiveExecutor<T> {
      * <p>The aggregated output uses:
      * <ul>
      *   <li>{@code raw} = the final level's last task output raw text</li>
-     *   <li>{@code taskOutputs} = the map phase outputs (the original item-level outputs)</li>
+     *   <li>{@code taskOutputs} = all non-carrier task outputs from all levels (map, intermediate
+     *       reduce, and final reduce); carrier tasks are excluded</li>
      *   <li>{@code trace.workflow} = {@code "MAP_REDUCE_ADAPTIVE"}</li>
      *   <li>{@code trace.mapReduceLevels} = per-level summaries</li>
      *   <li>{@code trace.taskTraces} = all task traces annotated with level/nodeType</li>
      *   <li>{@code metrics} = summed across all levels</li>
      * </ul>
      */
-    private EnsembleOutput aggregate(
-            String ensembleId, List<LevelRun> levelRuns, Map<String, String> inputs, List<TaskOutput> mapTaskOutputs) {
+    private EnsembleOutput aggregate(String ensembleId, List<LevelRun> levelRuns, Map<String, String> inputs) {
 
         LevelRun finalRun = levelRuns.get(levelRuns.size() - 1);
         String raw = finalRun.output().getRaw();
