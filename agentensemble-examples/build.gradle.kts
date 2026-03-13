@@ -79,6 +79,7 @@ mapOf(
     "runDeterministicOnlyPipeline" to "net.agentensemble.examples.DeterministicOnlyPipelineExample",
     "runPhases" to "net.agentensemble.examples.PhasesExample",
     "runPhaseReview" to "net.agentensemble.examples.PhaseReviewExample",
+    "runTypedTools" to "net.agentensemble.examples.TypedToolsExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

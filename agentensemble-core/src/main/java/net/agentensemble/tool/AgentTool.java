@@ -19,8 +19,23 @@ package net.agentensemble.tool;
  * }
  * </pre>
  *
- * Alternatively, use the {@code @dev.langchain4j.agent.tool.Tool} annotation
- * on methods in a plain Java object. Both approaches can be mixed in a single
+ * Alternatively, extend {@link AbstractTypedAgentTool} with a typed input record to give
+ * the LLM a proper JSON Schema rather than a single opaque string:
+ *
+ * <pre>
+ * {@literal @}ToolInput
+ * public record MyInput({@literal @}ToolParam(description = "The value") String value) {}
+ *
+ * public class MyTool extends AbstractTypedAgentTool{@literal <}MyInput{@literal >} {
+ *     public String name() { return "my_tool"; }
+ *     public String description() { return "Does something useful."; }
+ *     public Class{@literal <}MyInput{@literal >} inputType() { return MyInput.class; }
+ *     public ToolResult execute(MyInput input) { ... }
+ * }
+ * </pre>
+ *
+ * You may also use the {@code @dev.langchain4j.agent.tool.Tool} annotation
+ * on methods in a plain Java object. All approaches can be mixed in a single
  * agent's tool list.
  */
 public interface AgentTool {

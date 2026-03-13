@@ -2,7 +2,7 @@ package net.agentensemble.tools.web.search;
 
 import java.io.IOException;
 import java.util.Objects;
-import net.agentensemble.tool.AbstractAgentTool;
+import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.ToolResult;
 
 /**
@@ -17,11 +17,11 @@ import net.agentensemble.tool.ToolResult;
  *   <li>{@link #of(WebSearchProvider)} -- custom provider
  * </ul>
  *
- * <p>Input: a search query string (e.g. {@code "Java 21 virtual threads"}).
+ * <p>Input: a {@link WebSearchInput} record with a {@code query} field.
  *
  * <p>Output: formatted search results as plain text, ready for the agent to read.
  */
-public final class WebSearchTool extends AbstractAgentTool {
+public final class WebSearchTool extends AbstractTypedAgentTool<WebSearchInput> {
 
     private final WebSearchProvider provider;
 
@@ -72,16 +72,20 @@ public final class WebSearchTool extends AbstractAgentTool {
 
     @Override
     public String description() {
-        return "Performs a web search and returns relevant results. "
-                + "Input: a search query string (e.g. 'latest AI research papers 2024').";
+        return "Performs a web search and returns relevant results.";
     }
 
     @Override
-    protected ToolResult doExecute(String input) {
-        if (input == null || input.isBlank()) {
+    public Class<WebSearchInput> inputType() {
+        return WebSearchInput.class;
+    }
+
+    @Override
+    public ToolResult execute(WebSearchInput input) {
+        String query = input.query().trim();
+        if (query.isBlank()) {
             return ToolResult.failure("Search query must not be blank");
         }
-        String query = input.trim();
         try {
             String results = provider.search(query);
             return ToolResult.success(results);

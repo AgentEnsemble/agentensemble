@@ -7,14 +7,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import net.agentensemble.tool.AbstractAgentTool;
+import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.ToolResult;
 
 /**
  * Tool that extracts values from JSON using dot-notation path expressions.
  *
- * <p>Input format: two sections separated by a newline. The first line is the path expression;
- * the remaining lines are the JSON to parse.
+ * <p>Input: a {@link JsonParserInput} record with {@code jsonPath} and {@code json} fields.
  *
  * <p>Path syntax:
  *
@@ -27,14 +26,12 @@ import net.agentensemble.tool.ToolResult;
  * <p>Examples:
  *
  * <pre>
- * // Input:
- * user.name
- * {"user": {"name": "Alice", "age": 30}}
- *
+ * // jsonPath: "user.name"
+ * // json: {"user": {"name": "Alice", "age": 30}}
  * // Output: Alice
  * </pre>
  */
-public final class JsonParserTool extends AbstractAgentTool {
+public final class JsonParserTool extends AbstractTypedAgentTool<JsonParserInput> {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -48,26 +45,18 @@ public final class JsonParserTool extends AbstractAgentTool {
 
     @Override
     public String description() {
-        return "Extracts values from JSON using a path expression. "
-                + "Input format: first line is the path (e.g. 'user.name' or 'items[0].title'), "
-                + "second line onwards is the JSON. "
-                + "Example:\n"
-                + "user.address.city\n"
-                + "{\"user\": {\"address\": {\"city\": \"Denver\"}}}";
+        return "Extracts values from JSON using a dot-notation path expression.";
     }
 
     @Override
-    protected ToolResult doExecute(String input) {
-        if (input == null || input.isBlank()) {
-            return ToolResult.failure("Input must not be blank");
-        }
-        int newlineIndex = input.indexOf('\n');
-        if (newlineIndex < 0) {
-            return ToolResult.failure("Input must have two sections: first line is the path, remaining lines are JSON");
-        }
+    public Class<JsonParserInput> inputType() {
+        return JsonParserInput.class;
+    }
 
-        String path = input.substring(0, newlineIndex).trim();
-        String jsonStr = input.substring(newlineIndex + 1).trim();
+    @Override
+    public ToolResult execute(JsonParserInput input) {
+        String path = input.jsonPath().trim();
+        String jsonStr = input.json().trim();
 
         if (path.isBlank()) {
             return ToolResult.failure("Path expression must not be blank");

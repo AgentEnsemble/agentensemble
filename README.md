@@ -1007,27 +1007,83 @@ When a guardrail blocks a task, `GuardrailViolationException` propagates and is 
 
 ## Creating Tools
 
-### Option 1: Implement `AgentTool`
+### Option 1: Extend `AbstractTypedAgentTool<T>` (typed inputs -- recommended for structured parameters)
+
+Declare a Java record as the tool's input type. The framework generates a proper typed JSON Schema
+for the LLM, handles JSON deserialization, and validates required fields automatically. No input
+parsing code needed.
 
 ```java
-public class WebSearchTool implements AgentTool {
-    public String name() { return "web_search"; }
-    public String description() { return "Search the web. Input: a search query string."; }
-    public ToolResult execute(String input) {
-        String results = performSearch(input);
+@ToolInput(description = "Parameters for a web search")
+public record WebSearchInput(
+    @ToolParam(description = "Search query, e.g. 'Java 21 virtual threads'") String query,
+    @ToolParam(description = "Max results to return", required = false) Integer maxResults
+) {}
+
+public class WebSearchTool extends AbstractTypedAgentTool<WebSearchInput> {
+    public String name()        { return "web_search"; }
+    public String description() { return "Performs a web search and returns results."; }
+    public Class<WebSearchInput> inputType() { return WebSearchInput.class; }
+
+    @Override
+    public ToolResult execute(WebSearchInput input) {
+        // input.query() and input.maxResults() are typed and validated -- no parsing needed
+        int limit = input.maxResults() != null ? input.maxResults() : 10;
+        String results = performSearch(input.query(), limit);
         return ToolResult.success(results);
     }
 }
-
-var agent = Agent.builder()
-    .role("Researcher")
-    .goal("Find information")
-    .tools(List.of(new WebSearchTool()))
-    .llm(model)
-    .build();
 ```
 
-### Option 2: Use LangChain4j `@Tool` annotation
+The LLM receives a proper JSON Schema instead of a single opaque `"input": string`:
+
+```json
+{
+  "name": "web_search",
+  "parameters": {
+    "query":      { "type": "string",  "description": "Search query, e.g. 'Java 21 virtual threads'" },
+    "maxResults": { "type": "integer", "description": "Max results to return" }
+  },
+  "required": ["query"]
+}
+```
+
+**Full documentation:** [Typed Tool Inputs Guide](https://agentensemble.net/guides/tools/) | [Typed Tools Example](https://agentensemble.net/examples/typed-tools/) | [Design Doc](https://agentensemble.net/design/23-typed-tool-input/)
+
+### Option 2: Extend `AbstractAgentTool` (string-based input)
+
+Use when the tool's input is a single, natural domain-specific string -- a math expression, a
+date command, or a raw payload to forward to a remote service.
+
+```java
+public class TranslationTool extends AbstractAgentTool {
+    public String name() { return "translate"; }
+    public String description() { return "Translates text. Input: '<lang>: <text to translate>'."; }
+
+    @Override
+    protected ToolResult doExecute(String input) {
+        String[] parts = input.split(":", 2);
+        String translated = client.translate(parts[1].trim(), parts[0].trim());
+        return ToolResult.success(translated);
+    }
+}
+```
+
+### Option 3: Implement `AgentTool` Directly
+
+The minimal interface for simple tools that don't need metrics or the deserialization bridge:
+
+```java
+public class UpperCaseTool implements AgentTool {
+    public String name() { return "uppercase"; }
+    public String description() { return "Converts text to uppercase. Input: any string."; }
+    public ToolResult execute(String input) {
+        return ToolResult.success(input.toUpperCase());
+    }
+}
+```
+
+### Option 4: Use LangChain4j `@Tool` annotation
 
 ```java
 public class MathTools {
@@ -1047,7 +1103,7 @@ var agent = Agent.builder()
 
 Both approaches can be combined in a single agent's tool list.
 
-### Option 3: Chain tools with `ToolPipeline`
+### Option 5: Chain tools with `ToolPipeline`
 
 `ToolPipeline` wraps multiple tools into a single compound tool that the LLM calls once. All steps execute inside that single call with no LLM round-trips between them -- reducing token cost and latency for deterministic data-transformation chains.
 
@@ -1235,6 +1291,7 @@ Full design specifications are published at **[agentensemble.net/design/](https:
 - [15 - v2.0.0 Architecture](https://agentensemble.net/design/15-v2-architecture/)
 - [16 - Live Execution Dashboard](https://agentensemble.net/design/16-live-dashboard/)
 - [17 - Tool Pipeline](https://agentensemble.net/design/17-tool-pipeline/)
+- [23 - Typed Tool Inputs](https://agentensemble.net/design/23-typed-tool-input/)
 
 ---
 

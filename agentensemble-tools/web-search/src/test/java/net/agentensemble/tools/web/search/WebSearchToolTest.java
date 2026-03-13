@@ -40,7 +40,7 @@ class WebSearchToolTest {
     void execute_returnsProviderResults() throws Exception {
         when(mockProvider.search("climate change")).thenReturn("Result 1: ...\nResult 2: ...");
 
-        var result = tool.execute("climate change");
+        var result = tool.execute("{\"query\": \"climate change\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).contains("Result 1");
@@ -50,19 +50,29 @@ class WebSearchToolTest {
     void execute_passesQueryToProvider() throws Exception {
         when(mockProvider.search(anyString())).thenReturn("some results");
 
-        tool.execute("best Java frameworks 2024");
+        tool.execute("{\"query\": \"best Java frameworks 2024\"}");
 
         verify(mockProvider).search("best Java frameworks 2024");
     }
 
     @Test
-    void execute_trimsByDefault() throws Exception {
+    void execute_trimsQueryWhitespace() throws Exception {
         when(mockProvider.search("java agents")).thenReturn("results");
 
-        var result = tool.execute("  java agents  ");
+        var result = tool.execute("{\"query\": \"  java agents  \"}");
 
         assertThat(result.isSuccess()).isTrue();
         verify(mockProvider).search("java agents");
+    }
+
+    @Test
+    void execute_typedInput_search() throws Exception {
+        when(mockProvider.search("typed query")).thenReturn("typed results");
+
+        var result = tool.execute(new WebSearchInput("typed query"));
+
+        assertThat(result.isSuccess()).isTrue();
+        verify(mockProvider).search("typed query");
     }
 
     // --- provider IOException ---
@@ -71,7 +81,7 @@ class WebSearchToolTest {
     void execute_providerThrowsIOException_returnsFailure() throws Exception {
         when(mockProvider.search(anyString())).thenThrow(new IOException("Network error"));
 
-        var result = tool.execute("some query");
+        var result = tool.execute("{\"query\": \"some query\"}");
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("search failed");
@@ -81,22 +91,28 @@ class WebSearchToolTest {
     void execute_providerThrowsInterruptedException_returnsFailure() throws Exception {
         when(mockProvider.search(anyString())).thenThrow(new InterruptedException("Interrupted"));
 
-        var result = tool.execute("some query");
+        var result = tool.execute("{\"query\": \"some query\"}");
 
         assertThat(result.isSuccess()).isFalse();
     }
 
-    // --- null/blank ---
+    // --- null/blank/invalid JSON ---
 
     @Test
-    void execute_nullQuery_returnsFailure() {
-        var result = tool.execute(null);
+    void execute_nullInput_returnsFailure() {
+        var result = tool.execute((String) null);
         assertThat(result.isSuccess()).isFalse();
     }
 
     @Test
-    void execute_blankQuery_returnsFailure() {
+    void execute_blankInput_returnsFailure() {
         var result = tool.execute("   ");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_missingQueryField_returnsFailure() {
+        var result = tool.execute("{}");
         assertThat(result.isSuccess()).isFalse();
     }
 

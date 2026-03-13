@@ -35,27 +35,40 @@ public final class LangChain4jToolAdapter {
     /**
      * Convert an {@link AgentTool} to a LangChain4j {@link ToolSpecification}.
      *
-     * The generated specification has a single required string parameter named "input",
-     * which the LLM uses to pass input text to the tool.
+     * <p>For {@link TypedAgentTool} instances, the specification is generated from the
+     * tool's input record type via {@link ToolSchemaGenerator}, producing a multi-parameter
+     * typed schema. The LLM receives individual named parameters with types and descriptions,
+     * rather than a single opaque string.
+     *
+     * <p>For legacy {@link AgentTool} instances that do not implement {@code TypedAgentTool},
+     * the specification has a single required string parameter named {@code "input"}, which
+     * is the original behavior and is fully backward compatible.
      *
      * @param tool the AgentTool to adapt
      * @return a ToolSpecification for use with ChatModel.chat(ChatRequest)
      */
     public static ToolSpecification toSpecification(AgentTool tool) {
-        JsonObjectSchema parameters = JsonObjectSchema.builder()
-                .addStringProperty(INPUT_PARAM_NAME, INPUT_PARAM_DESCRIPTION)
-                .required(List.of(INPUT_PARAM_NAME))
-                .build();
+        JsonObjectSchema parameters;
 
-        var spec = ToolSpecification.builder()
+        if (tool instanceof TypedAgentTool<?> typed) {
+            parameters = ToolSchemaGenerator.generateSchema(typed.inputType());
+            log.debug(
+                    "Generated typed schema for AgentTool '{}' from input type '{}'",
+                    tool.name(),
+                    typed.inputType().getSimpleName());
+        } else {
+            parameters = JsonObjectSchema.builder()
+                    .addStringProperty(INPUT_PARAM_NAME, INPUT_PARAM_DESCRIPTION)
+                    .required(List.of(INPUT_PARAM_NAME))
+                    .build();
+            log.debug("Adapted AgentTool '{}' to LangChain4j ToolSpecification", tool.name());
+        }
+
+        return ToolSpecification.builder()
                 .name(tool.name())
                 .description(tool.description())
                 .parameters(parameters)
                 .build();
-
-        log.debug("Adapted AgentTool '{}' to LangChain4j ToolSpecification", tool.name());
-
-        return spec;
     }
 
     /**
@@ -82,16 +95,21 @@ public final class LangChain4jToolAdapter {
      * Execute an {@link AgentTool} with arguments provided as a JSON string, returning
      * the full {@link ToolResult} including any structured output.
      *
-     * <p>The arguments JSON is expected to contain an "input" key with the string value
-     * to pass to {@link AgentTool#execute(String)}. If the JSON is malformed or the
-     * "input" key is absent, the raw arguments string is passed directly to execute().
+     * <p>For {@link TypedAgentTool} instances, the full {@code argumentsJson} is passed
+     * directly to {@link AgentTool#execute(String)} so that
+     * {@link AbstractTypedAgentTool#doExecute(String)} can deserialize all parameters.
+     *
+     * <p>For legacy {@link AgentTool} instances, the {@code "input"} key is extracted
+     * from {@code argumentsJson} (original behavior, fully backward compatible).
      *
      * @param tool          the AgentTool to execute
      * @param argumentsJson the JSON arguments from the LLM tool call
      * @return the ToolResult; never null
      */
     public static ToolResult executeForResult(AgentTool tool, String argumentsJson) {
-        String input = extractInput(argumentsJson);
+        // Typed tools receive the full JSON arguments so AbstractTypedAgentTool can
+        // deserialize all parameters. Legacy tools receive only the "input" key value.
+        String input = (tool instanceof TypedAgentTool<?>) ? argumentsJson : extractInput(argumentsJson);
         try {
             ToolResult result = tool.execute(input);
             if (result == null) {
