@@ -92,6 +92,4 @@ LLMs may include extra fields in their tool calls; silently ignoring them preven
 failures and is the correct production behavior.
 
 ## Next Steps
-- Open PR for `feature/195-typed-tool-input`
-- Consider: runnable example class in `agentensemble-examples` (docs reference it but no
-  class was created -- could add in a follow-up commit or the PR)
+- Await PR #196 review and merge

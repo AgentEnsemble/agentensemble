@@ -42,9 +42,15 @@ import java.util.stream.Collectors;
  *     .name("fetch_and_save")
  *     .description("Fetch a URL and save the response body to a file")
  *     .step(new HttpAgentTool("fetcher"))
- *     .adapter(result -> "{\"filePath\": \"/tmp/out.txt\", \"content\": "
- *             + "\"" + result.getOutput() + "\"}")
- *     .step(new FileWriteTool("/tmp"))
+ *     .adapter(result -> {
+ *         String body = result.getOutput()
+ *                 .replace("\\", "\\\\")
+ *                 .replace("\"", "\\\"")
+ *                 .replace("\n", "\\n")
+ *                 .replace("\r", "\\r");
+ *         return "{\"path\": \"/tmp/out.txt\", \"content\": \"" + body + "\"}";
+ *     })
+ *     .step(FileWriteTool.of(Path.of("/tmp")))
  *     .build();
  * </pre>
  *

@@ -151,8 +151,9 @@ public final class ToolSchemaGenerator {
 
         // Enum (JSON "string" constrained to enum values)
         if (type.isEnum()) {
-            List<String> values =
-                    Arrays.stream(type.getEnumConstants()).map(Object::toString).collect(Collectors.toList());
+            List<String> values = Arrays.stream(type.getEnumConstants())
+                    .map(e -> ((Enum<?>) e).name())
+                    .collect(Collectors.toList());
             if (description != null) {
                 builder.addEnumProperty(name, values, description);
             } else {
@@ -202,8 +203,8 @@ public final class ToolSchemaGenerator {
                 return resolveClassSchema(itemClass, null);
             }
         }
-        // Unknown item type -- default to string
-        return new JsonStringSchema();
+        // Unknown item type -- default to open object schema
+        return JsonObjectSchema.builder().build();
     }
 
     /**
@@ -224,7 +225,9 @@ public final class ToolSchemaGenerator {
                 || cls == long.class
                 || cls == Long.class
                 || cls == short.class
-                || cls == Short.class) {
+                || cls == Short.class
+                || cls == byte.class
+                || cls == Byte.class) {
             return description != null
                     ? JsonIntegerSchema.builder().description(description).build()
                     : new JsonIntegerSchema();
@@ -245,17 +248,20 @@ public final class ToolSchemaGenerator {
                     : new JsonBooleanSchema();
         }
         if (cls.isEnum()) {
-            List<String> values =
-                    Arrays.stream(cls.getEnumConstants()).map(Object::toString).collect(Collectors.toList());
+            List<String> values = Arrays.stream(cls.getEnumConstants())
+                    .map(e -> ((Enum<?>) e).name())
+                    .collect(Collectors.toList());
             JsonEnumSchema.Builder enumBuilder = JsonEnumSchema.builder().enumValues(values);
             if (description != null) {
                 enumBuilder.description(description);
             }
             return enumBuilder.build();
         }
-        // Default: treat as string
-        return description != null
-                ? JsonStringSchema.builder().description(description).build()
-                : new JsonStringSchema();
+        // Default: open object schema for unknown/complex types (e.g. Map, POJO)
+        JsonObjectSchema.Builder objBuilder = JsonObjectSchema.builder();
+        if (description != null) {
+            objBuilder.description(description);
+        }
+        return objBuilder.build();
     }
 }

@@ -201,7 +201,9 @@ public class FileWriteTool extends AbstractTypedAgentTool<FileWriteInput> {
 - The input is a single, natural expression or command -- a math formula, a date command, a raw payload to forward
 - Wrapping in a one-field record would not improve clarity for tool authors or the LLM
 
-See also: [CalculatorTool](../../agentensemble-tools/calculator) and [DateTimeTool](../../agentensemble-tools/datetime) as intentional examples of the string-based style.
+See also: `CalculatorTool` and `DateTimeTool` are intentional examples of the string-based
+style. Refer to [Creating Tools](../guides/tools.md) for guidance on when each approach is
+appropriate.
 
 ---
 
@@ -210,5 +212,5 @@ See also: [CalculatorTool](../../agentensemble-tools/calculator) and [DateTimeTo
 See `TypedToolsExample` in `agentensemble-examples` for a complete runnable demonstration.
 
 ```shell
-./gradlew :agentensemble-examples:typed-tools
+./gradlew :agentensemble-examples:runTypedTools
 ```

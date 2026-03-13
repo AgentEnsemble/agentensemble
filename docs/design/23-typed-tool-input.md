@@ -1,4 +1,4 @@
-# 18. Typed Tool Input System
+# 23. Typed Tool Input System
 
 ## Overview
 

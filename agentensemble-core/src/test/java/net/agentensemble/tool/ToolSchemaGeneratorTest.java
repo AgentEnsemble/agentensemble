@@ -37,6 +37,19 @@ class ToolSchemaGeneratorTest {
 
     record EnumInput(@ToolParam(description = "A color") Color color) {}
 
+    /** Enum whose {@code toString()} returns lowercase -- should not affect schema values. */
+    enum StatusWithCustomToString {
+        ACTIVE,
+        INACTIVE;
+
+        @Override
+        public String toString() {
+            return name().toLowerCase();
+        }
+    }
+
+    record CustomToStringEnumInput(@ToolParam(description = "Status") StatusWithCustomToString status) {}
+
     record ListStringInput(@ToolParam(description = "Tags") List<String> tags) {}
 
     record ArrayInput(@ToolParam(description = "Bytes") byte[] data) {}
@@ -152,6 +165,18 @@ class ToolSchemaGeneratorTest {
         JsonObjectSchema schema = ToolSchemaGenerator.generateSchema(EnumInput.class);
         JsonEnumSchema enumProp = (JsonEnumSchema) schema.properties().get("color");
         assertThat(enumProp.description()).isEqualTo("A color");
+    }
+
+    @Test
+    void generateSchema_enumWithOverriddenToString_usesEnumName() {
+        // StatusWithCustomToString.toString() returns lowercase, but the schema must use
+        // Enum.name() to stay aligned with Jackson's default deserialization behaviour.
+        JsonObjectSchema schema = ToolSchemaGenerator.generateSchema(CustomToStringEnumInput.class);
+        JsonEnumSchema enumProp = (JsonEnumSchema) schema.properties().get("status");
+        assertThat(enumProp).isNotNull();
+        assertThat(enumProp.enumValues()).containsExactlyInAnyOrder("ACTIVE", "INACTIVE");
+        // Confirm that the lowercase toString() values are NOT present
+        assertThat(enumProp.enumValues()).doesNotContain("active", "inactive");
     }
 
     // ========================

@@ -13,7 +13,9 @@ plugins {
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     // Reduce the LINE minimum inherited from tool-conventions for this module.
     // Accessing the first rule (from tool-conventions) and updating its LINE limit in-place.
-    violationRules.rules.firstOrNull()?.limits?.firstOrNull()?.minimum = "0.86".toBigDecimal()
+    violationRules.rules.firstOrNull()
+        ?.limits?.firstOrNull { it.counter == "LINE" }
+        ?.minimum = "0.86".toBigDecimal()
 }
 
 mavenPublishing {
