@@ -2,11 +2,10 @@
 
 ## Current Work
 
-Branch: `fix/202-cross-phase-context-agentless-identity`
-PR: #203
+Branch: `fix/error-prone-pmd-p1`
+Tracking issue: GH #205
 
-Bug fix for cross-phase `Task.context()` failing at runtime when referenced tasks rely on
-agent synthesis (agentless tasks with no `.agent()` or `.handler()`).
+P1 and P2 code quality violation fixes (Error Prone + PMD). P1 committed as `94047f9`, P2 committed as `ef725fe`.
 
 ## Completed This Session
 
