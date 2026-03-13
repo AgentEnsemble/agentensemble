@@ -1,7 +1,7 @@
 package net.agentensemble.tools.web.scraper;
 
 import java.io.IOException;
-import net.agentensemble.tool.AbstractAgentTool;
+import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.ToolResult;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -23,9 +23,9 @@ import org.jsoup.nodes.Document;
  * var scraper = WebScraperTool.withMaxContentLength(3000);
  * </pre>
  *
- * <p>Input: a URL string (e.g. {@code "https://example.com/article"}).
+ * <p>Input: a {@link WebScraperInput} record with a {@code url} field.
  */
-public final class WebScraperTool extends AbstractAgentTool {
+public final class WebScraperTool extends AbstractTypedAgentTool<WebScraperInput> {
 
     private static final int DEFAULT_MAX_CONTENT_LENGTH = 5000;
     private static final int DEFAULT_TIMEOUT_SECONDS = 10;
@@ -63,16 +63,20 @@ public final class WebScraperTool extends AbstractAgentTool {
     @Override
     public String description() {
         return "Fetches a web page and extracts its readable text content. "
-                + "Input: a URL string (e.g. 'https://example.com/article'). "
                 + "Returns the page text with HTML tags removed.";
     }
 
     @Override
-    protected ToolResult doExecute(String input) {
-        if (input == null || input.isBlank()) {
+    public Class<WebScraperInput> inputType() {
+        return WebScraperInput.class;
+    }
+
+    @Override
+    public ToolResult execute(WebScraperInput input) {
+        String url = input.url().trim();
+        if (url.isBlank()) {
             return ToolResult.failure("URL must not be blank");
         }
-        String url = input.trim();
         try {
             String html = fetcher.fetch(url);
             String text = extractText(html);

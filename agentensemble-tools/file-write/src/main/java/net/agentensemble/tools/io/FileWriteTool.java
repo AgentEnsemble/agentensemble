@@ -1,8 +1,5 @@
 package net.agentensemble.tools.io;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -10,7 +7,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
-import net.agentensemble.tool.AbstractAgentTool;
+import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.ToolResult;
 
 /**
@@ -49,15 +46,10 @@ import net.agentensemble.tool.ToolResult;
  * when {@code requireApproval(true)} is set; otherwise an {@link IllegalStateException}
  * is thrown at execution time.
  *
- * <p>Input: a JSON object with {@code path} and {@code content} fields:
- *
- * <pre>
- * {"path": "report.txt", "content": "The analysis is complete."}
- * </pre>
+ * <p>Input: a {@link FileWriteInput} record with {@code path} and {@code content} fields.
  */
-public final class FileWriteTool extends AbstractAgentTool {
+public final class FileWriteTool extends AbstractTypedAgentTool<FileWriteInput> {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int APPROVAL_CONTENT_PREVIEW_LENGTH = 200;
 
     private final Path baseDir;
@@ -108,36 +100,24 @@ public final class FileWriteTool extends AbstractAgentTool {
 
     @Override
     public String description() {
-        return "Writes content to a file. Input: a JSON object with 'path' (relative file path) "
-                + "and 'content' (text to write) fields. Example: "
-                + "{\"path\": \"output/report.txt\", \"content\": \"Analysis complete.\"}. "
-                + "Parent directories are created automatically. Path traversal (../) is not permitted.";
+        return "Writes content to a file within a sandboxed directory. "
+                + "Parent directories are created automatically. "
+                + "Path traversal (../) is not permitted.";
     }
 
     @Override
-    protected ToolResult doExecute(String input) {
-        if (input == null || input.isBlank()) {
-            return ToolResult.failure("Input must not be blank");
-        }
-        JsonNode node;
-        try {
-            node = OBJECT_MAPPER.readTree(input.trim());
-        } catch (JsonProcessingException e) {
-            return ToolResult.failure("Invalid input: expected JSON with 'path' and 'content' fields");
+    public Class<FileWriteInput> inputType() {
+        return FileWriteInput.class;
+    }
+
+    @Override
+    public ToolResult execute(FileWriteInput input) {
+        String relativePath = input.path().trim();
+        if (relativePath.isBlank()) {
+            return ToolResult.failure("Path must not be blank");
         }
 
-        JsonNode pathNode = node.get("path");
-        JsonNode contentNode = node.get("content");
-
-        if (pathNode == null || pathNode.isNull() || pathNode.asText().isBlank()) {
-            return ToolResult.failure("Missing required field 'path' in input JSON");
-        }
-        if (contentNode == null || contentNode.isNull()) {
-            return ToolResult.failure("Missing required field 'content' in input JSON");
-        }
-
-        String relativePath = pathNode.asText().trim();
-        String content = contentNode.asText();
+        String content = input.content();
 
         Path resolved = resolveAndValidate(relativePath);
         if (resolved == null) {

@@ -140,4 +140,107 @@ class LangChain4jToolAdapterTest {
         verify(tool).execute("not valid json");
         assertThat(result).isEqualTo("ok");
     }
+
+    // ========================
+    // TypedAgentTool spec generation
+    // ========================
+
+    @ToolInput(description = "Test input")
+    record TestInput(
+            @ToolParam(description = "A required field") String required,
+            @ToolParam(description = "An optional field", required = false) String optional) {}
+
+    private static final class TestTypedTool extends AbstractTypedAgentTool<TestInput> {
+        @Override
+        public String name() {
+            return "typed_tool";
+        }
+
+        @Override
+        public String description() {
+            return "A typed test tool";
+        }
+
+        @Override
+        public Class<TestInput> inputType() {
+            return TestInput.class;
+        }
+
+        @Override
+        public ToolResult execute(TestInput input) {
+            return ToolResult.success("typed: " + input.required());
+        }
+    }
+
+    @Test
+    void toSpecification_typedTool_generatesMultiParamSchema() {
+        var tool = new TestTypedTool();
+        var spec = LangChain4jToolAdapter.toSpecification(tool);
+
+        assertThat(spec.name()).isEqualTo("typed_tool");
+        assertThat(spec.description()).isEqualTo("A typed test tool");
+        // Multi-param schema -- no single "input" key
+        assertThat(spec.parameters().properties()).containsKey("required");
+        assertThat(spec.parameters().properties()).containsKey("optional");
+        assertThat(spec.parameters().properties()).doesNotContainKey("input");
+    }
+
+    @Test
+    void toSpecification_typedTool_requiredFieldInRequired() {
+        var tool = new TestTypedTool();
+        var spec = LangChain4jToolAdapter.toSpecification(tool);
+
+        assertThat(spec.parameters().required()).contains("required");
+        assertThat(spec.parameters().required()).doesNotContain("optional");
+    }
+
+    @Test
+    void toSpecification_legacyTool_generatesSingleInputSchema() {
+        var tool = mockTool("legacy", "A legacy tool");
+        var spec = LangChain4jToolAdapter.toSpecification(tool);
+
+        // Legacy single-"input" string schema
+        assertThat(spec.parameters().properties()).containsKey("input");
+        assertThat(spec.parameters().required()).contains("input");
+    }
+
+    // ========================
+    // TypedAgentTool execution routing
+    // ========================
+
+    @Test
+    void executeForResult_typedTool_passesFullJsonArgs() {
+        var tool = new TestTypedTool();
+
+        // Typed tool receives full JSON args -- all fields at top level
+        var result = LangChain4jToolAdapter.executeForResult(tool, "{\"required\": \"hello\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("typed: hello");
+    }
+
+    @Test
+    void executeForResult_typedTool_missingRequiredField_returnsFailure() {
+        var tool = new TestTypedTool();
+
+        // Missing required "required" field -- deserialization should fail
+        var result = LangChain4jToolAdapter.executeForResult(tool, "{\"optional\": \"x\"}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("required");
+    }
+
+    @Test
+    void executeForResult_legacyTool_extractsInputKey() {
+        var tool = mock(AgentTool.class);
+        when(tool.name()).thenReturn("legacy");
+        when(tool.description()).thenReturn("Legacy");
+        when(tool.execute("the value")).thenReturn(ToolResult.success("done"));
+
+        // Legacy tool: adapter extracts "input" key
+        var result = LangChain4jToolAdapter.executeForResult(tool, "{\"input\": \"the value\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        verify(tool).execute("the value");
+    }
 }

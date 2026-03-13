@@ -34,6 +34,19 @@ import net.agentensemble.tool.ToolResult;
  *
  * <p>Timezone IDs use the IANA format (e.g., {@code America/New_York}, {@code Europe/London},
  * {@code UTC}).
+ *
+ * <h2>Why this tool uses the legacy string-input pattern</h2>
+ *
+ * <p>This tool intentionally extends {@link net.agentensemble.tool.AbstractAgentTool} and
+ * accepts a plain {@code String} command rather than a typed record. The command language is
+ * a compact, human-readable DSL ({@code "now in America/New_York"},
+ * {@code "2024-01-01 + 5 days"}). Decomposing it into individual record fields would make
+ * the interface more verbose without improving the LLM's ability to use it correctly.
+ *
+ * <p>This makes {@code DateTimeTool} a reference example of when the legacy string-input
+ * style is the right choice -- particularly when the input IS a natural command or expression
+ * string. For tools with multiple unrelated parameters, see
+ * {@link net.agentensemble.tool.AbstractTypedAgentTool}.
  */
 public final class DateTimeTool extends AbstractAgentTool {
 

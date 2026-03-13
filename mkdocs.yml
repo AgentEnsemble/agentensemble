@@ -123,8 +123,10 @@ nav:
     - Task Reflection: examples/task-reflection.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
+    - Typed Tool Inputs: examples/typed-tools.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
+    - Typed Tool Inputs: migration/typed-tool-inputs.md
   - Design:
     - Overview: design/01-overview.md
     - Architecture: design/02-architecture.md
@@ -148,3 +150,4 @@ nav:
     - Deterministic-Only Orchestration: design/20-deterministic-only.md
     - Phase Review and Retry: design/21-phase-review.md
     - Task Reflection: design/22-task-reflection.md
+    - Typed Tool Inputs: design/23-typed-tool-input.md

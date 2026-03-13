@@ -42,7 +42,7 @@ class FileReadToolTest {
         Path file = tempDir.resolve("hello.txt");
         Files.writeString(file, "Hello, World!");
 
-        var result = tool.execute("hello.txt");
+        var result = tool.execute("{\"path\": \"hello.txt\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEqualTo("Hello, World!");
@@ -54,7 +54,7 @@ class FileReadToolTest {
         Files.createDirectory(subDir);
         Files.writeString(subDir.resolve("data.txt"), "nested content");
 
-        var result = tool.execute("subdir/data.txt");
+        var result = tool.execute("{\"path\": \"subdir/data.txt\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEqualTo("nested content");
@@ -65,7 +65,7 @@ class FileReadToolTest {
         String content = "line one\nline two\nline three";
         Files.writeString(tempDir.resolve("multi.txt"), content);
 
-        var result = tool.execute("multi.txt");
+        var result = tool.execute("{\"path\": \"multi.txt\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEqualTo(content);
@@ -75,31 +75,41 @@ class FileReadToolTest {
     void execute_readsEmptyFile() throws IOException {
         Files.writeString(tempDir.resolve("empty.txt"), "");
 
-        var result = tool.execute("empty.txt");
+        var result = tool.execute("{\"path\": \"empty.txt\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEmpty();
+    }
+
+    @Test
+    void execute_typedInput_readsFile() throws IOException {
+        Files.writeString(tempDir.resolve("typed.txt"), "typed content");
+
+        var result = tool.execute(new FileReadInput("typed.txt"));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("typed content");
     }
 
     // --- path traversal rejection ---
 
     @Test
     void execute_pathTraversal_returnsFailure() {
-        var result = tool.execute("../secret.txt");
+        var result = tool.execute("{\"path\": \"../secret.txt\"}");
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
     }
 
     @Test
     void execute_absolutePathOutsideSandbox_returnsFailure() {
-        var result = tool.execute("/etc/passwd");
+        var result = tool.execute("{\"path\": \"/etc/passwd\"}");
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
     }
 
     @Test
     void execute_nestedTraversal_returnsFailure() {
-        var result = tool.execute("subdir/../../etc/passwd");
+        var result = tool.execute("{\"path\": \"subdir/../../etc/passwd\"}");
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
     }
@@ -108,7 +118,7 @@ class FileReadToolTest {
 
     @Test
     void execute_fileNotFound_returnsFailure() {
-        var result = tool.execute("nonexistent.txt");
+        var result = tool.execute("{\"path\": \"nonexistent.txt\"}");
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("not found");
     }
@@ -118,22 +128,42 @@ class FileReadToolTest {
     @Test
     void execute_directory_returnsFailure() throws IOException {
         Files.createDirectory(tempDir.resolve("adir"));
-        var result = tool.execute("adir");
+        var result = tool.execute("{\"path\": \"adir\"}");
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("not a regular file");
     }
 
-    // --- null/blank ---
+    // --- null/blank/invalid JSON ---
 
     @Test
     void execute_nullInput_returnsFailure() {
-        var result = tool.execute(null);
+        var result = tool.execute((String) null);
         assertThat(result.isSuccess()).isFalse();
     }
 
     @Test
     void execute_blankInput_returnsFailure() {
         var result = tool.execute("   ");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_plainStringInput_returnsFailure() {
+        // Plain string "hello.txt" is not valid JSON -- returns deserialization failure
+        var result = tool.execute("hello.txt");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_missingPathField_returnsFailure() {
+        var result = tool.execute("{}");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_blankPathInJson_returnsFailure() {
+        // A JSON object with blank path value reaches the blank-path guard in execute(FileReadInput)
+        var result = tool.execute("{\"path\": \"   \"}");
         assertThat(result.isSuccess()).isFalse();
     }
 
@@ -156,7 +186,7 @@ class FileReadToolTest {
     void execute_pathWithNullCharacter_returnsFailure() {
         // A path containing a null byte triggers InvalidPathException on most systems,
         // which is caught by the exception handler in resolveAndValidate() -> access denied.
-        var result = tool.execute("file\u0000.txt");
+        var result = tool.execute("{\"path\": \"file\u0000.txt\"}");
         assertThat(result.isSuccess()).isFalse();
     }
 
@@ -170,7 +200,7 @@ class FileReadToolTest {
         // Skip on systems where permission changes are not supported (e.g., root user)
         assumeTrue(changed && !file.toFile().canRead(), "Cannot restrict file read permissions");
         try {
-            var result = tool.execute("secret.txt");
+            var result = tool.execute("{\"path\": \"secret.txt\"}");
             assertThat(result.isSuccess()).isFalse();
             assertThat(result.getErrorMessage()).containsIgnoringCase("failed to read");
         } finally {
@@ -197,7 +227,7 @@ class FileReadToolTest {
         }
 
         try {
-            var result = tool.execute("link.txt");
+            var result = tool.execute("{\"path\": \"link.txt\"}");
             assertThat(result.isSuccess()).isFalse();
             assertThat(result.getErrorMessage()).containsIgnoringCase("access denied");
         } finally {

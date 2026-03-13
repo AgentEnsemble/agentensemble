@@ -14,6 +14,18 @@ import net.agentensemble.tool.ToolResult;
  *
  * <p>Output: the numeric result as a string. Integer results are formatted without a decimal
  * point; fractional results use standard double notation.
+ *
+ * <h2>Why this tool uses the legacy string-input pattern</h2>
+ *
+ * <p>This tool intentionally extends {@link net.agentensemble.tool.AbstractAgentTool} and
+ * accepts a plain {@code String} rather than a typed record. A math expression is a natural
+ * domain-specific language string: there is exactly one meaningful parameter (the expression
+ * itself), and a record with a single {@code expression} field would not improve clarity for
+ * either tool authors or the LLM.
+ *
+ * <p>This makes {@code CalculatorTool} a reference example of when the legacy string-input
+ * style is the right choice. For tools with multiple structured parameters, see
+ * {@link net.agentensemble.tool.AbstractTypedAgentTool}.
  */
 public final class CalculatorTool extends AbstractAgentTool {
 

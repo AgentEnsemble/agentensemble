@@ -154,7 +154,7 @@ class FileWriteToolTest {
 
     @Test
     void execute_nullInput_returnsFailure() {
-        var result = tool.execute(null);
+        var result = tool.execute((String) null);
         assertThat(result.isSuccess()).isFalse();
     }
 

@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
-import net.agentensemble.tool.AbstractAgentTool;
+import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.ToolResult;
 
 /**
@@ -21,10 +21,10 @@ import net.agentensemble.tool.ToolResult;
  * FileReadTool tool = FileReadTool.of(Path.of("/workspace/data"));
  * </pre>
  *
- * <p>Input: a file path relative to the sandbox directory, e.g. {@code "report.txt"} or
- * {@code "subdir/notes.txt"}.
+ * <p>Input: a {@link FileReadInput} record with a {@code path} field -- the relative path to
+ * the file within the sandbox directory.
  */
-public final class FileReadTool extends AbstractAgentTool {
+public final class FileReadTool extends AbstractTypedAgentTool<FileReadInput> {
 
     private final Path baseDir;
 
@@ -55,16 +55,21 @@ public final class FileReadTool extends AbstractAgentTool {
 
     @Override
     public String description() {
-        return "Reads the contents of a file. Input: a file path relative to the sandbox directory "
-                + "(e.g. 'report.txt' or 'data/notes.txt'). Path traversal (../) is not permitted.";
+        return "Reads the contents of a file within a sandboxed directory. " + "Path traversal (../) is not permitted.";
     }
 
     @Override
-    protected ToolResult doExecute(String input) {
-        if (input == null || input.isBlank()) {
+    public Class<FileReadInput> inputType() {
+        return FileReadInput.class;
+    }
+
+    @Override
+    public ToolResult execute(FileReadInput input) {
+        String relativePath = input.path().trim();
+        if (relativePath.isBlank()) {
             return ToolResult.failure("File path must not be blank");
         }
-        String relativePath = input.trim();
+
         Path resolved = resolveAndValidate(relativePath);
         if (resolved == null) {
             return ToolResult.failure("Access denied: path is outside the sandbox directory");
@@ -75,6 +80,7 @@ public final class FileReadTool extends AbstractAgentTool {
         if (!Files.isRegularFile(resolved)) {
             return ToolResult.failure("Not a regular file: " + relativePath);
         }
+
         // Reject symlinks that point outside the sandbox.
         // normalize()+startsWith() above blocks path traversal via "../" sequences,
         // but does not prevent a symlink inside baseDir that resolves to a path
@@ -86,6 +92,7 @@ public final class FileReadTool extends AbstractAgentTool {
         } catch (IOException e) {
             return ToolResult.failure("Access denied: cannot resolve file path");
         }
+
         try {
             String content = Files.readString(resolved, StandardCharsets.UTF_8);
             return ToolResult.success(content);

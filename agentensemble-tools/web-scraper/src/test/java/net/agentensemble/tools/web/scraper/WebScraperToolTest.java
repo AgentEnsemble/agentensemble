@@ -40,7 +40,7 @@ class WebScraperToolTest {
         String html = "<html><body><h1>Hello World</h1><p>This is content.</p></body></html>";
         when(mockFetcher.fetch(anyString())).thenReturn(html);
 
-        var result = tool.execute("https://example.com");
+        var result = tool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).contains("Hello World");
@@ -52,7 +52,7 @@ class WebScraperToolTest {
         String html = "<html><body><p>Text with <b>bold</b> and <i>italic</i>.</p></body></html>";
         when(mockFetcher.fetch(anyString())).thenReturn(html);
 
-        var result = tool.execute("https://example.com");
+        var result = tool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).doesNotContain("<b>");
@@ -65,19 +65,28 @@ class WebScraperToolTest {
     void execute_passesUrlToFetcher() throws Exception {
         when(mockFetcher.fetch("https://example.com/page")).thenReturn("<html><body>content</body></html>");
 
-        tool.execute("https://example.com/page");
+        tool.execute("{\"url\": \"https://example.com/page\"}");
 
         verify(mockFetcher).fetch("https://example.com/page");
     }
 
     @Test
-    void execute_trimsInputUrl() throws Exception {
+    void execute_trimsUrlWhitespace() throws Exception {
         when(mockFetcher.fetch("https://example.com")).thenReturn("<html><body>content</body></html>");
 
-        var result = tool.execute("  https://example.com  ");
+        var result = tool.execute("{\"url\": \"  https://example.com  \"}");
 
         assertThat(result.isSuccess()).isTrue();
         verify(mockFetcher).fetch("https://example.com");
+    }
+
+    @Test
+    void execute_typedInput_fetchesUrl() throws Exception {
+        when(mockFetcher.fetch("https://example.com")).thenReturn("<html><body>typed</body></html>");
+
+        var result = tool.execute(new WebScraperInput("https://example.com"));
+
+        assertThat(result.isSuccess()).isTrue();
     }
 
     @Test
@@ -87,7 +96,7 @@ class WebScraperToolTest {
         when(mockFetcher.fetch(anyString())).thenReturn(html);
 
         WebScraperTool smallTool = new WebScraperTool(100, 10, mockFetcher);
-        var result = smallTool.execute("https://example.com");
+        var result = smallTool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput().length()).isLessThanOrEqualTo(150); // includes truncation notice
@@ -98,7 +107,7 @@ class WebScraperToolTest {
     void execute_handlesEmptyBody() throws Exception {
         when(mockFetcher.fetch(anyString())).thenReturn("<html><body></body></html>");
 
-        var result = tool.execute("https://example.com");
+        var result = tool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).isEmpty();
@@ -110,7 +119,7 @@ class WebScraperToolTest {
     void execute_fetcherThrowsIOException_returnsFailure() throws Exception {
         when(mockFetcher.fetch(anyString())).thenThrow(new IOException("Connection refused"));
 
-        var result = tool.execute("https://example.com");
+        var result = tool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("failed to fetch");
@@ -120,20 +129,26 @@ class WebScraperToolTest {
     void execute_fetcherThrowsInterruptedException_returnsFailure() throws Exception {
         when(mockFetcher.fetch(anyString())).thenThrow(new InterruptedException());
 
-        var result = tool.execute("https://example.com");
+        var result = tool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isFalse();
     }
 
     @Test
     void execute_nullInput_returnsFailure() {
-        var result = tool.execute(null);
+        var result = tool.execute((String) null);
         assertThat(result.isSuccess()).isFalse();
     }
 
     @Test
     void execute_blankInput_returnsFailure() {
         var result = tool.execute("   ");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_missingUrlField_returnsFailure() {
+        var result = tool.execute("{}");
         assertThat(result.isSuccess()).isFalse();
     }
 
