@@ -11,6 +11,8 @@ import net.agentensemble.task.TaskOutput;
  */
 public class TaskExecutionException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final String taskDescription;
     private final String agentRole;
     private final List<TaskOutput> completedTaskOutputs;

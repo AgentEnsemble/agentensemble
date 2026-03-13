@@ -15,6 +15,7 @@ import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -924,17 +925,17 @@ public class AgentExecutor {
      * Failures are silently swallowed to ensure capture enrichment never disrupts execution.
      *
      * @param arguments the raw JSON arguments string from the LLM; may be {@code null}
-     * @return the parsed map, or {@code null} if parsing fails
+     * @return the parsed map, or an empty map if arguments is null, blank, or cannot be parsed
      */
     private static Map<String, Object> parseArguments(String arguments) {
         if (arguments == null || arguments.isBlank()) {
-            return null;
+            return Collections.emptyMap();
         }
         try {
             return ARGUMENT_MAPPER.readValue(arguments, MAP_TYPE_REF);
         } catch (Exception e) {
             log.debug("Could not parse tool arguments as JSON map for enriched trace: {}", e.getMessage());
-            return null;
+            return Collections.emptyMap();
         }
     }
 

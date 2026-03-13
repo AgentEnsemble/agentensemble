@@ -164,6 +164,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         // Thread-safe shared state -- IdentityHashMap for identity-based task lookup,
         // wrapped with Collections.synchronizedMap to allow concurrent access.
         // Pre-seed with prior phase outputs so cross-phase context() references resolve correctly.
+        @SuppressWarnings("IdentityHashMapUsage")
         Map<Task, TaskOutput> completedOutputs = Collections.synchronizedMap(new IdentityHashMap<>(seedOutputs));
         Map<Task, Throwable> failedTaskCauses = Collections.synchronizedMap(new IdentityHashMap<>());
 

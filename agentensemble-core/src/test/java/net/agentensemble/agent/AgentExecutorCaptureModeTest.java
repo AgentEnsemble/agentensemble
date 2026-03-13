@@ -247,4 +247,61 @@ class AgentExecutorCaptureModeTest {
         assertThat(toolCall.getParsedInput()).isNotNull();
         assertThat(toolCall.getParsedInput()).isEmpty();
     }
+
+    @Test
+    void full_withNullToolArguments_parsedInputIsEmptyMap() {
+        // Previously parseArguments(null) returned null; now returns Collections.emptyMap().
+        Agent agent = agentWithToolCallThenFinalAnswer("null_args_tool", null);
+        Task task = Task.builder()
+                .description("Run tool with null args")
+                .expectedOutput("Result")
+                .agent(agent)
+                .build();
+
+        TaskOutput output = executor.execute(task, List.of(), contextWithCaptureMode(CaptureMode.FULL));
+
+        // null args should produce an empty map (not null) in parsedInput
+        ToolCallTrace toolCall =
+                output.getTrace().getLlmInteractions().get(0).getToolCalls().get(0);
+        assertThat(toolCall.getParsedInput()).isNotNull();
+        assertThat(toolCall.getParsedInput()).isEmpty();
+    }
+
+    @Test
+    void full_withBlankToolArguments_parsedInputIsEmptyMap() {
+        // Previously parseArguments("") returned null; now returns Collections.emptyMap().
+        Agent agent = agentWithToolCallThenFinalAnswer("blank_args_tool", "   ");
+        Task task = Task.builder()
+                .description("Run tool with blank args")
+                .expectedOutput("Result")
+                .agent(agent)
+                .build();
+
+        TaskOutput output = executor.execute(task, List.of(), contextWithCaptureMode(CaptureMode.FULL));
+
+        // blank args should produce an empty map (not null) in parsedInput
+        ToolCallTrace toolCall =
+                output.getTrace().getLlmInteractions().get(0).getToolCalls().get(0);
+        assertThat(toolCall.getParsedInput()).isNotNull();
+        assertThat(toolCall.getParsedInput()).isEmpty();
+    }
+
+    @Test
+    void full_withInvalidJsonToolArguments_parsedInputIsEmptyMap() {
+        // Previously parseArguments("not json") returned null; now returns Collections.emptyMap().
+        Agent agent = agentWithToolCallThenFinalAnswer("bad_args_tool", "not valid json");
+        Task task = Task.builder()
+                .description("Run tool with bad args")
+                .expectedOutput("Result")
+                .agent(agent)
+                .build();
+
+        TaskOutput output = executor.execute(task, List.of(), contextWithCaptureMode(CaptureMode.FULL));
+
+        // invalid JSON should produce an empty map (not null) in parsedInput
+        ToolCallTrace toolCall =
+                output.getTrace().getLlmInteractions().get(0).getToolCalls().get(0);
+        assertThat(toolCall.getParsedInput()).isNotNull();
+        assertThat(toolCall.getParsedInput()).isEmpty();
+    }
 }

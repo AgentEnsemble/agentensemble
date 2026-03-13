@@ -14,6 +14,8 @@ import java.util.List;
  */
 public class PromptTemplateException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final List<String> missingVariables;
     private final String template;
 
