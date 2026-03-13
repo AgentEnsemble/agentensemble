@@ -2,7 +2,15 @@ package net.agentensemble.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
@@ -409,5 +417,89 @@ class PhaseReviewIntegrationTest {
         assertThat(researchCount.get()).isEqualTo(1);
         assertThat(writingCount.get()).isEqualTo(1);
         assertThat(output.getRaw()).isEqualTo("writing-1");
+    }
+
+    // ========================
+    // Cross-phase context with agentless tasks + PhaseReview self-retry (Issue #202)
+    //
+    // When Phase A has agentless tasks and a PhaseReview that triggers a retry,
+    // PhaseDagExecutor calls the phaseRunner lambda again with a rebuilt Phase.
+    // The originalTasksByPhaseName precomputation in executePhases() must ensure that
+    // cumulativeOriginalToResolved stays anchored to the user-created task identities
+    // so that Phase B's context() references still resolve after the retry.
+    // ========================
+
+    /**
+     * Predecessor phase has an agentless task (ChatModel-backed) with a PhaseReview that
+     * self-retries once before approving. The successor phase has a task with
+     * {@code context(taskFromPredecessor)}. Verifies that the identity bridge built by
+     * {@code Ensemble.executePhases()} correctly survives the retry rebuild and the
+     * successor can still read the predecessor's output via cross-phase context.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_predecessorPhaseRetry_successorResolvesPriorOutput() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(agentlessResponse("phase-a-result"));
+
+        AtomicInteger phaseARunCount = new AtomicInteger(0);
+        AtomicInteger reviewCallCount = new AtomicInteger(0);
+
+        // taskA is agentless -- resolveAgents() synthesizes a new Task instance each time
+        // Phase A is executed (including on retry with the rebuilt Phase object).
+        Task taskA = Task.builder()
+                .description("Agentless Phase A task")
+                .expectedOutput("Phase A output")
+                .build();
+
+        // The review task: retry once, then approve.
+        Task reviewTask = Task.builder()
+                .description("Review Phase A")
+                .expectedOutput("APPROVE or RETRY")
+                .handler(ctx -> {
+                    int call = reviewCallCount.incrementAndGet();
+                    if (call == 1) {
+                        return ToolResult.success(
+                                PhaseReviewDecision.retry("needs more detail").toText());
+                    }
+                    return ToolResult.success(PhaseReviewDecision.approve().toText());
+                })
+                .build();
+
+        Phase phaseA = Phase.builder()
+                .name("phase-a")
+                .task(taskA)
+                .review(PhaseReview.of(reviewTask, 2))
+                .build();
+
+        // taskB has a handler and references the ORIGINAL taskA via context().
+        // After Phase A retries (creating new Task objects internally), the identity
+        // bridge must still expose the Phase A output under the original taskA key.
+        Task taskB = Task.builder()
+                .description("Phase B consumes Phase A output")
+                .expectedOutput("Phase B output")
+                .context(List.of(taskA)) // cross-phase reference -- original identity
+                .handler(ctx -> ToolResult.success(
+                        "consumed-" + ctx.contextOutputs().get(0).getRaw()))
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        // Phase A ran twice: initial attempt (RETRY) + one retry (APPROVE).
+        assertThat(reviewCallCount.get()).isEqualTo(2);
+        // Phase B ran once after Phase A was approved, and received Phase A's context output.
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getRaw()).isEqualTo("consumed-phase-a-result");
+    }
+
+    // Helper: build a deterministic ChatResponse for agentless task tests
+    private static ChatResponse agentlessResponse(String text) {
+        return ChatResponse.builder().aiMessage(new AiMessage(text)).build();
     }
 }

@@ -27,9 +27,10 @@ import org.junit.jupiter.api.Test;
 /**
  * Integration tests for the Phase-based workflow execution path.
  *
- * All tests use deterministic {@code handler} tasks so no LLM or API key is required.
- * This allows the full phase execution pipeline (PhaseDagExecutor, SequentialWorkflowExecutor,
- * cross-phase context resolution) to be exercised deterministically.
+ * <p>Most tests use deterministic {@code handler} tasks (no LLM or API key required).
+ * The section "Cross-phase context with agentless tasks (Issue #202)" additionally uses
+ * a Mockito-mocked {@code ChatModel} to exercise the agent-synthesis path with agentless
+ * tasks; the mock is deterministic and still requires no API key.
  */
 class PhaseIntegrationTest {
 

@@ -5,6 +5,7 @@ import dev.langchain4j.model.chat.StreamingChatModel;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1128,6 +1129,15 @@ public class Ensemble {
         // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
         ConcurrentHashMap<String, List<TaskOutput>> phaseResultsMap = new ConcurrentHashMap<>();
 
+        // Precompute original task lists by phase name so that retry-rebuilt Phase objects
+        // (which PhaseDagExecutor creates with new task identities during PhaseReview retries)
+        // still map to the user-created originals when populating cumulativeOriginalToResolved.
+        // Synthetic review phases are not in this map; they fall back to phase.getTasks().
+        Map<String, List<Task>> originalTasksByPhaseName = new HashMap<>();
+        for (Phase p : phases) {
+            originalTasksByPhaseName.put(p.getName(), p.getTasks());
+        }
+
         // Cumulative mapping: original (user-created) task -> agent-resolved task, accumulated
         // across all completed phases. Used to augment priorOutputs before each phase executes
         // so that cross-phase context() references can find prior outputs regardless of whether
@@ -1148,11 +1158,25 @@ public class Ensemble {
             List<Task> agentResolved = resolveAgents(templateResolved, effectiveChatModel, chatLanguageModel);
 
             // 3. Record original -> agent-resolved mapping for this phase's tasks.
-            //    Uses positional correspondence: phase.getTasks().get(i) -> agentResolved.get(i).
+            //    Uses positional correspondence: originalPhaseTasks.get(i) -> agentResolved.get(i).
             //    This captures the full transformation chain (template resolution + synthesis)
             //    in a single map entry so later phases can bridge the identity gap.
-            List<Task> originalPhaseTasks = phase.getTasks();
-            for (int i = 0; i < originalPhaseTasks.size() && i < agentResolved.size(); i++) {
+            //
+            //    Use the precomputed original task list (not phase.getTasks()) so that
+            //    PhaseReview retries -- where the DAG executor calls this lambda with a
+            //    rebuilt Phase whose tasks are new objects -- still anchor the bridge to
+            //    the user-created task identities that successor phases' context() lists hold.
+            List<Task> originalPhaseTasks = originalTasksByPhaseName.getOrDefault(phase.getName(), phase.getTasks());
+
+            // Invariant: resolveTasksFromList and resolveAgents are 1:1 with their inputs.
+            // A size mismatch indicates a framework bug and must not silently corrupt the map.
+            if (originalPhaseTasks.size() != agentResolved.size()) {
+                throw new IllegalStateException("Phase '" + phase.getName()
+                        + "': task count changed during resolution (original="
+                        + originalPhaseTasks.size() + ", resolved=" + agentResolved.size()
+                        + "). This is a framework bug; please report it.");
+            }
+            for (int i = 0; i < originalPhaseTasks.size(); i++) {
                 cumulativeOriginalToResolved.put(originalPhaseTasks.get(i), agentResolved.get(i));
             }
 
