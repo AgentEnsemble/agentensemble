@@ -30,6 +30,28 @@ import java.util.stream.Collectors;
  * a JSON string -- attach an adapter after the source step using
  * the builder's {@link Builder#adapter(java.util.function.Function)} method.
  *
+ * <h2>Using TypedAgentTool Steps</h2>
+ *
+ * <p>Pipeline steps that extend {@link AbstractTypedAgentTool} expect their input to be a
+ * JSON object whose keys match the record component names. When composing a pipeline where
+ * step N+1 is a {@link TypedAgentTool}, you must ensure step N's output (or an attached
+ * adapter's result) is valid JSON that matches step N+1's input record type. For example:
+ *
+ * <pre>
+ * ToolPipeline pipeline = ToolPipeline.builder()
+ *     .name("fetch_and_save")
+ *     .description("Fetch a URL and save the response body to a file")
+ *     .step(new HttpAgentTool("fetcher"))
+ *     .adapter(result -> "{\"filePath\": \"/tmp/out.txt\", \"content\": "
+ *             + "\"" + result.getOutput() + "\"}")
+ *     .step(new FileWriteTool("/tmp"))
+ *     .build();
+ * </pre>
+ *
+ * <p>The pipeline itself always presents a legacy single-{@code "input"} string parameter
+ * to the LLM. If the first step is a {@link TypedAgentTool}, document the expected JSON
+ * format in the pipeline's description so the LLM formats its input accordingly.
+ *
  * <h2>Usage</h2>
  *
  * <pre>

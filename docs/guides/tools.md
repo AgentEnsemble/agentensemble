@@ -1,7 +1,7 @@
 # Tools
 
 Agents can be equipped with tools that they invoke during execution using a ReAct-style
-reasoning loop. There are three supported tool patterns.
+reasoning loop. There are four supported tool patterns.
 
 ---
 
@@ -21,7 +21,105 @@ directly without async overhead.
 
 ---
 
-## Option 1: Extend `AbstractAgentTool` (Recommended)
+## Option 1: Extend `AbstractTypedAgentTool<T>` (Recommended for Structured Inputs)
+
+`AbstractTypedAgentTool<T>` lets you declare a Java record as the tool's input type. The
+framework generates a typed JSON Schema for the LLM (proper named parameters with types and
+descriptions), handles JSON deserialization, and validates required fields automatically.
+
+**When to use:** Tools with multiple parameters, or whenever named parameters improve clarity
+for the LLM.
+
+```java
+@ToolInput(description = "Translation parameters")
+public record TranslationInput(
+    @ToolParam(description = "Text to translate") String text,
+    @ToolParam(description = "Target language code, e.g. 'es', 'fr', 'de'") String targetLanguage,
+    @ToolParam(description = "Source language code -- auto-detected if omitted", required = false) String sourceLanguage
+) {}
+
+public class TranslationTool extends AbstractTypedAgentTool<TranslationInput> {
+
+    private final TranslationClient client;
+
+    public TranslationTool(TranslationClient client) {
+        this.client = client;
+    }
+
+    @Override
+    public String name() { return "translate"; }
+
+    @Override
+    public String description() {
+        return "Translates text from one language to another.";
+        // No need to describe the input format -- the schema does it
+    }
+
+    @Override
+    public Class<TranslationInput> inputType() { return TranslationInput.class; }
+
+    @Override
+    public ToolResult execute(TranslationInput input) {
+        // input.text(), input.targetLanguage(), input.sourceLanguage() are typed and validated
+        // No JSON parsing needed
+        log().debug("Translating {} chars to {}", input.text().length(), input.targetLanguage());
+        String translated = client.translate(input.text(), input.targetLanguage());
+        return ToolResult.success(translated);
+    }
+}
+```
+
+The LLM receives a proper JSON Schema for this tool:
+
+```json
+{
+  "name": "translate",
+  "description": "Translates text from one language to another.",
+  "parameters": {
+    "text":           { "type": "string", "description": "Text to translate" },
+    "targetLanguage": { "type": "string", "description": "Target language code, e.g. 'es', 'fr', 'de'" },
+    "sourceLanguage": { "type": "string", "description": "Source language code -- auto-detected if omitted" }
+  },
+  "required": ["text", "targetLanguage"]
+}
+```
+
+### @ToolInput and @ToolParam
+
+- **`@ToolInput`** (optional) — annotates the record class itself. The `description` is for documentation.
+- **`@ToolParam`** — annotates each record component. `description` appears in the schema. `required = false` marks optional parameters.
+
+All components are **required by default**. Mark optional parameters explicitly:
+
+```java
+@ToolParam(description = "...", required = false) String optionalField
+```
+
+### Supported Parameter Types
+
+| Java Type | JSON Schema Type |
+|-----------|-----------------|
+| `String` | `string` |
+| `int`, `Integer`, `long`, `Long` | `integer` |
+| `double`, `Double`, `float`, `Float`, `BigDecimal` | `number` |
+| `boolean`, `Boolean` | `boolean` |
+| Enum | `enum` (with all values listed) |
+| `List<T>`, `Collection<T>`, `T[]` | `array` |
+| `Map<K,V>` and other objects | `object` |
+
+### Validation
+
+If the LLM omits a required field or sends invalid JSON, the framework returns a clear
+`ToolResult.failure("Missing required parameter(s) for 'TranslationInput': text")` to the
+LLM without ever calling `execute(T)`. The LLM can retry with the correct parameters.
+
+---
+
+## Option 2: Extend `AbstractAgentTool` (String-Based Input)
+
+Use `AbstractAgentTool` when the tool's input is a single, natural string — a math expression,
+a date command, a payload to forward to a remote endpoint. Both `AbstractAgentTool` and
+`AbstractTypedAgentTool` provide the same instrumentation (metrics, logging, exception safety).
 
 `AbstractAgentTool` is the recommended base class. It provides:
 
@@ -89,7 +187,7 @@ protected ToolResult doExecute(String input) {
 
 ---
 
-## Option 2: Implement `AgentTool` Directly
+## Option 3: Implement `AgentTool` Directly
 
 The `AgentTool` interface provides the minimal contract for simple tools:
 
@@ -129,7 +227,7 @@ public class UpperCaseTool implements AgentTool {
 
 ---
 
-## Option 3: Use `@Tool`-Annotated Methods
+## Option 4: Use `@Tool`-Annotated Methods
 
 Register a plain Java object with methods annotated with `@dev.langchain4j.agent.tool.Tool`.
 This is useful for tools with multiple methods or when integrating with existing LangChain4j code.
