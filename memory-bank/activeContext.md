@@ -2,11 +2,37 @@
 
 ## Current Work
 
-Branch: `feature/195-typed-tool-input`
+Branch: `fix/202-cross-phase-context-agentless-identity`
+PR: #203
 
-Typed tool input system via Java records. PR open against main.
+Bug fix for cross-phase `Task.context()` failing at runtime when referenced tasks rely on
+agent synthesis (agentless tasks with no `.agent()` or `.handler()`).
 
 ## Completed This Session
+
+### Issue #202: Cross-Phase Context Bug Fix (PR #203)
+
+Fixed `TaskExecutionException: Context task not yet completed` when using cross-phase
+`Task.context(...)` with agentless tasks (the standard LLM-backed task pattern).
+
+**Root cause:** `resolveAgents()` creates a new Task instance when synthesizing an agent
+(`toBuilder().agent(synthesizedAgent).build()`). `globalTaskOutputs` (IdentityHashMap) is
+keyed by the new instance, but the `context()` list in later-phase tasks still holds the
+original (user-created) task reference. Identity-based lookup fails.
+
+**Fix location:** `Ensemble.executePhases()` -- maintain a cumulative synchronized
+`IdentityHashMap<Task, Task>` across all phases. Before calling `executeSeeded()`, augment
+`priorOutputs` with entries keyed by original task references.
+
+**Tests:** 8 new integration tests in `PhaseIntegrationTest` covering all 8 failure scenarios.
+All use Mockito mock `ChatModel` for deterministic agentless execution. All confirmed FAIL
+before fix and PASS after fix. Full build: BUILD SUCCESSFUL.
+
+**Files changed:**
+- `agentensemble-core/src/main/java/net/agentensemble/Ensemble.java` (72 lines changed)
+- `agentensemble-core/src/test/java/net/agentensemble/integration/PhaseIntegrationTest.java` (368 lines added)
+
+---
 
 ### Issue #195: Typed Tool Input System
 
