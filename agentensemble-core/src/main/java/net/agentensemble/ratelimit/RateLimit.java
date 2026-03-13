@@ -100,8 +100,7 @@ public final class RateLimit {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof RateLimit)) return false;
-        RateLimit other = (RateLimit) o;
+        if (!(o instanceof RateLimit other)) return false;
         return requests == other.requests && Objects.equals(period, other.period);
     }
 

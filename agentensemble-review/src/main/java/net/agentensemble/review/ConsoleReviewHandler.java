@@ -139,7 +139,7 @@ public final class ConsoleReviewHandler implements ReviewHandler {
         try {
             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
             String firstLine = reader.readLine();
-            return processInput(firstLine, reader, request);
+            return processInput(firstLine, reader);
         } catch (IOException e) {
             log.warn("ConsoleReviewHandler I/O error: {}", e.getMessage());
             return ReviewDecision.continueExecution();
@@ -175,7 +175,7 @@ public final class ConsoleReviewHandler implements ReviewHandler {
         Future<ReviewDecision> decisionFuture = readerService.submit(() -> {
             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
             String firstLine = pollReadLine(reader);
-            return processInput(firstLine, reader, request);
+            return processInput(firstLine, reader);
         });
 
         @SuppressWarnings("FutureReturnValueIgnored")
@@ -255,12 +255,10 @@ public final class ConsoleReviewHandler implements ReviewHandler {
      *
      * @param firstLine the first line read from stdin (may be null on EOF)
      * @param reader    the reader for follow-up input on the edit path
-     * @param request   the original review request
      * @return the decided ReviewDecision
      * @throws IOException if I/O fails on the edit path
      */
-    private ReviewDecision processInput(String firstLine, BufferedReader reader, ReviewRequest request)
-            throws IOException {
+    private ReviewDecision processInput(String firstLine, BufferedReader reader) throws IOException {
         if (firstLine == null) {
             // EOF -- treat as Continue
             return ReviewDecision.continueExecution();

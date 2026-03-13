@@ -208,4 +208,13 @@ class CalculatorToolTest {
         var result = tool.execute("2 + 3 foo");
         assertThat(result.isSuccess()).isFalse();
     }
+
+    @Test
+    void execute_multipleDotsInNumber_errorMessageContainsOffendingToken() {
+        // Regression test: parseNumber chains NumberFormatException as cause.
+        // The error message must contain the invalid number token for diagnostics.
+        var result = tool.execute("1.2.3 + 1");
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("1.2.3");
+    }
 }

@@ -23,6 +23,8 @@ package net.agentensemble.exception;
  */
 public class ExitEarlyException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     private final boolean timedOut;
 
     /**

@@ -16,6 +16,8 @@ import java.util.List;
  */
 public class OutputParsingException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final String rawOutput;
     private final Class<?> outputType;
     private final List<String> parseErrors;

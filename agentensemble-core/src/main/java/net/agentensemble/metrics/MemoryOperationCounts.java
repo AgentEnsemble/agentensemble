@@ -36,7 +36,7 @@ public class MemoryOperationCounts {
      * @return aggregated counts
      */
     public MemoryOperationCounts add(MemoryOperationCounts other) {
-        if (other == null || other == ZERO) {
+        if (other == null || other.equals(ZERO)) {
             return this;
         }
         return MemoryOperationCounts.builder()

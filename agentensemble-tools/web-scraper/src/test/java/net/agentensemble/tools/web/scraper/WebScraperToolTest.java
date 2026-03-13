@@ -18,7 +18,7 @@ class WebScraperToolTest {
     @BeforeEach
     void setUp() {
         mockFetcher = mock(UrlFetcher.class);
-        tool = new WebScraperTool(5000, 10, mockFetcher);
+        tool = new WebScraperTool(5000, mockFetcher);
     }
 
     // --- metadata ---
@@ -95,7 +95,7 @@ class WebScraperToolTest {
         String html = "<html><body><p>" + longContent + "</p></body></html>";
         when(mockFetcher.fetch(anyString())).thenReturn(html);
 
-        WebScraperTool smallTool = new WebScraperTool(100, 10, mockFetcher);
+        WebScraperTool smallTool = new WebScraperTool(100, mockFetcher);
         var result = smallTool.execute("{\"url\": \"https://example.com\"}");
 
         assertThat(result.isSuccess()).isTrue();

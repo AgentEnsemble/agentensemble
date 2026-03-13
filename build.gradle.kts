@@ -1,4 +1,5 @@
 import net.ltgt.gradle.errorprone.errorprone
+import org.gradle.api.plugins.quality.PmdExtension
 import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
@@ -26,6 +27,7 @@ subprojects {
     apply(plugin = "java")
     apply(plugin = "com.diffplug.spotless")
     apply(plugin = "net.ltgt.errorprone")
+    apply(plugin = "pmd")
     apply(plugin = "jacoco")
 
     repositories {
@@ -76,6 +78,13 @@ subprojects {
             xml.required = true
             html.required = true
         }
+    }
+
+    configure<PmdExtension> {
+        toolVersion = "7.9.0"
+        isConsoleOutput = true
+        isIgnoreFailures = true
+        ruleSetConfig = resources.text.fromFile("${rootDir}/config/pmd/ruleset.xml")
     }
 
     dependencies {

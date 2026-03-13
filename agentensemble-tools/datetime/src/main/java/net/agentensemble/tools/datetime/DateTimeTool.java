@@ -195,7 +195,7 @@ public final class DateTimeTool extends AbstractAgentTool {
         try {
             return LocalDate.parse(s);
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid date format: '" + s + "'. Expected yyyy-MM-dd");
+            throw new IllegalArgumentException("Invalid date format: '" + s + "'. Expected yyyy-MM-dd", e);
         }
     }
 
@@ -205,7 +205,8 @@ public final class DateTimeTool extends AbstractAgentTool {
         try {
             return LocalDateTime.parse(normalized);
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid datetime format: '" + s + "'. Expected yyyy-MM-ddTHH:mm:ss[Z]");
+            throw new IllegalArgumentException(
+                    "Invalid datetime format: '" + s + "'. Expected yyyy-MM-ddTHH:mm:ss[Z]", e);
         }
     }
 
@@ -225,7 +226,7 @@ public final class DateTimeTool extends AbstractAgentTool {
         try {
             return ZoneId.of(zoneStr);
         } catch (DateTimeException e) {
-            throw new IllegalArgumentException("Unknown timezone: '" + zoneStr + "'");
+            throw new IllegalArgumentException("Unknown timezone: '" + zoneStr + "'", e);
         }
     }
 

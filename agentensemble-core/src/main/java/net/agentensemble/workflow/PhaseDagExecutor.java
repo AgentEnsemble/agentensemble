@@ -109,7 +109,7 @@ public class PhaseDagExecutor {
 
         // successorMap: phase P -> list of phases that depend on P (where P is in .after())
         // Uses identity comparison via IdentityHashMap.
-        Map<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
+        IdentityHashMap<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
         for (Phase phase : phases) {
             successorMap.putIfAbsent(phase, new ArrayList<>());
         }
@@ -123,7 +123,7 @@ public class PhaseDagExecutor {
 
         // remainingPredecessors: count of predecessors not yet completed for each phase.
         // When this reaches 0, the phase can be submitted.
-        Map<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
+        IdentityHashMap<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
         for (Phase phase : phases) {
             remainingPredecessors.put(phase, new AtomicInteger(phase.getAfter().size()));
         }
@@ -247,9 +247,11 @@ public class PhaseDagExecutor {
             CountDownLatch latch) {
 
         // Snapshot prior outputs at the time this phase is submitted.
-        final Map<Task, TaskOutput> priorOutputsSnapshot;
+        final IdentityHashMap<Task, TaskOutput> priorOutputsSnapshot;
         synchronized (globalTaskOutputs) {
-            priorOutputsSnapshot = new IdentityHashMap<>(globalTaskOutputs);
+            @SuppressWarnings("IdentityHashMapUsage")
+            IdentityHashMap<Task, TaskOutput> snapshot = new IdentityHashMap<>(globalTaskOutputs);
+            priorOutputsSnapshot = snapshot;
         }
 
         var unused = threadPool.submit(() -> {
@@ -349,7 +351,7 @@ public class PhaseDagExecutor {
         Phase currentPhase = phase;
         Map<Task, TaskOutput> currentPrior = initialPriorOutputs;
         // Tracks how many times each predecessor has been retried for this phase's review.
-        Map<Phase, Integer> predecessorRetryCounts = new IdentityHashMap<>();
+        IdentityHashMap<Phase, Integer> predecessorRetryCounts = new IdentityHashMap<>();
 
         for (int attempt = 0; ; attempt++) {
             log.info("Phase '{}' attempt {} starting", phase.getName(), attempt + 1);
@@ -454,7 +456,9 @@ public class PhaseDagExecutor {
 
                     // Rebuild the prior snapshot to include updated predecessor outputs.
                     synchronized (globalTaskOutputs) {
-                        currentPrior = new IdentityHashMap<>(globalTaskOutputs);
+                        @SuppressWarnings("IdentityHashMapUsage")
+                        IdentityHashMap<Task, TaskOutput> updatedPrior = new IdentityHashMap<>(globalTaskOutputs);
+                        currentPrior = updatedPrior;
                     }
 
                     // Reset current phase to original tasks (fresh run with updated inputs).
@@ -503,7 +507,8 @@ public class PhaseDagExecutor {
         // Build the review prior: current prior outputs + current-attempt phase outputs.
         // Map both original and current task identities to their outputs so the review
         // task's context() references resolve on all attempts.
-        Map<Task, TaskOutput> reviewPrior = new IdentityHashMap<>(currentPrior);
+        @SuppressWarnings("IdentityHashMapUsage")
+        IdentityHashMap<Task, TaskOutput> reviewPrior = new IdentityHashMap<>(currentPrior);
         if (phaseOutput.getTaskOutputIndex() != null) {
             // Map by current-attempt task identity.
             reviewPrior.putAll(phaseOutput.getTaskOutputIndex());

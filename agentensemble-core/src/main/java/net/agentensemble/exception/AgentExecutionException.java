@@ -9,6 +9,8 @@ package net.agentensemble.exception;
  */
 public class AgentExecutionException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final String agentRole;
     private final String taskDescription;
 

@@ -391,7 +391,7 @@ public class Ensemble {
      *
      * <p>When set, agents that produce a direct LLM answer (no tool loop) stream each token
      * through {@link net.agentensemble.callback.EnsembleListener#onToken(TokenEvent)} and,
-     * when using {@link #webDashboard(EnsembleDashboard)}, over the WebSocket wire protocol.
+     * when using {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}, over the WebSocket wire protocol.
      *
      * <p>Resolution order (first non-null wins):
      * {@code Agent.streamingLlm} &gt; {@code Task.streamingChatLanguageModel} &gt; this value.
@@ -756,7 +756,7 @@ public class Ensemble {
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
             Map<Task, TaskOutput> executorIndex = output.getTaskOutputIndex();
-            Map<Task, TaskOutput> originalIndex = null;
+            IdentityHashMap<Task, TaskOutput> originalIndex = null;
             if (executorIndex != null) {
                 IdentityHashMap<Task, TaskOutput> idx = new IdentityHashMap<>();
                 for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
@@ -1194,10 +1194,11 @@ public class Ensemble {
             //    task has an entry in priorOutputs, also expose it under the original key. Both
             //    the resolved key (for intra-phase lookups) and the original key (for cross-phase
             //    lookups) then resolve correctly.
-            Map<Task, TaskOutput> augmentedPriorOutputs;
+            IdentityHashMap<Task, TaskOutput> augmentedPriorOutputs;
             if (priorOutputs.isEmpty()) {
-                augmentedPriorOutputs = priorOutputs;
+                augmentedPriorOutputs = new IdentityHashMap<>();
             } else {
+                @SuppressWarnings("IdentityHashMapUsage")
                 IdentityHashMap<Task, TaskOutput> augmented = new IdentityHashMap<>(priorOutputs);
                 // Synchronise the iteration to prevent concurrent modification from a
                 // concurrently executing independent phase updating the map at the same time.

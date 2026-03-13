@@ -1,5 +1,62 @@
 # Changelog
 
+## [Unreleased] - fix/error-prone-pmd-p1 (P2 quality fixes) - 2026-03-13
+
+### Fixed (commit ef725fe -- P2 code quality violations, issue #205)
+
+**MissingSerialVersionUID (18 exception classes):**
+- Added `private static final long serialVersionUID = 1L` to all exception classes:
+  `AgentEnsembleException`, `AgentExecutionException`, `ConstraintViolationException`,
+  `ExitEarlyException`, `MaxIterationsExceededException`, `OutputParsingException`,
+  `ParallelExecutionException`, `PromptTemplateException`, `TaskExecutionException`,
+  `ToolConfigurationException`, `ToolExecutionException`, `ValidationException`,
+  `GuardrailViolationException`, `RateLimitInterruptedException`, `RateLimitTimeoutException`,
+  `ReviewTimeoutException`, and 2 inner classes in `JsonParserTool`
+
+**ReturnEmptyCollectionRatherThanNull:**
+- `AgentExecutor.parseArguments()`: returns `Collections.emptyMap()` instead of `null`
+  when args are null, blank, or invalid JSON. Previously callers at CaptureMode.FULL
+  received null `parsedInput` on `ToolCallTrace`.
+
+**PatternMatchingInstanceof:**
+- `RateLimit.equals()`: simplified from explicit cast pattern to pattern-matching instanceof
+
+**UnusedFormalParameter (7 removals across 4 files):**
+- `ConsoleReviewHandler.processInput()`: removed unused `ReviewRequest request` param
+- `WebScraperTool` package-private constructor: removed unused `int timeoutSeconds` param;
+  updated `WebScraperTool()` and `withMaxContentLength()` factory calls
+- `MapReduceAdaptiveExecutor.runIntermediateReducePhase()`: removed unused `int levelIndex`
+- `MapReduceAdaptiveExecutor.runFinalReducePhase()`: removed unused `int levelIndex`
+- `MapReduceAdaptiveExecutor.filterCarrierOutputs()`: removed unused `Set<Task> carriers`;
+  method now filters exclusively by `__carry__:` role prefix
+- `MapReduceAdaptiveExecutor.aggregate()`: removed unused `List<TaskOutput> mapTaskOutputs`
+- `ParallelTaskCoordinator.shouldApplyAfterReview()`: removed unused `int taskIndex`
+
+**IdentityHashMapUsage (9 Error Prone warnings):**
+- `Ensemble`: change `Map<Task,TaskOutput> originalIndex` to `IdentityHashMap` type;
+  change `Map<Task,TaskOutput> augmentedPriorOutputs` to `IdentityHashMap` type;
+  suppress copy-constructor mixing at augment creation site
+- `PhaseDagExecutor`: change `Map<Phase,...>` to `IdentityHashMap<Phase,...>` for
+  `successorMap`, `remainingPredecessors`, `predecessorRetryCounts`; suppress
+  copy-constructor mixing at `priorOutputsSnapshot` and `updatedPrior` creation sites;
+  suppress at `reviewPrior` copy-constructor
+- `ParallelWorkflowExecutor`: suppress IdentityHashMapUsage on
+  `Collections.synchronizedMap(new IdentityHashMap<>(seedOutputs))`
+
+**InvalidLink Javadoc:**
+- `Ensemble.streamingChatLanguageModel` field Javadoc: fixed `{@link #webDashboard(...)}`
+  to `{@link EnsembleBuilder#webDashboard(EnsembleDashboard)}`
+
+### Tests Added (P2, commit ef725fe)
+- `AgentExecutorCaptureModeTest`: 3 new tests verifying `parseArguments` empty-map behavior:
+  - `full_withNullToolArguments_parsedInputIsEmptyMap`
+  - `full_withBlankToolArguments_parsedInputIsEmptyMap`
+  - `full_withInvalidJsonToolArguments_parsedInputIsEmptyMap`
+- `WebScraperToolTest`: updated 2 constructors from `new WebScraperTool(5000, 10, mock)` to
+  `new WebScraperTool(5000, mock)` (removed dropped `timeoutSeconds` parameter)
+
+---
+
 ## [Unreleased] - fix/202-cross-phase-context-agentless-identity - 2026-03-13
 
 ### Fixed

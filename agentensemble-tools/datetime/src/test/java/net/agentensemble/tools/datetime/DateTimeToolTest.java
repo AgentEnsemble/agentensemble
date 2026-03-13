@@ -251,4 +251,31 @@ class DateTimeToolTest {
         var result = defaultTool.execute("today");
         assertThat(result.isSuccess()).isTrue();
     }
+
+    // --- PreserveStackTrace regression tests ---
+
+    @Test
+    void execute_invalidDateFormat_errorMessageContainsOffendingValue() {
+        // Regression test: parseLocalDate chains DateTimeParseException as cause.
+        // The failure message should contain the invalid value for diagnostics.
+        var result = tool.execute("not-a-date + 1 day");
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("not-a-date");
+    }
+
+    @Test
+    void execute_invalidDateTimeFormat_errorMessageContainsOffendingValue() {
+        // Regression test: parseLocalDateTime chains DateTimeParseException as cause.
+        var result = tool.execute("2024-01-01Tbadtime + 1 hour");
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("2024-01-01Tbadtime");
+    }
+
+    @Test
+    void execute_invalidTimezone_errorMessageContainsOffendingValue() {
+        // Regression test: parseZoneId chains DateTimeException as cause.
+        var result = tool.execute("now in Not/AReal/Zone");
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("Not/AReal/Zone");
+    }
 }

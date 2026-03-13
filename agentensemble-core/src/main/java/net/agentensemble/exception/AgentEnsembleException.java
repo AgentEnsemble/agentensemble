@@ -9,6 +9,8 @@ package net.agentensemble.exception;
  */
 public class AgentEnsembleException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     public AgentEnsembleException(String message) {
         super(message);
     }

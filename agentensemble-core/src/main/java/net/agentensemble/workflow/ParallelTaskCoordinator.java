@@ -189,7 +189,7 @@ class ParallelTaskCoordinator {
 
                 // === After-execution review gate ===
                 // Outer check avoids acquiring the lock when no gate is needed.
-                if (exitEarlyReasonRef.get() == null && shouldApplyAfterReview(task, taskIndex)) {
+                if (exitEarlyReasonRef.get() == null && shouldApplyAfterReview(task)) {
                     // Serialize review gate invocations to prevent concurrent prompts
                     // (TOCTOU: two threads can both pass the null-check above; the inner
                     // re-check inside the lock ensures only one fires the ReviewHandler).
@@ -398,7 +398,7 @@ class ParallelTaskCoordinator {
      *       is ambiguous). Use {@link Review#required()} on the terminal task explicitly.</li>
      * </ol>
      */
-    private boolean shouldApplyAfterReview(Task task, int taskIndex) {
+    private boolean shouldApplyAfterReview(Task task) {
         ReviewHandler handler = executionContext.reviewHandler();
         if (handler == null) {
             return false;

@@ -150,12 +150,16 @@ public final class JsonParserTool extends AbstractTypedAgentTool<JsonParserInput
     private record PathSegment(String key, boolean hasIndex, int index) {}
 
     private static final class PathNotFoundException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         PathNotFoundException(String message) {
             super(message);
         }
     }
 
     private static final class ArrayIndexException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         ArrayIndexException(String message) {
             super(message);
         }

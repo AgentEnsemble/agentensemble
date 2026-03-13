@@ -1,6 +1,7 @@
 package net.agentensemble.web;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -168,8 +169,9 @@ public final class WebReviewHandler implements ReviewHandler {
      * </ul>
      */
     private ReviewDecision mapToReviewDecision(ReviewDecisionMessage decision) {
-        String d =
-                decision.decision() != null ? decision.decision().toLowerCase().strip() : "";
+        String d = decision.decision() != null
+                ? decision.decision().toLowerCase(Locale.ROOT).strip()
+                : "";
         return switch (d) {
             case "approve", "continue" -> ReviewDecision.continueExecution();
             case "edit" -> {

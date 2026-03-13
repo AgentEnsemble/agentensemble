@@ -24,6 +24,8 @@ package net.agentensemble.exception;
  */
 public class ToolConfigurationException extends IllegalStateException {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * Construct a ToolConfigurationException with a detail message.
      *

@@ -482,4 +482,47 @@ class HttpAgentToolTest {
         });
         return future.get(5, TimeUnit.SECONDS);
     }
+
+    // ========================
+    // Locale-safe method normalization
+    // ========================
+
+    @Test
+    void builder_lowercaseMethod_normalizedToUppercase() throws Exception {
+        // Regression test: builder.method.toUpperCase(Locale.ROOT) must normalize
+        // lowercase method names regardless of system locale.
+        stubHttpResponse(200, "ok");
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("test")
+                        .description("test")
+                        .url("http://example.com/api")
+                        .method("get"), // lowercase - must be normalized to "GET"
+                mockClient);
+
+        tool.execute("query");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockClient).send(captor.capture(), any());
+        assertThat(captor.getValue().method()).isEqualTo("GET");
+    }
+
+    @Test
+    void builder_mixedCaseMethod_normalizedToUppercase() throws Exception {
+        // e.g. "Post" -> "POST", "Delete" -> "DELETE"
+        stubHttpResponse(200, "ok");
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("test")
+                        .description("test")
+                        .url("http://example.com/api")
+                        .method("Post"), // mixed case
+                mockClient);
+
+        tool.execute("data");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockClient).send(captor.capture(), any());
+        assertThat(captor.getValue().method()).isEqualTo("POST");
+    }
 }

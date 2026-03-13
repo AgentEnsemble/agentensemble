@@ -12,6 +12,8 @@ package net.agentensemble.exception;
  */
 public class ToolExecutionException extends AgentEnsembleException {
 
+    private static final long serialVersionUID = 1L;
+
     private final String toolName;
     private final String toolInput;
 

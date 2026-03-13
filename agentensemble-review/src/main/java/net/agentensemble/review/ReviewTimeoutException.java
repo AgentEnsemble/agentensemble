@@ -9,6 +9,8 @@ package net.agentensemble.review;
  */
 public class ReviewTimeoutException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * Construct a ReviewTimeoutException with a detail message.
      *

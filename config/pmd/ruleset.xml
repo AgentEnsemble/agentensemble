@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<ruleset name="AgentEnsemble PMD Rules"
+         xmlns="https://pmd.sourceforge.io/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://pmd.sourceforge.io/ruleset/2.0.0
+                             https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        AgentEnsemble PMD ruleset. Focuses on real bugs and meaningful issues;
+        noisy stylistic rules are excluded with rationale.
+    </description>
+
+    <!--
+        Best Practices
+        Excluded:
+          - UnitTestContainsTooManyAsserts: fires on every multi-assert integration test (988 hits)
+          - UnitTestShouldIncludeAssert: false positives with AssertJ/Mockito verify patterns (15 hits)
+          - AvoidUsingHardCodedIP: fires on localhost/test fixture addresses (30 hits)
+          - SystemPrintln: example classes deliberately use System.out for demo output (283 hits)
+          - LiteralsFirstInComparisons: Yoda conditions are a stylistic preference, not a defect (7 hits)
+    -->
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="UnitTestContainsTooManyAsserts"/>
+        <exclude name="UnitTestShouldIncludeAssert"/>
+        <exclude name="AvoidUsingHardCodedIP"/>
+        <exclude name="SystemPrintln"/>
+        <exclude name="LiteralsFirstInComparisons"/>
+    </rule>
+
+    <!--
+        Error Prone
+        Excluded:
+          - AvoidDuplicateLiterals: builders and message strings legitimately repeat (398 hits)
+          - AvoidFieldNameMatchingMethodName: builder accessor pattern - field matches method by design (96 hits)
+          - NullAssignment: explicit null-clearing is intentional in reset/clear/copy methods (8 hits)
+          - AvoidLiteralsInIfCondition: magic numbers in conditions are often clear and correct (27 hits)
+    -->
+    <rule ref="category/java/errorprone.xml">
+        <exclude name="AvoidDuplicateLiterals"/>
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+        <exclude name="NullAssignment"/>
+        <exclude name="AvoidLiteralsInIfCondition"/>
+    </rule>
+
+    <!--
+        Performance
+        Excluded:
+          - RedundantFieldInitializer: explicit = null/false/0 in builders is intentional for clarity (63 hits)
+    -->
+    <rule ref="category/java/performance.xml">
+        <exclude name="RedundantFieldInitializer"/>
+    </rule>
+
+</ruleset>

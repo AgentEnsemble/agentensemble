@@ -59,11 +59,11 @@ public class MemoryContext {
     private final ShortTermMemory shortTermMemory;
 
     /**
-     * Per-task listener for memory operation callbacks. Stored in a ThreadLocal so that
+     * Per-task listener for memory operation callbacks. Stored in a static ThreadLocal so that
      * concurrent tasks in Workflow.PARALLEL each maintain their own listener independently.
      * Set at the start of each task execution and removed in a finally block.
      */
-    private final ThreadLocal<MemoryOperationListener> operationListener = new ThreadLocal<>();
+    private static final ThreadLocal<MemoryOperationListener> operationListener = new ThreadLocal<>();
 
     private MemoryContext(EnsembleMemory config, ShortTermMemory shortTermMemory) {
         this.config = config;
