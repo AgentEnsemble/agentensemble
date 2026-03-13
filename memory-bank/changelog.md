@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - fix/202-cross-phase-context-agentless-identity - 2026-03-13
+
+### Fixed
+- **Cross-phase `Task.context()` fails for agentless tasks (Issue #202, PR #203)**:
+  `PhaseDagExecutor` + `Ensemble.executePhases()` failed at runtime when a task in a later
+  phase referenced a task from an earlier predecessor phase via `Task.context(...)` and the
+  referenced task relied on agent synthesis (no `.agent()` or `.handler()`).
+  Error: `TaskExecutionException: Context task not yet completed: <task>`.
+
+  Root cause: `resolveAgents()` synthesizes an agent by calling
+  `task.toBuilder().agent(synthesizedAgent).build()`, creating a new Task instance.
+  `globalTaskOutputs` (an `IdentityHashMap` in `PhaseDagExecutor`) is keyed by the new
+  instance. The `context()` list in a later-phase task still holds the ORIGINAL
+  (user-created) task reference. The identity-based `completedOutputs.get(contextTask)`
+  lookup in `gatherContextOutputs` / `ParallelTaskCoordinator` therefore misses the output.
+
+  Handler tasks (`.handler()`) were unaffected because `resolveAgents` preserves their
+  identity, which is why all existing integration tests never caught this.
+
+  Fix: in `Ensemble.executePhases()`, maintain a cumulative synchronized
+  `IdentityHashMap<Task, Task>` (`cumulativeOriginalToResolved`) mapping each original
+  (user-created) task to its final agent-resolved counterpart across all phases. Before
+  calling `executeSeeded()` for each phase, augment the `priorOutputs` seed with entries
+  keyed by original task references.
+
+  Scenarios fixed:
+  - Single agentless task in predecessor phase
+  - Multiple sequential agentless tasks in predecessor, consumer references both
+  - Parallel predecessor phase with agentless tasks
+  - Parallel successor phase consuming agentless predecessor task
+  - Task-level `chatLanguageModel` (no explicit agent) with cross-phase context
+  - Template variables in predecessor task + cross-phase context (double identity hop)
+  - Three-phase transitive chain: C references A (skipping B)
+  - Mixed handler/agentless predecessor, successor references agentless task
+
+### Tests Added
+- 8 new integration tests in `PhaseIntegrationTest`, all using Mockito mock `ChatModel`
+  for deterministic agentless task execution:
+  `crossPhaseContext_agentlessTask_simpleCase_phaseB_receivesPhaseA_output`,
+  `crossPhaseContext_agentlessTask_multipleSequentialPredecessorTasks`,
+  `crossPhaseContext_agentlessTask_parallelPredecessorPhase`,
+  `crossPhaseContext_agentlessTask_parallelSuccessorPhase`,
+  `crossPhaseContext_agentlessTask_taskLevelChatModel_doesNotBreakIdentity`,
+  `crossPhaseContext_agentlessTask_transitiveChain_phaseC_referencesPhaseA`,
+  `crossPhaseContext_agentlessTask_templateVariableInPredecessor`,
+  `crossPhaseContext_mixedHandlerAndAgentless_agentlessReferenceResolves`
+  All 8 confirmed failing before fix and passing after.
+
+---
+
 ## [Unreleased] - feature/195-typed-tool-input - 2026-03-12
 
 ### Added
