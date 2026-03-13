@@ -2,152 +2,96 @@
 
 ## Current Work
 
-Branch: `feature/193-task-reflection`
+Branch: `feature/195-typed-tool-input`
 
-Task reflection — self-optimizing prompt loop via persistent reflection store. After a
-task executes and all reviews pass, an automated reflection step analyzes the task's
-definition and output, identifies improvements to the instructions, and stores those
-improvements in a pluggable `ReflectionStore`. On subsequent runs, the stored reflection
-is injected into the prompt, creating a cross-run learning loop without modifying the
-compile-time task definition.
+Typed tool input system via Java records. PR open against main.
 
 ## Completed This Session
 
-### New Module: agentensemble-reflection
+### Issue #195: Typed Tool Input System
 
-**SPI types:**
-- `ReflectionStore` — SPI interface with `store(taskIdentity, reflection)` and
-  `retrieve(taskIdentity)` methods. Implementations may use any backend.
-- `TaskReflection` — immutable record with `refinedDescription`, `refinedExpectedOutput`,
-  `observations`, `suggestions`, `reflectedAt`, `runCount`. Factory methods `ofFirstRun()`
-  and `fromPrior()` manage run count accumulation.
-- `InMemoryReflectionStore` — `ConcurrentHashMap`-backed default implementation.
+Introduces `TypedAgentTool<T>` -- an opt-in extension to `AgentTool` that lets tool authors
+declare a Java record as the tool's input type. The framework generates a typed JSON Schema
+for the LLM, handles JSON deserialization, and validates required fields automatically.
+Fully backward compatible -- `AgentTool` and `AbstractAgentTool` are unchanged.
 
-**Tests (28):**
-- `TaskReflectionTest` (16 tests): validation, immutability, factory methods, run count
-- `InMemoryReflectionStoreTest` (12 tests): CRUD, validation, thread safety, clear
+### New framework types (agentensemble-core)
 
-### Core additions (agentensemble-core)
+- `@ToolInput` -- optional annotation on input record classes
+- `@ToolParam` -- annotation on record components (description, required)
+- `TypedAgentTool<T>` -- interface extending `AgentTool`; adds `inputType()` + `execute(T)`
+- `AbstractTypedAgentTool<T>` -- extends `AbstractAgentTool`; `doExecute(String)` deserializes
+  JSON and delegates to `execute(T)`
+- `ToolSchemaGenerator` -- introspects record classes via `getRecordComponents()`;
+  maps Java types to LangChain4j `JsonObjectSchema` elements
+- `ToolInputDeserializer` -- Jackson-based JSON -> typed record; validates required fields;
+  `FAIL_ON_UNKNOWN_PROPERTIES=false` (LLM extra fields are silently ignored)
+- `LangChain4jToolAdapter` -- updated to detect `TypedAgentTool`, generate multi-param schemas,
+  and route full JSON args for typed tools vs "input" key extraction for legacy tools
 
-**New types:**
-- `ReflectionInput` — input bundle (task, taskOutput, priorReflection) for strategies.
-- `ReflectionStrategy` — `@FunctionalInterface` SPI for custom analysis logic.
-- `ReflectionConfig` — configuration value object: model override, custom strategy.
-  `ReflectionConfig.DEFAULT` used by `.reflect(true)`.
-- `LlmReflectionStrategy` — default implementation. Sends structured prompt, parses
-  response into `TaskReflection`. Falls back gracefully on LLM failure or parse failure.
-- `ReflectionPromptBuilder` — builds the meta-prompt: task definition + output +
-  prior notes + structured analysis instructions.
-- `TaskIdentity` — SHA-256 hash of task description, used as store key.
-- `TaskReflector` — static utility that orchestrates the full reflection lifecycle:
-  load prior → build input → resolve strategy → run reflection → store → fire event.
-- `TaskReflectedEvent` — new callback event record.
+### Built-in tool migrations
 
-**Modified types:**
-- `Task` — new `reflectionConfig` field. Builder adds `.reflect(boolean)` and
-  `.reflect(ReflectionConfig)` methods.
-- `AgentPromptBuilder.buildUserPrompt` — new 5-arg overload with `TaskReflection priorReflection`.
-  Injects `## Task Improvement Notes` section before `## Task` when reflection present.
-- `AgentExecutor.execute` — loads prior reflection before prompt building; calls
-  `TaskReflector.reflect()` after memory scopes stored.
-- `DeterministicTaskExecutor.execute` — same reflection lifecycle.
-- `EnsembleListener` — new `onTaskReflected(TaskReflectedEvent)` default method.
-- `ExecutionContext` — new `reflectionStore` field + factory overload + `reflectionStore()`
-  accessor + `fireTaskReflected()` dispatch method.
-- `Ensemble` — new `reflectionStore` field + `Ensemble.reflectionStore(ReflectionStore)`
-  builder method. Passes store to `ExecutionContext.of(...)`.
+Migrated to `AbstractTypedAgentTool<T>`:
+- `FileReadTool` -> `FileReadInput(path)`
+- `FileWriteTool` -> `FileWriteInput(path, content)`
+- `JsonParserTool` -> `JsonParserInput(jsonPath, json)` (replaces newline-delimiter format)
+- `WebSearchTool` -> `WebSearchInput(query)`
+- `WebScraperTool` -> `WebScraperInput(url)`
 
-**Tests (core, 4 new test classes):**
-- `AgentPromptBuilderReflectionTest` (9 tests): injection, ordering, backward compatibility
-- `LlmReflectionStrategyParseTest` (10 tests): parsing, fallback, LLM round-trip
-- `ReflectionConfigTest` (10 tests): builder, task builder integration
-- `TaskReflectionIntegrationTest` (10 tests): store/retrieve, run count, events, fallback
+Legacy string-input kept intentionally (good examples for docs):
+- `CalculatorTool` -- input IS a math expression DSL string
+- `DateTimeTool` -- input IS a date command DSL string
+- `HttpAgentTool` -- passes payload through to configured remote endpoint
+- `ProcessAgentTool` -- passes input through to configured subprocess stdin
 
-### Build files
-- `settings.gradle.kts` — added `include("agentensemble-reflection")`
-- `agentensemble-reflection/build.gradle.kts` — new module build file
-- `agentensemble-core/build.gradle.kts` — added `api(project(":agentensemble-reflection"))`
-- `agentensemble-bom/build.gradle.kts` — added reflection to BOM constraints
+### Tests
+
+- `ToolSchemaGeneratorTest` -- type mapping (string, integer, number, boolean, enum, array, object),
+  required/optional, unannotated fields, null/non-record rejection
+- `ToolInputDeserializerTest` -- happy path (all types), missing required fields, null values,
+  invalid JSON, JSON array, contract violations
+- `AbstractTypedAgentToolTest` -- deserialization bridge, exception handling (runtime, ExitEarly,
+  ToolConfigurationException), type identity
+- `TypedToolIntegrationTest` -- schema generation and execution routing via LangChain4jToolAdapter,
+  missing required fields, extra fields ignored, legacy backward compat
+- `LangChain4jToolAdapterTest` -- updated with typed spec generation and execution routing cases
+- All tool tests updated: FileRead, FileWrite, JsonParser, WebSearch, WebScraper
 
 ### Documentation
-- `docs/design/22-task-reflection.md` — architecture doc: problem, goals, lifecycle,
-  prompt injection, SPI contracts, module structure, thread safety
-- `docs/guides/task-reflection.md` — user guide with quick start, configuration,
-  storage options, callbacks, default prompt
-- `docs/examples/task-reflection.md` — code examples for 6 use cases
-- `mkdocs.yml` — navigation entries added to Guides, Examples, and Design sections
 
-## PR #194 Copilot Review Response (commit 0c281b6)
-
-### Comment 2+3 — Reflection timing (most significant)
-Reflection was running inside `AgentExecutor.execute()` and `DeterministicTaskExecutor.execute()`
-BEFORE the after-execution review gate. This violated the documented contract of
-"after all reviews pass on accepted output".
-
-**Fix:** Removed `TaskReflector.reflect()` from both executors. Added to the workflow layer:
-- `SequentialWorkflowExecutor.executeSeeded()` — after the after-review gate (including both
-  normal Continue flow and ExitEarly path)
-- `ParallelTaskCoordinator.submitTask()` — same; uses fully-qualified class names to avoid
-  adding imports
-
-### Comment 4 — Ephemeral store per reflection call
-`TaskReflector.resolveStore()` was creating `new InMemoryReflectionStore()` on every
-reflection call when no store was configured. This prevented prior-reflection retrieval
-because each call got a fresh empty store.
-
-**Fix:** `Ensemble.runWithInputs()` now provisions a single `InMemoryReflectionStore` at
-run-start time when tasks have reflection enabled and no explicit store is configured.
-`TaskReflector.resolveStore()` now returns `null` (skips reflection) when no store is in
-context, rather than creating a throwaway store. Added `hasReflectionEnabled(List<Task>)` helper.
-
-### Comments 1, 5, 6 — Doc and Javadoc corrections
-- Design doc section 13: moved `ReflectionStrategy`, `ReflectionConfig`, `ReflectionInput`
-  to `agentensemble-core` section (they were listed under `agentensemble-reflection`)
-- `InMemoryReflectionStore` Javadoc: `.model(model)` → `.chatLanguageModel(model)`
-- Design doc Ensemble integration example: same fix
-- Design doc now also lists `SequentialWorkflowExecutor`, `ParallelTaskCoordinator` as
-  integration points
-
-### Comment 7 — slf4j dependency
-Changed `agentensemble-reflection/build.gradle.kts` from `implementation(libs.slf4j.api)`
-to `compileOnly(libs.slf4j.api)`. The SPI module sources don't use SLF4J directly; this
-keeps the published artifact's dependency surface minimal.
-
-### Test update
-`TaskReflectionIntegrationTest.taskReflector_withNoStore_createsEphemeralFallback` renamed
-to `taskReflector_withNoStore_skipsReflection` with assertions verifying nothing is stored
-and no event is fired when no store is in context.
+- `docs/design/23-typed-tool-input.md` -- architecture doc
+- `docs/guides/tools.md` -- Option 1 is now AbstractTypedAgentTool<T>
+- `docs/examples/typed-tools.md` -- custom typed tool examples
+- `docs/migration/typed-tool-inputs.md` -- migration guide (no breaking changes; opt-in)
+- `mkdocs.yml` -- all new pages added to nav
 
 ## Status
-- Full build: PASSING (both modules, build `0c281b6`)
+- Full build: PASSING (239 tasks, BUILD SUCCESSFUL in 51s)
 - All tests: PASSING
-- Branch: `feature/193-task-reflection` pushed to origin
-- PR #194 open; 7 Copilot comments addressed
+- Branch: `feature/195-typed-tool-input` committed (commit 7a2b78e)
+- 37 files changed, 2669 insertions(+), 160 deletions(-)
 
 ## Key Design Decisions
 
-### Cross-run vs intra-run
-Reflection is CROSS-RUN (across separate `Ensemble.run()` calls). Phase review is
-INTRA-RUN (retry within one run). Both can be used together.
+### Backward compatibility
+`AgentTool` interface and `AbstractAgentTool` are completely unchanged. Every existing tool
+compiles and runs identically. `TypedAgentTool<T>` is purely opt-in.
 
-### Post-acceptance only
-Reflection runs AFTER all reviews pass. It is not a quality gate; it is a learning step.
+### Execution routing
+`LangChain4jToolAdapter.executeForResult()` detects `TypedAgentTool` instances and passes
+the full JSON arguments string instead of extracting the "input" key. Legacy tools still
+receive only the "input" key value (unchanged behavior).
 
-### Static definition preserved
-Reflection never mutates the `Task` object. The original description and expectedOutput
-are always present in the prompt below the reflection notes.
+### Intentional legacy examples
+`CalculatorTool` and `DateTimeTool` intentionally keep the string-input style with explanatory
+Javadoc -- they demonstrate when a single DSL string is the right design for tool inputs.
 
-### Pluggable storage
-`ReflectionStore` SPI supports any backend: in-memory, RDBMS, SQLite, REST API. The
-`InMemoryReflectionStore` default logs a WARN when used without explicit configuration.
-
-### Non-fatal reflection
-All reflection failures (LLM errors, parse failures) are caught and logged as WARN.
-The task output is never affected.
-
-### Task identity = SHA-256(description)
-Stable across JVM restarts. Same description = shared reflection entry (intentional).
+### Jackson configuration
+`ToolInputDeserializer` configures `ObjectMapper` with `FAIL_ON_UNKNOWN_PROPERTIES=false`.
+LLMs may include extra fields in their tool calls; silently ignoring them prevents spurious
+failures and is the correct production behavior.
 
 ## Next Steps
-- Merge PR #193
-- Consider: SQLite-backed `ReflectionStore` implementation in examples or devtools module
+- Open PR for `feature/195-typed-tool-input`
+- Consider: runnable example class in `agentensemble-examples` (docs reference it but no
+  class was created -- could add in a follow-up commit or the PR)
