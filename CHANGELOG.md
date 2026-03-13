@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.8.0...v2.9.0) (2026-03-13)
+
+
+### Features
+
+* **tools:** typed tool input system via Java records ([#195](https://github.com/AgentEnsemble/agentensemble/issues/195)) ([#196](https://github.com/AgentEnsemble/agentensemble/issues/196)) ([9631f9c](https://github.com/AgentEnsemble/agentensemble/commit/9631f9cf891f90462dfcb6ceddfa3ff969f9c37f))
+
 ## [2.8.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.7.0...v2.8.0) (2026-03-12)
 
 
