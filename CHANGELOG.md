@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.2](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.1...v2.9.2) (2026-03-13)
+
+
+### Bug Fixes
+
+* resolve P1 + P2 code quality violations (issue [#205](https://github.com/AgentEnsemble/agentensemble/issues/205)) ([#206](https://github.com/AgentEnsemble/agentensemble/issues/206)) ([7aaef2a](https://github.com/AgentEnsemble/agentensemble/commit/7aaef2a8af70ead63eb694dd44042537f3899209))
+
 ## [2.9.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.0...v2.9.1) (2026-03-13)
 
 
