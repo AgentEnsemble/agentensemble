@@ -47,6 +47,17 @@
   `crossPhaseContext_agentlessTask_templateVariableInPredecessor`,
   `crossPhaseContext_mixedHandlerAndAgentless_agentlessReferenceResolves`
   All 8 confirmed failing before fix and passing after.
+- 1 new integration test in `PhaseReviewIntegrationTest` (Copilot comment #4):
+  `crossPhaseContext_agentlessTask_predecessorPhaseRetry_successorResolvesPriorOutput` --
+  verifies the identity bridge survives a PhaseReview self-retry (rebuilt Phase objects
+  with new task identities) and the successor resolves context correctly.
+
+### Copilot Review Fixes (commit d7f687c)
+1. Precomputed `originalTasksByPhaseName` before the lambda to anchor
+   `cumulativeOriginalToResolved` to user-created task identities during PhaseReview retries
+2. Replaced silently-truncating loop with explicit `IllegalStateException` invariant assertion
+3. Updated `PhaseIntegrationTest` class Javadoc to mention Mockito-mocked ChatModel section
+4. Added retry regression test in `PhaseReviewIntegrationTest`
 
 ---
 
