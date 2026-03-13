@@ -2,7 +2,14 @@ package net.agentensemble.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -20,9 +27,10 @@ import org.junit.jupiter.api.Test;
 /**
  * Integration tests for the Phase-based workflow execution path.
  *
- * All tests use deterministic {@code handler} tasks so no LLM or API key is required.
- * This allows the full phase execution pipeline (PhaseDagExecutor, SequentialWorkflowExecutor,
- * cross-phase context resolution) to be exercised deterministically.
+ * <p>Most tests use deterministic {@code handler} tasks (no LLM or API key required).
+ * The section "Cross-phase context with agentless tasks (Issue #202)" additionally uses
+ * a Mockito-mocked {@code ChatModel} to exercise the agent-synthesis path with agentless
+ * tasks; the mock is deterministic and still requires no API key.
  */
 class PhaseIntegrationTest {
 
@@ -538,5 +546,364 @@ class PhaseIntegrationTest {
 
         assertThat(startCount.get()).isEqualTo(2);
         assertThat(completeCount.get()).isEqualTo(2);
+    }
+
+    // ========================
+    // Cross-phase context with agentless tasks (Issue #202)
+    //
+    // These tests cover the case where tasks have no explicit .agent() and no
+    // .handler() -- the framework synthesizes an agent at runtime. Agent synthesis
+    // creates a new Task instance, which was breaking the identity-based context
+    // lookup in gatherContextOutputs() when the referenced task came from a prior phase.
+    // ========================
+
+    /**
+     * Simplest reported failing case: single agentless task in Phase A, single agentless
+     * task in Phase B with context(taskA). Agent synthesis in Phase A creates a new Task
+     * identity that was not matched by the original reference held in taskB.context.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_simpleCase_phaseB_receivesPhaseA_output() {
+        // Arrange: both tasks are agentless -- agent synthesis will create new Task instances
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        Task taskA = Task.builder()
+                .description("Task A produces data")
+                .expectedOutput("Task A output")
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA).build();
+
+        Task taskB = Task.builder()
+                .description("Task B consumes Task A output")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA)) // cross-phase reference -- original identity
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        // Act & Assert: must not throw TaskExecutionException("Context task not yet completed: Task A")
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(2);
+    }
+
+    /**
+     * Predecessor phase has two agentless tasks running sequentially; successor phase
+     * task references both via context().
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_multipleSequentialPredecessorTasks() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        Task taskA1 = Task.builder()
+                .description("Task A1 first step")
+                .expectedOutput("A1 output")
+                .build();
+
+        Task taskA2 = Task.builder()
+                .description("Task A2 second step")
+                .expectedOutput("A2 output")
+                .build();
+
+        Phase phaseA = Phase.builder()
+                .name("phase-a")
+                .workflow(Workflow.SEQUENTIAL)
+                .task(taskA1)
+                .task(taskA2)
+                .build();
+
+        Task taskB = Task.builder()
+                .description("Task B consumes both A1 and A2")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA1, taskA2)) // cross-phase references to both
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(3);
+    }
+
+    /**
+     * Predecessor phase has two agentless tasks running in parallel; successor phase
+     * task references one of them via context().
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_parallelPredecessorPhase() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        Task taskA1 = Task.builder()
+                .description("Task A1 parallel branch one")
+                .expectedOutput("A1 output")
+                .build();
+
+        Task taskA2 = Task.builder()
+                .description("Task A2 parallel branch two")
+                .expectedOutput("A2 output")
+                .build();
+
+        Phase phaseA = Phase.builder()
+                .name("phase-a")
+                .workflow(Workflow.PARALLEL)
+                .task(taskA1)
+                .task(taskA2)
+                .build();
+
+        Task taskB = Task.builder()
+                .description("Task B consumes A1 from parallel phase")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA1)) // cross-phase reference to one of the parallel tasks
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(3);
+    }
+
+    /**
+     * Successor phase uses PARALLEL workflow; predecessor tasks are agentless.
+     * Verifies that ParallelWorkflowExecutor.executeSeeded() handles the augmented
+     * prior outputs correctly.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_parallelSuccessorPhase() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        Task taskA = Task.builder()
+                .description("Task A produces source data")
+                .expectedOutput("Task A output")
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA).build();
+
+        Task taskB = Task.builder()
+                .description("Task B consumes Task A via parallel phase")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA))
+                .build();
+
+        Phase phaseB = Phase.builder()
+                .name("phase-b")
+                .workflow(Workflow.PARALLEL)
+                .after(phaseA)
+                .task(taskB)
+                .build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(2);
+    }
+
+    /**
+     * Predecessor task has a task-level chatLanguageModel (but no explicit .agent()).
+     * This also triggers agent synthesis in resolveAgents(), creating a new Task identity.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_taskLevelChatModel_doesNotBreakIdentity() {
+        ChatModel ensembleModel = mock(ChatModel.class);
+        when(ensembleModel.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("ensemble-result"));
+
+        ChatModel taskModel = mock(ChatModel.class);
+        when(taskModel.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("task-model-result"));
+
+        // taskA uses a task-level chatLanguageModel -- resolveAgents still synthesizes
+        // an agent for it, creating a new Task instance
+        Task taskA = Task.builder()
+                .description("Task A with task-level model")
+                .expectedOutput("Task A output")
+                .chatLanguageModel(taskModel)
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA).build();
+
+        Task taskB = Task.builder()
+                .description("Task B references Task A")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA))
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(ensembleModel)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(2);
+    }
+
+    /**
+     * Three-phase chain: A -> B -> C where Phase C references a task from Phase A
+     * (transitive cross-phase context, skipping Phase B). Verifies that the cumulative
+     * original-to-resolved mapping covers tasks from all prior phases, not just the
+     * immediate predecessor.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_transitiveChain_phaseC_referencesPhaseA() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        Task taskA = Task.builder()
+                .description("Phase A produces initial data")
+                .expectedOutput("Phase A output")
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA).build();
+
+        Task taskB = Task.builder()
+                .description("Phase B intermediate task")
+                .expectedOutput("Phase B output")
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        // taskC references taskA from Phase A (two phases back), not taskB
+        Task taskC = Task.builder()
+                .description("Phase C consumes Phase A output")
+                .expectedOutput("Phase C output")
+                .context(List.of(taskA)) // transitive cross-phase reference
+                .build();
+
+        Phase phaseC = Phase.builder().name("phase-c").after(phaseB).task(taskC).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .phase(phaseC)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(3);
+    }
+
+    /**
+     * Template variable in predecessor task description; successor task references it
+     * via context(). resolveTasksFromList creates a new Task instance for Phase A
+     * (due to template substitution), then resolveAgents creates another. Phase B's
+     * context ref points to the pre-template original -- two identity hops away.
+     */
+    @Test
+    void crossPhaseContext_agentlessTask_templateVariableInPredecessor() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("llm-result"));
+
+        // taskA uses a template variable in its description
+        Task taskA = Task.builder()
+                .description("Analyze {topic} data")
+                .expectedOutput("Analysis of {topic}")
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA).build();
+
+        Task taskB = Task.builder()
+                .description("Summarize the analysis")
+                .expectedOutput("Summary output")
+                .context(List.of(taskA)) // references the PRE-template original
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        // Run with template variable resolution
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .input("topic", "market")
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(2);
+    }
+
+    /**
+     * Mixed predecessor phase: one task has a .handler() (identity preserved through
+     * resolveAgents) and one task is agentless (identity broken). The successor
+     * references the agentless task. Validates that the fix correctly augments
+     * priorOutputs for the agentless task while the handler task continues to work.
+     */
+    @Test
+    void crossPhaseContext_mixedHandlerAndAgentless_agentlessReferenceResolves() {
+        ChatModel model = mock(ChatModel.class);
+        when(model.chat(any(ChatRequest.class))).thenReturn(syntheticResponse("agentless-output"));
+
+        // taskA1 has a handler (identity preserved)
+        Task taskA1 = Task.builder()
+                .description("Task A1 with handler")
+                .expectedOutput("A1 output")
+                .handler(ctx -> ToolResult.success("handler-result"))
+                .build();
+
+        // taskA2 is agentless (identity broken by resolveAgents)
+        Task taskA2 = Task.builder()
+                .description("Task A2 agentless")
+                .expectedOutput("A2 output")
+                .build();
+
+        Phase phaseA = Phase.builder().name("phase-a").task(taskA1).task(taskA2).build();
+
+        // taskB references the agentless taskA2
+        Task taskB = Task.builder()
+                .description("Task B references agentless A2")
+                .expectedOutput("Task B output")
+                .context(List.of(taskA2))
+                .handler(ctx -> ToolResult.success(
+                        "consumed-" + ctx.contextOutputs().get(0).getRaw()))
+                .build();
+
+        Phase phaseB = Phase.builder().name("phase-b").after(phaseA).task(taskB).build();
+
+        EnsembleOutput output = Ensemble.builder()
+                .chatLanguageModel(model)
+                .phase(phaseA)
+                .phase(phaseB)
+                .build()
+                .run();
+
+        assertThat(output.isComplete()).isTrue();
+        assertThat(output.getTaskOutputs()).hasSize(3);
+        assertThat(output.getRaw()).isEqualTo("consumed-agentless-output");
+    }
+
+    // Helper: build a deterministic ChatResponse for agentless task tests
+    private static ChatResponse syntheticResponse(String text) {
+        return ChatResponse.builder().aiMessage(new AiMessage(text)).build();
     }
 }
