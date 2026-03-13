@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.1](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.0...v2.9.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* cross-phase context() fails for agentless tasks due to identity mismatch ([#202](https://github.com/AgentEnsemble/agentensemble/issues/202)) ([#203](https://github.com/AgentEnsemble/agentensemble/issues/203)) ([de61ccc](https://github.com/AgentEnsemble/agentensemble/commit/de61ccc77c23e5683f53215950d1eed840acb4be))
+
 ## [2.9.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.8.0...v2.9.0) (2026-03-13)
 
 
