@@ -1128,6 +1128,16 @@ public class Ensemble {
         // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
         ConcurrentHashMap<String, List<TaskOutput>> phaseResultsMap = new ConcurrentHashMap<>();
 
+        // Cumulative mapping: original (user-created) task -> agent-resolved task, accumulated
+        // across all completed phases. Used to augment priorOutputs before each phase executes
+        // so that cross-phase context() references can find prior outputs regardless of whether
+        // resolveAgents() created new Task instances during synthesis.
+        //
+        // Must be synchronised: independent phases (no dependency on each other) may execute
+        // concurrently on virtual threads, so updates from one phase must be visible to a later
+        // phase that depends on the first without a happens-before beyond the DAG ordering.
+        Map<Task, Task> cumulativeOriginalToResolved = Collections.synchronizedMap(new IdentityHashMap<>());
+
         PhaseDagExecutor dagExecutor = new PhaseDagExecutor();
 
         EnsembleOutput dagOutput = dagExecutor.execute(phases, (phase, priorOutputs) -> {
@@ -1137,34 +1147,80 @@ public class Ensemble {
             // 2. Resolve agents (synthesize where needed)
             List<Task> agentResolved = resolveAgents(templateResolved, effectiveChatModel, chatLanguageModel);
 
-            // 3. Derive agents for delegation context
+            // 3. Record original -> agent-resolved mapping for this phase's tasks.
+            //    Uses positional correspondence: phase.getTasks().get(i) -> agentResolved.get(i).
+            //    This captures the full transformation chain (template resolution + synthesis)
+            //    in a single map entry so later phases can bridge the identity gap.
+            List<Task> originalPhaseTasks = phase.getTasks();
+            for (int i = 0; i < originalPhaseTasks.size() && i < agentResolved.size(); i++) {
+                cumulativeOriginalToResolved.put(originalPhaseTasks.get(i), agentResolved.get(i));
+            }
+
+            // 4. Augment priorOutputs with entries keyed by original task references.
+            //
+            //    Problem: globalTaskOutputs (and therefore priorOutputs) is keyed by the
+            //    agent-resolved task instances produced in step 2 of a prior phase. However,
+            //    the context() list of a later-phase task still holds the ORIGINAL (user-created)
+            //    task references, because resolveTasksFromList / resolveAgents for the later
+            //    phase only rewrites intra-phase context references -- cross-phase ones fall
+            //    through unchanged. The identity-based completedOutputs.get(contextTask) lookup
+            //    in gatherContextOutputs / ParallelTaskCoordinator therefore misses the output.
+            //
+            //    Fix: for each (original, resolved) pair in the cumulative map, if the resolved
+            //    task has an entry in priorOutputs, also expose it under the original key. Both
+            //    the resolved key (for intra-phase lookups) and the original key (for cross-phase
+            //    lookups) then resolve correctly.
+            Map<Task, TaskOutput> augmentedPriorOutputs;
+            if (priorOutputs.isEmpty()) {
+                augmentedPriorOutputs = priorOutputs;
+            } else {
+                IdentityHashMap<Task, TaskOutput> augmented = new IdentityHashMap<>(priorOutputs);
+                // Synchronise the iteration to prevent concurrent modification from a
+                // concurrently executing independent phase updating the map at the same time.
+                synchronized (cumulativeOriginalToResolved) {
+                    cumulativeOriginalToResolved.forEach((original, resolved) -> {
+                        TaskOutput out = priorOutputs.get(resolved);
+                        if (out != null) {
+                            // putIfAbsent: do not overwrite if original and resolved happen to be
+                            // the same object (handler tasks preserved by resolveAgents).
+                            augmented.putIfAbsent(original, out);
+                        }
+                    });
+                }
+                augmentedPriorOutputs = augmented;
+            }
+
+            // 5. Derive agents for delegation context
             List<Agent> phaseAgents = deriveAgents(agentResolved);
 
-            // 4. Determine the per-phase workflow
+            // 6. Determine the per-phase workflow
             Workflow phaseWorkflow = phase.getWorkflow() != null ? phase.getWorkflow() : ensembleEffectiveWorkflow;
 
             log.debug(
-                    "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {}",
+                    "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {} | Augmented: {}",
                     phase.getName(),
                     phaseWorkflow,
                     agentResolved.size(),
-                    priorOutputs.size());
+                    priorOutputs.size(),
+                    augmentedPriorOutputs.size());
 
-            // 5. Execute with appropriate executor, seeding prior outputs for cross-phase context
+            // 7. Execute with appropriate executor, seeding augmented prior outputs so that
+            //    cross-phase context() references resolve correctly regardless of whether
+            //    agent synthesis transformed the referenced task's identity.
             EnsembleOutput phaseOutput =
                     switch (phaseWorkflow) {
                         case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
-                                .executeSeeded(agentResolved, executionContext, priorOutputs);
+                                .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
                         case PARALLEL -> new ParallelWorkflowExecutor(
                                         phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
-                                .executeSeeded(agentResolved, executionContext, priorOutputs);
+                                .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
                         case HIERARCHICAL -> throw new ValidationException("Phase '"
                                 + phase.getName()
                                 + "': Workflow.HIERARCHICAL is not supported at the phase "
                                 + "level. Use HIERARCHICAL at the ensemble level (without phases).");
                     };
 
-            // 6. Record phase outputs for EnsembleOutput.getPhaseOutputs()
+            // 8. Record phase outputs for EnsembleOutput.getPhaseOutputs()
             phaseResultsMap.put(phase.getName(), phaseOutput.getTaskOutputs());
 
             return phaseOutput;
