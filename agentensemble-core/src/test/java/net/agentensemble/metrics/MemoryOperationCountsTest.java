@@ -60,4 +60,19 @@ class MemoryOperationCountsTest {
 
         assertThat(result.getShortTermEntriesWritten()).isZero();
     }
+
+    @Test
+    void add_freshZeroInstance_returnsSelfViaValueEquality() {
+        // Regression test: previously used == (reference equality) so only the ZERO
+        // singleton would short-circuit. After the fix, any instance that equals ZERO
+        // (i.e., all-zero counts) must also short-circuit.
+        MemoryOperationCounts a =
+                MemoryOperationCounts.builder().shortTermEntriesWritten(3).build();
+
+        MemoryOperationCounts freshZero = MemoryOperationCounts.builder().build(); // all-zero, but not ZERO singleton
+        assertThat(freshZero).isNotSameAs(MemoryOperationCounts.ZERO); // pre-condition: different reference
+        assertThat(freshZero).isEqualTo(MemoryOperationCounts.ZERO); // pre-condition: equal by value
+
+        assertThat(a.add(freshZero)).isSameAs(a); // must return 'a' unchanged
+    }
 }

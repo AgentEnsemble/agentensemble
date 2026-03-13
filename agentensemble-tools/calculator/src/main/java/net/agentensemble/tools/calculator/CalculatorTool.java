@@ -203,7 +203,7 @@ public final class CalculatorTool extends AbstractAgentTool {
             try {
                 return Double.parseDouble(numStr);
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Invalid number: " + numStr);
+                throw new IllegalArgumentException("Invalid number: " + numStr, e);
             }
         }
 

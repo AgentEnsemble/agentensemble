@@ -458,7 +458,7 @@ public class AgentExecutor {
         } catch (java.util.concurrent.ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new AgentExecutionException(
-                    "Streaming failed for agent '" + agentRole + "': " + cause.getMessage(), agentRole, null, cause);
+                    "Streaming failed for agent '" + agentRole + "': " + cause.getMessage(), agentRole, null, e);
         }
     }
 
@@ -748,7 +748,7 @@ public class AgentExecutor {
             if (ce.getCause() instanceof ExitEarlyException exitEarly) {
                 throw exitEarly;
             }
-            throw ce;
+            throw ce; // NOPMD PreserveStackTrace - direct re-throw preserves the full CompletionException chain
         }
 
         int updatedStopCount = stopMessageCount;
