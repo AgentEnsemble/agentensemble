@@ -7,6 +7,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,7 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
 
     private static final String SECTION_REFINED_DESCRIPTION = "REFINED_DESCRIPTION:";
     private static final String SECTION_REFINED_EXPECTED_OUTPUT = "REFINED_EXPECTED_OUTPUT:";
+    private static final Pattern NEWLINE = Pattern.compile("\n");
     private static final String SECTION_OBSERVATIONS = "OBSERVATIONS:";
     private static final String SECTION_SUGGESTIONS = "SUGGESTIONS:";
 
@@ -157,8 +159,7 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
 
     private static List<String> parseBulletItems(String section) {
         List<String> items = new ArrayList<>();
-        // Split with limit -1 to preserve trailing empty strings (satisfies StringSplitter check)
-        for (String line : section.split("\n", -1)) {
+        for (String line : NEWLINE.split(section, -1)) {
             String trimmed = line.strip();
             if (trimmed.startsWith("- ")) {
                 String item = trimmed.substring(2).strip();

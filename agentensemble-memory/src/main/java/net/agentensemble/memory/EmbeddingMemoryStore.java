@@ -101,6 +101,7 @@ class EmbeddingMemoryStore implements MemoryStore {
         EmbeddingSearchResult<TextSegment> result = embeddingStore.search(request);
 
         List<MemoryEntry> entries = new ArrayList<>();
+        HashMap<String, String> metadataMap = new HashMap<>();
         for (EmbeddingMatch<TextSegment> match : result.matches()) {
             TextSegment segment = match.embedded();
             if (segment == null) {
@@ -118,7 +119,7 @@ class EmbeddingMemoryStore implements MemoryStore {
             Instant storedAt = storedAtStr != null ? Instant.parse(storedAtStr) : Instant.EPOCH;
 
             // Reconstruct all user metadata from segment metadata, excluding internal keys
-            HashMap<String, String> metadataMap = new HashMap<>();
+            metadataMap.clear();
             Map<String, Object> rawMetaMap = meta.toMap();
             for (Map.Entry<String, Object> mEntry : rawMetaMap.entrySet()) {
                 String key = mEntry.getKey();

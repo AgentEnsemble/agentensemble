@@ -110,6 +110,7 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
         EmbeddingSearchResult<TextSegment> result = embeddingStore.search(request);
 
         List<MemoryEntry> entries = new ArrayList<>();
+        HashMap<String, String> metadataMap = new HashMap<>();
         for (EmbeddingMatch<TextSegment> match : result.matches()) {
             TextSegment segment = match.embedded();
             if (segment == null) {
@@ -120,7 +121,7 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
             Instant storedAt = storedAtStr != null ? Instant.parse(storedAtStr) : Instant.EPOCH;
 
             // Reconstruct user metadata from segment metadata
-            HashMap<String, String> metadataMap = new HashMap<>();
+            metadataMap.clear();
             String agentRole = meta.getString(MemoryEntry.META_AGENT_ROLE);
             if (agentRole != null) metadataMap.put(MemoryEntry.META_AGENT_ROLE, agentRole);
             String taskDesc = meta.getString(MemoryEntry.META_TASK_DESCRIPTION);
