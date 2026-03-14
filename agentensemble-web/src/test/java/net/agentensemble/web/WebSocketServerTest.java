@@ -343,7 +343,7 @@ class WebSocketServerTest {
 
         CountDownLatch gotPong = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket ws = client.newWebSocketBuilder()
@@ -384,7 +384,7 @@ class WebSocketServerTest {
         server.start(0, "0.0.0.0");
         int port = server.port();
 
-        CopyOnWriteArrayList<ClientMessage> received = new CopyOnWriteArrayList<>();
+        List<ClientMessage> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         server.setClientMessageHandler(msg -> {
             received.add(msg);
@@ -555,7 +555,7 @@ class WebSocketServerTest {
 
         CountDownLatch gotBroadcast = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
 
         HttpClient client = HttpClient.newHttpClient();
         WebSocket ws = client.newWebSocketBuilder()

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -37,8 +38,8 @@ class ConnectionManager {
     /** Default maximum number of completed runs to retain in the snapshot. */
     static final int DEFAULT_MAX_RETAINED_RUNS = 10;
 
-    private final ConcurrentHashMap<String, WsSession> sessions = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
+    private final Map<String, WsSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
     private final MessageSerializer serializer;
 
     /**
@@ -54,13 +55,13 @@ class ConnectionManager {
      * {@link CopyOnWriteArrayList} so that concurrent appends within a single run are
      * thread-safe without holding the outer lock.
      */
-    private final List<CopyOnWriteArrayList<String>> runSnapshots = new ArrayList<>();
+    private final List<List<String>> runSnapshots = new ArrayList<>();
 
     /**
      * The current run's message list. Updated atomically (volatile) when a new run starts.
      * Null until the first {@link #noteEnsembleStarted} call.
      */
-    private volatile CopyOnWriteArrayList<String> currentRunMessages = null;
+    private volatile List<String> currentRunMessages = null;
 
     /** Ensemble ID from the most recent {@code ensemble_started} message, for hello. */
     private volatile String currentEnsembleId = null;
@@ -195,7 +196,7 @@ class ConnectionManager {
      * @param messageJson the serialized JSON message that was just broadcast; must not be null
      */
     void appendToSnapshot(String messageJson) {
-        CopyOnWriteArrayList<String> current = currentRunMessages;
+        List<String> current = currentRunMessages;
         if (current == null) {
             // noteEnsembleStarted has not been called yet; silently drop the message.
             return;
@@ -283,7 +284,7 @@ class ConnectionManager {
      * each inner list's iterator provides a consistent snapshot without external locking.
      */
     private JsonNode buildSnapshotNode() {
-        List<CopyOnWriteArrayList<String>> runsCopy;
+        List<List<String>> runsCopy;
         synchronized (runSnapshots) {
             if (runSnapshots.isEmpty()) {
                 return null;
@@ -293,7 +294,7 @@ class ConnectionManager {
 
         // Flatten: collect all messages from all runs in order
         List<String> all = new ArrayList<>();
-        for (CopyOnWriteArrayList<String> runList : runsCopy) {
+        for (List<String> runList : runsCopy) {
             all.addAll(runList);
         }
 

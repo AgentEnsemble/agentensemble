@@ -27,13 +27,13 @@ public class TaskDependencyGraph {
      * Forward edges: task -> tasks that it depends on (its context list).
      * Used to determine if a task is ready (all dependencies are complete).
      */
-    private final IdentityHashMap<Task, List<Task>> dependencies;
+    private final Map<Task, List<Task>> dependencies;
 
     /**
      * Reverse edges: task -> tasks that depend on it.
      * Used to efficiently find which tasks to check after a task completes.
      */
-    private final IdentityHashMap<Task, List<Task>> dependents;
+    private final Map<Task, List<Task>> dependents;
 
     /**
      * Tasks with no dependencies -- they can start immediately.

@@ -175,7 +175,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Per-task: count of in-graph dependencies that have not yet resolved.
         // When this reaches 0, the task can be submitted or skipped.
-        IdentityHashMap<Task, AtomicInteger> pendingDepCounts = new IdentityHashMap<>();
+        Map<Task, AtomicInteger> pendingDepCounts = new IdentityHashMap<>();
         for (Task task : resolvedTasks) {
             int inGraphDeps =
                     (int) task.getContext().stream().filter(graph::isInGraph).count();
@@ -205,7 +205,7 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Pre-compute 1-based task indices so events carry a stable, deterministic index
         // that listeners can use to correlate start/complete/fail events per task.
-        IdentityHashMap<Task, Integer> taskIndexMap = new IdentityHashMap<>();
+        Map<Task, Integer> taskIndexMap = new IdentityHashMap<>();
         for (int i = 0; i < resolvedTasks.size(); i++) {
             taskIndexMap.put(resolvedTasks.get(i), i + 1);
         }

@@ -120,8 +120,8 @@ public final class MapReduceEnsemble<T> {
 
     // Static mode fields (null in adaptive mode)
     private final Ensemble ensemble;
-    private final IdentityHashMap<Task, String> nodeTypes;
-    private final IdentityHashMap<Task, Integer> mapReduceLevels;
+    private final Map<Task, String> nodeTypes;
+    private final Map<Task, Integer> mapReduceLevels;
 
     // Adaptive mode field (null in static mode)
     private final MapReduceAdaptiveExecutor<T> adaptiveExecutor;
@@ -133,8 +133,8 @@ public final class MapReduceEnsemble<T> {
     private MapReduceEnsemble(
             Ensemble ensemble,
             Map<String, String> inputs,
-            IdentityHashMap<Task, String> nodeTypes,
-            IdentityHashMap<Task, Integer> mapReduceLevels) {
+            Map<Task, String> nodeTypes,
+            Map<Task, Integer> mapReduceLevels) {
         this.ensemble = ensemble;
         this.inputs = inputs;
         this.nodeTypes = nodeTypes;
@@ -275,7 +275,7 @@ public final class MapReduceEnsemble<T> {
      *
      * @return an identity-keyed map of task to node type, or {@code null} in adaptive mode
      */
-    public IdentityHashMap<Task, String> getNodeTypes() {
+    public Map<Task, String> getNodeTypes() {
         return nodeTypes;
     }
 
@@ -286,7 +286,7 @@ public final class MapReduceEnsemble<T> {
      *
      * @return an identity-keyed map of task to level, or {@code null} in adaptive mode
      */
-    public IdentityHashMap<Task, Integer> getMapReduceLevels() {
+    public Map<Task, Integer> getMapReduceLevels() {
         return mapReduceLevels;
     }
 
@@ -1038,8 +1038,8 @@ public final class MapReduceEnsemble<T> {
         }
 
         private MapReduceEnsemble<T> buildStatic(int effectiveChunkSize, Map<String, String> immutableInputs) {
-            IdentityHashMap<Task, String> nodeTypes = new IdentityHashMap<>();
-            IdentityHashMap<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
+            Map<Task, String> nodeTypes = new IdentityHashMap<>();
+            Map<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
 
             List<Task> allTasks = new ArrayList<>();
 

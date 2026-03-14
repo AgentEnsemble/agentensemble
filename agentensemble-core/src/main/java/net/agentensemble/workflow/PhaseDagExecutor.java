@@ -109,7 +109,7 @@ public class PhaseDagExecutor {
 
         // successorMap: phase P -> list of phases that depend on P (where P is in .after())
         // Uses identity comparison via IdentityHashMap.
-        IdentityHashMap<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
+        Map<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
         for (Phase phase : phases) {
             successorMap.putIfAbsent(phase, new ArrayList<>());
         }
@@ -123,7 +123,7 @@ public class PhaseDagExecutor {
 
         // remainingPredecessors: count of predecessors not yet completed for each phase.
         // When this reaches 0, the phase can be submitted.
-        IdentityHashMap<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
+        Map<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
         for (Phase phase : phases) {
             remainingPredecessors.put(phase, new AtomicInteger(phase.getAfter().size()));
         }
@@ -249,7 +249,7 @@ public class PhaseDagExecutor {
             CountDownLatch latch) {
 
         // Snapshot prior outputs at the time this phase is submitted.
-        final IdentityHashMap<Task, TaskOutput> priorOutputsSnapshot;
+        final Map<Task, TaskOutput> priorOutputsSnapshot;
         synchronized (globalTaskOutputs) {
             @SuppressWarnings("IdentityHashMapUsage")
             IdentityHashMap<Task, TaskOutput> snapshot = new IdentityHashMap<>(globalTaskOutputs);

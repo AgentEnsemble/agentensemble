@@ -570,7 +570,7 @@ public class Ensemble {
      * @return an immutable list of unique agents from tasks with explicit agents
      */
     public List<Agent> getAgents() {
-        IdentityHashMap<Agent, Boolean> seen = new IdentityHashMap<>();
+        Map<Agent, Boolean> seen = new IdentityHashMap<>();
         List<Agent> result = new ArrayList<>();
         for (Task task : tasks) {
             if (task.getAgent() != null && seen.putIfAbsent(task.getAgent(), Boolean.TRUE) == null) {
@@ -772,7 +772,7 @@ public class Ensemble {
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
             Map<Task, TaskOutput> executorIndex = output.getTaskOutputIndex();
-            IdentityHashMap<Task, TaskOutput> originalIndex = null;
+            Map<Task, TaskOutput> originalIndex = null;
             if (executorIndex != null) {
                 IdentityHashMap<Task, TaskOutput> idx = new IdentityHashMap<>();
                 for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
@@ -1222,7 +1222,7 @@ public class Ensemble {
             //    task has an entry in priorOutputs, also expose it under the original key. Both
             //    the resolved key (for intra-phase lookups) and the original key (for cross-phase
             //    lookups) then resolve correctly.
-            IdentityHashMap<Task, TaskOutput> augmentedPriorOutputs;
+            Map<Task, TaskOutput> augmentedPriorOutputs;
             if (priorOutputs.isEmpty()) {
                 augmentedPriorOutputs = new IdentityHashMap<>();
             } else {

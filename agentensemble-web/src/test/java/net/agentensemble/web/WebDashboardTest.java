@@ -401,7 +401,7 @@ class WebDashboardTest {
         dashboard.start();
         int port = dashboard.actualPort();
 
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
         CountDownLatch gotHello = new CountDownLatch(1);
@@ -453,7 +453,7 @@ class WebDashboardTest {
         dashboard.start();
         int port = dashboard.actualPort();
 
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
         CountDownLatch gotHello = new CountDownLatch(1);
@@ -513,7 +513,7 @@ class WebDashboardTest {
         dashboard.onEnsembleStarted("ens-snap", Instant.now(), 1, "SEQUENTIAL");
 
         int port = dashboard.actualPort();
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotHello = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();
