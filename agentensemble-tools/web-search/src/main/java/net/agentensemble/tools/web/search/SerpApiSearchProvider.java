@@ -69,7 +69,7 @@ final class SerpApiSearchProvider implements WebSearchProvider {
         if (results == null || results.isEmpty()) {
             return "No results found.";
         }
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(512);
         int index = 1;
         for (JsonNode result : results) {
             sb.append(index++).append(". ");
@@ -77,15 +77,15 @@ final class SerpApiSearchProvider implements WebSearchProvider {
             JsonNode link = result.get("link");
             JsonNode snippet = result.get("snippet");
             if (title != null) {
-                sb.append(title.asText()).append("\n");
+                sb.append(title.asText()).append('\n');
             }
             if (link != null) {
-                sb.append("   URL: ").append(link.asText()).append("\n");
+                sb.append("   URL: ").append(link.asText()).append('\n');
             }
             if (snippet != null) {
-                sb.append("   ").append(snippet.asText()).append("\n");
+                sb.append("   ").append(snippet.asText()).append('\n');
             }
-            sb.append("\n");
+            sb.append('\n');
         }
         return sb.toString().trim();
     }

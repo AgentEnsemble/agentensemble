@@ -168,9 +168,11 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         try (OutputStream stdin = process.getOutputStream()) {
             stdin.write(inputJson.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            log().debug(
-                            "Process stdin closed before writing completed (process may not read stdin): {}",
-                            e.getMessage());
+            if (log().isDebugEnabled()) {
+                log().debug(
+                                "Process stdin closed before writing completed (process may not read stdin): {}",
+                                e.getMessage());
+            }
         }
 
         // Drain stdout and stderr concurrently on virtual threads before waiting.
@@ -210,7 +212,9 @@ public final class ProcessAgentTool extends AbstractAgentTool {
 
         if (exitCode != 0) {
             String errorMsg = !stderr.isBlank() ? stderr : "Process exited with code " + exitCode;
-            log().warn("Process {} exited with code {}: {}", command.get(0), exitCode, errorMsg);
+            if (log().isWarnEnabled()) {
+                log().warn("Process {} exited with code {}: {}", command.get(0), exitCode, errorMsg);
+            }
             return ToolResult.failure(errorMsg);
         }
 
@@ -249,7 +253,9 @@ public final class ProcessAgentTool extends AbstractAgentTool {
 
         } catch (Exception e) {
             // Not JSON or malformed -- return raw stdout as plain-text success
-            log().debug("Process output is not AgentEnsemble protocol JSON, returning raw: {}", e.getMessage());
+            if (log().isDebugEnabled()) {
+                log().debug("Process output is not AgentEnsemble protocol JSON, returning raw: {}", e.getMessage());
+            }
             return ToolResult.success(stdout);
         }
     }

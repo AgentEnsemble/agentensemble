@@ -326,7 +326,7 @@ public class EnsembleOutput {
                 // from the caller's map into a fresh IdentityHashMap to guarantee
                 // identity-based key semantics regardless of the input map type.
                 @SuppressWarnings("IdentityHashMapUsage")
-                IdentityHashMap<Task, TaskOutput> copy = new IdentityHashMap<>(taskOutputIndex);
+                Map<Task, TaskOutput> copy = new IdentityHashMap<>(taskOutputIndex);
                 resolvedIndex = Collections.unmodifiableMap(copy);
             }
 

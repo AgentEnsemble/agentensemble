@@ -1,5 +1,6 @@
 package net.agentensemble.reflection;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class InMemoryReflectionStore implements ReflectionStore {
 
-    private final ConcurrentHashMap<String, TaskReflection> entries = new ConcurrentHashMap<>();
+    private final Map<String, TaskReflection> entries = new ConcurrentHashMap<>();
 
     /**
      * Store or replace the reflection for the given task identity.

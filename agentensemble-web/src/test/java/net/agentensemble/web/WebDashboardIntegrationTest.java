@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 class WebDashboardIntegrationTest {
 
     private WebDashboard dashboard;
-    private CopyOnWriteArrayList<String> received;
+    private List<String> received;
     private WebSocket ws;
 
     @BeforeEach
@@ -244,7 +244,7 @@ class WebDashboardIntegrationTest {
     @Test
     void multipleClientsAllReceiveBroadcasts() throws Exception {
         // Connect two clients, verify both receive the same events.
-        CopyOnWriteArrayList<String> received2 = new CopyOnWriteArrayList<>();
+        List<String> received2 = new CopyOnWriteArrayList<>();
         CountDownLatch connected1 = new CountDownLatch(1);
         CountDownLatch connected2 = new CountDownLatch(1);
         CountDownLatch hello1 = new CountDownLatch(1);

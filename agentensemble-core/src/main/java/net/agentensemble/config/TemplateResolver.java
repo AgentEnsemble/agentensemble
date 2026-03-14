@@ -74,7 +74,10 @@ public final class TemplateResolver {
 
         Map<String, String> effectiveInputs = inputs != null ? inputs : Map.of();
 
-        log.debug("Resolving template ({} chars) with {} input variables", template.length(), effectiveInputs.size());
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Resolving template ({} chars) with {} input variables", template.length(), effectiveInputs.size());
+        }
 
         // Step 1: Protect escaped {{ }} by replacing with sentinels
         String working =
@@ -115,7 +118,9 @@ public final class TemplateResolver {
         // Step 5: Restore escaped sentinels as literal {name}
         working = SENTINEL_RESTORE_PATTERN.matcher(working).replaceAll(m -> "{" + m.group(1) + "}");
 
-        log.debug("Resolved {} variables in template", foundVariables.size());
+        if (log.isDebugEnabled()) {
+            log.debug("Resolved {} variables in template", foundVariables.size());
+        }
 
         return working;
     }

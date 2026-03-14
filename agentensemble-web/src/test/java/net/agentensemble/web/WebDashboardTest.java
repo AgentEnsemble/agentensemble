@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -401,7 +402,7 @@ class WebDashboardTest {
         dashboard.start();
         int port = dashboard.actualPort();
 
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
         CountDownLatch gotHello = new CountDownLatch(1);
@@ -453,7 +454,7 @@ class WebDashboardTest {
         dashboard.start();
         int port = dashboard.actualPort();
 
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotMessage = new CountDownLatch(1);
         CountDownLatch connected = new CountDownLatch(1);
         CountDownLatch gotHello = new CountDownLatch(1);
@@ -513,7 +514,7 @@ class WebDashboardTest {
         dashboard.onEnsembleStarted("ens-snap", Instant.now(), 1, "SEQUENTIAL");
 
         int port = dashboard.actualPort();
-        CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch gotHello = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();

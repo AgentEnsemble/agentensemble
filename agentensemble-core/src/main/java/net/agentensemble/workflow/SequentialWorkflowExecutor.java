@@ -162,11 +162,13 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             beforeRev.getPrompt());
 
                     ReviewDecision beforeDecision = reviewHandler.review(beforeRequest);
-                    log.info(
-                            "Task {}/{} before-review decision: {}",
-                            taskIndex,
-                            totalTasks,
-                            beforeDecision.getClass().getSimpleName());
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Task {}/{} before-review decision: {}",
+                                taskIndex,
+                                totalTasks,
+                                beforeDecision.getClass().getSimpleName());
+                    }
 
                     if (beforeDecision instanceof ReviewDecision.ExitEarly exitEarlyDecision) {
                         // Task does not execute; return what's been done so far
@@ -187,12 +189,14 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                     injectReviewHandlerIntoTools(task, reviewHandler);
                 }
 
-                log.info(
-                        "Task {}/{} starting | Description: {} | Agent: {}",
-                        taskIndex,
-                        totalTasks,
-                        truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
-                        agentRole(task));
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Task {}/{} starting | Description: {} | Agent: {}",
+                            taskIndex,
+                            totalTasks,
+                            truncate(task.getDescription(), MDC_DESCRIPTION_MAX_LENGTH),
+                            agentRole(task));
+                }
 
                 // Fire TaskStartEvent
                 executionContext.fireTaskStart(
@@ -200,7 +204,9 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
                 // Gather explicit context outputs for this task
                 List<TaskOutput> contextOutputs = gatherContextOutputs(task, completedOutputs);
-                log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
+                if (log.isDebugEnabled()) {
+                    log.debug("Task {}/{} context: {} prior outputs", taskIndex, totalTasks, contextOutputs.size());
+                }
 
                 // Execute the task -- deterministic handler tasks bypass AgentExecutor entirely
                 TaskOutput taskOutput;
@@ -227,11 +233,13 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             prompt);
 
                     ReviewDecision afterDecision = reviewHandler.review(afterRequest);
-                    log.info(
-                            "Task {}/{} after-review decision: {}",
-                            taskIndex,
-                            totalTasks,
-                            afterDecision.getClass().getSimpleName());
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Task {}/{} after-review decision: {}",
+                                taskIndex,
+                                totalTasks,
+                                afterDecision.getClass().getSimpleName());
+                    }
 
                     if (afterDecision instanceof ReviewDecision.Edit edit) {
                         // Replace task output with revised text and update memory
@@ -264,19 +272,31 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
 
                 completedOutputs.put(task, taskOutput);
 
-                log.info(
-                        "Task {}/{} completed | Duration: {} | Tool calls: {}",
-                        taskIndex,
-                        totalTasks,
-                        taskOutput.getDuration(),
-                        taskOutput.getToolCallCount());
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Task {}/{} completed | Duration: {} | Tool calls: {}",
+                            taskIndex,
+                            totalTasks,
+                            taskOutput.getDuration(),
+                            taskOutput.getToolCallCount());
+                }
 
                 if (executionContext.isVerbose()) {
-                    log.info(
-                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Task {}/{} output preview: {}",
+                                taskIndex,
+                                totalTasks,
+                                truncate(taskOutput.getRaw(), 200));
+                    }
                 } else {
-                    log.debug(
-                            "Task {}/{} output preview: {}", taskIndex, totalTasks, truncate(taskOutput.getRaw(), 200));
+                    if (log.isDebugEnabled()) {
+                        log.debug(
+                                "Task {}/{} output preview: {}",
+                                taskIndex,
+                                totalTasks,
+                                truncate(taskOutput.getRaw(), 200));
+                    }
                 }
 
                 // Fire TaskCompleteEvent -- use the role reported in the output (set by the executor)
@@ -292,16 +312,20 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 // HumanInputTool requested exit-early during agent execution.
                 // completedOutputs does NOT include the current task (it did not complete normally).
                 ExitReason toolExitReason = e.isTimedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
-                log.info(
-                        "HumanInputTool exit-early ({}): pipeline stopping after {}/{} tasks completed",
-                        toolExitReason,
-                        completedOutputs.size(),
-                        totalTasks);
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "HumanInputTool exit-early ({}): pipeline stopping after {}/{} tasks completed",
+                            toolExitReason,
+                            completedOutputs.size(),
+                            totalTasks);
+                }
                 return buildPartialOutput(completedOutputs, ensembleStartTime, toolExitReason);
 
             } catch (AgentExecutionException | MaxIterationsExceededException | GuardrailViolationException e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
-                log.error("Task {}/{} failed: {}", taskIndex, totalTasks, e.getMessage());
+                if (log.isErrorEnabled()) {
+                    log.error("Task {}/{} failed: {}", taskIndex, totalTasks, e.getMessage());
+                }
 
                 // Fire TaskFailedEvent before propagating
                 executionContext.fireTaskFailed(new TaskFailedEvent(

@@ -82,14 +82,16 @@ final class MapReduceBinPacker {
         for (OutputWithTokens item : items) {
             if (item.tokenCount() > targetTokenBudget) {
                 // Oversized item: own bin, with a warning
-                log.warn(
-                        "MapReduce: single output from agent [{}] exceeds targetTokenBudget "
-                                + "({} > {}). Proceeding with a single-item reduce group. "
-                                + "Consider increasing targetTokenBudget or using outputType to "
-                                + "produce more compact structured output.",
-                        item.output().getAgentRole(),
-                        item.tokenCount(),
-                        targetTokenBudget);
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "MapReduce: single output from agent [{}] exceeds targetTokenBudget "
+                                    + "({} > {}). Proceeding with a single-item reduce group. "
+                                    + "Consider increasing targetTokenBudget or using outputType to "
+                                    + "produce more compact structured output.",
+                            item.output().getAgentRole(),
+                            item.tokenCount(),
+                            targetTokenBudget);
+                }
                 List<TaskOutput> bin = new ArrayList<>();
                 bin.add(item.output());
                 bins.add(bin);
