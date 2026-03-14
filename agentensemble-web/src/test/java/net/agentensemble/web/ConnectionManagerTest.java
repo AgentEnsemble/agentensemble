@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -508,7 +509,7 @@ class ConnectionManagerTest {
         private final String id;
         // CopyOnWriteArrayList ensures send() is safe when called concurrently from
         // multiple virtual threads (e.g. in the parallel workflow concurrent test).
-        private final java.util.concurrent.List<String> messages = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final List<String> messages = new CopyOnWriteArrayList<>();
         private boolean open = true;
 
         MockWsSession(String id) {
