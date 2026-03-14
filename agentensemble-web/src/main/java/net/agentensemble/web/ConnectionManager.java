@@ -51,14 +51,15 @@ class ConnectionManager {
     /**
      * Per-run snapshot storage. Each inner list holds all messages broadcast during one run.
      * The latest run's list is last. Protected by {@code synchronized(runSnapshots)} for
-     * structural modifications (add/remove of inner lists). Individual inner lists use
-     * {@link CopyOnWriteArrayList} so that concurrent appends within a single run are
-     * thread-safe without holding the outer lock.
+     * structural modifications (add/remove of inner lists). Each inner list is instantiated
+     * as a {@code CopyOnWriteArrayList} (see {@link #noteEnsembleStarted}) so that concurrent
+     * appends within a single run are thread-safe without holding the outer lock.
      */
     private final List<List<String>> runSnapshots = new ArrayList<>();
 
     /**
      * The current run's message list. Updated atomically (volatile) when a new run starts.
+     * Always instantiated as a thread-safe list (see {@link #noteEnsembleStarted}).
      * Null until the first {@link #noteEnsembleStarted} call.
      */
     private volatile List<String> currentRunMessages = null;

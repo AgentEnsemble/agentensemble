@@ -120,8 +120,8 @@ public final class MapReduceEnsemble<T> {
 
     // Static mode fields (null in adaptive mode)
     private final Ensemble ensemble;
-    private final Map<Task, String> nodeTypes;
-    private final Map<Task, Integer> mapReduceLevels;
+    private final IdentityHashMap<Task, String> nodeTypes;
+    private final IdentityHashMap<Task, Integer> mapReduceLevels;
 
     // Adaptive mode field (null in static mode)
     private final MapReduceAdaptiveExecutor<T> adaptiveExecutor;
@@ -133,8 +133,8 @@ public final class MapReduceEnsemble<T> {
     private MapReduceEnsemble(
             Ensemble ensemble,
             Map<String, String> inputs,
-            Map<Task, String> nodeTypes,
-            Map<Task, Integer> mapReduceLevels) {
+            IdentityHashMap<Task, String> nodeTypes,
+            IdentityHashMap<Task, Integer> mapReduceLevels) {
         this.ensemble = ensemble;
         this.inputs = inputs;
         this.nodeTypes = nodeTypes;
@@ -269,24 +269,34 @@ public final class MapReduceEnsemble<T> {
     }
 
     /**
-     * Returns a map from task identity to node type string for devtools enrichment.
+     * Returns an identity-keyed map from task to node type string for devtools enrichment.
      *
      * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
+     * <p>The returned map uses identity-based ({@code ==}) key comparison, consistent with
+     * the framework's {@code IdentityHashMap} convention for task instances.
+     *
      * @return an identity-keyed map of task to node type, or {@code null} in adaptive mode
      */
-    public Map<Task, String> getNodeTypes() {
+    @SuppressWarnings(
+            "PMD.LooseCoupling") // IdentityHashMap is part of the API contract: callers must use identity comparison
+    public IdentityHashMap<Task, String> getNodeTypes() {
         return nodeTypes;
     }
 
     /**
-     * Returns a map from task identity to map-reduce level for devtools enrichment.
+     * Returns an identity-keyed map from task to map-reduce level for devtools enrichment.
      *
      * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
+     * <p>The returned map uses identity-based ({@code ==}) key comparison, consistent with
+     * the framework's {@code IdentityHashMap} convention for task instances.
+     *
      * @return an identity-keyed map of task to level, or {@code null} in adaptive mode
      */
-    public Map<Task, Integer> getMapReduceLevels() {
+    @SuppressWarnings(
+            "PMD.LooseCoupling") // IdentityHashMap is part of the API contract: callers must use identity comparison
+    public IdentityHashMap<Task, Integer> getMapReduceLevels() {
         return mapReduceLevels;
     }
 
@@ -1038,8 +1048,8 @@ public final class MapReduceEnsemble<T> {
         }
 
         private MapReduceEnsemble<T> buildStatic(int effectiveChunkSize, Map<String, String> immutableInputs) {
-            Map<Task, String> nodeTypes = new IdentityHashMap<>();
-            Map<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
+            IdentityHashMap<Task, String> nodeTypes = new IdentityHashMap<>();
+            IdentityHashMap<Task, Integer> mapReduceLevels = new IdentityHashMap<>();
 
             List<Task> allTasks = new ArrayList<>();
 
