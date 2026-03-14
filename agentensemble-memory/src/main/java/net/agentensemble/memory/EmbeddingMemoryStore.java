@@ -76,7 +76,9 @@ class EmbeddingMemoryStore implements MemoryStore {
         Embedding embedding = embeddingModel.embed(content).content();
         embeddingStore.add(embedding, segment);
 
-        log.debug("Stored embedding memory entry | scope: '{}' | content: {} chars", scope, content.length());
+        if (log.isDebugEnabled()) {
+            log.debug("Stored embedding memory entry | scope: '{}' | content: {} chars", scope, content.length());
+        }
     }
 
     @Override
@@ -136,11 +138,13 @@ class EmbeddingMemoryStore implements MemoryStore {
                     .build());
         }
 
-        log.debug(
-                "Retrieved {} embedding memory entries | scope: '{}' | query: {}",
-                entries.size(),
-                scope,
-                query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Retrieved {} embedding memory entries | scope: '{}' | query: {}",
+                    entries.size(),
+                    scope,
+                    query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        }
 
         return entries;
     }

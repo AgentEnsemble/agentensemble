@@ -52,24 +52,28 @@ public final class DefaultManagerPromptStrategy implements ManagerPromptStrategy
     @Override
     public String buildSystemPrompt(ManagerPromptContext context) {
         var agents = context.agents();
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(512);
         sb.append("You have access to the following worker agents:\n\n");
 
         for (int i = 0; i < agents.size(); i++) {
             Agent agent = agents.get(i);
-            sb.append(i + 1).append(". ").append(agent.getRole()).append("\n");
-            sb.append("   Goal: ").append(agent.getGoal()).append("\n");
+            sb.append(i + 1)
+                    .append(". ")
+                    .append(agent.getRole())
+                    .append('\n')
+                    .append("   Goal: ")
+                    .append(agent.getGoal())
+                    .append('\n');
             if (agent.getBackground() != null && !agent.getBackground().isBlank()) {
-                sb.append("   Background: ").append(agent.getBackground()).append("\n");
+                sb.append("   Background: ").append(agent.getBackground()).append('\n');
             }
             if (i < agents.size() - 1) {
-                sb.append("\n");
+                sb.append('\n');
             }
         }
 
-        sb.append("\n");
-        sb.append("Use the delegateTask tool to assign work to your team members. ");
-        sb.append("Review their outputs and synthesize a comprehensive final result.");
+        sb.append("\nUse the delegateTask tool to assign work to your team members. "
+                + "Review their outputs and synthesize a comprehensive final result.");
 
         return sb.toString();
     }
@@ -83,7 +87,7 @@ public final class DefaultManagerPromptStrategy implements ManagerPromptStrategy
     @Override
     public String buildUserPrompt(ManagerPromptContext context) {
         var tasks = context.tasks();
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(512);
         sb.append("You must coordinate your team to complete the following tasks:\n\n");
 
         for (int i = 0; i < tasks.size(); i++) {
@@ -92,16 +96,17 @@ public final class DefaultManagerPromptStrategy implements ManagerPromptStrategy
                     .append(i + 1)
                     .append(": ")
                     .append(task.getDescription())
-                    .append("\n");
-            sb.append("Expected output: ").append(task.getExpectedOutput()).append("\n");
+                    .append('\n')
+                    .append("Expected output: ")
+                    .append(task.getExpectedOutput())
+                    .append('\n');
             if (i < tasks.size() - 1) {
-                sb.append("\n");
+                sb.append('\n');
             }
         }
 
-        sb.append("\n");
-        sb.append("Delegate each task to the most appropriate team member using the delegateTask tool. ");
-        sb.append("Once all tasks are complete, synthesize the results into a comprehensive final response.");
+        sb.append("\nDelegate each task to the most appropriate team member using the delegateTask tool. "
+                + "Once all tasks are complete, synthesize the results into a comprehensive final response.");
 
         return sb.toString();
     }

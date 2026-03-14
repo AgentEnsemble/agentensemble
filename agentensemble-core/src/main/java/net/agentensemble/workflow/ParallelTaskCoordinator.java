@@ -152,10 +152,12 @@ class ParallelTaskCoordinator {
             int taskIndex = taskIndexMap.getOrDefault(task, 0);
             Instant taskStart = Instant.now();
             try {
-                log.info(
-                        "Task starting (parallel) | Agent: {} | Description: {}",
-                        agentRole(task),
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Task starting (parallel) | Agent: {} | Description: {}",
+                            agentRole(task),
+                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                }
 
                 executionContext.fireTaskStart(
                         new TaskStartEvent(task.getDescription(), agentRole(task), taskIndex, totalTasks));
@@ -211,10 +213,12 @@ class ParallelTaskCoordinator {
                                     prompt);
 
                             ReviewDecision afterDecision = reviewHandler.review(afterRequest);
-                            log.info(
-                                    "Task (parallel) after-review decision: {} | Task: {}",
-                                    afterDecision.getClass().getSimpleName(),
-                                    truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                            if (log.isInfoEnabled()) {
+                                log.info(
+                                        "Task (parallel) after-review decision: {} | Task: {}",
+                                        afterDecision.getClass().getSimpleName(),
+                                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                            }
 
                             if (afterDecision instanceof ReviewDecision.ExitEarly afterExitEarlyDecision) {
                                 // Include this task output, then stop the pipeline.
@@ -230,10 +234,12 @@ class ParallelTaskCoordinator {
                                         task, output.getRaw(), reflectionModel, executionContext);
                                 completedOutputs.put(task, output);
                                 completionOrder.add(output);
-                                log.info(
-                                        "Parallel exit-early ({}) triggered after task: {}",
-                                        afterReason,
-                                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                                if (log.isInfoEnabled()) {
+                                    log.info(
+                                            "Parallel exit-early ({}) triggered after task: {}",
+                                            afterReason,
+                                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                                }
 
                                 executionContext.fireTaskComplete(new TaskCompleteEvent(
                                         task.getDescription(),
@@ -247,9 +253,11 @@ class ParallelTaskCoordinator {
                                 output = output.toBuilder()
                                         .raw(edit.revisedOutput())
                                         .build();
-                                log.info(
-                                        "Task (parallel) output replaced by reviewer | Task: {}",
-                                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                                if (log.isInfoEnabled()) {
+                                    log.info(
+                                            "Task (parallel) output replaced by reviewer | Task: {}",
+                                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                                }
                             }
                             // Continue: proceed with output unchanged
                         }
@@ -266,11 +274,13 @@ class ParallelTaskCoordinator {
                 completedOutputs.put(task, output);
                 completionOrder.add(output);
 
-                log.info(
-                        "Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
-                        agentRole(task),
-                        output.getDuration(),
-                        output.getToolCallCount());
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Task completed (parallel) | Agent: {} | Duration: {} | Tool calls: {}",
+                            agentRole(task),
+                            output.getDuration(),
+                            output.getToolCallCount());
+                }
 
                 executionContext.fireTaskComplete(new TaskCompleteEvent(
                         task.getDescription(), agentRole(task), output, output.getDuration(), taskIndex, totalTasks));
@@ -280,18 +290,22 @@ class ParallelTaskCoordinator {
                 // This task did NOT complete; its output is not recorded.
                 ExitReason toolReason = e.isTimedOut() ? ExitReason.TIMEOUT : ExitReason.USER_EXIT_EARLY;
                 exitEarlyReasonRef.compareAndSet(null, toolReason);
-                log.info(
-                        "Parallel HumanInputTool exit-early ({}) | Task: {}",
-                        toolReason,
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Parallel HumanInputTool exit-early ({}) | Task: {}",
+                            toolReason,
+                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+                }
 
             } catch (Exception e) {
                 Duration taskDuration = Duration.between(taskStart, Instant.now());
-                log.error(
-                        "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
-                        agentRole(task),
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
-                        e.getMessage());
+                if (log.isErrorEnabled()) {
+                    log.error(
+                            "Task failed (parallel) | Agent: {} | Description: {} | Error: {}",
+                            agentRole(task),
+                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
+                            e.getMessage());
+                }
 
                 failedTaskCauses.put(task, e);
 
@@ -339,10 +353,12 @@ class ParallelTaskCoordinator {
             boolean shouldSkip = shouldSkip(dependent);
 
             if (shouldSkip) {
-                log.debug(
-                        "Task skipped (parallel) | Agent: {} | Description: {}",
-                        agentRole(dependent),
-                        truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "Task skipped (parallel) | Agent: {} | Description: {}",
+                            agentRole(dependent),
+                            truncate(dependent.getDescription(), LOG_TRUNCATE_LENGTH));
+                }
 
                 skippedTasks.add(dependent);
                 latch.countDown();

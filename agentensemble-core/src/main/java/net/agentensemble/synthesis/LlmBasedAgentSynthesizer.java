@@ -101,10 +101,12 @@ class LlmBasedAgentSynthesizer implements AgentSynthesizer {
                     .build();
 
         } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalStateException e) {
-            log.warn(
-                    "LLM-based agent synthesis failed for task '{}', falling back to template synthesizer: {}",
-                    truncate(task.getDescription(), 80),
-                    e.toString());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "LLM-based agent synthesis failed for task '{}', falling back to template synthesizer: {}",
+                        truncate(task.getDescription(), 80),
+                        e.toString());
+            }
             return FALLBACK.synthesize(task, context);
         }
     }

@@ -89,7 +89,9 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
         embeddingStore.add(embedding, segment);
 
         String agentRole = entry.getMeta(MemoryEntry.META_AGENT_ROLE);
-        log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars", agentRole, content.length());
+        if (log.isDebugEnabled()) {
+            log.debug("Stored long-term memory | Agent: '{}' | Content: {} chars", agentRole, content.length());
+        }
     }
 
     @Override
@@ -131,10 +133,12 @@ public class EmbeddingStoreLongTermMemory implements LongTermMemory {
                     .build());
         }
 
-        log.debug(
-                "Retrieved {} long-term memories for query: {}",
-                entries.size(),
-                query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Retrieved {} long-term memories for query: {}",
+                    entries.size(),
+                    query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        }
 
         return entries;
     }

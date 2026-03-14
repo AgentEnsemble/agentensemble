@@ -71,7 +71,9 @@ public class DeterministicOnlyPipelineExample {
                     String json = "[{\"id\":\"ORD-001\",\"total\":49.99,\"status\":\"shipped\"},"
                             + "{\"id\":\"ORD-002\",\"total\":129.50,\"status\":\"pending\"},"
                             + "{\"id\":\"ORD-003\",\"total\":19.00,\"status\":\"shipped\"}]";
-                    log.info("Fetched {} characters of order data", json.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("Fetched {} characters of order data", json.length());
+                    }
                     return ToolResult.success(json);
                 })
                 .build();
@@ -207,7 +209,9 @@ public class DeterministicOnlyPipelineExample {
                 .expectedOutput("Raw transaction data")
                 .handler(ctx -> {
                     String data = "txn:1001,amount:150.00;txn:1002,amount:75.50;txn:1003,amount:320.00";
-                    log.info("Ingested transaction log: {} bytes", data.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("Ingested transaction log: {} bytes", data.length());
+                    }
                     return ToolResult.success(data);
                 })
                 .build();

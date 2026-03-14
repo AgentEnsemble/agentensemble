@@ -45,10 +45,12 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
     @Override
     public TaskReflection reflect(ReflectionInput input) {
         String prompt = ReflectionPromptBuilder.buildPrompt(input);
-        log.debug(
-                "Reflecting on task '{}' (run {})",
-                abbreviate(input.task().getDescription(), 60),
-                input.priorReflection().map(p -> p.runCount() + 1).orElse(1));
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Reflecting on task '{}' (run {})",
+                    abbreviate(input.task().getDescription(), 60),
+                    input.priorReflection().map(p -> p.runCount() + 1).orElse(1));
+        }
 
         String rawResponse;
         try {
@@ -57,20 +59,24 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
             ChatResponse response = model.chat(request);
             rawResponse = response.aiMessage().text();
         } catch (Exception e) {
-            log.warn(
-                    "Reflection LLM call failed for task '{}': {}",
-                    abbreviate(input.task().getDescription(), 60),
-                    e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Reflection LLM call failed for task '{}': {}",
+                        abbreviate(input.task().getDescription(), 60),
+                        e.getMessage());
+            }
             return buildFallback(input, "LLM call failed: " + e.getMessage());
         }
 
         try {
             return parse(rawResponse, input);
         } catch (Exception e) {
-            log.warn(
-                    "Failed to parse reflection response for task '{}': {}",
-                    abbreviate(input.task().getDescription(), 60),
-                    e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Failed to parse reflection response for task '{}': {}",
+                        abbreviate(input.task().getDescription(), 60),
+                        e.getMessage());
+            }
             return buildFallback(input, "Response parsing failed. Raw response: " + rawResponse);
         }
     }

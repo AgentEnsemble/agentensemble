@@ -604,11 +604,15 @@ public class Ensemble {
                 try {
                     dashboard.start();
                 } catch (Exception e) {
-                    log.warn("Failed to start dashboard before ensemble run: {}", e.getMessage(), e);
+                    if (log.isWarnEnabled()) {
+                        log.warn("Failed to start dashboard before ensemble run: {}", e.getMessage(), e);
+                    }
                 }
             }
 
-            log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
+            if (log.isInfoEnabled()) {
+                log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
+            }
             log.debug("Input variables: {}", resolvedInputs);
 
             // Step 1: Validate configuration
@@ -637,11 +641,13 @@ public class Ensemble {
             // Step 4: Derive unique agents (for delegation context, trace, hierarchical)
             List<Agent> derivedAgents = deriveAgents(agentResolvedTasks);
 
-            log.info(
-                    "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
-                    effectiveWorkflow,
-                    agentResolvedTasks.size(),
-                    derivedAgents.size());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Ensemble run started | Workflow: {} | Tasks: {} | Agents: {}",
+                        effectiveWorkflow,
+                        agentResolvedTasks.size(),
+                        derivedAgents.size());
+            }
 
             // Step 5: Memory context is disabled in v2.0.0; scoped memory is handled
             // via MemoryStore in ExecutionContext (set on Ensemble via .memoryStore()).
@@ -682,9 +688,11 @@ public class Ensemble {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
             }
             if (effectiveReflectionStore != null) {
-                log.info(
-                        "ReflectionStore enabled for cross-run task reflection | Type: {}",
-                        effectiveReflectionStore.getClass().getSimpleName());
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "ReflectionStore enabled for cross-run task reflection | Type: {}",
+                            effectiveReflectionStore.getClass().getSimpleName());
+                }
             }
 
             // Step 7: Notify dashboard that execution is about to begin.
@@ -694,7 +702,9 @@ public class Ensemble {
                     dashboard.onEnsembleStarted(
                             ensembleId, runStartedAt, agentResolvedTasks.size(), effectiveWorkflow.name());
                 } catch (Exception e) {
-                    log.warn("Dashboard.onEnsembleStarted threw an exception: {}", e.getMessage(), e);
+                    if (log.isWarnEnabled()) {
+                        log.warn("Dashboard.onEnsembleStarted threw an exception: {}", e.getMessage(), e);
+                    }
                 }
             }
 
@@ -703,7 +713,9 @@ public class Ensemble {
             if (phases != null && !phases.isEmpty()) {
                 // Phase-based execution: PhaseDagExecutor handles the DAG; each phase
                 // runner resolves template vars and agents independently.
-                log.info("Ensemble run using Phase DAG | Phases: {}", phases.size());
+                if (log.isInfoEnabled()) {
+                    log.info("Ensemble run using Phase DAG | Phases: {}", phases.size());
+                }
                 output = executePhases(phases, resolvedInputs, buildEffectiveChatModel(), executionContext);
             } else {
                 WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
@@ -712,11 +724,13 @@ public class Ensemble {
 
             Instant runCompletedAt = Instant.now();
 
-            log.info(
-                    "Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
-                    output.getTotalDuration(),
-                    output.getTaskOutputs().size(),
-                    output.getTotalToolCalls());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Ensemble run completed | Duration: {} | Tasks: {} | Tool calls: {}",
+                        output.getTotalDuration(),
+                        output.getTaskOutputs().size(),
+                        output.getTotalToolCalls());
+            }
 
             // Step 9: Notify dashboard that the run has completed.
             if (dashboard != null) {
@@ -736,7 +750,9 @@ public class Ensemble {
                             totalTokens,
                             output.getTotalToolCalls());
                 } catch (Exception e) {
-                    log.warn("Dashboard.onEnsembleCompleted threw an exception: {}", e.getMessage(), e);
+                    if (log.isWarnEnabled()) {
+                        log.warn("Dashboard.onEnsembleCompleted threw an exception: {}", e.getMessage(), e);
+                    }
                 }
             }
 
@@ -792,14 +808,18 @@ public class Ensemble {
                 try {
                     effectiveExporter.export(trace);
                 } catch (Exception e) {
-                    log.warn("TraceExporter threw exception during export: {}", e.getMessage(), e);
+                    if (log.isWarnEnabled()) {
+                        log.warn("TraceExporter threw exception during export: {}", e.getMessage(), e);
+                    }
                 }
             }
 
             return outputWithTrace;
 
         } catch (ValidationException e) {
-            log.warn("Ensemble validation failed: {}", e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn("Ensemble validation failed: {}", e.getMessage());
+            }
             throw e;
         } catch (Exception e) {
             log.error("Ensemble run failed", e);
@@ -815,7 +835,9 @@ public class Ensemble {
                 try {
                     dashboard.stop();
                 } catch (Exception e) {
-                    log.warn("Failed to stop dashboard after ensemble run: {}", e.getMessage(), e);
+                    if (log.isWarnEnabled()) {
+                        log.warn("Failed to stop dashboard after ensemble run: {}", e.getMessage(), e);
+                    }
                 }
             }
             MDC.remove("ensemble.id");
@@ -878,7 +900,11 @@ public class Ensemble {
                 // Deterministic task -- no agent synthesis needed.
                 // The workflow executor invokes the handler directly, bypassing the LLM.
                 agentResolved = task;
-                log.debug("Skipping agent synthesis for deterministic task '{}'", truncate(task.getDescription(), 80));
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "Skipping agent synthesis for deterministic task '{}'",
+                            truncate(task.getDescription(), 80));
+                }
             } else {
                 // LLM resolution order:
                 // 1. Task has its own chatLanguageModel (already rate-limited at Task.build() time
@@ -922,10 +948,12 @@ public class Ensemble {
 
                 agentResolved = task.toBuilder().agent(agentBuilder.build()).build();
 
-                log.debug(
-                        "Synthesized agent '{}' for task '{}'",
-                        agentResolved.getAgent().getRole(),
-                        truncate(task.getDescription(), 80));
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "Synthesized agent '{}' for task '{}'",
+                            agentResolved.getAgent().getRole(),
+                            truncate(task.getDescription(), 80));
+                }
             }
             oldToNew.put(task, agentResolved);
             firstPass.add(agentResolved);
@@ -1221,13 +1249,15 @@ public class Ensemble {
             // 6. Determine the per-phase workflow
             Workflow phaseWorkflow = phase.getWorkflow() != null ? phase.getWorkflow() : ensembleEffectiveWorkflow;
 
-            log.debug(
-                    "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {} | Augmented: {}",
-                    phase.getName(),
-                    phaseWorkflow,
-                    agentResolved.size(),
-                    priorOutputs.size(),
-                    augmentedPriorOutputs.size());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Phase '{}' workflow: {} | Tasks: {} | Prior outputs: {} | Augmented: {}",
+                        phase.getName(),
+                        phaseWorkflow,
+                        agentResolved.size(),
+                        priorOutputs.size(),
+                        augmentedPriorOutputs.size());
+            }
 
             // 7. Execute with appropriate executor, seeding augmented prior outputs so that
             //    cross-phase context() references resolve correctly regardless of whether

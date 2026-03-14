@@ -113,7 +113,9 @@ class ConnectionManager {
      */
     void onConnect(WsSession session) {
         sessions.put(session.id(), session);
-        log.debug("WebSocket client connected: {}", session.id());
+        if (log.isDebugEnabled()) {
+            log.debug("WebSocket client connected: {}", session.id());
+        }
 
         JsonNode snapshotNode = buildSnapshotNode();
         HelloMessage hello = new HelloMessage(currentEnsembleId, ensembleStartedAt, snapshotNode);

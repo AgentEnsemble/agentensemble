@@ -62,26 +62,24 @@ public final class AgentPromptBuilder {
      * @return the system prompt string
      */
     public static String buildSystemPrompt(Agent agent) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(256);
 
         // Role line
-        sb.append("You are ").append(agent.getRole()).append(".");
+        sb.append("You are ").append(agent.getRole()).append('.');
 
         // Background (optional)
         String background = agent.getBackground();
         if (background != null && !background.isBlank()) {
-            sb.append("\n").append(background);
+            sb.append('\n').append(background);
         }
 
         // Goal
-        sb.append("\n\n");
-        sb.append("Your personal goal is: ").append(agent.getGoal());
+        sb.append("\n\nYour personal goal is: ").append(agent.getGoal());
 
         // Standard instructions
-        sb.append("\n\n");
-        sb.append("You must produce a final answer that satisfies the expected output described in the task.\n");
-        sb.append("Focus on quality and accuracy. ");
-        sb.append("Do not add unnecessary preamble or postscript to your final answer.");
+        sb.append("\n\nYou must produce a final answer that satisfies the expected output described in the task.\n"
+                + "Focus on quality and accuracy. "
+                + "Do not add unnecessary preamble or postscript to your final answer.");
 
         // Response format (optional)
         String responseFormat = agent.getResponseFormat();
@@ -90,7 +88,9 @@ public final class AgentPromptBuilder {
         }
 
         String prompt = sb.toString().stripTrailing();
-        log.debug("Built system prompt ({} chars) for agent '{}'", prompt.length(), agent.getRole());
+        if (log.isDebugEnabled()) {
+            log.debug("Built system prompt ({} chars) for agent '{}'", prompt.length(), agent.getRole());
+        }
         return prompt;
     }
 
@@ -183,7 +183,7 @@ public final class AgentPromptBuilder {
             MemoryContext memoryContext,
             MemoryStore memoryStore,
             TaskReflection priorReflection) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(1024);
 
         // Task-scoped memory sections (v2.0.0 MemoryStore API)
         if (memoryStore != null
@@ -193,14 +193,17 @@ public final class AgentPromptBuilder {
                 List<MemoryEntry> scopeEntries =
                         memoryStore.retrieve(scope.getName(), task.getDescription(), DEFAULT_SCOPE_MAX_RESULTS);
                 if (!scopeEntries.isEmpty()) {
-                    sb.append("## Memory: ").append(scope.getName()).append("\n");
-                    sb.append("The following information from scope \"")
+                    sb.append("## Memory: ")
+                            .append(scope.getName())
+                            .append('\n')
+                            .append("The following information from scope \"")
                             .append(scope.getName())
                             .append("\" may be relevant:\n");
                     for (MemoryEntry entry : scopeEntries) {
-                        sb.append("\n---\n");
-                        sb.append(entry.getContent()).append("\n");
-                        sb.append("---");
+                        sb.append("\n---\n")
+                                .append(entry.getContent())
+                                .append('\n')
+                                .append("---");
                     }
                     sb.append("\n\n");
                 }
@@ -211,40 +214,38 @@ public final class AgentPromptBuilder {
             // Short-term memory replaces explicit context (STM is a superset)
             List<MemoryEntry> stmEntries = memoryContext.getShortTermEntries();
             if (!stmEntries.isEmpty()) {
-                sb.append("## Short-Term Memory (Current Run)\n");
-                sb.append("The following outputs from earlier tasks in this run may be relevant:\n");
+                sb.append("## Short-Term Memory (Current Run)\n"
+                        + "The following outputs from earlier tasks in this run may be relevant:\n");
                 for (MemoryEntry entry : stmEntries) {
-                    sb.append("\n---\n");
                     String agentRole = entry.getMeta(MemoryEntry.META_AGENT_ROLE);
                     String taskDesc = entry.getMeta(MemoryEntry.META_TASK_DESCRIPTION);
-                    sb.append("### ")
+                    sb.append("\n---\n### ")
                             .append(agentRole != null ? agentRole : "Agent")
                             .append(": ")
                             .append(taskDesc != null ? taskDesc : "")
-                            .append("\n");
-                    sb.append(entry.getContent()).append("\n");
-                    sb.append("---");
+                            .append('\n')
+                            .append(entry.getContent())
+                            .append('\n')
+                            .append("---");
                 }
                 sb.append("\n\n");
             }
         } else {
             // No short-term memory: fall back to explicit context declarations
             if (contextOutputs != null && !contextOutputs.isEmpty()) {
-                sb.append("## Context from Previous Tasks\n");
-                sb.append("The following results from previous tasks may be relevant:\n");
+                sb.append("## Context from Previous Tasks\n"
+                        + "The following results from previous tasks may be relevant:\n");
                 for (TaskOutput ctx : contextOutputs) {
                     warnIfLargeContext(ctx);
-                    sb.append("\n---\n");
-                    sb.append("### ")
+                    sb.append("\n---\n### ")
                             .append(ctx.getAgentRole())
                             .append(": ")
                             .append(ctx.getTaskDescription())
-                            .append("\n");
+                            .append('\n');
                     String raw = ctx.getRaw();
-                    sb.append(raw != null ? raw : "").append("\n");
-                    sb.append("---\n");
+                    sb.append(raw != null ? raw : "").append('\n').append("---\n");
                 }
-                sb.append("\n");
+                sb.append('\n');
             }
         }
 
@@ -252,11 +253,11 @@ public final class AgentPromptBuilder {
         if (memoryContext.hasLongTerm()) {
             List<MemoryEntry> ltmEntries = memoryContext.queryLongTerm(task.getDescription());
             if (!ltmEntries.isEmpty()) {
-                sb.append("## Long-Term Memory\n");
-                sb.append("The following information recalled from past experience may be relevant:\n");
-                sb.append("\n---\n");
+                sb.append("## Long-Term Memory\n"
+                        + "The following information recalled from past experience may be relevant:\n"
+                        + "\n---\n");
                 for (MemoryEntry entry : ltmEntries) {
-                    sb.append("- ").append(entry.getContent()).append("\n");
+                    sb.append("- ").append(entry.getContent()).append('\n');
                 }
                 sb.append("---\n\n");
             }
@@ -266,39 +267,37 @@ public final class AgentPromptBuilder {
         if (memoryContext.hasEntityMemory()) {
             Map<String, String> entityFacts = memoryContext.getEntityFacts();
             if (!entityFacts.isEmpty()) {
-                sb.append("## Entity Knowledge\n");
-                sb.append("The following known facts may be relevant:\n\n");
+                sb.append("## Entity Knowledge\n" + "The following known facts may be relevant:\n\n");
                 for (Map.Entry<String, String> entry : entityFacts.entrySet()) {
                     sb.append("- **")
                             .append(entry.getKey())
                             .append("**: ")
                             .append(entry.getValue())
-                            .append("\n");
+                            .append('\n');
                 }
-                sb.append("\n");
+                sb.append('\n');
             }
         }
 
         // Task improvement notes section -- injected from stored reflection of prior runs
         if (priorReflection != null) {
-            sb.append("## Task Improvement Notes (from prior executions)\n");
-            sb.append("The following refinements were identified by analyzing previous runs of this task.\n");
-            sb.append(
-                    "Apply them to improve your approach while still fulfilling the original requirements below.\n\n");
-            sb.append("### Refined Instructions\n");
-            sb.append(priorReflection.refinedDescription()).append("\n\n");
-            sb.append("### Output Guidance\n");
-            sb.append(priorReflection.refinedExpectedOutput()).append("\n");
+            sb.append("## Task Improvement Notes (from prior executions)\n"
+                    + "The following refinements were identified by analyzing previous runs of this task.\n"
+                    + "Apply them to improve your approach while still fulfilling the original requirements"
+                    + " below.\n\n"
+                    + "### Refined Instructions\n");
+            sb.append(priorReflection.refinedDescription()).append("\n\n### Output Guidance\n");
+            sb.append(priorReflection.refinedExpectedOutput()).append('\n');
             if (!priorReflection.observations().isEmpty()) {
                 sb.append("\n### Observations\n");
                 for (String obs : priorReflection.observations()) {
-                    sb.append("- ").append(obs).append("\n");
+                    sb.append("- ").append(obs).append('\n');
                 }
             }
             if (!priorReflection.suggestions().isEmpty()) {
                 sb.append("\n### Suggestions\n");
                 for (String sug : priorReflection.suggestions()) {
-                    sb.append("- ").append(sug).append("\n");
+                    sb.append("- ").append(sug).append('\n');
                 }
             }
             sb.append("\n---\n\n");
@@ -308,52 +307,54 @@ public final class AgentPromptBuilder {
         if (task.getRevisionFeedback() != null && !task.getRevisionFeedback().isBlank()) {
             sb.append("## Revision Instructions");
             if (task.getAttemptNumber() > 0) {
-                sb.append(" (Attempt ").append(task.getAttemptNumber() + 1).append(")");
+                sb.append(" (Attempt ").append(task.getAttemptNumber() + 1).append(')');
             }
-            sb.append("\n");
+            sb.append('\n');
             sb.append("This task is being re-executed based on reviewer feedback. "
-                    + "Incorporate the feedback below into your response.\n\n");
-            sb.append("### Feedback\n");
+                    + "Incorporate the feedback below into your response.\n\n"
+                    + "### Feedback\n");
             sb.append(task.getRevisionFeedback());
             if (task.getPriorAttemptOutput() != null
                     && !task.getPriorAttemptOutput().isBlank()) {
-                sb.append("\n\n### Previous Output\n");
-                sb.append(task.getPriorAttemptOutput());
+                sb.append("\n\n### Previous Output\n").append(task.getPriorAttemptOutput());
             }
             sb.append("\n\n");
         }
 
         // Task section
-        sb.append("## Task\n");
-        sb.append(task.getDescription());
+        sb.append("## Task\n").append(task.getDescription());
 
         // Expected output section
-        sb.append("\n\n## Expected Output\n");
-        sb.append(task.getExpectedOutput());
+        sb.append("\n\n## Expected Output\n").append(task.getExpectedOutput());
 
         // Structured output format section (only when outputType is set)
         if (task.getOutputType() != null) {
             String schemaDescription = JsonSchemaGenerator.generate(task.getOutputType());
-            sb.append("\n\n## Output Format\n");
-            sb.append("You MUST respond with ONLY valid JSON and nothing else. ");
-            sb.append("Do not include markdown fences, preamble, or explanation.\n");
-            sb.append("Your response must be ONLY valid JSON matching this schema ");
-            sb.append("(object, array, or scalar as appropriate):\n\n");
+            sb.append("\n\n## Output Format\n"
+                    + "You MUST respond with ONLY valid JSON and nothing else. "
+                    + "Do not include markdown fences, preamble, or explanation.\n"
+                    + "Your response must be ONLY valid JSON matching this schema "
+                    + "(object, array, or scalar as appropriate):\n\n");
             sb.append(schemaDescription);
         }
 
         String prompt = sb.toString();
-        log.debug("Built user prompt ({} chars) for task '{}'", prompt.length(), truncate(task.getDescription(), 80));
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Built user prompt ({} chars) for task '{}'", prompt.length(), truncate(task.getDescription(), 80));
+        }
         return prompt;
     }
 
     private static void warnIfLargeContext(TaskOutput ctx) {
         if (ctx.getRaw() != null && ctx.getRaw().length() > CONTEXT_LENGTH_WARN_THRESHOLD) {
-            log.warn(
-                    "Context from task '{}' is {} characters (>{}). " + "Consider breaking into smaller tasks.",
-                    truncate(ctx.getTaskDescription(), 80),
-                    ctx.getRaw().length(),
-                    CONTEXT_LENGTH_WARN_THRESHOLD);
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Context from task '{}' is {} characters (>{}). Consider breaking into smaller tasks.",
+                        truncate(ctx.getTaskDescription(), 80),
+                        ctx.getRaw().length(),
+                        CONTEXT_LENGTH_WARN_THRESHOLD);
+            }
         }
     }
 

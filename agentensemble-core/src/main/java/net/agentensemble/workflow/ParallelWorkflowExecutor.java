@@ -260,11 +260,13 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     .mapToInt(TaskOutput::getToolCallCount)
                     .sum();
 
-            log.info(
-                    "Parallel workflow exit-early ({}) | Completed: {} | Total: {}",
-                    exitEarlyReason,
-                    partialOutputs.size(),
-                    totalTasks);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Parallel workflow exit-early ({}) | Completed: {} | Total: {}",
+                        exitEarlyReason,
+                        partialOutputs.size(),
+                        totalTasks);
+            }
 
             return EnsembleOutput.builder()
                     .raw(partialFinalOutput)
@@ -279,10 +281,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         // Handle FAIL_FAST failure
         TaskExecutionException firstFailure = firstFailureRef.get();
         if (firstFailure != null) {
-            log.error(
-                    "Parallel workflow failed (FAIL_FAST) | Completed: {} | Failed: {}",
-                    completedOutputs.size(),
-                    failedTaskCauses.size());
+            if (log.isErrorEnabled()) {
+                log.error(
+                        "Parallel workflow failed (FAIL_FAST) | Completed: {} | Failed: {}",
+                        completedOutputs.size(),
+                        failedTaskCauses.size());
+            }
             throw firstFailure;
         }
 
@@ -295,10 +299,12 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
                     namedFailures.put(entry.getKey().getDescription(), entry.getValue());
                 }
             }
-            log.error(
-                    "Parallel workflow partial failure (CONTINUE_ON_ERROR) | Completed: {} | Failed: {}",
-                    successOutputs.size(),
-                    namedFailures.size());
+            if (log.isErrorEnabled()) {
+                log.error(
+                        "Parallel workflow partial failure (CONTINUE_ON_ERROR) | Completed: {} | Failed: {}",
+                        successOutputs.size(),
+                        namedFailures.size());
+            }
             throw new ParallelExecutionException(
                     namedFailures.size() + " of " + totalTasks + " tasks failed", successOutputs, namedFailures);
         }
@@ -310,11 +316,13 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         int totalToolCalls =
                 allOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
-        log.info(
-                "Parallel workflow completed | Tasks: {} | Duration: {} | Tool calls: {}",
-                allOutputs.size(),
-                totalDuration,
-                totalToolCalls);
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Parallel workflow completed | Tasks: {} | Duration: {} | Tool calls: {}",
+                    allOutputs.size(),
+                    totalDuration,
+                    totalToolCalls);
+        }
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)
