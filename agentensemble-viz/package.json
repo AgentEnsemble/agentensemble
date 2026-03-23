@@ -35,7 +35,7 @@
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.2",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^25.5.0",
