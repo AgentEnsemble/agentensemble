@@ -109,7 +109,7 @@ public class PhaseDagExecutor {
 
         // successorMap: phase P -> list of phases that depend on P (where P is in .after())
         // Uses identity comparison via IdentityHashMap.
-        IdentityHashMap<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
+        Map<Phase, List<Phase>> successorMap = new IdentityHashMap<>();
         for (Phase phase : phases) {
             successorMap.putIfAbsent(phase, new ArrayList<>());
         }
@@ -123,7 +123,7 @@ public class PhaseDagExecutor {
 
         // remainingPredecessors: count of predecessors not yet completed for each phase.
         // When this reaches 0, the phase can be submitted.
-        IdentityHashMap<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
+        Map<Phase, AtomicInteger> remainingPredecessors = new IdentityHashMap<>();
         for (Phase phase : phases) {
             remainingPredecessors.put(phase, new AtomicInteger(phase.getAfter().size()));
         }
@@ -209,12 +209,14 @@ public class PhaseDagExecutor {
         int totalToolCalls =
                 outputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
 
-        log.info(
-                "Phase DAG completed | Phases: {} | Tasks: {} | Duration: {} | Tool calls: {}",
-                totalPhases,
-                outputs.size(),
-                totalDuration,
-                totalToolCalls);
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Phase DAG completed | Phases: {} | Tasks: {} | Duration: {} | Tool calls: {}",
+                    totalPhases,
+                    outputs.size(),
+                    totalDuration,
+                    totalToolCalls);
+        }
 
         return EnsembleOutput.builder()
                 .raw(finalOutput)
@@ -247,7 +249,7 @@ public class PhaseDagExecutor {
             CountDownLatch latch) {
 
         // Snapshot prior outputs at the time this phase is submitted.
-        final IdentityHashMap<Task, TaskOutput> priorOutputsSnapshot;
+        final Map<Task, TaskOutput> priorOutputsSnapshot;
         synchronized (globalTaskOutputs) {
             @SuppressWarnings("IdentityHashMapUsage")
             IdentityHashMap<Task, TaskOutput> snapshot = new IdentityHashMap<>(globalTaskOutputs);
@@ -259,7 +261,9 @@ public class PhaseDagExecutor {
                 MDC.setContextMap(frozenMdc);
             }
 
-            log.info("Phase '{}' starting", phase.getName());
+            if (log.isInfoEnabled()) {
+                log.info("Phase '{}' starting", phase.getName());
+            }
             try {
                 // Run phase with review/retry loop -- returns final approved output.
                 EnsembleOutput finalOutput = runPhaseWithRetry(
@@ -272,12 +276,14 @@ public class PhaseDagExecutor {
                     globalTaskOutputs.putAll(finalOutput.getTaskOutputIndex());
                 }
 
-                log.info(
-                        "Phase '{}' completed | Tasks: {} | Duration: {} | Tool calls: {}",
-                        phase.getName(),
-                        finalOutput.getTaskOutputs().size(),
-                        finalOutput.getTotalDuration(),
-                        finalOutput.getTotalToolCalls());
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Phase '{}' completed | Tasks: {} | Duration: {} | Tool calls: {}",
+                            phase.getName(),
+                            finalOutput.getTaskOutputs().size(),
+                            finalOutput.getTotalDuration(),
+                            finalOutput.getTotalToolCalls());
+                }
 
                 // Unblock successors.
                 onPhaseCompleted(
@@ -295,7 +301,9 @@ public class PhaseDagExecutor {
                         latch);
 
             } catch (Exception e) {
-                log.error("Phase '{}' failed: {}", phase.getName(), e.getMessage(), e);
+                if (log.isErrorEnabled()) {
+                    log.error("Phase '{}' failed: {}", phase.getName(), e.getMessage(), e);
+                }
                 firstFailure.compareAndSet(null, e);
                 skipTransitiveDependents(phase, successorMap, settledPhases, latch);
             } finally {
@@ -338,10 +346,12 @@ public class PhaseDagExecutor {
         if (review == null) {
             // No review gate: execute once and return.
             EnsembleOutput output = phaseRunner.apply(phase, initialPriorOutputs);
-            log.debug(
-                    "Phase '{}' executed (no review) | Tasks: {}",
-                    phase.getName(),
-                    output.getTaskOutputs().size());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Phase '{}' executed (no review) | Tasks: {}",
+                        phase.getName(),
+                        output.getTaskOutputs().size());
+            }
             return output;
         }
 
@@ -354,23 +364,29 @@ public class PhaseDagExecutor {
         IdentityHashMap<Phase, Integer> predecessorRetryCounts = new IdentityHashMap<>();
 
         for (int attempt = 0; ; attempt++) {
-            log.info("Phase '{}' attempt {} starting", phase.getName(), attempt + 1);
+            if (log.isInfoEnabled()) {
+                log.info("Phase '{}' attempt {} starting", phase.getName(), attempt + 1);
+            }
             EnsembleOutput output = phaseRunner.apply(currentPhase, currentPrior);
-            log.info(
-                    "Phase '{}' attempt {} completed | Tasks: {} | Duration: {}",
-                    phase.getName(),
-                    attempt + 1,
-                    output.getTaskOutputs().size(),
-                    output.getTotalDuration());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Phase '{}' attempt {} completed | Tasks: {} | Duration: {}",
+                        phase.getName(),
+                        attempt + 1,
+                        output.getTaskOutputs().size(),
+                        output.getTotalDuration());
+            }
 
             // Run the review task and parse its decision.
             PhaseReviewDecision decision =
                     executeReviewTask(review, phase, currentPhase, output, currentPrior, phaseRunner);
-            log.info(
-                    "Phase '{}' review decision on attempt {}: [{}]",
-                    phase.getName(),
-                    attempt + 1,
-                    truncate(decision.toText(), 120));
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Phase '{}' review decision on attempt {}: [{}]",
+                        phase.getName(),
+                        attempt + 1,
+                        truncate(decision.toText(), 120));
+            }
 
             switch (decision) {
                 case PhaseReviewDecision.Approve ignored -> {
@@ -379,17 +395,21 @@ public class PhaseDagExecutor {
 
                 case PhaseReviewDecision.Retry r -> {
                     if (attempt >= maxRetries) {
-                        log.warn(
-                                "Phase '{}' reached max self-retries ({}), accepting last output",
-                                phase.getName(),
-                                maxRetries);
+                        if (log.isWarnEnabled()) {
+                            log.warn(
+                                    "Phase '{}' reached max self-retries ({}), accepting last output",
+                                    phase.getName(),
+                                    maxRetries);
+                        }
                         return output;
                     }
-                    log.info(
-                            "Phase '{}' self-retry {} with feedback: [{}]",
-                            phase.getName(),
-                            attempt + 1,
-                            truncate(r.feedback(), 200));
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Phase '{}' self-retry {} with feedback: [{}]",
+                                phase.getName(),
+                                attempt + 1,
+                                truncate(r.feedback(), 200));
+                    }
                     currentPhase = rebuildPhaseWithFeedback(phase, currentPhase, r.feedback(), output, attempt + 1);
                     // currentPrior stays the same -- self-retry re-runs the same phase
                 }
@@ -397,39 +417,48 @@ public class PhaseDagExecutor {
                 case PhaseReviewDecision.RetryPredecessor rp -> {
                     Phase predPhase = findDirectPredecessorByName(rp.phaseName(), phase);
                     if (predPhase == null) {
-                        log.warn(
-                                "Phase '{}' review requested retry of '{}' which is not a recognized "
-                                        + "direct predecessor; treating as Approve.",
-                                phase.getName(),
-                                rp.phaseName());
+                        if (log.isWarnEnabled()) {
+                            log.warn(
+                                    "Phase '{}' review requested retry of '{}' which is not a recognized "
+                                            + "direct predecessor; treating as Approve.",
+                                    phase.getName(),
+                                    rp.phaseName());
+                        }
                         return output;
                     }
 
                     int predRetries = predecessorRetryCounts.getOrDefault(predPhase, 0);
                     if (predRetries >= maxPredRetries) {
-                        log.warn(
-                                "Phase '{}' predecessor '{}' reached max retries ({}), " + "accepting current outputs",
-                                phase.getName(),
-                                rp.phaseName(),
-                                maxPredRetries);
+                        if (log.isWarnEnabled()) {
+                            log.warn(
+                                    "Phase '{}' predecessor '{}' reached max retries ({}), "
+                                            + "accepting current outputs",
+                                    phase.getName(),
+                                    rp.phaseName(),
+                                    maxPredRetries);
+                        }
                         return output;
                     }
                     predecessorRetryCounts.put(predPhase, predRetries + 1);
-                    log.info(
-                            "Phase '{}' requesting predecessor '{}' retry {} with feedback: [{}]",
-                            phase.getName(),
-                            rp.phaseName(),
-                            predRetries + 1,
-                            truncate(rp.feedback(), 200));
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Phase '{}' requesting predecessor '{}' retry {} with feedback: [{}]",
+                                phase.getName(),
+                                rp.phaseName(),
+                                predRetries + 1,
+                                truncate(rp.feedback(), 200));
+                    }
 
                     // Locate the predecessor's last committed output.
                     EnsembleOutput predOldOutput = phaseOutputMap.get(predPhase);
                     if (predOldOutput == null) {
-                        log.warn(
-                                "Phase '{}' could not find committed output for predecessor '{}'; "
-                                        + "treating as Approve.",
-                                phase.getName(),
-                                rp.phaseName());
+                        if (log.isWarnEnabled()) {
+                            log.warn(
+                                    "Phase '{}' could not find committed output for predecessor '{}'; "
+                                            + "treating as Approve.",
+                                    phase.getName(),
+                                    rp.phaseName());
+                        }
                         return output;
                     }
 
@@ -439,13 +468,18 @@ public class PhaseDagExecutor {
                     // Rebuild predecessor with feedback and re-execute.
                     Phase rebuiltPred = rebuildPhaseWithFeedback(
                             predPhase, predPhase, rp.feedback(), predOldOutput, predRetries + 1);
-                    log.info("Re-executing predecessor phase '{}' (retry {})", predPhase.getName(), predRetries + 1);
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Re-executing predecessor phase '{}' (retry {})", predPhase.getName(), predRetries + 1);
+                    }
                     EnsembleOutput newPredOutput = phaseRunner.apply(rebuiltPred, initialPriorOutputs);
-                    log.info(
-                            "Predecessor phase '{}' retry {} completed | Tasks: {}",
-                            predPhase.getName(),
-                            predRetries + 1,
-                            newPredOutput.getTaskOutputs().size());
+                    if (log.isInfoEnabled()) {
+                        log.info(
+                                "Predecessor phase '{}' retry {} completed | Tasks: {}",
+                                predPhase.getName(),
+                                predRetries + 1,
+                                newPredOutput.getTaskOutputs().size());
+                    }
 
                     // Commit new predecessor outputs to global shared state.
                     phaseOutputMap.put(predPhase, newPredOutput);
@@ -537,7 +571,9 @@ public class PhaseDagExecutor {
                 ? ""
                 : reviewOutput.getTaskOutputs().get(0).getRaw();
 
-        log.debug("Phase '{}' review task raw output: [{}]", originalPhase.getName(), truncate(raw, 200));
+        if (log.isDebugEnabled()) {
+            log.debug("Phase '{}' review task raw output: [{}]", originalPhase.getName(), truncate(raw, 200));
+        }
 
         return PhaseReviewDecision.parse(raw);
     }
@@ -684,10 +720,12 @@ public class PhaseDagExecutor {
         List<Phase> successors = successorMap.getOrDefault(failedPhase, List.of());
         for (Phase successor : successors) {
             if (settledPhases.putIfAbsent(successor, "skipped") == null) {
-                log.warn(
-                        "Phase '{}' skipped (predecessor '{}' failed or was skipped)",
-                        successor.getName(),
-                        failedPhase.getName());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Phase '{}' skipped (predecessor '{}' failed or was skipped)",
+                            successor.getName(),
+                            failedPhase.getName());
+                }
                 latch.countDown();
                 skipTransitiveDependents(successor, successorMap, settledPhases, latch);
             }

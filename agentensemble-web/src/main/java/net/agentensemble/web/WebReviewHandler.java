@@ -104,7 +104,9 @@ public final class WebReviewHandler implements ReviewHandler {
         connectionManager.registerPendingReview(reviewId, future);
         broadcastReviewRequested(reviewId, request);
 
-        log.debug("Review gate {} opened for task: {}", reviewId, truncate(request.taskDescription(), 80));
+        if (log.isDebugEnabled()) {
+            log.debug("Review gate {} opened for task: {}", reviewId, truncate(request.taskDescription(), 80));
+        }
 
         try {
             String rawDecision = future.get(reviewTimeout.toMillis(), TimeUnit.MILLISECONDS);
@@ -116,7 +118,9 @@ public final class WebReviewHandler implements ReviewHandler {
             }
 
             ReviewDecisionMessage decision = serializer.fromJson(rawDecision, ReviewDecisionMessage.class);
-            log.debug("Review {} received decision: {}", reviewId, decision.decision());
+            if (log.isDebugEnabled()) {
+                log.debug("Review {} received decision: {}", reviewId, decision.decision());
+            }
             return mapToReviewDecision(decision);
 
         } catch (TimeoutException e) {
@@ -154,7 +158,9 @@ public final class WebReviewHandler implements ReviewHandler {
                     onTimeout.name());
             connectionManager.broadcast(serializer.toJson(msg));
         } catch (Exception e) {
-            log.warn("Failed to broadcast review_requested for review {}: {}", reviewId, e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to broadcast review_requested for review {}: {}", reviewId, e.getMessage(), e);
+            }
         }
     }
 
@@ -207,7 +213,9 @@ public final class WebReviewHandler implements ReviewHandler {
             ReviewTimedOutMessage msg = new ReviewTimedOutMessage(reviewId, onTimeout.name());
             connectionManager.broadcast(serializer.toJson(msg));
         } catch (Exception e) {
-            log.warn("Failed to broadcast review_timed_out for review {}: {}", reviewId, e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to broadcast review_timed_out for review {}: {}", reviewId, e.getMessage(), e);
+            }
         }
     }
 

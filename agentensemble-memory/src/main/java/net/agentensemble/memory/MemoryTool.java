@@ -109,7 +109,7 @@ public class MemoryTool {
         }
         StringBuilder sb = new StringBuilder("Retrieved memories:\n");
         for (MemoryEntry entry : entries) {
-            sb.append("- ").append(entry.getContent()).append("\n");
+            sb.append("- ").append(entry.getContent()).append('\n');
         }
         return sb.toString().stripTrailing();
     }

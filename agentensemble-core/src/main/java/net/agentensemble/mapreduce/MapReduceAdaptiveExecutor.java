@@ -181,7 +181,9 @@ final class MapReduceAdaptiveExecutor<T> {
                     estimatedInputTokens,
                     targetTokenBudget);
             if (estimatedInputTokens <= targetTokenBudget) {
-                log.info("Adaptive MapReduce: short-circuit fires, running direct task for {} items", items.size());
+                if (log.isInfoEnabled()) {
+                    log.info("Adaptive MapReduce: short-circuit fires, running direct task for {} items", items.size());
+                }
                 return runDirectPhase(ensembleId, inputs);
             }
             log.debug("Adaptive MapReduce: estimated input exceeds budget, running normal map-reduce pipeline");
@@ -190,7 +192,9 @@ final class MapReduceAdaptiveExecutor<T> {
         List<LevelRun> levelRuns = new ArrayList<>();
 
         // STEP 1: Map phase
-        log.info("Adaptive MapReduce: starting map phase for {} items", items.size());
+        if (log.isInfoEnabled()) {
+            log.info("Adaptive MapReduce: starting map phase for {} items", items.size());
+        }
         EnsembleOutput mapOutput = runMapPhase(inputs);
         levelRuns.add(new LevelRun(0, MapReduceEnsemble.NODE_TYPE_MAP, mapOutput));
 
@@ -215,11 +219,13 @@ final class MapReduceAdaptiveExecutor<T> {
         // STEP 3: Adaptive reduce loop
         int reduceLevel = 1;
         while (sumTokens(currentOutputs) > targetTokenBudget && reduceLevel <= maxReduceLevels) {
-            log.info(
-                    "Adaptive MapReduce: starting intermediate reduce level {} (tokens={}, budget={})",
-                    reduceLevel,
-                    sumTokens(currentOutputs),
-                    targetTokenBudget);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Adaptive MapReduce: starting intermediate reduce level {} (tokens={}, budget={})",
+                        reduceLevel,
+                        sumTokens(currentOutputs),
+                        targetTokenBudget);
+            }
 
             List<List<TaskOutput>> bins = MapReduceBinPacker.pack(currentOutputs, targetTokenBudget, tokenEstimator);
 
@@ -231,13 +237,15 @@ final class MapReduceAdaptiveExecutor<T> {
         }
 
         if (sumTokens(currentOutputs) > targetTokenBudget) {
-            log.warn(
-                    "Adaptive MapReduce: maxReduceLevels ({}) reached but total tokens ({}) "
-                            + "still exceed budget ({}). Proceeding with final reduce. "
-                            + "Consider increasing targetTokenBudget or maxReduceLevels.",
-                    maxReduceLevels,
-                    sumTokens(currentOutputs),
-                    targetTokenBudget);
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Adaptive MapReduce: maxReduceLevels ({}) reached but total tokens ({}) "
+                                + "still exceed budget ({}). Proceeding with final reduce. "
+                                + "Consider increasing targetTokenBudget or maxReduceLevels.",
+                        maxReduceLevels,
+                        sumTokens(currentOutputs),
+                        targetTokenBudget);
+            }
         }
 
         // STEP 4: Final reduce
@@ -378,11 +386,13 @@ final class MapReduceAdaptiveExecutor<T> {
                 if (survivors.isEmpty()) {
                     throw e; // All map tasks failed: propagate
                 }
-                log.warn(
-                        "Adaptive MapReduce: {} map task(s) failed with CONTINUE_ON_ERROR; "
-                                + "{} surviving outputs proceed to reduce phase.",
-                        e.getFailedCount(),
-                        survivors.size());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Adaptive MapReduce: {} map task(s) failed with CONTINUE_ON_ERROR; "
+                                    + "{} surviving outputs proceed to reduce phase.",
+                            e.getFailedCount(),
+                            survivors.size());
+                }
                 return buildSurvivorOutput(survivors);
             }
             throw e; // FAIL_FAST: propagate

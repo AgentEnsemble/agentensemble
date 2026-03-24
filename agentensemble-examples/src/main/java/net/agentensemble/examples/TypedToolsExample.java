@@ -4,6 +4,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import java.util.Map;
+import java.util.regex.Pattern;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.AbstractTypedAgentTool;
 import net.agentensemble.tool.LangChain4jToolAdapter;
@@ -80,6 +81,8 @@ public final class TypedToolsExample {
 
     static final class SortTool extends AbstractTypedAgentTool<SortInput> {
 
+        private static final Pattern COMMA = Pattern.compile(",");
+
         @Override
         public String name() {
             return "sort_items";
@@ -97,7 +100,7 @@ public final class TypedToolsExample {
 
         @Override
         public ToolResult execute(SortInput input) {
-            String[] items = input.items().split(",");
+            String[] items = COMMA.split(input.items());
             java.util.Arrays.sort(items, String.CASE_INSENSITIVE_ORDER);
             if (input.order() == SortOrder.DESCENDING) {
                 // reverse

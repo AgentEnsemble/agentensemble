@@ -120,17 +120,17 @@ public final class JsonSchemaGenerator {
         int i = 0;
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             sb.append(innerIndent)
-                    .append("\"")
+                    .append('"')
                     .append(entry.getKey())
                     .append("\": ")
                     .append(entry.getValue());
             if (i < fields.size() - 1) {
-                sb.append(",");
+                sb.append(',');
             }
-            sb.append("\n");
+            sb.append('\n');
             i++;
         }
-        sb.append(indent).append("}");
+        sb.append(indent).append('}');
         return sb.toString();
     }
 

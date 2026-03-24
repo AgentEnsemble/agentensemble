@@ -76,7 +76,11 @@ public final class StructuredOutputParser {
             String trimmed = raw.strip();
             try {
                 T value = OBJECT_MAPPER.readValue(trimmed, type);
-                log.debug("Structured scalar output parsed successfully into {} from bare value", type.getSimpleName());
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "Structured scalar output parsed successfully into {} from bare value",
+                            type.getSimpleName());
+                }
                 return ParseResult.success(value);
             } catch (Exception ignored) {
                 // Not a parseable scalar JSON value for this type -- fall through
@@ -86,7 +90,9 @@ public final class StructuredOutputParser {
 
         try {
             T value = OBJECT_MAPPER.readValue(json, type);
-            log.debug("Structured output parsed successfully into {}", type.getSimpleName());
+            if (log.isDebugEnabled()) {
+                log.debug("Structured output parsed successfully into {}", type.getSimpleName());
+            }
             return ParseResult.success(value);
         } catch (Exception e) {
             String errorMsg = "JSON could not be deserialized as " + type.getSimpleName() + ": " + e.getMessage();

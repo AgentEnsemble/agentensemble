@@ -309,8 +309,10 @@ class WebSocketServer {
                     ctx.send(message);
                 }
             } catch (Exception e) {
-                LoggerFactory.getLogger(JavalinWsSession.class)
-                        .debug("Failed to send message to session {}: {}", id(), e.getMessage());
+                Logger wsLog = LoggerFactory.getLogger(JavalinWsSession.class);
+                if (wsLog.isDebugEnabled()) {
+                    wsLog.debug("Failed to send message to session {}: {}", id(), e.getMessage());
+                }
             }
         }
     }

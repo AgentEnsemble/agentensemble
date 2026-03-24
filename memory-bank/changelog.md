@@ -1,5 +1,59 @@
 # Changelog
 
+## [Unreleased] - fix/error-prone-pmd-p3 (P3 performance fixes) - 2026-03-13
+
+### Fixed (GH #205 -- P3 Performance violations, 4 commits on fix/error-prone-pmd-p3)
+
+**GuardLogStatement (174 violations, commit bc7ce41):**
+- Wrapped all `log.debug()`/`log.trace()`/`log.warn()` calls in `if (log.isXxxEnabled())`
+  guards across 38 production source files (Ensemble, AgentExecutor, workflow executors,
+  mapreduce, memory, web, tool, reflection, review, config)
+- Files using `log()` accessor (AbstractAgentTool, ToolPipeline, ProcessAgentTool) fixed
+  manually with `if (log().isXxxEnabled())` pattern
+- WebSocketServer inner-class inline logger fixed with local `Logger wsLog` variable guard
+- AgentPromptBuilder fully rewritten to include guards alongside StringBuilder fixes
+
+**StringBuilder (145 violations, commit bc7ce41):**
+- AgentPromptBuilder: `new StringBuilder(256)` / `new StringBuilder(1024)`, char literals
+  for single-char appends, chained appends, merged adjacent literals
+- ReflectionPromptBuilder: `new StringBuilder(1024)`, all consecutive literals merged
+- DefaultManagerPromptStrategy: `new StringBuilder(512)` for both methods, char literals
+- SerpApiSearchProvider / TavilySearchProvider: `new StringBuilder(512)`, char literals
+- MemoryTool: `append('\n')` instead of `append("\n")`
+- JsonSchemaGenerator: char literals `'"'`, `','`, `'\n'`, `'}'` in `generateObject()`
+
+**LooseCoupling (82 violations, commit 48a06e9):**
+- ConcurrentHashMap -> Map in field/variable declarations (ConnectionManager, TemplateResolver,
+  EmbeddingMemoryStore, EmbeddingStoreLongTermMemory, MemoryContext, InMemoryEntityMemory,
+  InMemoryStore, InMemoryReflectionStore, AgentExecutor, MapReduceEnsemble, and others)
+- CopyOnWriteArrayList -> List in field/variable declarations (ConnectionManager)
+- IdentityHashMap -> Map for local variables used only as Map (Ensemble, PhaseDagExecutor,
+  SequentialWorkflowExecutor, ParallelWorkflowExecutor, TaskDependencyGraph)
+- Instantiation sites preserved; added missing java.util.Map/List imports to 9 files
+
+**AvoidInstantiatingObjectsInLoops (2 fixes, commit ce91798):**
+- EmbeddingMemoryStore: hoisted `HashMap<String,String> metadataMap` outside the results
+  loop; `metadataMap.clear()` before each iteration; `Map.copyOf(metadataMap)` produces
+  independent immutable map per entry (semantically equivalent, reduced GC pressure)
+- EmbeddingStoreLongTermMemory: same pattern
+
+**StringSplitter (3 fixes, Error Prone, commit ce91798):**
+- LlmReflectionStrategy: `private static final Pattern NEWLINE = Pattern.compile("\n")`
+  replaces `section.split("\n", -1)`
+- TypedToolsExample: `private static final Pattern COMMA = Pattern.compile(",")` in
+  SortTool inner class; `COMMA.split(input.items())`
+- DeterministicOnlyPipelineExample: `EQUALS_SIGN` and `SEMICOLON` Pattern constants
+
+**Import fixes + ProcessAgentTool correction (commit 5e7ab65):**
+- Added missing `java.util.Map`/`java.util.List`/`java.util.concurrent.CopyOnWriteArrayList`
+  imports to 9 files after LooseCoupling script replacements
+- Fixed ConnectionManagerTest.java: script produced invalid `java.util.concurrent.List`
+  (non-existent class); reverted to `List` from `java.util`
+- Reverted two extra ProcessAgentTool log guards (stdout/stderr drain lambdas) that were
+  not in the PMD violation list and caused branch coverage to drop below 0.75 threshold
+
+---
+
 ## [Unreleased] - fix/error-prone-pmd-p1 (P2 quality fixes) - 2026-03-13
 
 ### Fixed (commit ef725fe -- P2 code quality violations, issue #205)

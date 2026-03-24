@@ -200,10 +200,12 @@ public class MemoryContext {
 
         if (hasShortTerm()) {
             shortTermMemory.add(entry);
-            log.debug(
-                    "Recorded short-term memory | Agent: '{}' | STM size: {}",
-                    record.agentRole(),
-                    shortTermMemory.size());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Recorded short-term memory | Agent: '{}' | STM size: {}",
+                        record.agentRole(),
+                        shortTermMemory.size());
+            }
             if (listener != null) {
                 listener.onStmWrite();
             }
@@ -211,7 +213,9 @@ public class MemoryContext {
 
         if (hasLongTerm()) {
             config.getLongTerm().store(entry);
-            log.debug("Stored long-term memory | Agent: '{}'", record.agentRole());
+            if (log.isDebugEnabled()) {
+                log.debug("Stored long-term memory | Agent: '{}'", record.agentRole());
+            }
             if (listener != null) {
                 listener.onLtmStore();
             }

@@ -271,7 +271,9 @@ public final class WebDashboard implements EnsembleDashboard {
             connectionManager.broadcast(json);
             connectionManager.appendToSnapshot(json);
         } catch (Exception e) {
-            log.warn("Failed to broadcast ensemble_started message: {}", e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to broadcast ensemble_started message: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -295,7 +297,9 @@ public final class WebDashboard implements EnsembleDashboard {
             connectionManager.broadcast(json);
             connectionManager.appendToSnapshot(json);
         } catch (Exception e) {
-            log.warn("Failed to broadcast ensemble_completed message: {}", e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to broadcast ensemble_completed message: {}", e.getMessage(), e);
+            }
         }
     }
 

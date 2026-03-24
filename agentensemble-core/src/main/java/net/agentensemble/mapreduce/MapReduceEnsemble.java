@@ -269,23 +269,33 @@ public final class MapReduceEnsemble<T> {
     }
 
     /**
-     * Returns a map from task identity to node type string for devtools enrichment.
+     * Returns an identity-keyed map from task to node type string for devtools enrichment.
      *
      * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
+     * <p>The returned map uses identity-based ({@code ==}) key comparison, consistent with
+     * the framework's {@code IdentityHashMap} convention for task instances.
+     *
      * @return an identity-keyed map of task to node type, or {@code null} in adaptive mode
      */
+    @SuppressWarnings(
+            "PMD.LooseCoupling") // IdentityHashMap is part of the API contract: callers must use identity comparison
     public IdentityHashMap<Task, String> getNodeTypes() {
         return nodeTypes;
     }
 
     /**
-     * Returns a map from task identity to map-reduce level for devtools enrichment.
+     * Returns an identity-keyed map from task to map-reduce level for devtools enrichment.
      *
      * <p>Available in static mode only. Returns {@code null} in adaptive mode.
      *
+     * <p>The returned map uses identity-based ({@code ==}) key comparison, consistent with
+     * the framework's {@code IdentityHashMap} convention for task instances.
+     *
      * @return an identity-keyed map of task to level, or {@code null} in adaptive mode
      */
+    @SuppressWarnings(
+            "PMD.LooseCoupling") // IdentityHashMap is part of the API contract: callers must use identity comparison
     public IdentityHashMap<Task, Integer> getMapReduceLevels() {
         return mapReduceLevels;
     }

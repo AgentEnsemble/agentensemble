@@ -50,11 +50,13 @@ class StructuredOutputHandler {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             ParseResult<?> result = StructuredOutputParser.parse(currentResponse, outputType);
             if (result.isSuccess()) {
-                log.info(
-                        "Agent '{}' structured output parsed successfully on attempt {}/{}",
-                        agent.getRole(),
-                        attempt + 1,
-                        maxRetries + 1);
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Agent '{}' structured output parsed successfully on attempt {}/{}",
+                            agent.getRole(),
+                            attempt + 1,
+                            maxRetries + 1);
+                }
                 return result.getValue();
             }
 
@@ -64,12 +66,14 @@ class StructuredOutputHandler {
                 break;
             }
 
-            log.warn(
-                    "Agent '{}' structured output parse failed (attempt {}/{}): {}",
-                    agent.getRole(),
-                    attempt + 1,
-                    maxRetries + 1,
-                    result.getErrorMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Agent '{}' structured output parse failed (attempt {}/{}): {}",
+                        agent.getRole(),
+                        attempt + 1,
+                        maxRetries + 1,
+                        result.getErrorMessage());
+            }
 
             String correctionPrompt =
                     buildCorrectionPrompt(currentResponse, result.getErrorMessage(), schemaDescription);

@@ -226,7 +226,13 @@ public class AgentDelegationTool {
             }
             if (result instanceof DelegationPolicyResult.Reject reject) {
                 String msg = "Delegation rejected by policy: " + reject.reason();
-                log.warn("Delegation from '{}' to '{}' rejected by policy: {}", callerRole, agentRole, reject.reason());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Delegation from '{}' to '{}' rejected by policy: {}",
+                            callerRole,
+                            agentRole,
+                            reject.reason());
+                }
                 DelegationResponse response = failureResponse(workingRequest, agentRole, msg, requestStart);
                 delegationResponses.add(response);
                 delegationContext
@@ -306,15 +312,17 @@ public class AgentDelegationTool {
 
         // All guards and policies passed -- fire DelegationStartedEvent
         int childDepth = delegationContext.getCurrentDepth() + 1;
-        log.info(
-                "Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
-                callerRole,
-                resolvedTarget.getRole(),
-                childDepth,
-                delegationContext.getMaxDepth(),
-                workingRequest.getTaskDescription().length() > 80
-                        ? workingRequest.getTaskDescription().substring(0, 80) + "..."
-                        : workingRequest.getTaskDescription());
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Agent '{}' delegating subtask to '{}' (depth {}/{}): {}",
+                    callerRole,
+                    resolvedTarget.getRole(),
+                    childDepth,
+                    delegationContext.getMaxDepth(),
+                    workingRequest.getTaskDescription().length() > 80
+                            ? workingRequest.getTaskDescription().substring(0, 80) + "..."
+                            : workingRequest.getTaskDescription());
+        }
 
         delegationContext
                 .getExecutionContext()
@@ -366,11 +374,13 @@ public class AgentDelegationTool {
                     elapsed);
             delegationResponses.add(response);
 
-            log.info(
-                    "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    finalTarget.getRole(),
-                    output.getToolCallCount(),
-                    output.getDuration());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
+                        finalTarget.getRole(),
+                        output.getToolCallCount(),
+                        output.getDuration());
+            }
 
             delegationContext
                     .getExecutionContext()

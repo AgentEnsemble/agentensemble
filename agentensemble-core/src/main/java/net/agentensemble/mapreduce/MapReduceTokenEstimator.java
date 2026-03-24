@@ -94,14 +94,16 @@ final class MapReduceTokenEstimator {
 
         // Heuristic fallback
         int heuristic = output.getRaw().length() / CHARS_PER_TOKEN;
-        log.warn(
-                "MapReduce: provider did not return output token count for agent [{}]. "
-                        + "Using heuristic estimate ({} chars / {} = {} tokens). "
-                        + "Consider providing a tokenEstimator for more accurate bin-packing.",
-                output.getAgentRole(),
-                output.getRaw().length(),
-                CHARS_PER_TOKEN,
-                heuristic);
+        if (log.isWarnEnabled()) {
+            log.warn(
+                    "MapReduce: provider did not return output token count for agent [{}]. "
+                            + "Using heuristic estimate ({} chars / {} = {} tokens). "
+                            + "Consider providing a tokenEstimator for more accurate bin-packing.",
+                    output.getAgentRole(),
+                    output.getRaw().length(),
+                    CHARS_PER_TOKEN,
+                    heuristic);
+        }
         return heuristic;
     }
 }

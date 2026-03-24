@@ -390,7 +390,7 @@ class MapReduceEnsembleTest {
 
         List<Agent> agents = mre.toEnsemble().getAgents();
         // Verify no two agent objects are the same reference
-        IdentityHashMap<Agent, Boolean> seen = new IdentityHashMap<>();
+        Map<Agent, Boolean> seen = new IdentityHashMap<>();
         for (Agent a : agents) {
             assertThat(seen.put(a, true)).isNull();
         }
@@ -424,7 +424,7 @@ class MapReduceEnsembleTest {
 
         List<Agent> agents = mre.toEnsemble().getAgents();
         // 4 map + 2 L1 + 1 final = 7 agents, all distinct by identity
-        IdentityHashMap<Agent, Boolean> seen = new IdentityHashMap<>();
+        Map<Agent, Boolean> seen = new IdentityHashMap<>();
         for (Agent a : agents) {
             assertThat(seen.put(a, true)).isNull();
         }

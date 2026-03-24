@@ -158,7 +158,9 @@ public final class WebSocketStreamingListener implements EnsembleListener {
             // all past events in the hello message and can reconstruct the current state.
             connectionManager.appendToSnapshot(json);
         } catch (Exception e) {
-            log.warn("Failed to serialize and broadcast protocol message: {}", e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to serialize and broadcast protocol message: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -174,7 +176,9 @@ public final class WebSocketStreamingListener implements EnsembleListener {
             connectionManager.broadcast(json);
             // Intentionally not calling appendToSnapshot -- tokens are ephemeral
         } catch (Exception e) {
-            log.warn("Failed to serialize and broadcast ephemeral protocol message: {}", e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to serialize and broadcast ephemeral protocol message: {}", e.getMessage(), e);
+            }
         }
     }
 

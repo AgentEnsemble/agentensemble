@@ -308,7 +308,7 @@ class EnsembleOutputTest {
         Task task = Task.of("Research AI trends");
         TaskOutput taskOutput = taskOutputWithMetrics("Researcher", TaskMetrics.EMPTY);
 
-        java.util.IdentityHashMap<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
+        java.util.Map<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
         index.put(task, taskOutput);
 
         EnsembleOutput output = EnsembleOutput.builder()
@@ -328,7 +328,7 @@ class EnsembleOutputTest {
         Task unknownTask = Task.of("Unknown task");
         TaskOutput taskOutput = taskOutputWithMetrics("Agent", TaskMetrics.EMPTY);
 
-        java.util.IdentityHashMap<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
+        java.util.Map<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
         index.put(knownTask, taskOutput);
 
         EnsembleOutput output = EnsembleOutput.builder()
@@ -364,7 +364,7 @@ class EnsembleOutputTest {
         Task taskB = Task.of("Research AI trends"); // equal fields, different instance
         TaskOutput outputA = taskOutputWithMetrics("AgentA", TaskMetrics.EMPTY);
 
-        java.util.IdentityHashMap<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
+        java.util.Map<Task, TaskOutput> index = new java.util.IdentityHashMap<>();
         index.put(taskA, outputA);
 
         EnsembleOutput output = EnsembleOutput.builder()

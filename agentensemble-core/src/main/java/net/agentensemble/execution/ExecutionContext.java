@@ -587,7 +587,9 @@ public final class ExecutionContext {
             try {
                 listener.onTaskStart(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onTaskStart: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onTaskStart: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -604,7 +606,9 @@ public final class ExecutionContext {
             try {
                 listener.onTaskComplete(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onTaskComplete: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onTaskComplete: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -621,7 +625,9 @@ public final class ExecutionContext {
             try {
                 listener.onTaskFailed(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onTaskFailed: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onTaskFailed: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -638,7 +644,9 @@ public final class ExecutionContext {
             try {
                 listener.onToolCall(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onToolCall: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onToolCall: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -655,7 +663,9 @@ public final class ExecutionContext {
             try {
                 listener.onDelegationStarted(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onDelegationStarted: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onDelegationStarted: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -672,7 +682,9 @@ public final class ExecutionContext {
             try {
                 listener.onDelegationCompleted(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onDelegationCompleted: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onDelegationCompleted: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -689,7 +701,9 @@ public final class ExecutionContext {
             try {
                 listener.onDelegationFailed(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onDelegationFailed: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onDelegationFailed: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -707,7 +721,9 @@ public final class ExecutionContext {
             try {
                 listener.onTaskReflected(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onTaskReflected: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onTaskReflected: {}", e.getMessage(), e);
+                }
             }
         }
     }
@@ -725,7 +741,9 @@ public final class ExecutionContext {
             try {
                 listener.onToken(event);
             } catch (Exception e) {
-                log.warn("EnsembleListener threw exception in onToken: {}", e.getMessage(), e);
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onToken: {}", e.getMessage(), e);
+                }
             }
         }
     }

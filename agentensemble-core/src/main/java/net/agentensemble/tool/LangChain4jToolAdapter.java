@@ -52,16 +52,20 @@ public final class LangChain4jToolAdapter {
 
         if (tool instanceof TypedAgentTool<?> typed) {
             parameters = ToolSchemaGenerator.generateSchema(typed.inputType());
-            log.debug(
-                    "Generated typed schema for AgentTool '{}' from input type '{}'",
-                    tool.name(),
-                    typed.inputType().getSimpleName());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Generated typed schema for AgentTool '{}' from input type '{}'",
+                        tool.name(),
+                        typed.inputType().getSimpleName());
+            }
         } else {
             parameters = JsonObjectSchema.builder()
                     .addStringProperty(INPUT_PARAM_NAME, INPUT_PARAM_DESCRIPTION)
                     .required(List.of(INPUT_PARAM_NAME))
                     .build();
-            log.debug("Adapted AgentTool '{}' to LangChain4j ToolSpecification", tool.name());
+            if (log.isDebugEnabled()) {
+                log.debug("Adapted AgentTool '{}' to LangChain4j ToolSpecification", tool.name());
+            }
         }
 
         return ToolSpecification.builder()
@@ -124,10 +128,14 @@ public final class LangChain4jToolAdapter {
             // Re-throw tool configuration errors (e.g., requireApproval=true with no ReviewHandler,
             // or missing agentensemble-review module). These are programmer errors that must surface
             // clearly. Ordinary IllegalStateException from tool code is NOT re-thrown here.
-            log.error("AgentTool '{}' configuration error: {}", tool.name(), e.getMessage());
+            if (log.isErrorEnabled()) {
+                log.error("AgentTool '{}' configuration error: {}", tool.name(), e.getMessage());
+            }
             throw e;
         } catch (Exception e) {
-            log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("AgentTool '{}' threw exception during execution: {}", tool.name(), e.getMessage(), e);
+            }
             return ToolResult.failure(e.getMessage());
         }
     }
@@ -175,7 +183,9 @@ public final class LangChain4jToolAdapter {
             return result != null ? result.toString() : "";
 
         } catch (Exception e) {
-            log.warn("Annotated tool '{}' threw exception: {}", methodName, e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn("Annotated tool '{}' threw exception: {}", methodName, e.getMessage());
+            }
             return "Error: " + e.getMessage();
         }
     }

@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.agentensemble.Agent;
@@ -63,13 +64,13 @@ public final class DagExporter {
         }
 
         // Assign stable, index-based IDs to each task (identity-safe)
-        IdentityHashMap<Task, String> taskIds = buildTaskIds(tasks);
+        Map<Task, String> taskIds = buildTaskIds(tasks);
 
         // Build the dependency graph (same algorithm used by the parallel executor)
         TaskDependencyGraph graph = new TaskDependencyGraph(tasks);
 
         // Compute topological levels: level 0 = roots, level N = depends on level N-1
-        IdentityHashMap<Task, Integer> levels = computeLevels(tasks, graph);
+        Map<Task, Integer> levels = computeLevels(tasks, graph);
 
         // Build parallel groups list: each index is a level, value is task IDs at that level
         List<List<String>> parallelGroups = buildParallelGroups(tasks, taskIds, levels);
@@ -121,8 +122,8 @@ public final class DagExporter {
         DagModel base = build(inner);
 
         List<Task> tasks = inner.getTasks();
-        IdentityHashMap<Task, String> nodeTypes = mapReduceEnsemble.getNodeTypes();
-        IdentityHashMap<Task, Integer> mapReduceLevels = mapReduceEnsemble.getMapReduceLevels();
+        Map<Task, String> nodeTypes = mapReduceEnsemble.getNodeTypes();
+        Map<Task, Integer> mapReduceLevels = mapReduceEnsemble.getMapReduceLevels();
 
         // Enrich task nodes: task list index aligns with base.getTasks() order.
         List<DagTaskNode> enrichedTasks = new ArrayList<>(tasks.size());
@@ -257,8 +258,8 @@ public final class DagExporter {
     // Private helpers
     // ========================
 
-    private static IdentityHashMap<Task, String> buildTaskIds(List<Task> tasks) {
-        IdentityHashMap<Task, String> taskIds = new IdentityHashMap<>();
+    private static Map<Task, String> buildTaskIds(List<Task> tasks) {
+        Map<Task, String> taskIds = new IdentityHashMap<>();
         for (int i = 0; i < tasks.size(); i++) {
             taskIds.put(tasks.get(i), String.valueOf(i));
         }
@@ -272,15 +273,15 @@ public final class DagExporter {
      * Level N = depends on at least one task at level N-1 (and none at level N+).
      * Uses memoized recursion via the {@code levels} map.
      */
-    private static IdentityHashMap<Task, Integer> computeLevels(List<Task> tasks, TaskDependencyGraph graph) {
-        IdentityHashMap<Task, Integer> levels = new IdentityHashMap<>();
+    private static Map<Task, Integer> computeLevels(List<Task> tasks, TaskDependencyGraph graph) {
+        Map<Task, Integer> levels = new IdentityHashMap<>();
         for (Task task : tasks) {
             computeLevel(task, graph, levels);
         }
         return levels;
     }
 
-    private static int computeLevel(Task task, TaskDependencyGraph graph, IdentityHashMap<Task, Integer> levels) {
+    private static int computeLevel(Task task, TaskDependencyGraph graph, Map<Task, Integer> levels) {
         Integer cached = levels.get(task);
         if (cached != null) {
             return cached;
@@ -309,7 +310,7 @@ public final class DagExporter {
     }
 
     private static List<List<String>> buildParallelGroups(
-            List<Task> tasks, IdentityHashMap<Task, String> taskIds, IdentityHashMap<Task, Integer> levels) {
+            List<Task> tasks, Map<Task, String> taskIds, Map<Task, Integer> levels) {
         int maxLevel =
                 levels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
 
@@ -335,10 +336,7 @@ public final class DagExporter {
      * with the highest level until we reach a root.
      */
     private static List<String> computeCriticalPath(
-            List<Task> tasks,
-            IdentityHashMap<Task, String> taskIds,
-            IdentityHashMap<Task, Integer> levels,
-            TaskDependencyGraph graph) {
+            List<Task> tasks, Map<Task, String> taskIds, Map<Task, Integer> levels, TaskDependencyGraph graph) {
         if (tasks.isEmpty()) {
             return List.of();
         }
@@ -397,9 +395,9 @@ public final class DagExporter {
 
     private static List<DagTaskNode> buildTaskNodes(
             List<Task> tasks,
-            IdentityHashMap<Task, String> taskIds,
+            Map<Task, String> taskIds,
             TaskDependencyGraph graph,
-            IdentityHashMap<Task, Integer> levels,
+            Map<Task, Integer> levels,
             Set<String> criticalPathSet) {
         List<DagTaskNode> nodes = new ArrayList<>(tasks.size());
         for (Task task : tasks) {

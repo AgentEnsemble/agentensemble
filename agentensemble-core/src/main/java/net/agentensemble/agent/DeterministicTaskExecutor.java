@@ -85,7 +85,11 @@ public class DeterministicTaskExecutor {
             executionContext = ExecutionContext.disabled();
         }
 
-        log.info("Deterministic task starting | Description: {}", truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Deterministic task starting | Description: {}",
+                    truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+        }
 
         // Capture startTime before guardrails so duration includes guardrail evaluation time,
         // matching AgentExecutor semantics.
@@ -133,10 +137,12 @@ public class DeterministicTaskExecutor {
         Instant completedAt = Instant.now();
         Duration duration = Duration.between(startTime, completedAt);
 
-        log.info(
-                "Deterministic task completed | Duration: {} | Description: {}",
-                duration,
-                truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Deterministic task completed | Duration: {} | Description: {}",
+                    duration,
+                    truncate(task.getDescription(), LOG_TRUNCATE_LENGTH));
+        }
 
         TaskOutput output = TaskOutput.builder()
                 .raw(raw)
@@ -184,10 +190,12 @@ public class DeterministicTaskExecutor {
         for (InputGuardrail guardrail : guardrails) {
             GuardrailResult result = guardrail.validate(input);
             if (!result.isSuccess()) {
-                log.warn(
-                        "Input guardrail blocked deterministic task '{}': {}",
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
-                        result.getMessage());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Input guardrail blocked deterministic task '{}': {}",
+                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
+                            result.getMessage());
+                }
                 throw new GuardrailViolationException(
                         GuardrailType.INPUT, result.getMessage(), task.getDescription(), DETERMINISTIC_ROLE);
             }
@@ -205,10 +213,12 @@ public class DeterministicTaskExecutor {
         for (OutputGuardrail guardrail : guardrails) {
             GuardrailResult result = guardrail.validate(output);
             if (!result.isSuccess()) {
-                log.warn(
-                        "Output guardrail blocked deterministic task '{}': {}",
-                        truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
-                        result.getMessage());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Output guardrail blocked deterministic task '{}': {}",
+                            truncate(task.getDescription(), LOG_TRUNCATE_LENGTH),
+                            result.getMessage());
+                }
                 throw new GuardrailViolationException(
                         GuardrailType.OUTPUT, result.getMessage(), task.getDescription(), DETERMINISTIC_ROLE);
             }

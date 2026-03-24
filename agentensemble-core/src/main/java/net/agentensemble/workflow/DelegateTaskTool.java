@@ -170,7 +170,9 @@ public class DelegateTaskTool {
             }
             if (result instanceof DelegationPolicyResult.Reject reject) {
                 String msg = "Delegation rejected by policy: " + reject.reason();
-                log.warn("Delegation from Manager to '{}' rejected by policy: {}", agentRole, reject.reason());
+                if (log.isWarnEnabled()) {
+                    log.warn("Delegation from Manager to '{}' rejected by policy: {}", agentRole, reject.reason());
+                }
                 DelegationResponse response = failureResponse(workingRequest, agentRole, msg, requestStart);
                 delegationResponses.add(response);
                 executionContext.fireDelegationFailed(new DelegationFailedEvent(
@@ -224,12 +226,14 @@ public class DelegateTaskTool {
         }
 
         // All policies passed -- fire DelegationStartedEvent
-        log.info(
-                "Delegating task to agent '{}': {}",
-                finalAgent.getRole(),
-                workingRequest.getTaskDescription().length() > 80
-                        ? workingRequest.getTaskDescription().substring(0, 80) + "..."
-                        : workingRequest.getTaskDescription());
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Delegating task to agent '{}': {}",
+                    finalAgent.getRole(),
+                    workingRequest.getTaskDescription().length() > 80
+                            ? workingRequest.getTaskDescription().substring(0, 80) + "..."
+                            : workingRequest.getTaskDescription());
+        }
 
         executionContext.fireDelegationStarted(new DelegationStartedEvent(
                 workingRequest.getTaskId(),
@@ -272,11 +276,13 @@ public class DelegateTaskTool {
                     elapsed);
             delegationResponses.add(response);
 
-            log.info(
-                    "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
-                    finalAgent.getRole(),
-                    output.getToolCallCount(),
-                    output.getDuration());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Delegation to '{}' completed | Tool calls: {} | Duration: {}",
+                        finalAgent.getRole(),
+                        output.getToolCallCount(),
+                        output.getDuration());
+            }
 
             executionContext.fireDelegationCompleted(new DelegationCompletedEvent(
                     finalRequest.getTaskId(), MANAGER_ROLE, finalAgent.getRole(), response, elapsed));

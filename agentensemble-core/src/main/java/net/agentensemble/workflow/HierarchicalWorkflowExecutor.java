@@ -183,10 +183,12 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
         MDC.put(MDC_AGENT_ROLE, MANAGER_ROLE);
 
         try {
-            log.info(
-                    "Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
-                    resolvedTasks.size(),
-                    workerAgents.size());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Hierarchical workflow starting | Tasks: {} | Worker agents: {}",
+                        resolvedTasks.size(),
+                        workerAgents.size());
+            }
 
             // Setup constraint enforcement if constraints are configured.
             // When active, the enforcer is prepended to the delegation policy chain and an
@@ -293,7 +295,9 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                 Duration managerDuration = Duration.between(managerStart, Instant.now());
                 // Wrap with partial outputs so callers can recover completed worker results
                 List<TaskOutput> partial = delegateTool.getDelegatedOutputs();
-                log.error("Manager agent failed after {} delegations: {}", partial.size(), e.getMessage(), e);
+                if (log.isErrorEnabled()) {
+                    log.error("Manager agent failed after {} delegations: {}", partial.size(), e.getMessage(), e);
+                }
 
                 // Fire TaskFailedEvent before propagating
                 effectiveContext.fireTaskFailed(
@@ -307,10 +311,12 @@ public class HierarchicalWorkflowExecutor implements WorkflowExecutor {
                         e);
             }
 
-            log.info(
-                    "Manager agent completed | Delegations: {} | Duration: {}",
-                    delegateTool.getDelegatedOutputs().size(),
-                    managerOutput.getDuration());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Manager agent completed | Delegations: {} | Duration: {}",
+                        delegateTool.getDelegatedOutputs().size(),
+                        managerOutput.getDuration());
+            }
 
             // Fire TaskCompleteEvent for the manager meta-task
             effectiveContext.fireTaskComplete(new TaskCompleteEvent(

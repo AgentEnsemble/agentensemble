@@ -107,11 +107,17 @@ public class PhasesExample {
         EnsembleOutput output =
                 Ensemble.builder().phase(fetch).phase(normalize).build().run();
 
-        log.info("Pattern 1 final output: {}", output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 1 final output: {}", output.getRaw());
+        }
 
         Map<String, List<TaskOutput>> byPhase = output.getPhaseOutputs();
-        log.info("Phase 'fetch' outputs:     {}", byPhase.get("fetch").size());
-        log.info("Phase 'normalize' outputs: {}", byPhase.get("normalize").size());
+        if (log.isInfoEnabled()) {
+            log.info("Phase 'fetch' outputs:     {}", byPhase.get("fetch").size());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Phase 'normalize' outputs: {}", byPhase.get("normalize").size());
+        }
     }
 
     // ================================================
@@ -204,7 +210,9 @@ public class PhasesExample {
                 .run();
 
         long elapsed = System.currentTimeMillis() - start;
-        log.info("Pattern 2 final output: {}", output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 2 final output: {}", output.getRaw());
+        }
         log.info("Total wall time: {}ms (phases ran in parallel)", elapsed);
     }
 
@@ -273,17 +281,27 @@ public class PhasesExample {
 
         log.info("Pattern 3 results:");
         for (TaskOutput taskOutput : output.getTaskOutputs()) {
-            log.info("[{}] {}", taskOutput.getAgentRole(), taskOutput.getRaw());
+            if (log.isInfoEnabled()) {
+                log.info("[{}] {}", taskOutput.getAgentRole(), taskOutput.getRaw());
+            }
         }
 
         Map<String, List<TaskOutput>> byPhase = output.getPhaseOutputs();
-        log.info(
-                "market-research phase tasks completed: {}",
-                byPhase.get("market-research").size());
-        log.info(
-                "technical-research phase tasks completed: {}",
-                byPhase.get("technical-research").size());
-        log.info("report phase tasks completed: {}", byPhase.get("report").size());
-        log.info("Final recommendation:\n{}", output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "market-research phase tasks completed: {}",
+                    byPhase.get("market-research").size());
+        }
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "technical-research phase tasks completed: {}",
+                    byPhase.get("technical-research").size());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("report phase tasks completed: {}", byPhase.get("report").size());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Final recommendation:\n{}", output.getRaw());
+        }
     }
 }

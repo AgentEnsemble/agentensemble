@@ -69,7 +69,7 @@ final class TavilySearchProvider implements WebSearchProvider {
         if (results == null || results.isEmpty()) {
             return "No results found.";
         }
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(512);
         int index = 1;
         for (JsonNode result : results) {
             sb.append(index++).append(". ");
@@ -77,15 +77,15 @@ final class TavilySearchProvider implements WebSearchProvider {
             JsonNode url = result.get("url");
             JsonNode content = result.get("content");
             if (title != null) {
-                sb.append(title.asText()).append("\n");
+                sb.append(title.asText()).append('\n');
             }
             if (url != null) {
-                sb.append("   URL: ").append(url.asText()).append("\n");
+                sb.append("   URL: ").append(url.asText()).append('\n');
             }
             if (content != null) {
-                sb.append("   ").append(content.asText()).append("\n");
+                sb.append("   ").append(content.asText()).append('\n');
             }
-            sb.append("\n");
+            sb.append('\n');
         }
         return sb.toString().trim();
     }

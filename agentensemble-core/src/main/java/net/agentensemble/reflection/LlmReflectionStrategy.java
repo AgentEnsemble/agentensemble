@@ -7,6 +7,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,7 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
 
     private static final String SECTION_REFINED_DESCRIPTION = "REFINED_DESCRIPTION:";
     private static final String SECTION_REFINED_EXPECTED_OUTPUT = "REFINED_EXPECTED_OUTPUT:";
+    private static final Pattern NEWLINE = Pattern.compile("\n");
     private static final String SECTION_OBSERVATIONS = "OBSERVATIONS:";
     private static final String SECTION_SUGGESTIONS = "SUGGESTIONS:";
 
@@ -45,10 +47,12 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
     @Override
     public TaskReflection reflect(ReflectionInput input) {
         String prompt = ReflectionPromptBuilder.buildPrompt(input);
-        log.debug(
-                "Reflecting on task '{}' (run {})",
-                abbreviate(input.task().getDescription(), 60),
-                input.priorReflection().map(p -> p.runCount() + 1).orElse(1));
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Reflecting on task '{}' (run {})",
+                    abbreviate(input.task().getDescription(), 60),
+                    input.priorReflection().map(p -> p.runCount() + 1).orElse(1));
+        }
 
         String rawResponse;
         try {
@@ -57,20 +61,24 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
             ChatResponse response = model.chat(request);
             rawResponse = response.aiMessage().text();
         } catch (Exception e) {
-            log.warn(
-                    "Reflection LLM call failed for task '{}': {}",
-                    abbreviate(input.task().getDescription(), 60),
-                    e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Reflection LLM call failed for task '{}': {}",
+                        abbreviate(input.task().getDescription(), 60),
+                        e.getMessage());
+            }
             return buildFallback(input, "LLM call failed: " + e.getMessage());
         }
 
         try {
             return parse(rawResponse, input);
         } catch (Exception e) {
-            log.warn(
-                    "Failed to parse reflection response for task '{}': {}",
-                    abbreviate(input.task().getDescription(), 60),
-                    e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Failed to parse reflection response for task '{}': {}",
+                        abbreviate(input.task().getDescription(), 60),
+                        e.getMessage());
+            }
             return buildFallback(input, "Response parsing failed. Raw response: " + rawResponse);
         }
     }
@@ -151,8 +159,7 @@ public final class LlmReflectionStrategy implements ReflectionStrategy {
 
     private static List<String> parseBulletItems(String section) {
         List<String> items = new ArrayList<>();
-        // Split with limit -1 to preserve trailing empty strings (satisfies StringSplitter check)
-        for (String line : section.split("\n", -1)) {
+        for (String line : NEWLINE.split(section, -1)) {
             String trimmed = line.strip();
             if (trimmed.startsWith("- ")) {
                 String item = trimmed.substring(2).strip();

@@ -78,7 +78,9 @@ public class JsonTraceExporter implements ExecutionTraceExporter {
             trace.toJson(target);
             log.debug("Execution trace written to {}", target);
         } catch (Exception e) {
-            log.warn("Failed to export execution trace to {}: {}", target, e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn("Failed to export execution trace to {}: {}", target, e.getMessage(), e);
+            }
         }
     }
 

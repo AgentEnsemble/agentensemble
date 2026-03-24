@@ -205,17 +205,23 @@ public class AgentExecutor {
                 log.info("System prompt:\n{}", systemPrompt);
                 log.info("User prompt:\n{}", userPrompt);
             } else {
-                log.debug("System prompt ({} chars):\n{}", systemPrompt.length(), systemPrompt);
-                log.debug("User prompt ({} chars):\n{}", userPrompt.length(), userPrompt);
+                if (log.isDebugEnabled()) {
+                    log.debug("System prompt ({} chars):\n{}", systemPrompt.length(), systemPrompt);
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("User prompt ({} chars):\n{}", userPrompt.length(), userPrompt);
+                }
             }
 
             List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext, accumulator);
 
-            log.info(
-                    "Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
-                    agent.getRole(),
-                    effectiveTools.size(),
-                    agent.isAllowDelegation());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Agent '{}' executing task | Tools: {} | AllowDelegation: {}",
+                        agent.getRole(),
+                        effectiveTools.size(),
+                        agent.isAllowDelegation());
+            }
 
             // Resolve tools, injecting ToolContext (including reviewHandler) into AbstractAgentTool instances
             ToolResolver.ResolvedTools resolvedTools = ToolResolver.resolve(
@@ -252,7 +258,9 @@ public class AgentExecutor {
                             streamingModel,
                             executionContext,
                             task.getDescription());
-                    log.debug("Agent '{}' completed (no tools)", agent.getRole());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Agent '{}' completed (no tools)", agent.getRole());
+                    }
                 }
             } catch (AgentExecutionException | MaxIterationsExceededException | ExitEarlyException e) {
                 // Re-throw framework-controlled exceptions without wrapping
@@ -266,10 +274,12 @@ public class AgentExecutor {
             }
 
             if (finalResponse == null || finalResponse.isBlank()) {
-                log.warn(
-                        "Agent '{}' returned empty response for task '{}'",
-                        agent.getRole(),
-                        truncate(task.getDescription(), 80));
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Agent '{}' returned empty response for task '{}'",
+                            agent.getRole(),
+                            truncate(task.getDescription(), 80));
+                }
                 finalResponse = finalResponse != null ? finalResponse : "";
             }
 
@@ -289,7 +299,9 @@ public class AgentExecutor {
             Instant completedAt = Instant.now();
             Duration duration = Duration.between(startTime, completedAt);
             int toolCalls = toolCallCounter.get();
-            log.debug("Agent '{}' completed | Tool calls: {} | Duration: {}", agent.getRole(), toolCalls, duration);
+            if (log.isDebugEnabled()) {
+                log.debug("Agent '{}' completed | Tool calls: {} | Duration: {}", agent.getRole(), toolCalls, duration);
+            }
 
             // Freeze accumulated trace and metrics
             net.agentensemble.trace.TaskTrace taskTrace = accumulator.buildTrace(
@@ -381,11 +393,13 @@ public class AgentExecutor {
             List<Object> tools = new ArrayList<>();
             tools.add(delegationTool);
             tools.addAll(agent.getTools());
-            log.debug(
-                    "Agent '{}' delegation tool injected (depth {}/{})",
-                    agent.getRole(),
-                    delegationContext.getCurrentDepth(),
-                    delegationContext.getMaxDepth());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Agent '{}' delegation tool injected (depth {}/{})",
+                        agent.getRole(),
+                        delegationContext.getCurrentDepth(),
+                        delegationContext.getMaxDepth());
+            }
             return tools;
         }
         return agent.getTools();
@@ -485,7 +499,9 @@ public class AgentExecutor {
         accumulator.beginLlmCall(llmStart);
         ChatResponse response;
         if (streamingModel != null) {
-            log.debug("Agent '{}' using streaming model for final response", agent.getRole());
+            if (log.isDebugEnabled()) {
+                log.debug("Agent '{}' using streaming model for final response", agent.getRole());
+            }
             response = executeStreaming(streamingModel, request, executionContext, agent.getRole(), taskDescription);
         } else {
             response = agent.getLlm().chat(request);
@@ -614,11 +630,13 @@ public class AgentExecutor {
         if (toolCallCounter.get() >= maxIterations) {
             String stopText = buildStopText(maxIterations);
             messages.add(new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), stopText));
-            log.warn(
-                    "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
-                    agentRole,
-                    maxIterations,
-                    toolRequest.name());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
+                        agentRole,
+                        maxIterations,
+                        toolRequest.name());
+            }
             ToolCallTrace skippedTrace = ToolCallTrace.builder()
                     .toolName(toolRequest.name())
                     .arguments(toolRequest.arguments() != null ? toolRequest.arguments() : "{}")
@@ -692,7 +710,9 @@ public class AgentExecutor {
             TaskTraceAccumulator accumulator,
             CaptureMode captureMode) {
 
-        log.debug("Agent '{}' executing {} tools in parallel", agentRole, toolRequests.size());
+        if (log.isDebugEnabled()) {
+            log.debug("Agent '{}' executing {} tools in parallel", agentRole, toolRequests.size());
+        }
 
         // Pre-check per request whether we can execute it
         record PendingTool(ToolExecutionRequest request, boolean withinLimit) {}
@@ -759,11 +779,13 @@ public class AgentExecutor {
                 String stopText = buildStopText(maxIterations);
                 messages.add(new ToolExecutionResultMessage(
                         te.request().id(), te.request().name(), stopText));
-                log.warn(
-                        "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
-                        agentRole,
-                        maxIterations,
-                        te.request().name());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Agent '{}' exceeded max iterations ({}) on tool '{}'.",
+                            agentRole,
+                            maxIterations,
+                            te.request().name());
+                }
 
                 ToolCallTrace skippedTrace = ToolCallTrace.builder()
                         .toolName(te.request().name())
@@ -837,11 +859,13 @@ public class AgentExecutor {
         for (InputGuardrail guardrail : guardrails) {
             GuardrailResult result = guardrail.validate(input);
             if (!result.isSuccess()) {
-                log.warn(
-                        "Input guardrail blocked agent '{}' task '{}': {}",
-                        agent.getRole(),
-                        truncate(task.getDescription(), 80),
-                        result.getMessage());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Input guardrail blocked agent '{}' task '{}': {}",
+                            agent.getRole(),
+                            truncate(task.getDescription(), 80),
+                            result.getMessage());
+                }
                 throw new GuardrailViolationException(
                         GuardrailType.INPUT, result.getMessage(), task.getDescription(), agent.getRole());
             }
@@ -859,11 +883,13 @@ public class AgentExecutor {
         for (OutputGuardrail guardrail : guardrails) {
             GuardrailResult result = guardrail.validate(output);
             if (!result.isSuccess()) {
-                log.warn(
-                        "Output guardrail blocked agent '{}' task '{}': {}",
-                        agent.getRole(),
-                        truncate(task.getDescription(), 80),
-                        result.getMessage());
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Output guardrail blocked agent '{}' task '{}': {}",
+                            agent.getRole(),
+                            truncate(task.getDescription(), 80),
+                            result.getMessage());
+                }
                 throw new GuardrailViolationException(
                         GuardrailType.OUTPUT, result.getMessage(), task.getDescription(), agent.getRole());
             }
@@ -899,21 +925,25 @@ public class AgentExecutor {
     private static void logToolCall(
             String agentRole, ToolExecutionRequest toolRequest, String toolResultText, Duration toolDuration) {
         if (toolResultText != null && toolResultText.startsWith("Error:")) {
-            log.warn(
-                    "[{}] Tool error: {}({}) -> {} [{}ms]",
-                    agentRole,
-                    toolRequest.name(),
-                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                    truncate(toolResultText, LOG_TRUNCATE_LENGTH),
-                    toolDuration.toMillis());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "[{}] Tool error: {}({}) -> {} [{}ms]",
+                        agentRole,
+                        toolRequest.name(),
+                        truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                        truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                        toolDuration.toMillis());
+            }
         } else {
-            log.info(
-                    "[{}] Tool call: {}({}) -> {} [{}ms]",
-                    agentRole,
-                    toolRequest.name(),
-                    truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                    truncate(toolResultText, LOG_TRUNCATE_LENGTH),
-                    toolDuration.toMillis());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[{}] Tool call: {}({}) -> {} [{}ms]",
+                        agentRole,
+                        toolRequest.name(),
+                        truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
+                        truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                        toolDuration.toMillis());
+            }
         }
     }
 
@@ -934,7 +964,9 @@ public class AgentExecutor {
         try {
             return ARGUMENT_MAPPER.readValue(arguments, MAP_TYPE_REF);
         } catch (Exception e) {
-            log.debug("Could not parse tool arguments as JSON map for enriched trace: {}", e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Could not parse tool arguments as JSON map for enriched trace: {}", e.getMessage());
+            }
             return Collections.emptyMap();
         }
     }
