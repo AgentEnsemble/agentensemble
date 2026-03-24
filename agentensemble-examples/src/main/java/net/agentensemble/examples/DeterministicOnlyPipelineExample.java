@@ -1,6 +1,7 @@
 package net.agentensemble.examples;
 
 import java.util.List;
+import java.util.regex.Pattern;
 import net.agentensemble.Ensemble;
 import net.agentensemble.Task;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -39,6 +40,8 @@ import org.slf4j.LoggerFactory;
 public class DeterministicOnlyPipelineExample {
 
     private static final Logger log = LoggerFactory.getLogger(DeterministicOnlyPipelineExample.class);
+    private static final Pattern EQUALS_SIGN = Pattern.compile("=");
+    private static final Pattern SEMICOLON = Pattern.compile(";");
 
     public static void main(String[] args) {
         System.out.println("=== Pattern 1: Sequential ETL pipeline with data passing ===");
@@ -71,7 +74,9 @@ public class DeterministicOnlyPipelineExample {
                     String json = "[{\"id\":\"ORD-001\",\"total\":49.99,\"status\":\"shipped\"},"
                             + "{\"id\":\"ORD-002\",\"total\":129.50,\"status\":\"pending\"},"
                             + "{\"id\":\"ORD-003\",\"total\":19.00,\"status\":\"shipped\"}]";
-                    log.info("Fetched {} characters of order data", json.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("Fetched {} characters of order data", json.length());
+                    }
                     return ToolResult.success(json);
                 })
                 .build();
@@ -98,7 +103,7 @@ public class DeterministicOnlyPipelineExample {
                 .context(List.of(parseTask))
                 .handler(ctx -> {
                     String parsed = ctx.contextOutputs().get(0).getRaw();
-                    int count = Integer.parseInt(parsed.split("=")[1]);
+                    int count = Integer.parseInt(EQUALS_SIGN.split(parsed)[1]);
                     String sla = count > 5 ? "BREACH" : count > 2 ? "WARNING" : "OK";
                     String report = parsed + ",sla=" + sla;
                     log.info("Transformed: {}", report);
@@ -207,7 +212,9 @@ public class DeterministicOnlyPipelineExample {
                 .expectedOutput("Raw transaction data")
                 .handler(ctx -> {
                     String data = "txn:1001,amount:150.00;txn:1002,amount:75.50;txn:1003,amount:320.00";
-                    log.info("Ingested transaction log: {} bytes", data.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("Ingested transaction log: {} bytes", data.length());
+                    }
                     return ToolResult.success(data);
                 })
                 .build();
@@ -220,7 +227,7 @@ public class DeterministicOnlyPipelineExample {
                 .context(List.of(ingestTask))
                 .handler(ctx -> {
                     String data = ctx.contextOutputs().get(0).getRaw();
-                    double total = java.util.Arrays.stream(data.split(";"))
+                    double total = java.util.Arrays.stream(SEMICOLON.split(data))
                             .mapToDouble(txn -> {
                                 String[] parts = txn.split(",amount:");
                                 return parts.length == 2 ? Double.parseDouble(parts[1]) : 0.0;

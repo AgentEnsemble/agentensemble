@@ -75,10 +75,12 @@ public final class TaskReflector {
             // Resolve strategy
             ReflectionStrategy strategy = resolveStrategy(reflectionConfig, task, ensembleModel);
             if (strategy == null) {
-                log.warn(
-                        "Reflection is enabled on task '{}' but no LLM model is available. "
-                                + "Configure a model on the Ensemble or ReflectionConfig.",
-                        abbreviate(task.getDescription(), 60));
+                if (log.isWarnEnabled()) {
+                    log.warn(
+                            "Reflection is enabled on task '{}' but no LLM model is available. "
+                                    + "Configure a model on the Ensemble or ReflectionConfig.",
+                            abbreviate(task.getDescription(), 60));
+                }
                 return;
             }
 
@@ -88,16 +90,24 @@ public final class TaskReflector {
             // Store
             store.store(taskIdentity, reflection);
 
-            log.debug(
-                    "Reflection stored for task '{}' (run {})",
-                    abbreviate(task.getDescription(), 60),
-                    reflection.runCount());
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Reflection stored for task '{}' (run {})",
+                        abbreviate(task.getDescription(), 60),
+                        reflection.runCount());
+            }
 
             // Fire event
             context.fireTaskReflected(new TaskReflectedEvent(task.getDescription(), reflection, isFirstReflection));
 
         } catch (Exception e) {
-            log.warn("Reflection failed for task '{}': {}", abbreviate(task.getDescription(), 60), e.getMessage(), e);
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Reflection failed for task '{}': {}",
+                        abbreviate(task.getDescription(), 60),
+                        e.getMessage(),
+                        e);
+            }
         }
     }
 
@@ -113,11 +123,13 @@ public final class TaskReflector {
     private static ReflectionStore resolveStore(ExecutionContext context, Task task) {
         ReflectionStore store = context.reflectionStore();
         if (store == null) {
-            log.warn(
-                    "Task '{}' has reflection enabled but no ReflectionStore is available in the "
-                            + "ExecutionContext. Reflection will be skipped for this task. "
-                            + "Configure a store via Ensemble.builder().reflectionStore(...).",
-                    abbreviate(task.getDescription(), 60));
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "Task '{}' has reflection enabled but no ReflectionStore is available in the "
+                                + "ExecutionContext. Reflection will be skipped for this task. "
+                                + "Configure a store via Ensemble.builder().reflectionStore(...).",
+                        abbreviate(task.getDescription(), 60));
+            }
             return null;
         }
         return store;

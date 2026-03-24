@@ -185,7 +185,9 @@ public abstract class AbstractAgentTool implements AgentTool {
                 metrics().incrementSuccess(name(), agentRole);
             } else {
                 metrics().incrementFailure(name(), agentRole);
-                log().debug("Tool '{}' returned failure: {}", name(), result.getErrorMessage());
+                if (log().isDebugEnabled()) {
+                    log().debug("Tool '{}' returned failure: {}", name(), result.getErrorMessage());
+                }
             }
             metrics().recordDuration(name(), agentRole, elapsed);
             return result;
@@ -202,7 +204,9 @@ public abstract class AbstractAgentTool implements AgentTool {
             Duration elapsed = Duration.between(start, Instant.now());
             metrics().incrementError(name(), agentRole);
             metrics().recordDuration(name(), agentRole, elapsed);
-            log().warn("Tool '{}' threw exception: {}", name(), e.getMessage(), e);
+            if (log().isWarnEnabled()) {
+                log().warn("Tool '{}' threw exception: {}", name(), e.getMessage(), e);
+            }
             return ToolResult.failure(e.getMessage());
         }
     }
@@ -295,7 +299,11 @@ public abstract class AbstractAgentTool implements AgentTool {
         if (rawHandler == null) {
             // No handler configured -- auto-approve (caller is responsible for fail-fast
             // checks when requireApproval semantics are needed)
-            log().debug("Tool '{}' requestApproval called but no ReviewHandler is configured; auto-approving.", name());
+            if (log().isDebugEnabled()) {
+                log().debug(
+                                "Tool '{}' requestApproval called but no ReviewHandler is configured; auto-approving.",
+                                name());
+            }
             return ReviewDecision.continueExecution();
         }
 

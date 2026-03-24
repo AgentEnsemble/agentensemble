@@ -94,9 +94,15 @@ public class DeterministicTaskExample {
                 .build()
                 .run();
 
-        log.info("Pattern 1 output: {}", output.getRaw());
-        log.info("Agent role: {}", output.getTaskOutputs().get(0).getAgentRole());
-        log.info("Tool calls: {}", output.getTaskOutputs().get(0).getToolCallCount());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 1 output: {}", output.getRaw());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Agent role: {}", output.getTaskOutputs().get(0).getAgentRole());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Tool calls: {}", output.getTaskOutputs().get(0).getToolCallCount());
+        }
     }
 
     // ========================
@@ -128,8 +134,12 @@ public class DeterministicTaskExample {
                 .build()
                 .run();
 
-        log.info("Pattern 2 discounted price: {}", output.getRaw());
-        log.info("Agent role: {}", output.getTaskOutputs().get(0).getAgentRole());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 2 discounted price: {}", output.getRaw());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Agent role: {}", output.getTaskOutputs().get(0).getAgentRole());
+        }
     }
 
     // ========================
@@ -180,7 +190,13 @@ public class DeterministicTaskExample {
 
         log.info("Pattern 3 results:");
         for (TaskOutput taskOutput : output.getTaskOutputs()) {
-            log.info("  [{}] {}: {}", taskOutput.getAgentRole(), taskOutput.getTaskDescription(), taskOutput.getRaw());
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "  [{}] {}: {}",
+                        taskOutput.getAgentRole(),
+                        taskOutput.getTaskDescription(),
+                        taskOutput.getRaw());
+            }
         }
     }
 }

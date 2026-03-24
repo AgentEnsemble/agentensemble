@@ -2,6 +2,7 @@ package net.agentensemble.memory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -21,7 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 class InMemoryStore implements MemoryStore {
 
-    private final ConcurrentHashMap<String, CopyOnWriteArrayList<MemoryEntry>> scopes = new ConcurrentHashMap<>();
+    private final Map<String, List<MemoryEntry>> scopes = new ConcurrentHashMap<>();
 
     @Override
     public void store(String scope, MemoryEntry entry) {
@@ -38,7 +39,7 @@ class InMemoryStore implements MemoryStore {
         if (maxResults <= 0) {
             throw new IllegalArgumentException("maxResults must be > 0, got: " + maxResults);
         }
-        CopyOnWriteArrayList<MemoryEntry> entries = scopes.get(scope);
+        List<MemoryEntry> entries = scopes.get(scope);
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -56,7 +57,7 @@ class InMemoryStore implements MemoryStore {
         }
         scopes.computeIfPresent(scope, (k, existing) -> {
             List<MemoryEntry> retained = policy.apply(new ArrayList<>(existing));
-            CopyOnWriteArrayList<MemoryEntry> updated = new CopyOnWriteArrayList<>();
+            List<MemoryEntry> updated = new CopyOnWriteArrayList<>();
             updated.addAll(retained);
             return updated;
         });

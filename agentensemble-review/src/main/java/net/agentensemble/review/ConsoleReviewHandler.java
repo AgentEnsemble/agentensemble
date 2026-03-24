@@ -141,7 +141,9 @@ public final class ConsoleReviewHandler implements ReviewHandler {
             String firstLine = reader.readLine();
             return processInput(firstLine, reader);
         } catch (IOException e) {
-            log.warn("ConsoleReviewHandler I/O error: {}", e.getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn("ConsoleReviewHandler I/O error: {}", e.getMessage());
+            }
             return ReviewDecision.continueExecution();
         }
     }
@@ -198,15 +200,19 @@ public final class ConsoleReviewHandler implements ReviewHandler {
         } catch (TimeoutException e) {
             decisionFuture.cancel(true);
             outputStream.println();
-            log.info("Review gate timed out after {}s", timeout.toSeconds());
+            if (log.isInfoEnabled()) {
+                log.info("Review gate timed out after {}s", timeout.toSeconds());
+            }
             return handleTimeout(request.onTimeoutAction(), timeout);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ReviewDecision.continueExecution();
         } catch (ExecutionException e) {
-            log.warn(
-                    "ConsoleReviewHandler I/O error in reader thread: {}",
-                    e.getCause().getMessage());
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "ConsoleReviewHandler I/O error in reader thread: {}",
+                        e.getCause().getMessage());
+            }
             return ReviewDecision.continueExecution();
         } finally {
             countdown.shutdownNow();

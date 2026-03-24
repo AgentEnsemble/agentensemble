@@ -181,12 +181,14 @@ public final class ToolPipeline extends AbstractAgentTool {
 
         for (int i = 0; i < steps.size(); i++) {
             PipelineStep step = steps.get(i);
-            log().debug(
-                            "Pipeline '{}': executing step [{}/{}] '{}'",
-                            name,
-                            i + 1,
-                            steps.size(),
-                            step.tool().name());
+            if (log().isDebugEnabled()) {
+                log().debug(
+                                "Pipeline '{}': executing step [{}/{}] '{}'",
+                                name,
+                                i + 1,
+                                steps.size(),
+                                step.tool().name());
+            }
 
             try {
                 lastResult = step.tool().execute(currentInput);
@@ -203,12 +205,14 @@ public final class ToolPipeline extends AbstractAgentTool {
                     throw e;
                 }
                 String exceptionMessage = e.getMessage();
-                log().warn(
-                                "Pipeline '{}': step '{}' threw exception: {}",
-                                name,
-                                step.tool().name(),
-                                exceptionMessage != null ? exceptionMessage : e.toString(),
-                                e);
+                if (log().isWarnEnabled()) {
+                    log().warn(
+                                    "Pipeline '{}': step '{}' threw exception: {}",
+                                    name,
+                                    step.tool().name(),
+                                    exceptionMessage != null ? exceptionMessage : e.toString(),
+                                    e);
+                }
                 // Pass null to ToolResult.failure() when the exception has no message; its
                 // built-in defaulting produces a meaningful error string.
                 String failureMessage = (exceptionMessage != null && !exceptionMessage.isEmpty())
@@ -218,11 +222,13 @@ public final class ToolPipeline extends AbstractAgentTool {
             }
 
             if (!lastResult.isSuccess()) {
-                log().debug(
-                                "Pipeline '{}': step '{}' failed: {}",
-                                name,
-                                step.tool().name(),
-                                lastResult.getErrorMessage());
+                if (log().isDebugEnabled()) {
+                    log().debug(
+                                    "Pipeline '{}': step '{}' failed: {}",
+                                    name,
+                                    step.tool().name(),
+                                    lastResult.getErrorMessage());
+                }
                 if (errorStrategy == PipelineErrorStrategy.FAIL_FAST) {
                     return lastResult;
                 }

@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class InMemoryEntityMemory implements EntityMemory {
 
-    private final ConcurrentHashMap<String, String> store = new ConcurrentHashMap<>();
+    private final Map<String, String> store = new ConcurrentHashMap<>();
 
     @Override
     public void put(String entityName, String fact) {

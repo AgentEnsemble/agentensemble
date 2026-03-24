@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -321,8 +322,8 @@ class WebReviewHandlerTest {
      */
     static class CapturingConnectionManager extends ConnectionManager {
 
-        private final ConcurrentHashMap<String, CompletableFuture<String>> captured = new ConcurrentHashMap<>();
-        private final CopyOnWriteArrayList<String> orderedIds = new CopyOnWriteArrayList<>();
+        private final Map<String, CompletableFuture<String>> captured = new ConcurrentHashMap<>();
+        private final List<String> orderedIds = new CopyOnWriteArrayList<>();
         private final CountDownLatch registeredLatch;
 
         CapturingConnectionManager(MessageSerializer serializer, int expectedCount) {

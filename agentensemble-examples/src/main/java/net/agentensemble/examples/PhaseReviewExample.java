@@ -78,7 +78,9 @@ public class PhaseReviewExample {
                                     + "including cryptography (Shor's algorithm), optimisation (QAOA), and "
                                     + "simulation of molecular systems. Key hardware: superconducting qubits "
                                     + "and trapped ions. Leading vendors: IBM, Google, IonQ. [sources: A, B, C]";
-                    log.info("[research] Attempt {}: produced {} chars", n, output.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("[research] Attempt {}: produced {} chars", n, output.length());
+                    }
                     return ToolResult.success(output);
                 })
                 .build();
@@ -100,7 +102,9 @@ public class PhaseReviewExample {
                         return ToolResult.success(
                                 PhaseReviewDecision.retry(feedback).toText());
                     }
-                    log.info("[review] APPROVED -- output length: {} chars", output.length());
+                    if (log.isInfoEnabled()) {
+                        log.info("[review] APPROVED -- output length: {} chars", output.length());
+                    }
                     return ToolResult.success(PhaseReviewDecision.approve().toText());
                 })
                 .build();
@@ -113,7 +117,9 @@ public class PhaseReviewExample {
 
         EnsembleOutput output = Ensemble.builder().phase(research).build().run();
 
-        log.info("Pattern 1 result ({} attempts total): {}", attemptCount.get(), output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 1 result ({} attempts total): {}", attemptCount.get(), output.getRaw());
+        }
         log.info(""); // blank line
     }
 
@@ -189,10 +195,18 @@ public class PhaseReviewExample {
                 Ensemble.builder().phase(research).phase(writing).build().run();
 
         log.info("Pattern 2 results:");
-        log.info("  Research ran {} time(s)", researchRunCount.get());
-        log.info("  Writing ran {} time(s)", writingRunCount.get());
-        log.info("  Writing review ran {} time(s)", writingReviewCount.get());
-        log.info("  Final output: {}", output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info("  Research ran {} time(s)", researchRunCount.get());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("  Writing ran {} time(s)", writingRunCount.get());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("  Writing review ran {} time(s)", writingReviewCount.get());
+        }
+        if (log.isInfoEnabled()) {
+            log.info("  Final output: {}", output.getRaw());
+        }
         log.info(""); // blank line
     }
 
@@ -238,6 +252,8 @@ public class PhaseReviewExample {
 
         EnsembleOutput output = Ensemble.builder().phase(research).build().run();
 
-        log.info("Pattern 3 final output:\n{}", output.getRaw());
+        if (log.isInfoEnabled()) {
+            log.info("Pattern 3 final output:\n{}", output.getRaw());
+        }
     }
 }
