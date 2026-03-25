@@ -1,18 +1,36 @@
 package net.agentensemble.web.protocol;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JsonNode;
-import java.time.Instant;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.List;
+import net.agentensemble.trace.ExecutionTrace;
 
 /**
- * Sent by the server to a client immediately upon connection.
+ * Sent by the server to a newly connected client.
  *
- * <p>Provides the current execution state for late-joining browsers. If the ensemble has not
- * started yet, all fields except {@code type} may be null.
+ * <p>Carries a snapshot of the current {@link ExecutionTrace} so that
+ * late-joining clients can catch up with in-progress execution.
  *
- * @param ensembleId    the current ensemble run ID; null if no run has started
- * @param startedAt     when the current run started; null if no run has started
- * @param snapshotTrace the current partial {@code ExecutionTrace} as a JSON tree; null if none
+ * <p>In long-running mode, also includes the ensemble's shared capabilities
+ * so that connecting peers can discover available tasks and tools. The
+ * {@code sharedCapabilities} field is {@code null} for one-shot ensembles,
+ * maintaining backward compatibility with v2.x clients (which use
+ * {@code @JsonIgnoreProperties(ignoreUnknown = true)} and simply ignore
+ * unknown fields).
+ *
+ * @param snapshotTrace      the current execution state, or null if idle
+ * @param sharedCapabilities list of shared tasks/tools, or null if not a
+ *                           long-running ensemble
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public record HelloMessage(String ensembleId, Instant startedAt, JsonNode snapshotTrace) implements ServerMessage {}
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record HelloMessage(ExecutionTrace snapshotTrace, List<SharedCapabilityInfo> sharedCapabilities)
+        implements ServerMessage {
+
+    /**
+     * Backward-compatible constructor for one-shot ensembles.
+     *
+     * @param snapshotTrace the current execution state, or null if idle
+     */
+    public HelloMessage(ExecutionTrace snapshotTrace) {
+        this(snapshotTrace, null);
+    }
+}
