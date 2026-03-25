@@ -129,13 +129,13 @@ String toonTrace = result.getTrace().toToon();
 ## Error Handling
 
 If you set `contextFormat(ContextFormat.TOON)` but JToon is not on the classpath,
-`Ensemble.build()` fails immediately with a `ValidationException`:
+`Ensemble.run()` fails with an `IllegalStateException` before any LLM calls are made:
 
 ```
 TOON context format requires the JToon library on the classpath.
-Add to your build:
-  Gradle: implementation("dev.toonformat:jtoon:1.0.9")
-  Maven:  <dependency><groupId>dev.toonformat</groupId><artifactId>jtoon</artifactId><version>1.0.9</version></dependency>
+Add to your build (check the version catalog or docs for the current version):
+  Gradle: implementation("dev.toonformat:jtoon")
+  Maven:  <dependency><groupId>dev.toonformat</groupId><artifactId>jtoon</artifactId></dependency>
 ```
 
 Similarly, calling `ExecutionTrace.toToon()` without JToon throws an

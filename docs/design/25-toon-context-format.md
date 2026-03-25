@@ -148,9 +148,11 @@ Always available. Uses the shared Jackson `ObjectMapper` for `format(Object)`.
 
 ### ToonContextFormatter
 
-Loaded via reflection to avoid a hard dependency on JToon. On first use,
-`ContextFormatters` checks for `dev.toonformat.jtoon.JToon` on the classpath
-and instantiates `ToonContextFormatter` via a private constructor.
+Available only when JToon is present on the classpath. On first use,
+`ContextFormatters` checks for `dev.toonformat.jtoon.JToon` and, if found,
+instantiates `ToonContextFormatter` directly; otherwise it throws
+`IllegalStateException`. JToon is declared as a `compileOnly` dependency so
+applications that do not use TOON are not required to include it.
 
 `format(Object)` delegates to `JToon.encode(value)`.
 `formatJson(String)` delegates to `JToon.encodeJson(json)`.
@@ -175,9 +177,10 @@ Ensemble.builder()
 |---|---|---|---|---|
 | `contextFormat` | `ContextFormat` | No | `JSON` | Serialization format for structured data in LLM prompts. `TOON` requires `dev.toonformat:jtoon` on classpath. |
 
-At `build()` time, if `contextFormat` is `TOON`, the builder verifies the JToon
-class is loadable. If not, it throws a `ValidationException` with a clear message
-including the Maven/Gradle coordinates to add.
+At execution time (inside `run()` / `runWithInputs()`), if `contextFormat` is
+`TOON`, the framework verifies that the JToon class is loadable via
+`ContextFormatters.forFormat(TOON)`. If not, it throws an `IllegalStateException`
+with a clear message including the Maven/Gradle coordinates to add.
 
 The resolved `ContextFormatter` is stored in `ExecutionContext` and passed to all
 components that serialize data for the LLM.

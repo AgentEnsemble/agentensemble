@@ -18,12 +18,13 @@ public final class ContextFormatters {
 
     /** Dependency instructions shown when JToon is missing. */
     static final String JTOON_MISSING_MESSAGE = "TOON context format requires the JToon library on the classpath.\n"
-            + "Add to your build:\n"
-            + "  Gradle: implementation(\"dev.toonformat:jtoon:1.0.9\")\n"
+            + "Add to your build (check the version catalog or docs for the current version):\n"
+            + "  Gradle: implementation(\"dev.toonformat:jtoon\")\n"
             + "  Maven:  <dependency><groupId>dev.toonformat</groupId>"
-            + "<artifactId>jtoon</artifactId><version>1.0.9</version></dependency>";
+            + "<artifactId>jtoon</artifactId></dependency>";
 
     private static final ContextFormatter JSON_FORMATTER = new JsonContextFormatter();
+    private static volatile ContextFormatter toonFormatterCache;
 
     private ContextFormatters() {
         // utility class
@@ -47,7 +48,12 @@ public final class ContextFormatters {
                 if (!isToonAvailable()) {
                     throw new IllegalStateException(JTOON_MISSING_MESSAGE);
                 }
-                yield new ToonContextFormatter();
+                ContextFormatter cached = toonFormatterCache;
+                if (cached == null) {
+                    cached = new ToonContextFormatter();
+                    toonFormatterCache = cached;
+                }
+                yield cached;
             }
         };
     }

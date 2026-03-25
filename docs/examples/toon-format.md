@@ -103,14 +103,13 @@ public class ToonFormatExample {
         System.out.println(result.getRaw());
         System.out.println();
 
-        // 4. Print token usage per task
-        System.out.println("=== Token Usage ===");
+        // 4. Print task summary
+        System.out.println("=== Task Summary ===");
         for (TaskOutput output : result.getTaskOutputs()) {
-            System.out.printf("  %s: %d tokens (in: %d, out: %d)%n",
+            System.out.printf("  %s: %s | Tool calls: %d%n",
                 output.getAgentRole(),
-                output.getTokenUsage().totalTokenCount(),
-                output.getTokenUsage().inputTokenCount(),
-                output.getTokenUsage().outputTokenCount());
+                output.getDuration(),
+                output.getToolCallCount());
         }
 
         // 5. Export trace in TOON format
