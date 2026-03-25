@@ -28,6 +28,9 @@ dependencies {
     api(libs.langchain4j.open.ai)
     api(libs.langchain4j)
 
+    // TOON format for ToonFormatExample
+    implementation(libs.jtoon)
+
     // SLF4J implementation with Logback for examples
     implementation(libs.logback.classic)
 }
@@ -80,6 +83,7 @@ mapOf(
     "runPhases" to "net.agentensemble.examples.PhasesExample",
     "runPhaseReview" to "net.agentensemble.examples.PhaseReviewExample",
     "runTypedTools" to "net.agentensemble.examples.TypedToolsExample",
+    "runToonFormat" to "net.agentensemble.examples.ToonFormatExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

@@ -14,6 +14,9 @@ import net.agentensemble.callback.TaskReflectedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
+import net.agentensemble.format.ContextFormat;
+import net.agentensemble.format.ContextFormatter;
+import net.agentensemble.format.ContextFormatters;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
@@ -82,6 +85,7 @@ public final class ExecutionContext {
     private final ReviewPolicy reviewPolicy;
     private final StreamingChatModel streamingChatModel;
     private final ReflectionStore reflectionStore;
+    private final ContextFormatter contextFormatter;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -95,7 +99,8 @@ public final class ExecutionContext {
             ReviewHandler reviewHandler,
             ReviewPolicy reviewPolicy,
             StreamingChatModel streamingChatModel,
-            ReflectionStore reflectionStore) {
+            ReflectionStore reflectionStore,
+            ContextFormatter contextFormatter) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -108,6 +113,8 @@ public final class ExecutionContext {
         this.reviewPolicy = reviewPolicy != null ? reviewPolicy : ReviewPolicy.NEVER;
         this.streamingChatModel = streamingChatModel;
         this.reflectionStore = reflectionStore;
+        this.contextFormatter =
+                contextFormatter != null ? contextFormatter : ContextFormatters.forFormat(ContextFormat.JSON);
     }
 
     // ========================
@@ -204,6 +211,7 @@ public final class ExecutionContext {
                 reviewHandler,
                 reviewPolicy,
                 null,
+                null,
                 null);
     }
 
@@ -264,6 +272,7 @@ public final class ExecutionContext {
                 reviewHandler,
                 reviewPolicy,
                 streamingChatModel,
+                null,
                 null);
     }
 
@@ -324,7 +333,70 @@ public final class ExecutionContext {
                 reviewHandler,
                 reviewPolicy,
                 streamingChatModel,
-                reflectionStore);
+                reflectionStore,
+                null);
+    }
+
+    /**
+     * Create an ExecutionContext with all fields including reflection store and context formatter.
+     *
+     * <p>This is the primary factory used by {@code Ensemble} when TOON format is configured.
+     *
+     * @param memoryContext      runtime memory state for this run; must not be null
+     * @param verbose            when true, elevates execution logging to INFO level
+     * @param listeners          event listeners to notify; must not be null
+     * @param toolExecutor       executor for parallel tool calls; must not be null
+     * @param toolMetrics        metrics backend for tool execution; must not be null
+     * @param costConfiguration  optional per-token cost rates; may be {@code null}
+     * @param captureMode        depth of data collection; defaults to {@link CaptureMode#OFF}
+     * @param memoryStore        optional scoped memory store; may be {@code null}
+     * @param reviewHandler      optional review handler; may be {@code null}
+     * @param reviewPolicy       ensemble-level review policy; defaults to {@link ReviewPolicy#NEVER}
+     * @param streamingChatModel optional streaming model; may be {@code null}
+     * @param reflectionStore    optional reflection store; may be {@code null}
+     * @param contextFormatter   optional context formatter; defaults to JSON when {@code null}
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore,
+            ContextFormatter contextFormatter) {
+        if (memoryContext == null) {
+            throw new IllegalArgumentException("memoryContext must not be null");
+        }
+        if (listeners == null) {
+            throw new IllegalArgumentException("listeners must not be null");
+        }
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(
+                memoryContext,
+                verbose,
+                List.copyOf(listeners),
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel,
+                reflectionStore,
+                contextFormatter);
     }
 
     /**
@@ -432,6 +504,7 @@ public final class ExecutionContext {
                 NoOpToolMetrics.INSTANCE,
                 null,
                 CaptureMode.OFF,
+                null,
                 null,
                 null,
                 null,
@@ -568,6 +641,19 @@ public final class ExecutionContext {
      */
     public ReflectionStore reflectionStore() {
         return reflectionStore;
+    }
+
+    /**
+     * The context formatter used to serialize structured data in LLM prompts.
+     *
+     * <p>Defaults to {@link ContextFormat#JSON} when not explicitly configured.
+     * When {@link ContextFormat#TOON} is selected on the ensemble builder, this
+     * returns a TOON formatter that encodes data using the JToon library.
+     *
+     * @return the context formatter; never null
+     */
+    public ContextFormatter contextFormatter() {
+        return contextFormatter;
     }
 
     // ========================
