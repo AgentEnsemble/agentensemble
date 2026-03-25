@@ -51,6 +51,10 @@ dependencies {
     // AgentExecutor, and AgentPromptBuilder.
     api(project(":agentensemble-reflection"))
 
+    // TOON format -- compileOnly so it is available at compile time but optional at runtime.
+    // Users who want ContextFormat.TOON add jtoon to their own runtime classpath.
+    compileOnly(libs.jtoon)
+
     // LangChain4j core - exposed as api so users can interact with ChatModel, etc.
     api(libs.langchain4j.core)
 
@@ -70,6 +74,7 @@ dependencies {
     testImplementation(libs.assertj.core)
     testImplementation(libs.mockito.core)
     testImplementation(libs.slf4j.simple)
+    testImplementation(libs.jtoon)
 
     testCompileOnly(libs.lombok)
     testAnnotationProcessor(libs.lombok)

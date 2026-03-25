@@ -98,6 +98,7 @@ nav:
     - Testing: guides/testing.md
     - Deterministic Orchestration: guides/deterministic-orchestration.md
     - Task Reflection: guides/task-reflection.md
+    - TOON Context Format: guides/toon-format.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
@@ -124,6 +125,7 @@ nav:
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
     - Typed Tool Inputs: examples/typed-tools.md
+    - TOON Format: examples/toon-format.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
     - Typed Tool Inputs: migration/typed-tool-inputs.md
@@ -151,3 +153,4 @@ nav:
     - Phase Review and Retry: design/21-phase-review.md
     - Task Reflection: design/22-task-reflection.md
     - Typed Tool Inputs: design/23-typed-tool-input.md
+    - TOON Context Format: design/25-toon-context-format.md
