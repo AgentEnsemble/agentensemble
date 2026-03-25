@@ -2,12 +2,34 @@
 
 ## Current Work
 
-Branch: `fix/error-prone-pmd-p3`
-Tracking issue: GH #205
+Branch: `feat/toon-context-format`
+Tracking issue: GH #206, PR #207
 
-P3 performance violation fixes (PMD + Error Prone). PR pending review.
+TOON context format integration -- design doc, documentation, and scaffolding complete.
+Implementation code to follow.
 
 ## Completed This Session
+
+### TOON Context Format Documentation (GH #206, PR #207)
+
+Created the full documentation scaffolding for integrating TOON (Token-Oriented Object
+Notation) as a configurable serialization format for LLM-facing structured data:
+
+- **Design doc**: `docs/design/25-toon-context-format.md` -- ADR specifying ContextFormat
+  enum, ContextFormatter SPI, integration points (AgentPromptBuilder, AgentExecutor,
+  ExecutionTrace), optional JToon dependency, and testing strategy.
+- **User guide**: `docs/guides/toon-format.md` -- Setup instructions, what gets formatted,
+  when to use JSON vs TOON, error handling, full example.
+- **Example page**: `docs/examples/toon-format.md` -- Three-task pipeline walkthrough with
+  JSON vs TOON comparison.
+- **Runnable example**: `ToonFormatExample.java` with `runToonFormat` Gradle task.
+- **Reference update**: `contextFormat` field added to ensemble-configuration.md builder table.
+- **Version catalog**: `jtoon = 1.0.9` added to libs.versions.toml.
+- **Navigation**: mkdocs.yml updated with new pages in Guides, Examples, and Design sections.
+
+### Previous Session: P3 Performance Fixes (GH #205)
+
+## Previous Session Work
 
 ### P3 Performance Fixes (GH #205)
 
