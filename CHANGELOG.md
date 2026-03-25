@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.10.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.2...v2.10.0) (2026-03-25)
+
+
+### Features
+
+* TOON context format - design doc, guide, example, and reference ([#248](https://github.com/AgentEnsemble/agentensemble/issues/248)) ([656e030](https://github.com/AgentEnsemble/agentensemble/commit/656e0304101702f65840d8c9175477ede8ba04a9)), closes [#247](https://github.com/AgentEnsemble/agentensemble/issues/247)
+
+
+### Bug Fixes
+
+* **pmd-p3:** fix P3 performance violations (GuardLogStatement, StringBuilder, LooseCoupling, StringSplitter) ([#208](https://github.com/AgentEnsemble/agentensemble/issues/208)) ([e5c2d63](https://github.com/AgentEnsemble/agentensemble/commit/e5c2d63d8f59bce9d5ac05697c74017f12f1d28a))
+
 ## [2.9.2](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.1...v2.9.2) (2026-03-13)
 
 
