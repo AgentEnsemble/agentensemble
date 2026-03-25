@@ -109,5 +109,13 @@ needs a new independent collection. These cannot be hoisted without changing sem
 Only the metadata HashMap pattern (populate, Map.copyOf(), discard) was optimizable.
 
 ## Next Steps
-- Merge `fix/error-prone-pmd-p3` PR
-- Continue with P4 style fixes (issue #205, lowest priority)
+
+1. Implement TOON context format code on `feat/toon-context-format` branch:
+   - ContextFormat enum, ContextFormatter interface, JsonContextFormatter, ToonContextFormatter
+   - ContextFormatters factory with classpath detection
+   - Wire contextFormat into Ensemble.builder() and ExecutionContext
+   - Update AgentPromptBuilder to use ContextFormatter
+   - Update AgentExecutor tool output formatting
+   - Add ExecutionTrace.toToon() / toToon(Path)
+   - Unit + integration tests
+2. Wait for PR review on #205 (P3 performance fixes)

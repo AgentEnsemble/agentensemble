@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] - feat/toon-context-format (TOON context format) - 2026-03-24
+
+### Added
+- TOON context format: design doc, user guide, example page, runnable example,
+  reference update, version catalog entry (GH #247, PR #248)
+  - `docs/design/25-toon-context-format.md`
+  - `docs/guides/toon-format.md`
+  - `docs/examples/toon-format.md`
+  - `ToonFormatExample.java` with `runToonFormat` Gradle task
+  - `jtoon = 1.0.9` in version catalog
+  - Implementation code to follow
+
+---
+
 ## [Unreleased] - fix/error-prone-pmd-p3 (P3 performance fixes) - 2026-03-13
 
 ### Fixed (GH #205 -- P3 Performance violations, 4 commits on fix/error-prone-pmd-p3)

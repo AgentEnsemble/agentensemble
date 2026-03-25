@@ -332,6 +332,10 @@ Design document: `docs/design/16-live-dashboard.md`
 
 ## Current Status
 
+- Branch `feat/toon-context-format`: Design doc, guide, example, reference, and scaffolding
+  committed. Implementation code to follow. GH #247, PR #248.
+- Branch `fix/error-prone-pmd-p3`: P3 performance fixes complete, PR #205 pending review.
+
 **Issues #111 + #112** implementation complete on branch `feat/111-112-partial-results-workflow-inference`:
 - `agentensemble-core` -- 1162+ tests pass; 0 failures; full Gradle build successful
 - `agentensemble-review` -- all tests pass; javadoc clean; spotless clean

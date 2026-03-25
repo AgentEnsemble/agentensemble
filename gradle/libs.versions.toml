@@ -15,6 +15,7 @@ errorprone       = "5.1.0"
 errorprone-core  = "2.48.0"
 micrometer       = "1.16.4"
 javalin          = "7.1.0"
+jtoon            = "1.0.9"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -23,6 +24,7 @@ langchain4j-open-ai       = { group = "dev.langchain4j", name = "langchain4j-ope
 lombok                    = { group = "org.projectlombok",              name = "lombok",                   version.ref = "lombok"   }
 jackson-databind          = { group = "com.fasterxml.jackson.core",     name = "jackson-databind",         version.ref = "jackson"  }
 jackson-datatype-jsr310   = { group = "com.fasterxml.jackson.datatype", name = "jackson-datatype-jsr310",  version.ref = "jackson"  }
+jtoon                     = { group = "dev.toonformat",                  name = "jtoon",                    version.ref = "jtoon"    }
 jsoup                     = { group = "org.jsoup",                       name = "jsoup",                    version.ref = "jsoup"    }
 slf4j-api                 = { group = "org.slf4j",                      name = "slf4j-api",                version.ref = "slf4j"    }
 slf4j-simple              = { group = "org.slf4j",                      name = "slf4j-simple",             version.ref = "slf4j"    }
