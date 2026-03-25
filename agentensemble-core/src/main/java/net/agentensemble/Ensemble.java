@@ -36,6 +36,8 @@ import net.agentensemble.delegation.policy.DelegationPolicy;
 import net.agentensemble.ensemble.EnsembleOutput;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
+import net.agentensemble.format.ContextFormat;
+import net.agentensemble.format.ContextFormatters;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryStore;
 import net.agentensemble.metrics.CostConfiguration;
@@ -356,6 +358,17 @@ public class Ensemble {
      * <p>Default: null (ephemeral in-memory fallback when reflection is enabled on any task).
      */
     private final ReflectionStore reflectionStore;
+
+    /**
+     * Serialization format for structured data in LLM prompts.
+     *
+     * <p>When set to {@link ContextFormat#TOON}, context from prior tasks, tool results,
+     * and memory entries are encoded in TOON format (30-60% token reduction vs JSON).
+     * Requires {@code dev.toonformat:jtoon} on the runtime classpath.
+     *
+     * <p>Default: null (treated as {@link ContextFormat#JSON}).
+     */
+    private final ContextFormat contextFormat;
 
     /**
      * Optional live execution dashboard registered via
@@ -682,7 +695,8 @@ public class Ensemble {
                     reviewHandler,
                     reviewPolicy,
                     streamingChatLanguageModel,
-                    effectiveReflectionStore);
+                    effectiveReflectionStore,
+                    contextFormat != null ? ContextFormatters.forFormat(contextFormat) : null);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
