@@ -484,14 +484,6 @@ public class Ensemble {
     @Getter(lombok.AccessLevel.NONE)
     private final AtomicReference<EnsembleLifecycleState> lifecycleStateRef = new AtomicReference<>();
 
-    /**
-     * Dashboard created dynamically by {@link #start(int)} when no dashboard was
-     * configured at build time. Not part of the builder API.
-     */
-    @Builder.Default
-    @Getter(lombok.AccessLevel.NONE)
-    private final AtomicReference<EnsembleDashboard> longRunningDashboard = new AtomicReference<>();
-
     // ========================
     // Lifecycle (long-running mode)
     // ========================
@@ -535,7 +527,11 @@ public class Ensemble {
         }
 
         new EnsembleValidator(this).validate();
-        lifecycleStateRef.set(EnsembleLifecycleState.STARTING);
+
+        // Atomically transition to STARTING; if another thread started concurrently, this is a no-op.
+        if (!lifecycleStateRef.compareAndSet(current, EnsembleLifecycleState.STARTING)) {
+            return;
+        }
 
         try {
             if (dashboard == null) {
@@ -569,11 +565,15 @@ public class Ensemble {
     }
 
     /**
-     * Initiate graceful shutdown of a long-running ensemble.
+     * Initiate shutdown of a long-running ensemble.
      *
-     * <p>The ensemble transitions to {@link EnsembleLifecycleState#DRAINING}, waits up
-     * to {@link #drainTimeout} for in-flight work to complete, then transitions to
+     * <p>The ensemble transitions to {@link EnsembleLifecycleState#DRAINING}, stops the
+     * configured dashboard if this ensemble owns its lifecycle, and then transitions to
      * {@link EnsembleLifecycleState#STOPPED}.
+     *
+     * <p>Note: the {@link #drainTimeout} field is retained for future use when in-flight
+     * task draining is implemented. The current implementation stops the WebSocket server
+     * immediately without waiting for in-flight work to complete.
      *
      * <p>Calling {@code stop()} on an already-stopped or never-started ensemble is a
      * no-op (idempotent).
@@ -590,13 +590,11 @@ public class Ensemble {
         log.info("Ensemble draining (timeout: {})", drainTimeout);
 
         try {
-            // Stop whichever dashboard is in use (pre-configured or auto-created)
-            EnsembleDashboard dash = longRunningDashboard.get();
-            if (dash == null) {
-                dash = this.dashboard;
-            }
-            if (dash != null && dash.isRunning()) {
-                dash.stop();
+            // Only stop the dashboard when this ensemble owns the lifecycle. An externally-
+            // managed dashboard (ownsDashboardLifecycle=false) must not be stopped here, since
+            // the caller retains lifecycle responsibility -- same contract as one-shot run().
+            if (ownsDashboardLifecycle && dashboard != null && dashboard.isRunning()) {
+                dashboard.stop();
             }
         } finally {
             lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
@@ -1632,8 +1630,9 @@ public class Ensemble {
             if (name.isBlank()) {
                 throw new IllegalArgumentException("Shared tool name must not be blank");
             }
+            String description = tool.description() != null ? tool.description() : "";
             List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
-            updated.add(new SharedCapability(name, name, SharedCapabilityType.TOOL));
+            updated.add(new SharedCapability(name, description, SharedCapabilityType.TOOL));
             this.sharedCapabilities = List.copyOf(updated);
             return this;
         }

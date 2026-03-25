@@ -53,8 +53,11 @@ kitchen.stop();       // DRAINING -> STOPPED
 
 ### Graceful Shutdown
 
-When `stop()` is called, the ensemble transitions to `DRAINING` and waits up to the
-configured `drainTimeout` for in-flight work to complete before transitioning to `STOPPED`.
+When `stop()` is called, the ensemble transitions to `DRAINING`, stops the WebSocket server
+(if this ensemble owns the dashboard lifecycle), and then transitions to `STOPPED`.
+
+The `drainTimeout` field is available for configuration and will be used by a future
+implementation that waits for in-flight tasks to complete before stopping.
 
 A JVM shutdown hook is automatically registered so that SIGTERM triggers graceful shutdown.
 
@@ -62,7 +65,7 @@ A JVM shutdown hook is automatically registered so that SIGTERM triggers gracefu
 Ensemble kitchen = Ensemble.builder()
     .chatLanguageModel(model)
     .task(Task.of("Manage kitchen operations"))
-    .drainTimeout(Duration.ofMinutes(2))  // Default: 5 minutes
+    .drainTimeout(Duration.ofMinutes(2))  // Configurable; default: 5 minutes
     .build();
 ```
 
@@ -109,12 +112,13 @@ Ensemble.builder()
 ## Capability Handshake
 
 When a client connects to a long-running ensemble via WebSocket, the server sends a
-`hello` message that includes the ensemble's shared capabilities:
+`hello` message that includes the ensemble's shared capabilities. Because
+`HelloMessage` uses `@JsonInclude(NON_NULL)`, null fields are omitted from the wire payload:
 
 ```json
 {
     "type": "hello",
-    "snapshotTrace": null,
+    "ensembleId": "run-abc123",
     "sharedCapabilities": [
         {"name": "prepare-meal", "description": "Prepare a meal as specified", "type": "TASK"},
         {"name": "check-inventory", "description": "Check ingredient availability", "type": "TOOL"}
@@ -122,8 +126,9 @@ When a client connects to a long-running ensemble via WebSocket, the server send
 }
 ```
 
-This is **backward compatible** with v2.x clients: the `@JsonIgnoreProperties(ignoreUnknown = true)`
-annotation on `HelloMessage` means older clients simply ignore the new field.
+This is **backward compatible** with v2.x clients because `MessageSerializer` configures
+Jackson with `FAIL_ON_UNKNOWN_PROPERTIES = false`, so older clients simply ignore the new
+`sharedCapabilities` field.
 
 ## Related
 

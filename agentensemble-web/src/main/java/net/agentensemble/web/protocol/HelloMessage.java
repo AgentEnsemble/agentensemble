@@ -19,7 +19,8 @@ import java.util.List;
  *
  * @param ensembleId         the current ensemble run ID; null if no run has started
  * @param startedAt          when the current run started; null if no run has started
- * @param snapshotTrace      the current partial {@code ExecutionTrace} as a JSON tree; null if none
+ * @param snapshotTrace      JSON array of previously broadcast {@code ServerMessage}s used for
+ *                           late-join replay; null if no run has started
  * @param sharedCapabilities shared tasks/tools for the capability handshake; null for one-shot
  *                           ensembles
  */
@@ -34,7 +35,8 @@ public record HelloMessage(
      *
      * @param ensembleId    the current ensemble run ID; null if no run has started
      * @param startedAt     when the current run started; null if no run has started
-     * @param snapshotTrace the current partial execution trace; null if none
+     * @param snapshotTrace JSON array of previously broadcast messages for late-join replay;
+     *                      null if no run has started
      */
     public HelloMessage(String ensembleId, Instant startedAt, JsonNode snapshotTrace) {
         this(ensembleId, startedAt, snapshotTrace, null);

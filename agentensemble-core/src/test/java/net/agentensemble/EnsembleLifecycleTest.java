@@ -132,13 +132,31 @@ class EnsembleLifecycleTest {
     }
 
     @Test
-    void stopCallsDashboardStop() {
-        Ensemble ensemble = buildWithDashboard();
+    void stopCallsDashboardStopWhenOwned() {
+        // When ownsDashboardLifecycle=true, stop() stops the dashboard.
+        Ensemble ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .task(Task.of("main task"))
+                .dashboard(dashboard)
+                .ownsDashboardLifecycle(true) // owns the lifecycle
+                .build();
+        when(dashboard.isRunning()).thenReturn(true);
 
         ensemble.start(7329);
         ensemble.stop();
 
         verify(dashboard).stop();
+    }
+
+    @Test
+    void stopDoesNotCallDashboardStopWhenNotOwned() {
+        // When ownsDashboardLifecycle=false, stop() does NOT stop the dashboard.
+        Ensemble ensemble = buildWithDashboard(); // ownsDashboardLifecycle=false
+
+        ensemble.start(7329);
+        ensemble.stop();
+
+        verify(dashboard, times(0)).stop();
     }
 
     @Test

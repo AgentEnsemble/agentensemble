@@ -10,25 +10,26 @@ Closes #216 (EN-001), #217 (EN-002), #218 (EN-003).
 
 **EN-001 (#216): Long-running ensemble mode**
 - `EnsembleLifecycleState` enum: STARTING, READY, DRAINING, STOPPED
-- `Ensemble.start(int port)` / `stop()` lifecycle methods (idempotent)
-- `drainTimeout(Duration)` builder field (default 5 min)
-- JVM shutdown hook on `start()`
+- `Ensemble.start(int port)` / `stop()` lifecycle methods (idempotent, thread-safe)
+- `drainTimeout(Duration)` builder field (default 5 min; drain logic pending future work)
+- `stop()` gates on `ownsDashboardLifecycle` -- consistent with one-shot `run()` contract
+- JVM shutdown hook registered on `start()`
 - Dashboard required at build time via `webDashboard()` for long-running mode
 
 **EN-002 (#217): shareTask()/shareTool() on Ensemble builder**
 - `SharedCapability` record (name, description, type)
 - `SharedCapabilityType` enum (TASK, TOOL)
 - `Ensemble.builder().shareTask(name, task)` / `.shareTool(name, tool)`
-- Validation: unique names (duplicate rejected by `EnsembleValidator`)
+- `shareTool()` uses `tool.description()` for capability metadata
+- Validation: unique names detected by `EnsembleValidator`
 - Does not affect one-shot `run()`
-- Default empty list when no capabilities configured
 
 **EN-003 (#218): Capability handshake protocol**
 - `SharedCapabilityInfo` wire-protocol record (name, description, type as String)
 - `HelloMessage` extended with optional `sharedCapabilities` field
   - Original `(String ensembleId, Instant startedAt, JsonNode snapshotTrace)` preserved
-  - Backward compat: null omitted from JSON via `@JsonInclude(NON_NULL)`
-  - Forward compat: `@JsonIgnoreProperties(ignoreUnknown = true)`
+  - `@JsonInclude(NON_NULL)` omits null fields from wire; null = one-shot ensemble
+  - Backward compat: `MessageSerializer` uses `FAIL_ON_UNKNOWN_PROPERTIES=false`
 
 ### Documentation
 - New guide: `docs/guides/long-running-ensembles.md`
@@ -43,7 +44,6 @@ Closes #216 (EN-001), #217 (EN-002), #218 (EN-003).
 ## Next Steps
 
 Remaining Ensemble Network Phase 1 tickets (in dependency order):
-- EN-003 (#218) ← Done (this PR)
 - EN-004 (#219): NetworkTask implementation (WebSocket transport)
 - EN-005 (#220): NetworkTool implementation (WebSocket transport)
 - EN-006 (#221): WorkRequest envelope and wire protocol extensions
@@ -53,21 +53,3 @@ Remaining Ensemble Network Phase 1 tickets (in dependency order):
 EN-006 is pure data types (no runtime deps) -- implement first.
 EN-004 and EN-005 (NetworkTask, NetworkTool) share EN-003 as a dep.
 EN-007 requires EN-001, EN-002, EN-006.
-</content>
-<parameter name="task_progress">
-- [x] Create feature branch
-- [x] Implement EnsembleLifecycleState enum (#216)
-- [x] Implement SharedCapability + SharedCapabilityType (#217)
-- [x] Implement SharedCapabilityInfo wire type (#218)
-- [x] Modify Ensemble.java: fields, lifecycle, builder methods
-- [x] Re-add validateSharedCapabilities to EnsembleValidator
-- [x] Fix HelloMessage to extend original record (not replace)
-- [x] Write and fix all test files
-- [x] Fix Javadoc reference errors
-- [x] Full build passes (./gradlew build)
-- [x] Update docs/reference/ensemble-configuration.md
-- [x] Update mkdocs.yml navigation
-- [x] Create docs/guides/long-running-ensembles.md
-- [x] Create docs/examples/long-running-ensemble.md
-- [x] Commit and push all changes
-- [x] Update memory bank

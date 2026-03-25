@@ -1,3 +1,4 @@
+
 # Long-Running Ensemble Example
 
 This example shows how to configure and start an ensemble in long-running mode with
@@ -16,7 +17,9 @@ import java.time.Duration;
 public class LongRunningExample {
 
     public static void main(String[] args) {
-        ChatModel model = // ... configure your LLM provider
+        // Configure your LLM provider -- for example:
+        // ChatModel model = OpenAiChatModel.builder().apiKey(...).build();
+        ChatModel model = /* your LLM provider */ null;
 
         // Define a task the kitchen handles internally
         Task managementTask = Task.of("Manage kitchen operations");
@@ -49,7 +52,12 @@ public class LongRunningExample {
 ## Checking Lifecycle State
 
 ```java
-Ensemble ensemble = // ...
+// Build and start (configure dashboard separately in production code)
+Ensemble ensemble = Ensemble.builder()
+        .chatLanguageModel(model)
+        .task(Task.of("Manage operations"))
+        .build();
+
 ensemble.start(7329);
 
 // Check the current state
