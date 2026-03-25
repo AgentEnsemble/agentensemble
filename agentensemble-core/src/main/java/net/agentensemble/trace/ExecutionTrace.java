@@ -197,6 +197,44 @@ public class ExecutionTrace {
     }
 
     /**
+     * Serialize this trace to TOON (Token-Oriented Object Notation) format.
+     *
+     * <p>Requires {@code dev.toonformat:jtoon} on the runtime classpath. If JToon is not
+     * available, throws {@link IllegalStateException} with dependency instructions.
+     *
+     * @return a TOON string representation of this trace; never null
+     * @throws IllegalStateException if JToon is not on the classpath
+     */
+    public String toToon() {
+        net.agentensemble.format.ContextFormatter formatter =
+                net.agentensemble.format.ContextFormatters.forFormat(net.agentensemble.format.ContextFormat.TOON);
+        return formatter.format(this);
+    }
+
+    /**
+     * Write this trace to the specified file in TOON format.
+     *
+     * <p>Parent directories are created automatically if they do not exist.
+     * Requires {@code dev.toonformat:jtoon} on the runtime classpath.
+     *
+     * @param outputPath the file to write to; must not be {@code null}
+     * @throws IllegalStateException if JToon is not on the classpath
+     * @throws UncheckedIOException  if file I/O fails
+     */
+    public void toToon(Path outputPath) {
+        try {
+            String toon = toToon();
+            Path parent = outputPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(outputPath, toon);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write ExecutionTrace to " + outputPath, e);
+        }
+    }
+
+    /**
      * Export this trace using the provided exporter.
      *
      * @param exporter the exporter to use; must not be {@code null}

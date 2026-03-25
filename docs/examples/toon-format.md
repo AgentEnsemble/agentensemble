@@ -77,14 +77,14 @@ public class ToonFormatExample {
                 + "emerging trends in " + topic)
             .expectedOutput("A ranked list of trends with supporting evidence "
                 + "and market impact assessment")
-            .context(research)  // receives researcher's output as TOON
+            .context(java.util.List.of(research))  // receives researcher's output as TOON
             .build();
 
         Task report = Task.builder()
             .description("Write a concise executive summary about " + topic)
             .expectedOutput("A polished 500-word executive summary suitable "
                 + "for C-level stakeholders")
-            .context(research, analysis)  // receives both outputs as TOON
+            .context(java.util.List.of(research, analysis))  // receives both outputs as TOON
             .build();
 
         // 2. Run with TOON context format

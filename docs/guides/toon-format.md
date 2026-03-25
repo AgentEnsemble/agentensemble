@@ -180,13 +180,13 @@ public class ToonFormatExample {
         Task analysis = Task.builder()
             .description("Analyze the research and identify the top 3 trends")
             .expectedOutput("A ranked list of trends with supporting evidence")
-            .context(research)
+            .context(java.util.List.of(research))
             .build();
 
         Task report = Task.builder()
             .description("Write an executive summary of {topic} trends")
             .expectedOutput("A concise 500-word executive summary")
-            .context(research, analysis)
+            .context(java.util.List.of(research, analysis))
             .build();
 
         EnsembleOutput result = Ensemble.builder()

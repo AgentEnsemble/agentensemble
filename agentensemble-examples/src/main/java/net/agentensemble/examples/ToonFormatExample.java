@@ -47,14 +47,14 @@ public class ToonFormatExample {
         Task analysis = Task.builder()
                 .description("Analyze the research findings and identify the top 3 " + "emerging trends in " + topic)
                 .expectedOutput("A ranked list of trends with supporting evidence " + "and market impact assessment")
-                .context(research) // receives researcher's output as TOON
+                .context(java.util.List.of(research)) // receives researcher's output as TOON
                 .build();
 
         Task report = Task.builder()
                 .description("Write a concise executive summary about " + topic)
                 .expectedOutput("A polished 500-word executive summary suitable "
                         + "for C-level stakeholders, with specific numbers and clear recommendations")
-                .context(research, analysis) // receives both outputs as TOON
+                .context(java.util.List.of(research, analysis)) // receives both outputs as TOON
                 .build();
 
         // 2. Run with TOON context format -- one builder call to enable
@@ -83,18 +83,13 @@ public class ToonFormatExample {
     }
 
     private static void printTokenUsage(EnsembleOutput result) {
-        System.out.println("\n--- Token Usage ---");
+        System.out.println("\n--- Task Summary ---");
         for (TaskOutput output : result.getTaskOutputs()) {
             System.out.printf(
-                    "  %s: %d tokens (in: %d, out: %d)%n",
-                    output.getAgentRole(),
-                    output.getTokenUsage().totalTokenCount(),
-                    output.getTokenUsage().inputTokenCount(),
-                    output.getTokenUsage().outputTokenCount());
+                    "  %s: %s | Tool calls: %d%n",
+                    output.getAgentRole(), output.getDuration(), output.getToolCallCount());
         }
-        int totalTokens = result.getTaskOutputs().stream()
-                .mapToInt(o -> o.getTokenUsage().totalTokenCount())
-                .sum();
-        System.out.printf("  TOTAL: %d tokens%n", totalTokens);
+        System.out.printf("  Total duration: %s%n", result.getTotalDuration());
+        System.out.printf("  Total tool calls: %d%n", result.getTotalToolCalls());
     }
 }
