@@ -513,11 +513,10 @@ public class Ensemble {
      * {@link EnsembleLifecycleState#READY}. A WebSocket server is bound to the specified
      * port, and shared capabilities are published for peer discovery.
      *
-     * <p>If a dashboard was configured at build time (via
-     * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}), it is used directly.
-     * Otherwise, a new dashboard is auto-created for the given port using
-     * {@link EnsembleDashboard#builder()}, which requires the {@code agentensemble-web}
-     * module on the classpath.
+     * <p>A dashboard must be configured at build time via
+     * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}.
+     * If no dashboard is configured, {@code start()} throws {@link IllegalStateException}
+     * with guidance on how to add one.
      *
      * <p>Calling {@code start()} on an already-started ensemble (state is {@code STARTING}
      * or {@code READY}) is a no-op (idempotent).
@@ -539,13 +538,14 @@ public class Ensemble {
         lifecycleStateRef.set(EnsembleLifecycleState.STARTING);
 
         try {
-            EnsembleDashboard dash = this.dashboard;
-            if (dash == null) {
-                dash = EnsembleDashboard.builder().port(port).build();
-                longRunningDashboard.set(dash);
+            if (dashboard == null) {
+                throw new IllegalStateException("Ensemble.start(int) requires a dashboard. Configure one via "
+                        + "Ensemble.builder().webDashboard(WebDashboard.builder().port("
+                        + port
+                        + ").build()).");
             }
-            if (!dash.isRunning()) {
-                dash.start();
+            if (!dashboard.isRunning()) {
+                dashboard.start();
             }
 
             lifecycleStateRef.set(EnsembleLifecycleState.READY);
@@ -559,6 +559,9 @@ public class Ensemble {
                                 }
                             },
                             "ensemble-shutdown-hook"));
+        } catch (IllegalStateException e) {
+            lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
+            throw e;
         } catch (Exception e) {
             lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
             throw new AgentEnsembleException("Failed to start ensemble on port " + port, e);
@@ -1622,59 +1625,6 @@ public class Ensemble {
          * @param name unique name for this shared tool
          * @param tool the tool to share
          * @return this builder
-         */
-        public EnsembleBuilder shareTool(String name, AgentTool tool) {
-            Objects.requireNonNull(name, "Shared tool name must not be null");
-            Objects.requireNonNull(tool, "Shared tool must not be null");
-            if (name.isBlank()) {
-                throw new IllegalArgumentException("Shared tool name must not be blank");
-            }
-            List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
-            updated.add(new SharedCapability(name, name, SharedCapabilityType.TOOL));
-            this.sharedCapabilities = List.copyOf(updated);
-            return this;
-        }
-
-        // Shared capabilities accumulator. Follows the same pattern as phases:
-        // manually managed with custom shareTask() / shareTool() methods.
-        private List<SharedCapability> sharedCapabilities = List.of();
-
-        /**
-         * Share a named task with the network.
-         *
-         * <p>Other ensembles can discover and delegate work to this task via
-         * {@code NetworkTask.from(ensembleName, taskName)}.
-         *
-         * @param name unique name for this shared task
-         * @param task the task definition to share
-         * @return this builder
-         * @throws NullPointerException     if name or task is null
-         * @throws IllegalArgumentException if name is blank
-         */
-        public EnsembleBuilder shareTask(String name, Task task) {
-            Objects.requireNonNull(name, "Shared task name must not be null");
-            Objects.requireNonNull(task, "Shared task must not be null");
-            if (name.isBlank()) {
-                throw new IllegalArgumentException("Shared task name must not be blank");
-            }
-            String description = task.getDescription() != null ? task.getDescription() : "";
-            List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
-            updated.add(new SharedCapability(name, description, SharedCapabilityType.TASK));
-            this.sharedCapabilities = List.copyOf(updated);
-            return this;
-        }
-
-        /**
-         * Share a named tool with the network.
-         *
-         * <p>Other ensembles' agents can invoke this tool remotely via
-         * {@code NetworkTool.from(ensembleName, toolName)}.
-         *
-         * @param name unique name for this shared tool
-         * @param tool the tool to share
-         * @return this builder
-         * @throws NullPointerException     if name or tool is null
-         * @throws IllegalArgumentException if name is blank
          */
         public EnsembleBuilder shareTool(String name, AgentTool tool) {
             Objects.requireNonNull(name, "Shared tool name must not be null");

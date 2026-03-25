@@ -66,14 +66,14 @@ class SharedCapabilityBuilderTest {
     }
 
     @Test
-    void noSharedCapabilitiesReturnsNull() {
+    void noSharedCapabilitiesReturnsEmpty() {
         Ensemble ensemble = Ensemble.builder()
                 .chatLanguageModel(model)
                 .task(Task.of("main task"))
                 .build();
 
-        // When no shareTask/shareTool is called, the field is null (no @Builder.Default)
-        assertThat(ensemble.getSharedCapabilities()).isNull();
+        // When no shareTask/shareTool is called, the custom builder initializes to List.of()
+        assertThat(ensemble.getSharedCapabilities()).isEmpty();
     }
 
     @Test

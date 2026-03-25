@@ -30,7 +30,7 @@ class HelloMessageCapabilityTest {
                 new SharedCapabilityInfo("prepare-meal", "Prepare a meal", "TASK"),
                 new SharedCapabilityInfo("check-inventory", "Check inventory", "TOOL"));
 
-        HelloMessage msg = new HelloMessage(null, caps);
+        HelloMessage msg = new HelloMessage(null, null, null, caps);
         String json = mapper.writeValueAsString(msg);
 
         assertThat(json).contains("\"sharedCapabilities\"");
@@ -46,7 +46,7 @@ class HelloMessageCapabilityTest {
                 """
                 {
                     "type": "hello",
-                    "snapshotTrace": null,
+                    "ensembleId": "run-1",
                     "sharedCapabilities": [
                         {"name": "prepare-meal", "description": "Prepare a meal", "type": "TASK"},
                         {"name": "check-inventory", "description": "Check inventory", "type": "TOOL"}
@@ -56,7 +56,7 @@ class HelloMessageCapabilityTest {
 
         HelloMessage msg = mapper.readValue(json, HelloMessage.class);
 
-        assertThat(msg.snapshotTrace()).isNull();
+        assertThat(msg.ensembleId()).isEqualTo("run-1");
         assertThat(msg.sharedCapabilities()).hasSize(2);
         assertThat(msg.sharedCapabilities().get(0).name()).isEqualTo("prepare-meal");
         assertThat(msg.sharedCapabilities().get(0).type()).isEqualTo("TASK");
@@ -66,19 +66,24 @@ class HelloMessageCapabilityTest {
 
     @Test
     void backwardCompatibleHelloWithoutCapabilities() throws Exception {
-        HelloMessage msg = new HelloMessage(null);
+        // The 3-arg compat constructor produces a message with null sharedCapabilities,
+        // which is omitted from JSON due to @JsonInclude(NON_NULL).
+        HelloMessage msg = new HelloMessage("run-1", null, null);
         String json = mapper.writeValueAsString(msg);
 
+        assertThat(json).doesNotContain("sharedCapabilities");
+
         HelloMessage deserialized = mapper.readValue(json, HelloMessage.class);
-        assertThat(deserialized.snapshotTrace()).isNull();
+        assertThat(deserialized.ensembleId()).isEqualTo("run-1");
         assertThat(deserialized.sharedCapabilities()).isNull();
     }
 
     @Test
     void emptyCapabilitiesListSerializesCorrectly() throws Exception {
-        HelloMessage msg = new HelloMessage(null, List.of());
+        HelloMessage msg = new HelloMessage(null, null, null, List.of());
         String json = mapper.writeValueAsString(msg);
 
+        // Empty list is NOT null, so it is included (even though @NonNull)
         HelloMessage deserialized = mapper.readValue(json, HelloMessage.class);
         assertThat(deserialized.sharedCapabilities()).isEmpty();
     }
@@ -90,7 +95,7 @@ class HelloMessageCapabilityTest {
                 """
                 {
                     "type": "hello",
-                    "snapshotTrace": null,
+                    "ensembleId": "run-42",
                     "sharedCapabilities": [
                         {"name": "prepare-meal", "description": "Prepare a meal", "type": "TASK"}
                     ],
@@ -101,7 +106,7 @@ class HelloMessageCapabilityTest {
 
         HelloMessage msg = mapper.readValue(json, HelloMessage.class);
 
-        assertThat(msg.snapshotTrace()).isNull();
+        assertThat(msg.ensembleId()).isEqualTo("run-42");
         assertThat(msg.sharedCapabilities()).hasSize(1);
         assertThat(msg.sharedCapabilities().get(0).name()).isEqualTo("prepare-meal");
     }
@@ -113,7 +118,6 @@ class HelloMessageCapabilityTest {
                 """
                 {
                     "type": "hello",
-                    "snapshotTrace": null,
                     "sharedCapabilities": [
                         {
                             "name": "prepare-meal",
@@ -140,10 +144,11 @@ class HelloMessageCapabilityTest {
                 new SharedCapabilityInfo("check-inventory", "Check ingredient availability", "TOOL"),
                 new SharedCapabilityInfo("dietary-check", "Verify allergen safety", "TOOL"));
 
-        HelloMessage original = new HelloMessage(null, caps);
+        HelloMessage original = new HelloMessage("run-123", null, null, caps);
         String json = mapper.writeValueAsString(original);
         HelloMessage deserialized = mapper.readValue(json, HelloMessage.class);
 
+        assertThat(deserialized.ensembleId()).isEqualTo("run-123");
         assertThat(deserialized.sharedCapabilities()).hasSize(3);
         assertThat(deserialized.sharedCapabilities())
                 .extracting(SharedCapabilityInfo::name)

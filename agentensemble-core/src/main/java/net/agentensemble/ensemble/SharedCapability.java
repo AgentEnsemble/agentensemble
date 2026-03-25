@@ -17,7 +17,7 @@ import java.util.Objects;
  *
  * @see SharedCapabilityType
  * @see net.agentensemble.Ensemble.EnsembleBuilder#shareTask(String, net.agentensemble.Task)
- * @see net.agentensemble.Ensemble.EnsembleBuilder#shareTool(String, dev.langchain4j.agent.tool.Tool)
+ * @see net.agentensemble.Ensemble.EnsembleBuilder#shareTool(String, net.agentensemble.tool.AgentTool)
  */
 public record SharedCapability(String name, String description, SharedCapabilityType type) {
 

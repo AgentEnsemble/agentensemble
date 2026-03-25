@@ -6,7 +6,7 @@ package net.agentensemble.ensemble;
  * <p>Shared capabilities are registered via
  * {@link net.agentensemble.Ensemble.EnsembleBuilder#shareTask(String, net.agentensemble.Task)}
  * and
- * {@link net.agentensemble.Ensemble.EnsembleBuilder#shareTool(String, dev.langchain4j.agent.tool.Tool)}.
+ * {@link net.agentensemble.Ensemble.EnsembleBuilder#shareTool(String, net.agentensemble.tool.AgentTool)}.
  *
  * @see SharedCapability
  */

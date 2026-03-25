@@ -180,13 +180,12 @@ class EnsembleLifecycleTest {
     }
 
     @Test
-    void sharedCapabilitiesDefaultToNull() {
+    void sharedCapabilitiesDefaultToEmpty() {
         Ensemble ensemble = Ensemble.builder()
                 .chatLanguageModel(model)
                 .task(Task.of("main task"))
                 .build();
-        // When no sharedCapabilities are set via shareTask/shareTool, the field is null
-        // (Lombok does not initialize non-@Singular, non-@Builder.Default fields).
-        assertThat(ensemble.getSharedCapabilities()).isNull();
+        // When no shareTask/shareTool is called, the custom builder initializes to List.of()
+        assertThat(ensemble.getSharedCapabilities()).isEmpty();
     }
 }
