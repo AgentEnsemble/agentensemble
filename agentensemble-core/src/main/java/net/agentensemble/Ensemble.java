@@ -443,16 +443,16 @@ public class Ensemble {
     private final RateLimit rateLimit;
 
     /**
-     * Maximum time to wait for in-flight work to complete during graceful shutdown.
+     * Reserved for future graceful shutdown behavior.
      *
-     * <p>When {@link #stop()} is called on a long-running ensemble, it transitions to
-     * {@link EnsembleLifecycleState#DRAINING} and waits up to this duration for in-flight
-     * tasks to finish before transitioning to {@link EnsembleLifecycleState#STOPPED}.
+     * <p>Currently, {@link #stop()} stops the ensemble immediately without waiting for
+     * in-flight tasks to finish. This field is reserved for a future drain implementation
+     * that will wait up to this duration before forcing shutdown. It does not affect
+     * current behavior.
      *
      * <p>Default: 5 minutes.
      *
      * @see #stop()
-     * @see EnsembleLifecycleState#DRAINING
      */
     @Builder.Default
     private final Duration drainTimeout = Duration.ofMinutes(5);
@@ -484,6 +484,14 @@ public class Ensemble {
     @Getter(lombok.AccessLevel.NONE)
     private final AtomicReference<EnsembleLifecycleState> lifecycleStateRef = new AtomicReference<>();
 
+    /**
+     * Registered JVM shutdown hook thread for this ensemble, stored so it can be
+     * deregistered by {@link #stop()} to avoid accumulation across restart cycles.
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final AtomicReference<Thread> shutdownHookRef = new AtomicReference<>();
+
     // ========================
     // Lifecycle (long-running mode)
     // ========================
@@ -499,24 +507,30 @@ public class Ensemble {
     }
 
     /**
-     * Start this ensemble in long-running mode on the given port.
+     * Start this ensemble in long-running mode.
      *
      * <p>The ensemble transitions through {@link EnsembleLifecycleState#STARTING} to
-     * {@link EnsembleLifecycleState#READY}. A WebSocket server is bound to the specified
-     * port, and shared capabilities are published for peer discovery.
+     * {@link EnsembleLifecycleState#READY}. Shared capabilities are published for peer
+     * discovery, and any configured dashboard is started.
      *
      * <p>A dashboard must be configured at build time via
      * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}.
      * If no dashboard is configured, {@code start()} throws {@link IllegalStateException}
      * with guidance on how to add one.
      *
+     * <p>The {@code port} argument is advisory: it is included in error messages and logs
+     * to help identify which port is expected. The configured {@link EnsembleDashboard}
+     * is responsible for actually binding to the port -- it uses the port set on its own
+     * builder (e.g., {@code WebDashboard.builder().port(7329).build()}).
+     *
      * <p>Calling {@code start()} on an already-started ensemble (state is {@code STARTING}
      * or {@code READY}) is a no-op (idempotent).
      *
      * <p>A JVM shutdown hook is registered to trigger {@link #stop()} on SIGTERM or
-     * normal shutdown.
+     * normal shutdown. Any previously registered hook from an earlier {@code start()} call
+     * is deregistered first to avoid accumulation.
      *
-     * @param port the port to bind the WebSocket server to
+     * @param port advisory port hint used in error messages and logging
      * @throws ValidationException     if the ensemble configuration is invalid
      * @throws AgentEnsembleException  if the server cannot be started
      */
@@ -544,17 +558,33 @@ public class Ensemble {
                 dashboard.start();
             }
 
-            lifecycleStateRef.set(EnsembleLifecycleState.READY);
+            // Use CAS to transition STARTING -> READY. If stop() was called concurrently
+            // (which set the state to DRAINING), this returns false and we abort cleanly.
+            if (!lifecycleStateRef.compareAndSet(EnsembleLifecycleState.STARTING, EnsembleLifecycleState.READY)) {
+                log.warn("Ensemble start aborted: stop() was called concurrently during startup");
+                return;
+            }
             log.info("Ensemble started in long-running mode on port {}", port);
 
-            Runtime.getRuntime()
-                    .addShutdownHook(new Thread(
-                            () -> {
-                                if (getLifecycleState() == EnsembleLifecycleState.READY) {
-                                    stop();
-                                }
-                            },
-                            "ensemble-shutdown-hook"));
+            // Register shutdown hook, deregistering any previous one to avoid accumulation
+            // when the ensemble is stopped and restarted within the same JVM.
+            Thread oldHook = shutdownHookRef.getAndSet(null);
+            if (oldHook != null) {
+                try {
+                    Runtime.getRuntime().removeShutdownHook(oldHook);
+                } catch (IllegalStateException ignored) {
+                    // JVM is already shutting down; ignore
+                }
+            }
+            Thread newHook = new Thread(
+                    () -> {
+                        if (getLifecycleState() == EnsembleLifecycleState.READY) {
+                            stop();
+                        }
+                    },
+                    "ensemble-shutdown-hook");
+            shutdownHookRef.set(newHook);
+            Runtime.getRuntime().addShutdownHook(newHook);
         } catch (IllegalStateException e) {
             lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
             throw e;
@@ -588,6 +618,18 @@ public class Ensemble {
 
         lifecycleStateRef.set(EnsembleLifecycleState.DRAINING);
         log.info("Ensemble draining (timeout: {})", drainTimeout);
+
+        // Remove the registered shutdown hook (if any) to prevent it from firing during
+        // normal JVM shutdown after an explicit stop() call, and to avoid accumulation if
+        // the ensemble is started again in the same JVM.
+        Thread hook = shutdownHookRef.getAndSet(null);
+        if (hook != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException ignored) {
+                // JVM is already shutting down; the hook will fire naturally
+            }
+        }
 
         try {
             // Only stop the dashboard when this ensemble owns the lifecycle. An externally-

@@ -14,8 +14,9 @@ import java.util.List;
  *
  * <p>In long-running mode, also includes the ensemble's shared capabilities so that connecting
  * peers can discover available tasks and tools. The {@code sharedCapabilities} field is
- * {@code null} for one-shot ensembles; existing v2.x clients ignore it via
- * {@code @JsonIgnoreProperties(ignoreUnknown = true)}.
+ * {@code null} for one-shot ensembles; existing v2.x clients remain compatible because
+ * their Jackson {@code ObjectMapper} (configured with {@code FAIL_ON_UNKNOWN_PROPERTIES}
+ * disabled, as {@code MessageSerializer} does) simply ignores the new field.
  *
  * @param ensembleId         the current ensemble run ID; null if no run has started
  * @param startedAt          when the current run started; null if no run has started

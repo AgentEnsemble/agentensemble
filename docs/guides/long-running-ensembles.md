@@ -31,15 +31,24 @@ STARTING -> READY -> DRAINING -> STOPPED
 
 ## Starting and Stopping
 
+Long-running mode requires a dashboard for WebSocket connectivity. Configure one
+via `.webDashboard(...)` before calling `start()`:
+
 ```java
+// 1. Create the WebDashboard bound to the desired port
+WebDashboard dashboard = WebDashboard.builder().port(7329).build();
+
+// 2. Build the ensemble with the dashboard wired in
 Ensemble kitchen = Ensemble.builder()
     .chatLanguageModel(model)
     .task(Task.of("Manage kitchen operations"))
     .shareTask("prepare-meal", mealTask)
     .shareTool("check-inventory", inventoryTool)
+    .webDashboard(dashboard)  // required; also starts the server
     .build();
 
-kitchen.start(7329);  // Binds WebSocket server, enters READY state
+// 3. Transition to READY state and register the shutdown hook
+kitchen.start(7329);  // port is advisory for error messages / logs
 
 // ... ensemble runs until stopped ...
 
