@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import net.agentensemble.ensemble.SharedCapability;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.ratelimit.RateLimit;
 import net.agentensemble.workflow.HierarchicalConstraints;
@@ -52,6 +53,7 @@ class EnsembleValidator {
     private final int managerMaxIterations;
     private final ParallelErrorStrategy parallelErrorStrategy;
     private final HierarchicalConstraints hierarchicalConstraints;
+    private final List<SharedCapability> sharedCapabilities;
 
     EnsembleValidator(Ensemble ensemble) {
         this.tasks = ensemble.getTasks();
@@ -63,6 +65,7 @@ class EnsembleValidator {
         this.managerMaxIterations = ensemble.getManagerMaxIterations();
         this.parallelErrorStrategy = ensemble.getParallelErrorStrategy();
         this.hierarchicalConstraints = ensemble.getHierarchicalConstraints();
+        this.sharedCapabilities = ensemble.getSharedCapabilities();
     }
 
     void validate() {
@@ -101,6 +104,8 @@ class EnsembleValidator {
             validateNoCircularContextDependencies();
             validateContextOrdering(effective);
         }
+        // Common validations applied to both paths
+        validateSharedCapabilities();
     }
 
     // ========================
@@ -457,15 +462,24 @@ class EnsembleValidator {
     }
 
     /**
-     * Infer the effective workflow from the original task list, for use in validation
-     * before template resolution.
+     * Validate that shared capability names are unique within this ensemble.
      *
-     * <p>When {@link #workflow} is explicitly set, returns it unchanged. Otherwise uses
-     * the same inference logic as {@link Ensemble#resolveWorkflow}: if any task has a
-     * context dependency on another task in this ensemble, infer PARALLEL; else SEQUENTIAL.
-     *
-     * @return the effective workflow for this ensemble run
+     * <p>Duplicate names across {@code shareTask()} and {@code shareTool()} calls are
+     * rejected because peer ensembles use the name as the lookup key for routing.
      */
+    private void validateSharedCapabilities() {
+        if (sharedCapabilities == null || sharedCapabilities.isEmpty()) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (SharedCapability cap : sharedCapabilities) {
+            if (!seen.add(cap.name())) {
+                throw new ValidationException("Duplicate shared capability name: '" + cap.name()
+                        + "'. Each shared task/tool must have a unique name within the ensemble.");
+            }
+        }
+    }
+
     private Workflow resolveWorkflow() {
         if (workflow != null) {
             return workflow;
