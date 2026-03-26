@@ -99,6 +99,7 @@ nav:
     - Deterministic Orchestration: guides/deterministic-orchestration.md
     - Task Reflection: guides/task-reflection.md
     - TOON Context Format: guides/toon-format.md
+    - Long-Running Ensembles: guides/long-running-ensembles.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
@@ -126,6 +127,7 @@ nav:
     - Live Dashboard: examples/live-dashboard.md
     - Typed Tool Inputs: examples/typed-tools.md
     - TOON Format: examples/toon-format.md
+    - Long-Running Ensemble: examples/long-running-ensemble.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
     - Typed Tool Inputs: migration/typed-tool-inputs.md

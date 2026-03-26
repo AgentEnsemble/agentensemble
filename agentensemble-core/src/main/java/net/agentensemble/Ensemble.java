@@ -2,6 +2,7 @@ package net.agentensemble;
 
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Builder;
@@ -33,7 +35,11 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.delegation.policy.DelegationPolicy;
+import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.ensemble.SharedCapability;
+import net.agentensemble.ensemble.SharedCapabilityType;
+import net.agentensemble.exception.AgentEnsembleException;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
 import net.agentensemble.format.ContextFormat;
@@ -435,6 +441,208 @@ public class Ensemble {
      * <p>Default: null (no ensemble-level rate limiting).
      */
     private final RateLimit rateLimit;
+
+    /**
+     * Reserved for future graceful shutdown behavior.
+     *
+     * <p>Currently, {@link #stop()} stops the ensemble immediately without waiting for
+     * in-flight tasks to finish. This field is reserved for a future drain implementation
+     * that will wait up to this duration before forcing shutdown. It does not affect
+     * current behavior.
+     *
+     * <p>Default: 5 minutes.
+     *
+     * @see #stop()
+     */
+    @Builder.Default
+    private final Duration drainTimeout = Duration.ofMinutes(5);
+
+    /**
+     * Tasks and tools that this ensemble shares with the network.
+     *
+     * <p>Shared capabilities are published during the capability handshake when peer
+     * ensembles connect. Populated via
+     * {@link EnsembleBuilder#shareTask(String, Task)} and
+     * {@link EnsembleBuilder#shareTool(String, AgentTool)}.
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we
+     * provide custom {@code shareTask()} and {@code shareTool()} methods in the custom
+     * {@link EnsembleBuilder}. Managed identically to {@link #phases}.
+     *
+     * @see SharedCapability
+     */
+    private final List<SharedCapability> sharedCapabilities;
+
+    /**
+     * Internal lifecycle state for long-running mode.
+     *
+     * <p>Not exposed via the builder; managed internally by {@link #start(int)} and
+     * {@link #stop()}. The {@code @Getter(AccessLevel.NONE)} annotation prevents Lombok
+     * from generating a getter; use {@link #getLifecycleState()} instead.
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final AtomicReference<EnsembleLifecycleState> lifecycleStateRef = new AtomicReference<>();
+
+    /**
+     * Registered JVM shutdown hook thread for this ensemble, stored so it can be
+     * deregistered by {@link #stop()} to avoid accumulation across restart cycles.
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final AtomicReference<Thread> shutdownHookRef = new AtomicReference<>();
+
+    // ========================
+    // Lifecycle (long-running mode)
+    // ========================
+
+    /**
+     * Returns the current lifecycle state, or {@code null} if the ensemble has never
+     * been started (one-shot mode).
+     *
+     * @return the current lifecycle state, or null for one-shot ensembles
+     */
+    public EnsembleLifecycleState getLifecycleState() {
+        return lifecycleStateRef.get();
+    }
+
+    /**
+     * Start this ensemble in long-running mode.
+     *
+     * <p>The ensemble transitions through {@link EnsembleLifecycleState#STARTING} to
+     * {@link EnsembleLifecycleState#READY}. Shared capabilities are published for peer
+     * discovery, and any configured dashboard is started.
+     *
+     * <p>A dashboard must be configured at build time via
+     * {@link EnsembleBuilder#webDashboard(EnsembleDashboard)}.
+     * If no dashboard is configured, {@code start()} throws {@link IllegalStateException}
+     * with guidance on how to add one.
+     *
+     * <p>The {@code port} argument is advisory: it is included in error messages and logs
+     * to help identify which port is expected. The configured {@link EnsembleDashboard}
+     * is responsible for actually binding to the port -- it uses the port set on its own
+     * builder (e.g., {@code WebDashboard.builder().port(7329).build()}).
+     *
+     * <p>Calling {@code start()} on an already-started ensemble (state is {@code STARTING}
+     * or {@code READY}) is a no-op (idempotent).
+     *
+     * <p>A JVM shutdown hook is registered to trigger {@link #stop()} on SIGTERM or
+     * normal shutdown. Any previously registered hook from an earlier {@code start()} call
+     * is deregistered first to avoid accumulation.
+     *
+     * @param port advisory port hint used in error messages and logging
+     * @throws ValidationException     if the ensemble configuration is invalid
+     * @throws AgentEnsembleException  if the server cannot be started
+     */
+    public void start(int port) {
+        EnsembleLifecycleState current = lifecycleStateRef.get();
+        if (current == EnsembleLifecycleState.STARTING || current == EnsembleLifecycleState.READY) {
+            return; // idempotent
+        }
+
+        new EnsembleValidator(this).validate();
+
+        // Atomically transition to STARTING; if another thread started concurrently, this is a no-op.
+        if (!lifecycleStateRef.compareAndSet(current, EnsembleLifecycleState.STARTING)) {
+            return;
+        }
+
+        try {
+            if (dashboard == null) {
+                throw new IllegalStateException("Ensemble.start(int) requires a dashboard. Configure one via "
+                        + "Ensemble.builder().webDashboard(WebDashboard.builder().port("
+                        + port
+                        + ").build()).");
+            }
+            if (!dashboard.isRunning()) {
+                dashboard.start();
+            }
+
+            // Use CAS to transition STARTING -> READY. If stop() was called concurrently
+            // (which set the state to DRAINING), this returns false and we abort cleanly.
+            if (!lifecycleStateRef.compareAndSet(EnsembleLifecycleState.STARTING, EnsembleLifecycleState.READY)) {
+                log.warn("Ensemble start aborted: stop() was called concurrently during startup");
+                return;
+            }
+            log.info("Ensemble started in long-running mode on port {}", port);
+
+            // Register shutdown hook, deregistering any previous one to avoid accumulation
+            // when the ensemble is stopped and restarted within the same JVM.
+            Thread oldHook = shutdownHookRef.getAndSet(null);
+            if (oldHook != null) {
+                try {
+                    Runtime.getRuntime().removeShutdownHook(oldHook);
+                } catch (IllegalStateException ignored) {
+                    // JVM is already shutting down; ignore
+                }
+            }
+            Thread newHook = new Thread(
+                    () -> {
+                        if (getLifecycleState() == EnsembleLifecycleState.READY) {
+                            stop();
+                        }
+                    },
+                    "ensemble-shutdown-hook");
+            shutdownHookRef.set(newHook);
+            Runtime.getRuntime().addShutdownHook(newHook);
+        } catch (IllegalStateException e) {
+            lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
+            throw e;
+        } catch (Exception e) {
+            lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
+            throw new AgentEnsembleException("Failed to start ensemble on port " + port, e);
+        }
+    }
+
+    /**
+     * Initiate shutdown of a long-running ensemble.
+     *
+     * <p>The ensemble transitions to {@link EnsembleLifecycleState#DRAINING}, stops the
+     * configured dashboard if this ensemble owns its lifecycle, and then transitions to
+     * {@link EnsembleLifecycleState#STOPPED}.
+     *
+     * <p>Note: the {@link #drainTimeout} field is retained for future use when in-flight
+     * task draining is implemented. The current implementation stops the WebSocket server
+     * immediately without waiting for in-flight work to complete.
+     *
+     * <p>Calling {@code stop()} on an already-stopped or never-started ensemble is a
+     * no-op (idempotent).
+     */
+    public void stop() {
+        EnsembleLifecycleState current = lifecycleStateRef.get();
+        if (current == null
+                || current == EnsembleLifecycleState.DRAINING
+                || current == EnsembleLifecycleState.STOPPED) {
+            return; // idempotent
+        }
+
+        lifecycleStateRef.set(EnsembleLifecycleState.DRAINING);
+        log.info("Ensemble draining (timeout: {})", drainTimeout);
+
+        // Remove the registered shutdown hook (if any) to prevent it from firing during
+        // normal JVM shutdown after an explicit stop() call, and to avoid accumulation if
+        // the ensemble is started again in the same JVM.
+        Thread hook = shutdownHookRef.getAndSet(null);
+        if (hook != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException ignored) {
+                // JVM is already shutting down; the hook will fire naturally
+            }
+        }
+
+        try {
+            // Only stop the dashboard when this ensemble owns the lifecycle. An externally-
+            // managed dashboard (ownsDashboardLifecycle=false) must not be stopped here, since
+            // the caller retains lifecycle responsibility -- same contract as one-shot run().
+            if (ownsDashboardLifecycle && dashboard != null && dashboard.isRunning()) {
+                dashboard.stop();
+            }
+        } finally {
+            lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
+            log.info("Ensemble stopped");
+        }
+    }
 
     // ========================
     // Static zero-ceremony factory
@@ -1421,6 +1629,55 @@ public class Ensemble {
         // an empty immutable list; each phase() call creates a new immutable copy so that
         // Lombok's generated build() always receives an immutable list.
         private List<Phase> phases = List.of();
+
+        // Shared capabilities accumulator (same pattern as phases).
+        private List<SharedCapability> sharedCapabilities = List.of();
+
+        /**
+         * Share a named task with the network.
+         *
+         * <p>Other ensembles can discover and delegate work to this task via
+         * {@code NetworkTask.from(ensembleName, taskName)}.
+         *
+         * @param name unique name for this shared task
+         * @param task the task definition to share
+         * @return this builder
+         */
+        public EnsembleBuilder shareTask(String name, Task task) {
+            Objects.requireNonNull(name, "Shared task name must not be null");
+            Objects.requireNonNull(task, "Shared task must not be null");
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("Shared task name must not be blank");
+            }
+            String description = task.getDescription() != null ? task.getDescription() : "";
+            List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
+            updated.add(new SharedCapability(name, description, SharedCapabilityType.TASK));
+            this.sharedCapabilities = List.copyOf(updated);
+            return this;
+        }
+
+        /**
+         * Share a named tool with the network.
+         *
+         * <p>Other ensembles' agents can invoke this tool remotely via
+         * {@code NetworkTool.from(ensembleName, toolName)}.
+         *
+         * @param name unique name for this shared tool
+         * @param tool the tool to share
+         * @return this builder
+         */
+        public EnsembleBuilder shareTool(String name, AgentTool tool) {
+            Objects.requireNonNull(name, "Shared tool name must not be null");
+            Objects.requireNonNull(tool, "Shared tool must not be null");
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("Shared tool name must not be blank");
+            }
+            String description = tool.description() != null ? tool.description() : "";
+            List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
+            updated.add(new SharedCapability(name, description, SharedCapabilityType.TOOL));
+            this.sharedCapabilities = List.copyOf(updated);
+            return this;
+        }
 
         /**
          * Add a single phase to this ensemble.
