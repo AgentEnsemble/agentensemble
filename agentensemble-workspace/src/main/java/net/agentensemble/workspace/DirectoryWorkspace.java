@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>{@link #close()} recursively deletes the temporary directory when {@code autoCleanup} is
  * enabled (the default). This class is thread-safe.
  */
+@SuppressWarnings("PMD.GuardLogStatement") // SLF4J parameterized logging already defers formatting
 public final class DirectoryWorkspace implements Workspace {
 
     private static final Logger LOG = LoggerFactory.getLogger(DirectoryWorkspace.class);

@@ -36,6 +36,8 @@ import org.slf4j.LoggerFactory;
  * <p>This class is thread-safe. Multiple tasks running in parallel each get their own
  * independent workspace.
  */
+@SuppressWarnings({"PMD.CloseResource", "PMD.GuardLogStatement"
+}) // Lifecycle managed via events; SLF4J defers formatting
 public final class WorkspaceLifecycleListener implements EnsembleListener {
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkspaceLifecycleListener.class);

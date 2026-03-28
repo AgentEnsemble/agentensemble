@@ -17,6 +17,7 @@ import net.agentensemble.task.TaskOutput;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings("PMD.CloseResource") // Workspaces are mocks; lifecycle managed by listener under test
 class WorkspaceLifecycleListenerTest {
 
     private WorkspaceProvider provider;

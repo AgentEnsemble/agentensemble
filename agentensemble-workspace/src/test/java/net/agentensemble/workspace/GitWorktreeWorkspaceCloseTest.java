@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>Uses a bogus repoRoot to exercise the warn/catch paths that occur when
  * git commands fail during cleanup.
  */
+@SuppressWarnings("PMD.CloseResource") // Tests explicitly verify close() behavior
 class GitWorktreeWorkspaceCloseTest {
 
     @Test

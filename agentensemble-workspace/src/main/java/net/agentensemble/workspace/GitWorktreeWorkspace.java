@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>This class is thread-safe. {@link #close()} is idempotent and never throws.
  */
+@SuppressWarnings("PMD.GuardLogStatement") // SLF4J parameterized logging already defers formatting
 final class GitWorktreeWorkspace implements Workspace {
 
     private static final Logger LOG = LoggerFactory.getLogger(GitWorktreeWorkspace.class);
