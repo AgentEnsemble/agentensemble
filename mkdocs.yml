@@ -100,6 +100,8 @@ nav:
     - Task Reflection: guides/task-reflection.md
     - TOON Context Format: guides/toon-format.md
     - Long-Running Ensembles: guides/long-running-ensembles.md
+    - Cross-Ensemble Delegation: guides/cross-ensemble-delegation.md
+    - Network Testing: guides/network-testing.md
   - Reference:
     - Agent Configuration: reference/agent-configuration.md
     - Task Configuration: reference/task-configuration.md
@@ -128,6 +130,7 @@ nav:
     - Typed Tool Inputs: examples/typed-tools.md
     - TOON Format: examples/toon-format.md
     - Long-Running Ensemble: examples/long-running-ensemble.md
+    - Cross-Ensemble Delegation: examples/cross-ensemble-delegation.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
     - Typed Tool Inputs: migration/typed-tool-inputs.md
