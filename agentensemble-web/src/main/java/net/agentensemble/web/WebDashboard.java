@@ -212,13 +212,14 @@ public final class WebDashboard implements EnsembleDashboard {
         server.start(port, host);
 
         // Route incoming client messages to the appropriate handler.
-        server.setClientMessageHandler(msg -> {
+        // Use the session-aware handler to enable targeted responses for task/tool requests.
+        server.setSessionAwareClientMessageHandler((sessionId, msg) -> {
             if (msg instanceof ReviewDecisionMessage rdm) {
                 connectionManager.resolveReview(rdm.reviewId(), serializer.toJson(rdm));
             } else if (msg instanceof TaskRequestMessage trm) {
-                handleTaskRequest(trm);
+                handleTaskRequest(sessionId, trm);
             } else if (msg instanceof ToolRequestMessage trm) {
-                handleToolRequest(trm);
+                handleToolRequest(sessionId, trm);
             }
         });
 
@@ -250,9 +251,13 @@ public final class WebDashboard implements EnsembleDashboard {
         server.stop();
         if (wasRunning) {
             heartbeatScheduler.shutdownNow();
+            requestExecutor.shutdownNow();
             try {
                 if (!heartbeatScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
                     log.warn("Heartbeat scheduler did not terminate within 2 seconds");
+                }
+                if (!requestExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    log.warn("Request executor did not terminate within 2 seconds");
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -448,34 +453,37 @@ public final class WebDashboard implements EnsembleDashboard {
         this.requestHandler = handler;
     }
 
-    private void handleTaskRequest(TaskRequestMessage msg) {
+    private void handleTaskRequest(String sessionId, TaskRequestMessage msg) {
         RequestHandler handler = this.requestHandler;
         if (handler == null) {
             log.warn("Received task_request but no RequestHandler is configured");
             return;
         }
 
-        // Send accepted acknowledgment immediately
-        try {
-            TaskAcceptedMessage accepted = new TaskAcceptedMessage(msg.requestId(), 0, null);
-            connectionManager.broadcast(serializer.toJson(accepted));
-        } catch (Exception e) {
-            log.warn("Failed to send task_accepted for requestId {}: {}", msg.requestId(), e.getMessage());
-        }
-
         // Execute asynchronously on virtual thread
         requestExecutor.submit(() -> {
             try {
                 RequestHandler.TaskResult result = handler.handleTaskRequest(msg.task(), msg.context());
+
+                // Only send task_accepted if the request was actually accepted (not rejected)
+                if (!"REJECTED".equals(result.status())) {
+                    try {
+                        TaskAcceptedMessage accepted = new TaskAcceptedMessage(msg.requestId(), 0, null);
+                        connectionManager.send(sessionId, serializer.toJson(accepted));
+                    } catch (Exception e) {
+                        log.warn("Failed to send task_accepted for requestId {}: {}", msg.requestId(), e.getMessage());
+                    }
+                }
+
                 TaskResponseMessage response = new TaskResponseMessage(
                         msg.requestId(), result.status(), result.result(), result.error(), result.durationMs());
-                connectionManager.broadcast(serializer.toJson(response));
+                connectionManager.send(sessionId, serializer.toJson(response));
             } catch (Exception e) {
                 log.warn("Failed to handle task_request for '{}': {}", msg.task(), e.getMessage(), e);
                 try {
                     TaskResponseMessage errorResponse =
                             new TaskResponseMessage(msg.requestId(), "FAILED", null, e.getMessage(), null);
-                    connectionManager.broadcast(serializer.toJson(errorResponse));
+                    connectionManager.send(sessionId, serializer.toJson(errorResponse));
                 } catch (Exception ex) {
                     log.warn("Failed to send error response: {}", ex.getMessage());
                 }
@@ -483,7 +491,7 @@ public final class WebDashboard implements EnsembleDashboard {
         });
     }
 
-    private void handleToolRequest(ToolRequestMessage msg) {
+    private void handleToolRequest(String sessionId, ToolRequestMessage msg) {
         RequestHandler handler = this.requestHandler;
         if (handler == null) {
             log.warn("Received tool_request but no RequestHandler is configured");
@@ -496,13 +504,13 @@ public final class WebDashboard implements EnsembleDashboard {
                 RequestHandler.ToolResult result = handler.handleToolRequest(msg.tool(), msg.input());
                 ToolResponseMessage response = new ToolResponseMessage(
                         msg.requestId(), result.status(), result.result(), result.error(), result.durationMs());
-                connectionManager.broadcast(serializer.toJson(response));
+                connectionManager.send(sessionId, serializer.toJson(response));
             } catch (Exception e) {
                 log.warn("Failed to handle tool_request for '{}': {}", msg.tool(), e.getMessage(), e);
                 try {
                     ToolResponseMessage errorResponse =
                             new ToolResponseMessage(msg.requestId(), "FAILED", null, e.getMessage(), null);
-                    connectionManager.broadcast(serializer.toJson(errorResponse));
+                    connectionManager.send(sessionId, serializer.toJson(errorResponse));
                 } catch (Exception ex) {
                     log.warn("Failed to send error response: {}", ex.getMessage());
                 }

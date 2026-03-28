@@ -222,4 +222,205 @@ class WebDashboardRequestHandlingTest {
 
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
     }
+
+    @Test
+    void taskRequest_rejected_doesNotSendTaskAccepted() throws Exception {
+        dashboard.setRequestHandler(new RequestHandler() {
+            @Override
+            public TaskResult handleTaskRequest(String taskName, String context) {
+                return new TaskResult("REJECTED", null, "Ensemble is DRAINING", 0);
+            }
+
+            @Override
+            public ToolResult handleToolRequest(String toolName, String input) {
+                return new ToolResult("COMPLETED", "done", null, 100);
+            }
+        });
+
+        int port = dashboard.actualPort();
+
+        CountDownLatch gotResponse = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+        List<String> received = new CopyOnWriteArrayList<>();
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("\"type\":\"task_response\"")) {
+                                gotResponse.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+
+        String taskRequestJson = "{\"type\":\"task_request\",\"requestId\":\"req-rejected\",\"from\":\"caller\","
+                + "\"task\":\"prepare-meal\",\"context\":\"make a salad\"}";
+        ws.sendText(taskRequestJson, true).get(5, TimeUnit.SECONDS);
+
+        assertThat(gotResponse.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // Rejected requests should NOT receive task_accepted
+        assertThat(received).noneMatch(m -> m.contains("\"type\":\"task_accepted\""));
+
+        // Should receive task_response with REJECTED status
+        assertThat(received)
+                .anyMatch(m -> m.contains("\"type\":\"task_response\"")
+                        && m.contains("REJECTED")
+                        && m.contains("Ensemble is DRAINING"));
+
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void taskRequest_handlerThrows_sendsErrorResponse() throws Exception {
+        dashboard.setRequestHandler(new RequestHandler() {
+            @Override
+            public TaskResult handleTaskRequest(String taskName, String context) {
+                throw new RuntimeException("handler exploded");
+            }
+
+            @Override
+            public ToolResult handleToolRequest(String toolName, String input) {
+                return new ToolResult("COMPLETED", "done", null, 100);
+            }
+        });
+
+        int port = dashboard.actualPort();
+
+        CountDownLatch gotResponse = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+        List<String> received = new CopyOnWriteArrayList<>();
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("\"type\":\"task_response\"")) {
+                                gotResponse.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+
+        String taskRequestJson = "{\"type\":\"task_request\",\"requestId\":\"req-err\",\"from\":\"caller\","
+                + "\"task\":\"prepare-meal\",\"context\":\"boom\"}";
+        ws.sendText(taskRequestJson, true).get(5, TimeUnit.SECONDS);
+
+        assertThat(gotResponse.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(received)
+                .anyMatch(m -> m.contains("\"type\":\"task_response\"")
+                        && m.contains("FAILED")
+                        && m.contains("handler exploded"));
+
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void toolRequest_handlerThrows_sendsErrorResponse() throws Exception {
+        dashboard.setRequestHandler(new RequestHandler() {
+            @Override
+            public TaskResult handleTaskRequest(String taskName, String context) {
+                return new TaskResult("COMPLETED", "done", null, 100);
+            }
+
+            @Override
+            public ToolResult handleToolRequest(String toolName, String input) {
+                throw new RuntimeException("tool handler exploded");
+            }
+        });
+
+        int port = dashboard.actualPort();
+
+        CountDownLatch gotResponse = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+        List<String> received = new CopyOnWriteArrayList<>();
+
+        HttpClient client = HttpClient.newHttpClient();
+        WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(10);
+                    }
+
+                    @Override
+                    public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        if (last) {
+                            String msg = data.toString();
+                            received.add(msg);
+                            if (msg.contains("\"type\":\"tool_response\"")) {
+                                gotResponse.countDown();
+                            }
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+
+        String toolRequestJson = "{\"type\":\"tool_request\",\"requestId\":\"req-terr\",\"from\":\"caller\","
+                + "\"tool\":\"check-inventory\",\"input\":\"boom\"}";
+        ws.sendText(toolRequestJson, true).get(5, TimeUnit.SECONDS);
+
+        assertThat(gotResponse.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(received)
+                .anyMatch(m -> m.contains("\"type\":\"tool_response\"")
+                        && m.contains("FAILED")
+                        && m.contains("tool handler exploded"));
+
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void stop_shutsDownRequestExecutor() throws Exception {
+        dashboard.setRequestHandler(new RequestHandler() {
+            @Override
+            public TaskResult handleTaskRequest(String taskName, String context) {
+                return new TaskResult("COMPLETED", "done", null, 100);
+            }
+
+            @Override
+            public ToolResult handleToolRequest(String toolName, String input) {
+                return new ToolResult("COMPLETED", "done", null, 100);
+            }
+        });
+
+        assertThat(dashboard.isRunning()).isTrue();
+        dashboard.stop();
+        assertThat(dashboard.isRunning()).isFalse();
+    }
 }

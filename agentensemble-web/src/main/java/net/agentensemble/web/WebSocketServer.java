@@ -60,6 +60,12 @@ class WebSocketServer {
     /** Optional handler called for every parsed client message (e.g. review decisions). */
     private volatile Consumer<ClientMessage> clientMessageHandler;
 
+    /**
+     * Optional handler that receives client messages along with the session ID of the sender.
+     * Takes precedence over {@link #clientMessageHandler} when set.
+     */
+    private volatile java.util.function.BiConsumer<String, ClientMessage> sessionAwareClientMessageHandler;
+
     /** Supplier for the ensemble's lifecycle state (for health endpoints). Null in one-shot mode. */
     private volatile Supplier<EnsembleLifecycleState> lifecycleStateProvider;
 
@@ -99,6 +105,8 @@ class WebSocketServer {
         }
 
         final String boundHost = host;
+        final boolean isLocalBinding =
+                "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
         app = Javalin.create(config -> {
             config.startup.showJavalinBanner = false;
             // Static files from viz dist embedded in the JAR under /web/
@@ -163,11 +171,25 @@ class WebSocketServer {
             });
 
             config.routes.post("/api/lifecycle/drain", ctx -> {
+                // Restrict lifecycle endpoints to localhost when bound to a local interface
+                if (isLocalBinding) {
+                    String remoteAddr = ctx.req().getRemoteAddr();
+                    boolean isLocalClient = "127.0.0.1".equals(remoteAddr)
+                            || "0:0:0:0:0:0:0:1".equals(remoteAddr)
+                            || "::1".equals(remoteAddr);
+                    if (!isLocalClient) {
+                        ctx.status(403);
+                        ctx.json(Map.of("error", "Lifecycle endpoints restricted to localhost"));
+                        return;
+                    }
+                }
                 Runnable action = drainAction;
                 if (action != null) {
-                    action.run();
+                    // Respond before triggering drain so the HTTP response is written
+                    // before the server is potentially torn down by the drain action.
                     ctx.status(200);
                     ctx.json(Map.of("status", "DRAINING"));
+                    Thread.startVirtualThread(action);
                 } else {
                     ctx.status(404);
                     ctx.json(Map.of("error", "Drain not available (ensemble not in long-running mode)"));
@@ -244,6 +266,17 @@ class WebSocketServer {
      */
     void setClientMessageHandler(Consumer<ClientMessage> handler) {
         this.clientMessageHandler = handler;
+    }
+
+    /**
+     * Sets a session-aware handler to be called for every parsed {@link ClientMessage}.
+     * The handler receives the WebSocket session ID along with the message, enabling
+     * targeted responses via {@link ConnectionManager#send(String, String)}.
+     *
+     * @param handler the session-aware message handler; may be null to clear
+     */
+    void setSessionAwareClientMessageHandler(java.util.function.BiConsumer<String, ClientMessage> handler) {
+        this.sessionAwareClientMessageHandler = handler;
     }
 
     /**
@@ -329,7 +362,19 @@ class WebSocketServer {
             ctx.send(pong);
             return;
         }
-        // Forward to any registered handler (e.g. WebReviewHandler for review decisions)
+
+        // Try session-aware handler first (provides session ID for targeted responses)
+        java.util.function.BiConsumer<String, ClientMessage> sessionHandler = this.sessionAwareClientMessageHandler;
+        if (sessionHandler != null) {
+            try {
+                sessionHandler.accept(ctx.sessionId(), message);
+            } catch (Exception e) {
+                log.warn("Session-aware client message handler threw an exception", e);
+            }
+            return;
+        }
+
+        // Fall back to legacy handler (e.g. WebReviewHandler for review decisions)
         Consumer<ClientMessage> handler = this.clientMessageHandler;
         if (handler != null) {
             try {

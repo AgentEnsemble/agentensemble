@@ -196,7 +196,7 @@ NetworkConfig config = NetworkConfig.builder()
     .build();
 
 try (NetworkClientRegistry registry = new NetworkClientRegistry(config)) {
-    Ensemble roomService = Ensemble.builder()
+    EnsembleOutput result = Ensemble.builder()
         .chatLanguageModel(model)
         .task(Task.builder()
             .description("Handle room service request")

@@ -30,11 +30,12 @@ import net.agentensemble.web.protocol.TaskResponseMessage;
  * <h2>Usage</h2>
  * <pre>
  * // Production: connect to a real remote ensemble
+ * NetworkClientRegistry registry = new NetworkClientRegistry(config);
  * Ensemble roomService = Ensemble.builder()
  *     .chatLanguageModel(model)
  *     .task(Task.builder()
  *         .description("Handle room service request")
- *         .tools(NetworkTask.from("kitchen", "prepare-meal"))
+ *         .tools(NetworkTask.from("kitchen", "prepare-meal", registry))
  *         .build())
  *     .build();
  * </pre>

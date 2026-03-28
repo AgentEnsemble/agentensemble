@@ -58,15 +58,12 @@ public class EnsembleRequestHandler implements RequestHandler {
         }
 
         try {
-            // Execute the task through the ensemble's execution pipeline
+            // Execute the original shared task through the ensemble's execution pipeline,
+            // preserving all task configuration (tools, guardrails, reviews, etc.)
             EnsembleOutput output = Ensemble.builder()
                     .chatLanguageModel(ensemble.getChatLanguageModel())
                     .agentSynthesizer(ensemble.getAgentSynthesizer())
-                    .task(Task.builder()
-                            .description(task.getDescription())
-                            .expectedOutput(task.getExpectedOutput())
-                            .handler(task.getHandler())
-                            .build())
+                    .task(task)
                     .input("context", context != null ? context : "")
                     .build()
                     .run();
@@ -88,6 +85,13 @@ public class EnsembleRequestHandler implements RequestHandler {
         if (tool == null) {
             long durationMs = Duration.between(start, Instant.now()).toMillis();
             return new ToolResult("FAILED", null, "Unknown shared tool: " + toolName, durationMs);
+        }
+
+        // Check if ensemble is draining
+        EnsembleLifecycleState state = ensemble.getLifecycleState();
+        if (state == EnsembleLifecycleState.DRAINING || state == EnsembleLifecycleState.STOPPED) {
+            long durationMs = Duration.between(start, Instant.now()).toMillis();
+            return new ToolResult("REJECTED", null, "Ensemble is " + state.name(), durationMs);
         }
 
         try {

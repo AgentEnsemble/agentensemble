@@ -178,6 +178,12 @@ public class NetworkClient implements AutoCloseable {
         private final StringBuilder buffer = new StringBuilder();
 
         @Override
+        public void onOpen(WebSocket webSocket) {
+            // Request the first message; subsequent requests are made in onText().
+            webSocket.request(1);
+        }
+
+        @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             buffer.append(data);
             if (last) {
