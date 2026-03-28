@@ -27,9 +27,19 @@ public interface RequestQueue {
 ```
 
 Provided implementations:
-- `RequestQueue.inMemory()` -- `ConcurrentLinkedQueue`, single-JVM, development only
+- `RequestQueue.inMemory()` -- FIFO `LinkedBlockingQueue`, single-JVM, development only
+- `RequestQueue.priority()` -- priority-ordered with FIFO within same level, single-JVM
+- `RequestQueue.priority(AgingPolicy)` -- priority-ordered with configurable aging
 - `RequestQueue.redis(RedisClient)` -- Redis Streams with consumer groups
 - `RequestQueue.kafka(Properties)` -- Kafka consumer groups
+
+#### Supporting types
+
+| Type | Description |
+|---|---|
+| `AgingPolicy` | Configures priority aging. `AgingPolicy.every(Duration)` promotes one level per interval. `AgingPolicy.none()` disables aging. |
+| `QueueMetrics` | Callback interface for queue depth reporting. `QueueMetrics.noOp()` discards all reports. |
+| `QueueStatus` | Queue position and estimated completion time, returned by `PriorityWorkQueue.queueStatus()`. |
 
 ### ResultStore
 
