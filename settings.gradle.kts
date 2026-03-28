@@ -39,6 +39,9 @@ include("agentensemble-web")
 // Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
 include("agentensemble-network")
 
+// Redis transport (durable queue + result store -- optional)
+include("agentensemble-transport-redis")
+
 // MCP protocol bridge (AgentTool <-> MCP)
 include("agentensemble-mcp")
 

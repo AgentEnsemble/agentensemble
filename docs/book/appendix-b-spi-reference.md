@@ -30,8 +30,8 @@ Provided implementations:
 - `RequestQueue.inMemory()` -- FIFO `LinkedBlockingQueue`, single-JVM, development only
 - `RequestQueue.priority()` -- priority-ordered with FIFO within same level, single-JVM
 - `RequestQueue.priority(AgingPolicy)` -- priority-ordered with configurable aging
-- `RequestQueue.redis(RedisClient)` -- Redis Streams with consumer groups
-- `RequestQueue.kafka(Properties)` -- Kafka consumer groups
+- `RedisRequestQueue.create(RedisClient)` -- Redis Streams with consumer groups (requires `agentensemble-transport-redis`)
+- `RequestQueue.kafka(Properties)` -- Kafka consumer groups (planned)
 
 #### Supporting types
 
@@ -62,7 +62,7 @@ public interface ResultStore {
 
 Provided implementations:
 - `ResultStore.inMemory()` -- `ConcurrentHashMap`, single-JVM, development only
-- `ResultStore.redis(RedisClient)` -- Redis with TTL and pub/sub notification
+- `RedisResultStore.create(RedisClient)` -- Redis with TTL and pub/sub notification (requires `agentensemble-transport-redis`)
 
 ### Transport
 
@@ -73,9 +73,11 @@ public interface Transport {
 
     /** Simple mode: in-process queues + direct WebSocket. No external infrastructure. */
     static Transport websocket() { ... }
+    static Transport websocket(String ensembleName) { ... }
 
     /** Durable mode: external queue + external result store. Production-grade. */
-    static Transport durable(RequestQueue queue, ResultStore store) { ... }
+    static Transport durable(String ensembleName, RequestQueue queue, ResultStore store) { ... }
+    static Transport durable(RequestQueue queue, ResultStore store) { ... }  // "default" name
 }
 ```
 
