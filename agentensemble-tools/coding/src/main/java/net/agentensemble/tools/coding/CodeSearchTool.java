@@ -169,47 +169,39 @@ public final class CodeSearchTool extends AbstractTypedAgentTool<CodeSearchInput
         return ToolResult.success(capMatches(relativized));
     }
 
-    private List<String> buildSubprocessCommand(CodeSearchInput input, Path searchRoot) {
+    /** Package-private for testing. */
+    List<String> buildSubprocessCommand(CodeSearchInput input, Path searchRoot) {
+        boolean isRg = backend == SearchBackend.RG;
         List<String> command = new ArrayList<>();
-        if (backend == SearchBackend.RG) {
-            command.add("rg");
-            command.add("-n");
-            command.add("--color=never");
-            if (input.contextLines() != null && input.contextLines() > 0) {
-                command.add("-C");
-                command.add(String.valueOf(input.contextLines()));
-            }
-            if (Boolean.TRUE.equals(input.ignoreCase())) {
-                command.add("-i");
-            }
-            if (input.glob() != null && !input.glob().isBlank()) {
-                command.add("-g");
+        command.add(isRg ? "rg" : "grep");
+        if (!isRg) {
+            command.add("-r");
+        }
+        command.add("-n");
+        command.add("--color=never");
+        if (input.contextLines() != null && input.contextLines() > 0) {
+            command.add("-C");
+            command.add(String.valueOf(input.contextLines()));
+        }
+        if (Boolean.TRUE.equals(input.ignoreCase())) {
+            command.add("-i");
+        }
+        if (input.glob() != null && !input.glob().isBlank()) {
+            command.add(isRg ? "-g" : "--include=" + input.glob());
+            if (isRg) {
                 command.add(input.glob());
             }
-            command.add("--max-count=" + MAX_MATCHES);
-            command.add(input.pattern());
-            command.add(searchRoot.toString());
-        } else {
-            command.add("grep");
-            command.add("-rn");
-            command.add("--color=never");
-            if (input.contextLines() != null && input.contextLines() > 0) {
-                command.add("-C");
-                command.add(String.valueOf(input.contextLines()));
-            }
-            if (Boolean.TRUE.equals(input.ignoreCase())) {
-                command.add("-i");
-            }
-            if (input.glob() != null && !input.glob().isBlank()) {
-                command.add("--include=" + input.glob());
-            }
-            command.add(input.pattern());
-            command.add(searchRoot.toString());
         }
+        if (isRg) {
+            command.add("--max-count=" + MAX_MATCHES);
+        }
+        command.add(input.pattern());
+        command.add(searchRoot.toString());
         return command;
     }
 
-    private String relativizePaths(String output, Path searchRoot) {
+    /** Package-private for testing. */
+    String relativizePaths(String output, Path searchRoot) {
         String basePath = sandbox.baseDir().toString();
         String unixPrefix = basePath + "/";
         String windowsPrefix = basePath + "\\";
@@ -233,7 +225,8 @@ public final class CodeSearchTool extends AbstractTypedAgentTool<CodeSearchInput
         return sb.toString();
     }
 
-    private String capMatches(String output) {
+    /** Package-private for testing. */
+    String capMatches(String output) {
         String[] lines = output.split("\n");
         if (lines.length <= MAX_MATCHES) {
             return output;

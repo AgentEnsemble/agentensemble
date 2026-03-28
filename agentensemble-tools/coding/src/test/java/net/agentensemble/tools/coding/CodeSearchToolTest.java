@@ -358,6 +358,105 @@ class CodeSearchToolTest {
         assertThat(result.isSuccess()).isTrue();
     }
 
+    // --- buildSubprocessCommand unit tests (no subprocess needed) ---
+
+    @Test
+    void buildSubprocessCommand_grepBackend_basicCommand() {
+        var grepTool = CodeSearchTool.withBackend(tempDir, CodeSearchTool.SearchBackend.GREP);
+        var input = new CodeSearchInput("pattern", null, null, null, null);
+
+        var command = grepTool.buildSubprocessCommand(input, tempDir);
+
+        assertThat(command.getFirst()).isEqualTo("grep");
+        assertThat(command).contains("-r", "-n", "--color=never", "pattern");
+    }
+
+    @Test
+    void buildSubprocessCommand_rgBackend_basicCommand() {
+        var rgTool = CodeSearchTool.withBackend(tempDir, CodeSearchTool.SearchBackend.RG);
+        var input = new CodeSearchInput("pattern", null, null, null, null);
+
+        var command = rgTool.buildSubprocessCommand(input, tempDir);
+
+        assertThat(command.getFirst()).isEqualTo("rg");
+        assertThat(command).contains("-n", "--color=never", "pattern");
+        assertThat(command).doesNotContain("-r");
+    }
+
+    @Test
+    void buildSubprocessCommand_withAllOptions_grepBackend() {
+        var grepTool = CodeSearchTool.withBackend(tempDir, CodeSearchTool.SearchBackend.GREP);
+        var input = new CodeSearchInput("pattern", "*.java", 3, true, null);
+
+        var command = grepTool.buildSubprocessCommand(input, tempDir);
+
+        assertThat(command).contains("-C", "3", "-i", "--include=*.java");
+    }
+
+    @Test
+    void buildSubprocessCommand_withAllOptions_rgBackend() {
+        var rgTool = CodeSearchTool.withBackend(tempDir, CodeSearchTool.SearchBackend.RG);
+        var input = new CodeSearchInput("pattern", "*.java", 3, true, null);
+
+        var command = rgTool.buildSubprocessCommand(input, tempDir);
+
+        assertThat(command).contains("-C", "3", "-i", "-g", "*.java");
+        assertThat(command.stream().anyMatch(s -> s.startsWith("--max-count="))).isTrue();
+    }
+
+    // --- relativizePaths unit tests ---
+
+    @Test
+    void relativizePaths_stripsBasePathPrefix() {
+        String basePath = tempDir.toString();
+        String output = basePath + "/src/Foo.java:1:hello\n" + basePath + "/src/Bar.java:2:world";
+
+        String result = tool.relativizePaths(output, tempDir);
+
+        assertThat(result).isEqualTo("src/Foo.java:1:hello\nsrc/Bar.java:2:world");
+    }
+
+    @Test
+    void relativizePaths_preservesContentContainingBasePath() {
+        String basePath = tempDir.toString();
+        // Line content contains the base path but the line doesn't start with it
+        String output = "src/Foo.java:1:path is " + basePath + "/other";
+
+        String result = tool.relativizePaths(output, tempDir);
+
+        // Should NOT strip the base path from inside the content
+        assertThat(result).contains(basePath);
+    }
+
+    // --- capMatches unit tests ---
+
+    @Test
+    void capMatches_underLimit_returnsUnchanged() {
+        String output = "line1\nline2\nline3";
+
+        String result = tool.capMatches(output);
+
+        assertThat(result).isEqualTo(output);
+    }
+
+    @Test
+    void capMatches_overLimit_truncatesWithMessage() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 150; i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append("line").append(i);
+        }
+
+        String result = tool.capMatches(sb.toString());
+
+        String[] lines = result.split("\n");
+        // MAX_MATCHES lines + 1 truncation message line
+        assertThat(lines).hasSize(CodeSearchTool.MAX_MATCHES + 1);
+        assertThat(result).contains("capped at");
+    }
+
     // --- subprocess backend tests (grep and rg) ---
 
     @Nested

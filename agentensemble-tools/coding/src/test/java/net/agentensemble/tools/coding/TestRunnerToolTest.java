@@ -239,7 +239,7 @@ class TestRunnerToolTest {
         var timedTool =
                 TestRunnerTool.builder(tempDir).timeout(Duration.ofMillis(200)).build();
 
-        var result = timedTool.execute("{\"command\": \"sleep 60\"}");
+        var result = timedTool.execute("{\"command\": \"sleep 2\"}");
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("timed out");

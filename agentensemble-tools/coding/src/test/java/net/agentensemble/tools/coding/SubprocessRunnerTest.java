@@ -72,7 +72,7 @@ class SubprocessRunnerTest {
     void run_timeout_returnsNegativeOneExitCode() throws IOException, InterruptedException {
         assumeTrue(shellAvailable, "Shell not available");
 
-        var result = SubprocessRunner.run(List.of("sh", "-c", "sleep 60"), tempDir, Duration.ofMillis(200), LOG);
+        var result = SubprocessRunner.run(List.of("sh", "-c", "sleep 2"), tempDir, Duration.ofMillis(200), LOG);
 
         assertThat(result.exitCode()).isEqualTo(-1);
         assertThat(result.stderr()).containsIgnoringCase("timed out");
