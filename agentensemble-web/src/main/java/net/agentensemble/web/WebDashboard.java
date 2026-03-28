@@ -4,12 +4,16 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
+import net.agentensemble.dashboard.RequestHandler;
+import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.trace.export.ExecutionTraceExporter;
@@ -18,6 +22,11 @@ import net.agentensemble.web.protocol.EnsembleCompletedMessage;
 import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ReviewDecisionMessage;
+import net.agentensemble.web.protocol.TaskAcceptedMessage;
+import net.agentensemble.web.protocol.TaskRequestMessage;
+import net.agentensemble.web.protocol.TaskResponseMessage;
+import net.agentensemble.web.protocol.ToolRequestMessage;
+import net.agentensemble.web.protocol.ToolResponseMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -129,6 +138,12 @@ public final class WebDashboard implements EnsembleDashboard {
 
     private final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
 
+    /** Request handler for incoming cross-ensemble work requests. Set via setRequestHandler(). */
+    private volatile RequestHandler requestHandler;
+
+    /** Virtual-thread executor for processing incoming work requests asynchronously. */
+    private final ExecutorService requestExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     private WebDashboard(Builder builder) {
         this.port = builder.port;
         this.host = builder.host;
@@ -196,11 +211,14 @@ public final class WebDashboard implements EnsembleDashboard {
 
         server.start(port, host);
 
-        // Route incoming ReviewDecisionMessage messages to the ConnectionManager so
-        // that pending review futures are resolved.
+        // Route incoming client messages to the appropriate handler.
         server.setClientMessageHandler(msg -> {
             if (msg instanceof ReviewDecisionMessage rdm) {
                 connectionManager.resolveReview(rdm.reviewId(), serializer.toJson(rdm));
+            } else if (msg instanceof TaskRequestMessage trm) {
+                handleTaskRequest(trm);
+            } else if (msg instanceof ToolRequestMessage trm) {
+                handleToolRequest(trm);
             }
         });
 
@@ -411,6 +429,113 @@ public final class WebDashboard implements EnsembleDashboard {
     @Override
     public ExecutionTraceExporter traceExporter() {
         return configuredTraceExporter;
+    }
+
+    // ========================
+    // Request handler (EN-007: Incoming work request handler)
+    // ========================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Stores the request handler so that incoming {@link TaskRequestMessage} and
+     * {@link ToolRequestMessage} messages can be dispatched to the ensemble's shared
+     * tasks and tools.
+     */
+    @Override
+    public void setRequestHandler(RequestHandler handler) {
+        Objects.requireNonNull(handler, "handler must not be null");
+        this.requestHandler = handler;
+    }
+
+    private void handleTaskRequest(TaskRequestMessage msg) {
+        RequestHandler handler = this.requestHandler;
+        if (handler == null) {
+            log.warn("Received task_request but no RequestHandler is configured");
+            return;
+        }
+
+        // Send accepted acknowledgment immediately
+        try {
+            TaskAcceptedMessage accepted = new TaskAcceptedMessage(msg.requestId(), 0, null);
+            connectionManager.broadcast(serializer.toJson(accepted));
+        } catch (Exception e) {
+            log.warn("Failed to send task_accepted for requestId {}: {}", msg.requestId(), e.getMessage());
+        }
+
+        // Execute asynchronously on virtual thread
+        requestExecutor.submit(() -> {
+            try {
+                RequestHandler.TaskResult result = handler.handleTaskRequest(msg.task(), msg.context());
+                TaskResponseMessage response = new TaskResponseMessage(
+                        msg.requestId(), result.status(), result.result(), result.error(), result.durationMs());
+                connectionManager.broadcast(serializer.toJson(response));
+            } catch (Exception e) {
+                log.warn("Failed to handle task_request for '{}': {}", msg.task(), e.getMessage(), e);
+                try {
+                    TaskResponseMessage errorResponse =
+                            new TaskResponseMessage(msg.requestId(), "FAILED", null, e.getMessage(), null);
+                    connectionManager.broadcast(serializer.toJson(errorResponse));
+                } catch (Exception ex) {
+                    log.warn("Failed to send error response: {}", ex.getMessage());
+                }
+            }
+        });
+    }
+
+    private void handleToolRequest(ToolRequestMessage msg) {
+        RequestHandler handler = this.requestHandler;
+        if (handler == null) {
+            log.warn("Received tool_request but no RequestHandler is configured");
+            return;
+        }
+
+        // Execute asynchronously on virtual thread
+        requestExecutor.submit(() -> {
+            try {
+                RequestHandler.ToolResult result = handler.handleToolRequest(msg.tool(), msg.input());
+                ToolResponseMessage response = new ToolResponseMessage(
+                        msg.requestId(), result.status(), result.result(), result.error(), result.durationMs());
+                connectionManager.broadcast(serializer.toJson(response));
+            } catch (Exception e) {
+                log.warn("Failed to handle tool_request for '{}': {}", msg.tool(), e.getMessage(), e);
+                try {
+                    ToolResponseMessage errorResponse =
+                            new ToolResponseMessage(msg.requestId(), "FAILED", null, e.getMessage(), null);
+                    connectionManager.broadcast(serializer.toJson(errorResponse));
+                } catch (Exception ex) {
+                    log.warn("Failed to send error response: {}", ex.getMessage());
+                }
+            }
+        });
+    }
+
+    // ========================
+    // Lifecycle state provider and drain action (EN-008: K8s health endpoints)
+    // ========================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Forwards the lifecycle state provider to the underlying {@link WebSocketServer}
+     * so that K8s health endpoints can report the ensemble's current state.
+     */
+    @Override
+    public void setLifecycleStateProvider(Supplier<EnsembleLifecycleState> provider) {
+        Objects.requireNonNull(provider, "provider must not be null");
+        server.setLifecycleStateProvider(provider);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Forwards the drain action to the underlying {@link WebSocketServer} so that
+     * the {@code POST /api/lifecycle/drain} endpoint can trigger ensemble shutdown.
+     */
+    @Override
+    public void setDrainAction(Runnable drainAction) {
+        Objects.requireNonNull(drainAction, "drainAction must not be null");
+        server.setDrainAction(drainAction);
     }
 
     /**

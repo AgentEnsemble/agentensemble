@@ -436,6 +436,143 @@ class ProtocolSerializationTest {
     }
 
     // ========================
+    // EN-006: Cross-ensemble protocol messages
+    // ========================
+
+    @Test
+    void taskRequestMessageRoundTrip() throws Exception {
+        TaskRequestMessage msg = new TaskRequestMessage(
+                "req-001",
+                "ensemble-alpha",
+                "prepare-meal",
+                "Make a pasta dish",
+                Priority.HIGH,
+                "PT5M",
+                new DeliverySpec(DeliveryMethod.WEBSOCKET, null),
+                new TraceContext("00-traceparent-01", null),
+                CachePolicy.USE_CACHED,
+                "cache-key-1");
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("task_request");
+        assertThat(json).contains("\"requestId\":\"req-001\"");
+        assertThat(json).contains("\"from\":\"ensemble-alpha\"");
+        assertThat(json).contains("\"task\":\"prepare-meal\"");
+
+        ClientMessage deserialized = serializer.fromJson(json, ClientMessage.class);
+        assertThat(deserialized).isInstanceOf(TaskRequestMessage.class);
+        TaskRequestMessage rt = (TaskRequestMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-001");
+        assertThat(rt.from()).isEqualTo("ensemble-alpha");
+        assertThat(rt.task()).isEqualTo("prepare-meal");
+        assertThat(rt.context()).isEqualTo("Make a pasta dish");
+        assertThat(rt.priority()).isEqualTo(Priority.HIGH);
+        assertThat(rt.deadline()).isEqualTo("PT5M");
+        assertThat(rt.cachePolicy()).isEqualTo(CachePolicy.USE_CACHED);
+    }
+
+    @Test
+    void toolRequestMessageRoundTrip() throws Exception {
+        ToolRequestMessage msg = new ToolRequestMessage(
+                "req-002",
+                "ensemble-beta",
+                "check-inventory",
+                "tomatoes",
+                new TraceContext("00-traceparent-02", "vendor=abc"));
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("tool_request");
+        assertThat(json).contains("\"requestId\":\"req-002\"");
+        assertThat(json).contains("\"tool\":\"check-inventory\"");
+
+        ClientMessage deserialized = serializer.fromJson(json, ClientMessage.class);
+        assertThat(deserialized).isInstanceOf(ToolRequestMessage.class);
+        ToolRequestMessage rt = (ToolRequestMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-002");
+        assertThat(rt.from()).isEqualTo("ensemble-beta");
+        assertThat(rt.tool()).isEqualTo("check-inventory");
+        assertThat(rt.input()).isEqualTo("tomatoes");
+        assertThat(rt.traceContext().traceparent()).isEqualTo("00-traceparent-02");
+        assertThat(rt.traceContext().tracestate()).isEqualTo("vendor=abc");
+    }
+
+    @Test
+    void taskAcceptedMessageRoundTrip() throws Exception {
+        TaskAcceptedMessage msg = new TaskAcceptedMessage("req-001", 0, "PT2M");
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("task_accepted");
+        assertThat(json).contains("\"requestId\":\"req-001\"");
+        assertThat(json).contains("\"queuePosition\":0");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(TaskAcceptedMessage.class);
+        TaskAcceptedMessage rt = (TaskAcceptedMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-001");
+        assertThat(rt.queuePosition()).isEqualTo(0);
+        assertThat(rt.estimatedCompletion()).isEqualTo("PT2M");
+    }
+
+    @Test
+    void taskProgressMessageRoundTrip() throws Exception {
+        TaskProgressMessage msg = new TaskProgressMessage("req-001", "RUNNING", "Gathering ingredients", 25);
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("task_progress");
+        assertThat(json).contains("\"requestId\":\"req-001\"");
+        assertThat(json).contains("\"percentComplete\":25");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(TaskProgressMessage.class);
+        TaskProgressMessage rt = (TaskProgressMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-001");
+        assertThat(rt.status()).isEqualTo("RUNNING");
+        assertThat(rt.message()).isEqualTo("Gathering ingredients");
+        assertThat(rt.percentComplete()).isEqualTo(25);
+    }
+
+    @Test
+    void taskResponseMessageRoundTrip() throws Exception {
+        TaskResponseMessage msg = new TaskResponseMessage("req-001", "COMPLETED", "Pasta is ready", null, 45000L);
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("task_response");
+        assertThat(json).contains("\"requestId\":\"req-001\"");
+        assertThat(json).contains("\"status\":\"COMPLETED\"");
+        assertThat(json).contains("\"result\":\"Pasta is ready\"");
+        assertThat(json).contains("\"durationMs\":45000");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(TaskResponseMessage.class);
+        TaskResponseMessage rt = (TaskResponseMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-001");
+        assertThat(rt.status()).isEqualTo("COMPLETED");
+        assertThat(rt.result()).isEqualTo("Pasta is ready");
+        assertThat(rt.error()).isNull();
+        assertThat(rt.durationMs()).isEqualTo(45000L);
+    }
+
+    @Test
+    void toolResponseMessageRoundTrip() throws Exception {
+        ToolResponseMessage msg = new ToolResponseMessage("req-002", "COMPLETED", "In stock: 5kg", null, 1200L);
+        String json = serializer.toJson(msg);
+
+        assertThat(typeOf(json)).isEqualTo("tool_response");
+        assertThat(json).contains("\"requestId\":\"req-002\"");
+        assertThat(json).contains("\"status\":\"COMPLETED\"");
+        assertThat(json).contains("\"result\":\"In stock: 5kg\"");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(ToolResponseMessage.class);
+        ToolResponseMessage rt = (ToolResponseMessage) deserialized;
+        assertThat(rt.requestId()).isEqualTo("req-002");
+        assertThat(rt.status()).isEqualTo("COMPLETED");
+        assertThat(rt.result()).isEqualTo("In stock: 5kg");
+        assertThat(rt.error()).isNull();
+        assertThat(rt.durationMs()).isEqualTo(1200L);
+    }
+
+    // ========================
     // Helpers
     // ========================
 

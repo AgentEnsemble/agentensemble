@@ -139,7 +139,81 @@ This is **backward compatible** with v2.x clients because `MessageSerializer` co
 Jackson with `FAIL_ON_UNKNOWN_PROPERTIES = false`, so older clients simply ignore the new
 `sharedCapabilities` field.
 
+## K8s Health and Lifecycle Endpoints
+
+Long-running ensembles expose HTTP endpoints for Kubernetes health probes and lifecycle
+management:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/health/live` | GET | Liveness probe -- returns 200 when the process is alive |
+| `/api/health/ready` | GET | Readiness probe -- returns 200 only in READY state; 503 otherwise |
+| `/api/lifecycle/drain` | POST | Triggers transition to DRAINING state |
+| `/api/status` | GET | Extended status including `lifecycleState` field |
+
+### Kubernetes deployment example
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kitchen
+spec:
+  replicas: 2
+  template:
+    spec:
+      terminationGracePeriodSeconds: 300  # Match drainTimeout
+      containers:
+      - name: kitchen
+        image: hotel/kitchen-ensemble:latest
+        ports:
+        - containerPort: 7329
+        livenessProbe:
+          httpGet:
+            path: /api/health/live
+            port: 7329
+        readinessProbe:
+          httpGet:
+            path: /api/health/ready
+            port: 7329
+        lifecycle:
+          preStop:
+            httpGet:
+              path: /api/lifecycle/drain
+              port: 7329
+```
+
+Set `terminationGracePeriodSeconds` to match the ensemble's `drainTimeout` so that
+Kubernetes waits long enough for in-flight work to complete.
+
+## Consuming Shared Capabilities
+
+Other ensembles can use shared tasks and tools via `NetworkTask` and `NetworkTool`:
+
+```java
+NetworkConfig config = NetworkConfig.builder()
+    .ensemble("kitchen", "ws://kitchen:7329/ws")
+    .build();
+
+try (NetworkClientRegistry registry = new NetworkClientRegistry(config)) {
+    Ensemble roomService = Ensemble.builder()
+        .chatLanguageModel(model)
+        .task(Task.builder()
+            .description("Handle room service request")
+            .tools(
+                NetworkTask.from("kitchen", "prepare-meal", registry),
+                NetworkTool.from("kitchen", "check-inventory", registry))
+            .build())
+        .build()
+        .run();
+}
+```
+
+See the [Cross-Ensemble Delegation](cross-ensemble-delegation.md) guide for details.
+
 ## Related
 
+- [Cross-Ensemble Delegation](cross-ensemble-delegation.md)
+- [Network Testing](network-testing.md)
 - [Ensemble Configuration Reference](../reference/ensemble-configuration.md)
 - [Design Doc: Ensemble Network](../design/24-ensemble-network.md)

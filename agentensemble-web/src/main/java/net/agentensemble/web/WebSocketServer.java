@@ -2,12 +2,15 @@ package net.agentensemble.web;
 
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
+import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.web.protocol.ClientMessage;
 import net.agentensemble.web.protocol.HeartbeatMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
@@ -56,6 +59,12 @@ class WebSocketServer {
 
     /** Optional handler called for every parsed client message (e.g. review decisions). */
     private volatile Consumer<ClientMessage> clientMessageHandler;
+
+    /** Supplier for the ensemble's lifecycle state (for health endpoints). Null in one-shot mode. */
+    private volatile Supplier<EnsembleLifecycleState> lifecycleStateProvider;
+
+    /** Action to trigger ensemble draining (for lifecycle/drain endpoint). Null if not configured. */
+    private volatile Runnable drainAction;
 
     WebSocketServer(
             ConnectionManager connectionManager,
@@ -120,15 +129,50 @@ class WebSocketServer {
                 ws.onClose(ctx -> connectionManager.onDisconnect(ctx.sessionId()));
             });
 
-            config.routes.get(
-                    "/api/status",
-                    ctx -> ctx.json(Map.of(
-                            "status",
-                            "running",
-                            "clients",
-                            connectionManager.sessionCount(),
-                            "port",
-                            runningPort > 0 ? runningPort : port)));
+            config.routes.get("/api/status", ctx -> {
+                Map<String, Object> status = new LinkedHashMap<>();
+                status.put("status", "running");
+                status.put("clients", connectionManager.sessionCount());
+                status.put("port", runningPort > 0 ? runningPort : port);
+                Supplier<EnsembleLifecycleState> lsp = lifecycleStateProvider;
+                if (lsp != null) {
+                    EnsembleLifecycleState state = lsp.get();
+                    if (state != null) {
+                        status.put("lifecycleState", state.name());
+                    }
+                }
+                ctx.json(status);
+            });
+
+            config.routes.get("/api/health/live", ctx -> {
+                ctx.status(200);
+                ctx.json(Map.of("status", "UP"));
+            });
+
+            config.routes.get("/api/health/ready", ctx -> {
+                Supplier<EnsembleLifecycleState> lsp = lifecycleStateProvider;
+                EnsembleLifecycleState state = lsp != null ? lsp.get() : null;
+                if (state == EnsembleLifecycleState.READY) {
+                    ctx.status(200);
+                    ctx.json(Map.of("status", "READY", "lifecycleState", "READY"));
+                } else {
+                    ctx.status(503);
+                    String stateName = state != null ? state.name() : "UNKNOWN";
+                    ctx.json(Map.of("status", "NOT_READY", "lifecycleState", stateName));
+                }
+            });
+
+            config.routes.post("/api/lifecycle/drain", ctx -> {
+                Runnable action = drainAction;
+                if (action != null) {
+                    action.run();
+                    ctx.status(200);
+                    ctx.json(Map.of("status", "DRAINING"));
+                } else {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Drain not available (ensemble not in long-running mode)"));
+                }
+            });
         });
 
         app.start(host, port);
@@ -200,6 +244,24 @@ class WebSocketServer {
      */
     void setClientMessageHandler(Consumer<ClientMessage> handler) {
         this.clientMessageHandler = handler;
+    }
+
+    /**
+     * Sets the lifecycle state provider for K8s health endpoints.
+     *
+     * @param provider supplier for the ensemble's lifecycle state; may be null
+     */
+    void setLifecycleStateProvider(Supplier<EnsembleLifecycleState> provider) {
+        this.lifecycleStateProvider = provider;
+    }
+
+    /**
+     * Sets the drain action for the {@code POST /api/lifecycle/drain} endpoint.
+     *
+     * @param action runnable that initiates graceful shutdown; may be null
+     */
+    void setDrainAction(Runnable action) {
+        this.drainAction = action;
     }
 
     // ========================
