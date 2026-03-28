@@ -2,6 +2,7 @@ package net.agentensemble.web.protocol;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -20,6 +21,7 @@ import java.util.Objects;
  * @param traceContext W3C trace context for distributed tracing; may be null
  * @param cachePolicy  caching policy; may be null
  * @param cacheKey     optional cache key; may be null
+ * @param maxAge       maximum age for cached results; may be null
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -33,7 +35,8 @@ public record TaskRequestMessage(
         DeliverySpec delivery,
         TraceContext traceContext,
         CachePolicy cachePolicy,
-        String cacheKey)
+        String cacheKey,
+        Duration maxAge)
         implements ClientMessage {
 
     /**

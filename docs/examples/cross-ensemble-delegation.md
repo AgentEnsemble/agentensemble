@@ -117,7 +117,7 @@ WorkRequest request = new WorkRequest(
     Priority.NORMAL,
     Duration.ofMinutes(30),
     new DeliverySpec(DeliveryMethod.WEBSOCKET, null),
-    null, null, null);
+    null, null, null, null);
 
 // Room service sends the request to the kitchen's inbox
 kitchenTransport.send(request);
@@ -164,12 +164,12 @@ PriorityWorkQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMin
 queue.enqueue("kitchen", new WorkRequest(
     "req-vip-1", "room-service", "prepare-meal",
     "Wagyu steak for penthouse suite", Priority.CRITICAL,
-    null, null, null, null, null));
+    null, null, null, null, null, null));
 
 queue.enqueue("kitchen", new WorkRequest(
     "req-4071", "room-service", "prepare-meal",
     "Club sandwich, room 205", Priority.NORMAL,
-    null, null, null, null, null));
+    null, null, null, null, null, null));
 
 // Dequeue returns CRITICAL request first
 WorkRequest next = queue.dequeue("kitchen", Duration.ofSeconds(30));

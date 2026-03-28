@@ -33,6 +33,9 @@ dependencies {
     // Web module - exposed as api for protocol message types (TaskRequestMessage, etc.)
     api(project(":agentensemble-web"))
 
+    // Embedded HTTP server for HttpIngress (pluggable ingress methods).
+    implementation(libs.javalin)
+
     // JSON serialization for wire protocol messages.
     implementation(libs.jackson.databind)
     implementation(libs.jackson.datatype.jsr310)

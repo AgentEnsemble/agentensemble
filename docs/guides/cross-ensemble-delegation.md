@@ -212,6 +212,9 @@ If a consumer crashes before acknowledging a message, the visibility timeout (de
 See [Chapter 6: Durable Transport](../book/06-durable-transport.md) for a detailed
 explanation of the asymmetric routing pattern and consumer group semantics.
 
+For Kafka-backed transport, see `agentensemble-transport-kafka` which provides
+Kafka-backed `RequestQueue`, `DeliveryHandler`, and `IngressSource` implementations.
+
 ## Priority Queue
 
 The `RequestQueue` SPI includes a priority-aware implementation that orders requests by
@@ -279,8 +282,226 @@ QueueMetrics metrics = new QueueMetrics() {
 };
 ```
 
+## Request Modes
+
+By default, `NetworkTask` and `NetworkTool` block until the result arrives (AWAIT mode).
+Two additional modes are available via the builder API:
+
+### Builder API
+
+```java
+// AWAIT (default -- same as from())
+NetworkTask task = NetworkTask.builder()
+    .ensembleName("kitchen")
+    .taskName("prepare-meal")
+    .clientRegistry(registry)
+    .build();
+
+// ASYNC -- submit and return immediately
+NetworkTask asyncTask = NetworkTask.builder()
+    .ensembleName("kitchen")
+    .taskName("prepare-meal")
+    .clientRegistry(registry)
+    .mode(RequestMode.ASYNC)
+    .onComplete(result -> log.info("Meal ready: {}", result.getOutput()))
+    .build();
+
+// AWAIT_WITH_DEADLINE -- block up to 30 seconds
+NetworkTask deadlineTask = NetworkTask.builder()
+    .ensembleName("kitchen")
+    .taskName("prepare-meal")
+    .clientRegistry(registry)
+    .mode(RequestMode.AWAIT_WITH_DEADLINE)
+    .deadline(Duration.ofSeconds(30))
+    .deadlineAction(DeadlineAction.CONTINUE_IN_BACKGROUND)
+    .onComplete(result -> log.info("Background result: {}", result.getOutput()))
+    .build();
+```
+
+### Modes
+
+| Mode | Behavior |
+|------|----------|
+| `AWAIT` | Block until result (default) |
+| `ASYNC` | Return immediately; result via `onComplete` callback |
+| `AWAIT_WITH_DEADLINE` | Block up to `deadline`; on timeout, apply `DeadlineAction` |
+
+### Deadline Actions
+
+| Action | On timeout |
+|--------|-----------|
+| `RETURN_TIMEOUT_ERROR` | Return `ToolResult.failure("Deadline exceeded")` |
+| `RETURN_PARTIAL` | Return success with "continuing in background" message |
+| `CONTINUE_IN_BACKGROUND` | Return success + fire `onComplete` when result arrives |
+
+## Delivery Methods
+
+Work responses can be delivered via different transports using the `DeliveryHandler` SPI.
+
+### Built-in handlers
+
+| Method | Handler | Behavior |
+|--------|---------|----------|
+| `WEBSOCKET` | `WebSocketDeliveryHandler` | Send via WebSocket |
+| `QUEUE` | `QueueDeliveryHandler` | Write to a named queue |
+| `TOPIC` | `KafkaTopicDelivery` | Publish to Kafka topic (requires `agentensemble-transport-kafka`) |
+| `WEBHOOK` | `WebhookDeliveryHandler` | HTTP POST to a URL |
+| `STORE` | `StoreDeliveryHandler` | Write to `ResultStore` |
+| `BROADCAST_CLAIM` | `BroadcastClaimDeliveryHandler` | Broadcast to all replicas |
+| `NONE` | `NoneDeliveryHandler` | Fire and forget |
+
+### DeliveryRegistry
+
+```java
+DeliveryRegistry registry = DeliveryRegistry.withDefaults(ResultStore.inMemory());
+registry.register(new WebhookDeliveryHandler());
+registry.register(new QueueDeliveryHandler((queue, response) -> { /* write to queue */ }));
+
+// Use with transport
+Transport transport = Transport.simple("kitchen", registry);
+```
+
+### Custom delivery handler
+
+```java
+public class SlackDeliveryHandler implements DeliveryHandler {
+    @Override
+    public DeliveryMethod method() { return DeliveryMethod.WEBHOOK; }
+
+    @Override
+    public void deliver(DeliverySpec spec, WorkResponse response) {
+        // POST to Slack webhook at spec.address()
+    }
+}
+```
+
+## Ingress Methods
+
+Work can arrive at an ensemble via multiple ingress sources simultaneously.
+
+### Built-in sources
+
+| Source | Behavior |
+|--------|----------|
+| `HttpIngress` | `POST /api/work` HTTP endpoint |
+| `QueueIngress` | Poll a `RequestQueue` |
+| `WebSocketIngress` | Receive via WebSocket |
+| `KafkaTopicIngress` | Subscribe to Kafka topic (requires `agentensemble-transport-kafka`) |
+
+### IngressCoordinator
+
+```java
+IngressCoordinator ingress = IngressCoordinator.builder()
+    .add(new HttpIngress(8080))
+    .add(new QueueIngress(RequestQueue.inMemory(), "kitchen"))
+    .build();
+
+Transport transport = Transport.websocket("kitchen");
+ingress.startAll(transport::send);
+
+// Work submitted via HTTP or queue is routed to the transport
+```
+
+## Idempotency & Caching
+
+### Idempotency
+
+The `IdempotencyGuard` prevents duplicate processing of the same request:
+
+```java
+IdempotencyGuard guard = IdempotencyGuard.inMemory();
+ResultCache cache = ResultCache.inMemory();
+
+// Wrap the request handler with caching support
+RequestHandler cachedHandler = new CachingRequestHandler(baseHandler, guard, cache);
+```
+
+When a `WorkRequest` arrives with a previously-seen `requestId`, the guard returns the
+cached result instead of re-executing.
+
+### Result caching
+
+The `ResultCache` caches results by semantic `cacheKey`:
+
+```java
+WorkRequest request = new WorkRequest(
+    "req-1", "frontend", "get-menu", null,
+    Priority.NORMAL, null, null, null,
+    CachePolicy.USE_CACHED, "menu-cache-key",
+    Duration.ofMinutes(30));  // maxAge
+```
+
+| Policy | Behavior |
+|--------|----------|
+| `USE_CACHED` | Return cached result if valid; execute if miss |
+| `FORCE_FRESH` | Bypass cache; execute and update cache |
+
+## Scheduled Tasks
+
+Long-running ensembles can execute tasks on a schedule:
+
+```java
+Ensemble kitchen = Ensemble.builder()
+    .chatLanguageModel(model)
+    .task(Task.of("Manage kitchen operations"))
+    .scheduledTask(ScheduledTask.builder()
+        .name("inventory-report")
+        .task(Task.of("Check current inventory levels and generate report"))
+        .schedule(Schedule.every(Duration.ofHours(1)))
+        .broadcastTo("hotel.inventory")
+        .build())
+    .broadcastHandler((topic, result) -> {
+        log.info("Broadcast to {}: {}", topic, result);
+    })
+    .webDashboard(WebDashboard.builder().port(7329).build())
+    .build();
+
+kitchen.start(7329);
+```
+
+Scheduled tasks automatically stop when the ensemble enters the `DRAINING` state.
+
+## Kafka Transport
+
+The `agentensemble-transport-kafka` module provides Kafka-backed implementations.
+
+### Dependency
+
+Add `agentensemble-transport-kafka` to your project.
+
+### KafkaRequestQueue
+
+```java
+KafkaTransportConfig config = KafkaTransportConfig.builder()
+    .bootstrapServers("kafka:9092")
+    .consumerGroupId("kitchen-ensemble")
+    .build();
+
+KafkaRequestQueue queue = KafkaRequestQueue.create(config);
+queue.enqueue("kitchen", workRequest);
+WorkRequest received = queue.dequeue("kitchen", Duration.ofSeconds(30));
+queue.acknowledge("kitchen", received.requestId());
+```
+
+### KafkaTopicDelivery
+
+```java
+KafkaTopicDelivery topicDelivery = new KafkaTopicDelivery(config);
+DeliveryRegistry registry = DeliveryRegistry.withDefaults(ResultStore.inMemory());
+registry.register(topicDelivery);
+```
+
+### KafkaTopicIngress
+
+```java
+KafkaTopicIngress ingress = new KafkaTopicIngress(config, "work-requests");
+ingress.start(transport::send);
+```
+
 ## Related
 
 - [Long-Running Ensembles](long-running-ensembles.md)
 - [Network Testing](network-testing.md)
+- [Scheduled Tasks](scheduled-tasks.md)
+- [Durable Transport](durable-transport.md)
 - [Design Doc: Ensemble Network](../design/24-ensemble-network.md)
