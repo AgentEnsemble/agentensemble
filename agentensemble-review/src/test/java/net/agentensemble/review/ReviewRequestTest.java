@@ -91,4 +91,43 @@ class ReviewRequestTest {
         ReviewRequest req = ReviewRequest.of("Agent question?", "", ReviewTiming.DURING_EXECUTION, null);
         assertThat(req.timing()).isEqualTo(ReviewTiming.DURING_EXECUTION);
     }
+
+    // ========================
+    // requiredRole
+    // ========================
+
+    @Test
+    void of4arg_requiredRoleIsNull() {
+        ReviewRequest req = ReviewRequest.of("Task", "Out", ReviewTiming.AFTER_EXECUTION, null);
+        assertThat(req.requiredRole()).isNull();
+    }
+
+    @Test
+    void of6arg_requiredRoleIsNull() {
+        ReviewRequest req = ReviewRequest.of("Task", "Out", ReviewTiming.AFTER_EXECUTION, null, null, null);
+        assertThat(req.requiredRole()).isNull();
+    }
+
+    @Test
+    void of7arg_setsRequiredRole() {
+        ReviewRequest req = ReviewRequest.of(
+                "Open the safe",
+                "",
+                ReviewTiming.BEFORE_EXECUTION,
+                Duration.ZERO,
+                OnTimeoutAction.EXIT_EARLY,
+                "Manager authorization required",
+                "manager");
+
+        assertThat(req.requiredRole()).isEqualTo("manager");
+        assertThat(req.taskDescription()).isEqualTo("Open the safe");
+        assertThat(req.prompt()).isEqualTo("Manager authorization required");
+        assertThat(req.timeout()).isEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void of7arg_nullRequiredRole_isNull() {
+        ReviewRequest req = ReviewRequest.of("Task", "Out", ReviewTiming.AFTER_EXECUTION, null, null, null, null);
+        assertThat(req.requiredRole()).isNull();
+    }
 }

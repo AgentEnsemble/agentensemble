@@ -203,6 +203,7 @@ class ParallelTaskCoordinator {
                             OnTimeoutAction onTimeout =
                                     review != null ? review.getOnTimeoutAction() : Review.DEFAULT_ON_TIMEOUT;
                             String prompt = review != null ? review.getPrompt() : null;
+                            String requiredRole = review != null ? review.getRequiredRole() : null;
 
                             ReviewRequest afterRequest = ReviewRequest.of(
                                     task.getDescription(),
@@ -210,7 +211,8 @@ class ParallelTaskCoordinator {
                                     ReviewTiming.AFTER_EXECUTION,
                                     timeout,
                                     onTimeout,
-                                    prompt);
+                                    prompt,
+                                    requiredRole);
 
                             ReviewDecision afterDecision = reviewHandler.review(afterRequest);
                             if (log.isInfoEnabled()) {

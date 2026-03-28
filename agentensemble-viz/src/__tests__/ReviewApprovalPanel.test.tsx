@@ -17,6 +17,7 @@ const baseReview: LiveReviewRequest = {
   prompt: null,
   timeoutMs: 300_000,
   onTimeout: 'CONTINUE',
+  requiredRole: null,
   receivedAt: FIXED_NOW,
 };
 

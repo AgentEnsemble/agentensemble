@@ -109,7 +109,17 @@ public final class WebReviewHandler implements ReviewHandler {
         }
 
         try {
-            String rawDecision = future.get(reviewTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            // Use the request-level timeout if available; fall back to the handler default.
+            // Duration.ZERO means wait indefinitely (no timeout).
+            Duration effectiveTimeout = request.timeout() != null ? request.timeout() : reviewTimeout;
+
+            String rawDecision;
+            if (effectiveTimeout.isZero()) {
+                // No timeout -- wait indefinitely for a qualified human to respond
+                rawDecision = future.get();
+            } else {
+                rawDecision = future.get(effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            }
 
             // Empty string means all clients disconnected; treat as timeout
             if (rawDecision == null || rawDecision.isEmpty()) {
@@ -148,14 +158,19 @@ public final class WebReviewHandler implements ReviewHandler {
 
     private void broadcastReviewRequested(String reviewId, ReviewRequest request) {
         try {
+            Duration effectiveTimeout = request.timeout() != null ? request.timeout() : reviewTimeout;
+            OnTimeoutAction effectiveOnTimeout =
+                    request.onTimeoutAction() != null ? request.onTimeoutAction() : onTimeout;
+
             ReviewRequestedMessage msg = new ReviewRequestedMessage(
                     reviewId,
                     request.taskDescription(),
                     request.taskOutput() != null ? request.taskOutput() : "",
                     request.timing() != null ? request.timing().name() : "AFTER_EXECUTION",
                     request.prompt(),
-                    reviewTimeout.toMillis(),
-                    onTimeout.name());
+                    effectiveTimeout.toMillis(),
+                    effectiveOnTimeout.name(),
+                    request.requiredRole());
             connectionManager.broadcast(serializer.toJson(msg));
         } catch (Exception e) {
             if (log.isWarnEnabled()) {

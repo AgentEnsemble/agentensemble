@@ -159,7 +159,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             ReviewTiming.BEFORE_EXECUTION,
                             beforeRev.getTimeout(),
                             beforeRev.getOnTimeoutAction(),
-                            beforeRev.getPrompt());
+                            beforeRev.getPrompt(),
+                            beforeRev.getRequiredRole());
 
                     ReviewDecision beforeDecision = reviewHandler.review(beforeRequest);
                     if (log.isInfoEnabled()) {
@@ -223,6 +224,7 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                     OnTimeoutAction onTimeout =
                             review != null ? review.getOnTimeoutAction() : Review.DEFAULT_ON_TIMEOUT;
                     String prompt = review != null ? review.getPrompt() : null;
+                    String requiredRole = review != null ? review.getRequiredRole() : null;
 
                     ReviewRequest afterRequest = ReviewRequest.of(
                             task.getDescription(),
@@ -230,7 +232,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                             ReviewTiming.AFTER_EXECUTION,
                             timeout,
                             onTimeout,
-                            prompt);
+                            prompt,
+                            requiredRole);
 
                     ReviewDecision afterDecision = reviewHandler.review(afterRequest);
                     if (log.isInfoEnabled()) {

@@ -242,7 +242,8 @@ class ProtocolSerializationTest {
                 "AFTER_EXECUTION",
                 null,
                 300000L,
-                "CONTINUE");
+                "CONTINUE",
+                null);
         String json = serializer.toJson(msg);
 
         assertThat(typeOf(json)).isEqualTo("review_requested");
