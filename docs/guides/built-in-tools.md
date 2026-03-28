@@ -343,6 +343,42 @@ on the ensemble (see [Tool-Level Approval Gates](review.md#tool-level-approval-g
 
 ---
 
+## MCP Bridge
+
+**Module:** `agentensemble-mcp` |
+**Package:** `net.agentensemble.mcp`
+
+Bridges the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ecosystem
+into AgentEnsemble. Connects to any MCP server and exposes its tools as standard
+`AgentTool` instances.
+
+```java
+import net.agentensemble.mcp.McpToolFactory;
+import net.agentensemble.mcp.McpServerLifecycle;
+
+// Start the MCP filesystem server
+try (McpServerLifecycle fs = McpToolFactory.filesystem(Path.of("/workspace"))) {
+    fs.start();
+    List<AgentTool> tools = fs.tools();
+    // Use tools with any agent
+}
+
+// Or connect to any MCP server
+List<AgentTool> tools = McpToolFactory.fromServer(transport);
+```
+
+**Key classes:**
+
+| Class | Description |
+|-------|-------------|
+| `McpAgentTool` | Wraps a single MCP tool as an `AgentTool` |
+| `McpToolFactory` | Factory methods to create tools from MCP servers |
+| `McpServerLifecycle` | Manages MCP server subprocess lifecycle |
+
+**Full documentation:** [MCP Bridge Guide](mcp.md)
+
+---
+
 ## Using Multiple Tools
 
 ```java

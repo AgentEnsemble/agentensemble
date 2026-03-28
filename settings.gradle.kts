@@ -39,6 +39,9 @@ include("agentensemble-web")
 // Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
 include("agentensemble-network")
 
+// MCP protocol bridge (AgentTool <-> MCP)
+include("agentensemble-mcp")
+
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 

@@ -50,7 +50,12 @@ public final class LangChain4jToolAdapter {
     public static ToolSpecification toSpecification(AgentTool tool) {
         JsonObjectSchema parameters;
 
-        if (tool instanceof TypedAgentTool<?> typed) {
+        if (tool instanceof CustomSchemaAgentTool custom) {
+            parameters = custom.parameterSchema();
+            if (log.isDebugEnabled()) {
+                log.debug("Using custom parameter schema for AgentTool '{}'", tool.name());
+            }
+        } else if (tool instanceof TypedAgentTool<?> typed) {
             parameters = ToolSchemaGenerator.generateSchema(typed.inputType());
             if (log.isDebugEnabled()) {
                 log.debug(
@@ -113,7 +118,9 @@ public final class LangChain4jToolAdapter {
     public static ToolResult executeForResult(AgentTool tool, String argumentsJson) {
         // Typed tools receive the full JSON arguments so AbstractTypedAgentTool can
         // deserialize all parameters. Legacy tools receive only the "input" key value.
-        String input = (tool instanceof TypedAgentTool<?>) ? argumentsJson : extractInput(argumentsJson);
+        String input = (tool instanceof TypedAgentTool<?> || tool instanceof CustomSchemaAgentTool)
+                ? argumentsJson
+                : extractInput(argumentsJson);
         try {
             ToolResult result = tool.execute(input);
             if (result == null) {

@@ -15,6 +15,7 @@ dependencies {
         api(project(":agentensemble-web"))
         api(project(":agentensemble-metrics-micrometer"))
         api(project(":agentensemble-devtools"))
+        api(project(":agentensemble-mcp"))
 
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
