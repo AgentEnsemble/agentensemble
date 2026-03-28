@@ -10,9 +10,10 @@ import net.agentensemble.web.protocol.WorkResponse;
 /**
  * In-memory {@link ResultStore} backed by {@link ConcurrentHashMap}.
  *
- * <p>Stores work responses keyed by request ID with lazy TTL expiration: entries are
- * removed on retrieval if they have expired. This prevents unbounded memory growth in
- * long-running processes.
+ * <p>Stores work responses keyed by request ID with lazy TTL expiration: expired entries
+ * are removed on {@link #retrieve} calls. Note that entries which are stored but never
+ * retrieved will not be evicted — this is acceptable for the development/testing use
+ * case this implementation targets.
  *
  * <p>Suitable for development and testing. Does not survive process restarts.
  *
@@ -50,7 +51,8 @@ class InMemoryResultStore implements ResultStore {
             return null;
         }
         if (Instant.now().isAfter(entry.expiresAt())) {
-            store.remove(requestId);
+            // Remove only the specific entry we observed to avoid deleting a newer value
+            store.remove(requestId, entry);
             return null;
         }
         return entry.response();

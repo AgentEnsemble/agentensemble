@@ -83,4 +83,24 @@ class HttpUrlFetcherTest {
         HttpUrlFetcher fetcher = new HttpUrlFetcher(10);
         assertThat(fetcher).isNotNull();
     }
+
+    @Test
+    void constructor_zeroMaxResponseBytes_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new HttpUrlFetcher(10, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive");
+    }
+
+    @Test
+    void constructor_negativeMaxResponseBytes_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new HttpUrlFetcher(10, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive");
+    }
+
+    @Test
+    void constructor_customMaxResponseBytes_accepted() {
+        HttpUrlFetcher fetcher = new HttpUrlFetcher(10, 1024);
+        assertThat(fetcher).isNotNull();
+    }
 }

@@ -107,13 +107,15 @@ public class NetworkClient implements AutoCloseable {
     public CompletableFuture<ServerMessage> send(ClientMessage message, String requestId) throws IOException {
         CompletableFuture<ServerMessage> future = new CompletableFuture<>();
 
+        // Insert into map before attaching timeout/cleanup to avoid a race where
+        // the cleanup handler fires before the map entry exists.
+        pendingRequests.put(requestId, future);
+
         // Apply request timeout and ensure map cleanup on any completion (success,
         // timeout, error, or close). orTimeout completes exceptionally with
         // TimeoutException if no response arrives within the configured duration.
         future.orTimeout(requestTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .whenComplete((result, ex) -> pendingRequests.remove(requestId));
-
-        pendingRequests.put(requestId, future);
 
         try {
             WebSocket ws = ensureConnected();

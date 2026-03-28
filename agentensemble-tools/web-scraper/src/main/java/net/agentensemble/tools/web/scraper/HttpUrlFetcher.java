@@ -27,6 +27,9 @@ final class HttpUrlFetcher implements UrlFetcher {
     }
 
     HttpUrlFetcher(int timeoutSeconds, long maxResponseBytes) {
+        if (maxResponseBytes <= 0) {
+            throw new IllegalArgumentException("maxResponseBytes must be positive");
+        }
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(timeoutSeconds))
                 .followRedirects(HttpClient.Redirect.NORMAL)

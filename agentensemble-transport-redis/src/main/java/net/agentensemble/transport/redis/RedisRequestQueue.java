@@ -226,7 +226,7 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
             if (isExpectedStreamError(e)) {
                 log.debug("XREADGROUP pending: stream not ready for {}: {}", streamKey, e.getMessage());
             } else {
-                log.warn("XREADGROUP pending failed unexpectedly for stream={}: {}", streamKey, e.getMessage());
+                log.warn("XREADGROUP pending failed unexpectedly for stream={}: {}", streamKey, e.getMessage(), e);
                 throw e;
             }
         }
@@ -251,7 +251,7 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
             if (isExpectedStreamError(e)) {
                 log.debug("XAUTOCLAIM: stream not ready for {}: {}", streamKey, e.getMessage());
             } else {
-                log.warn("XAUTOCLAIM failed unexpectedly for stream={}: {}", streamKey, e.getMessage());
+                log.warn("XAUTOCLAIM failed unexpectedly for stream={}: {}", streamKey, e.getMessage(), e);
                 throw e;
             }
         }

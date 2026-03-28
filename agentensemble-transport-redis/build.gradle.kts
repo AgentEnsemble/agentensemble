@@ -14,7 +14,7 @@ tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
         rule {
             limit {
                 counter = "LINE"
-                minimum = "0.88".toBigDecimal()
+                minimum = "0.90".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"

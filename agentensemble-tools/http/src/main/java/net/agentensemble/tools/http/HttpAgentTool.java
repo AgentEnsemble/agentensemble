@@ -235,16 +235,22 @@ public final class HttpAgentTool extends AbstractAgentTool {
     /**
      * Read up to {@code maxBytes} from the input stream. If the stream contains more data,
      * the output is truncated and a marker is appended.
+     *
+     * <p>Reads {@code maxBytes + 1} bytes so truncation can be detected without an extra
+     * blocking {@code read()} call on the stream.
      */
     private static String readBounded(InputStream in, long maxBytes) throws IOException {
         try (in) {
-            byte[] buf = in.readNBytes((int) Math.min(maxBytes, Integer.MAX_VALUE));
-            String content = new String(buf, StandardCharsets.UTF_8);
-            // Check if there was more data
-            if (buf.length >= maxBytes && in.read() != -1) {
-                return content + "\n[response truncated at " + maxBytes + " bytes]";
+            int effectiveMax = maxBytes > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) maxBytes;
+            // Read one extra byte to detect truncation without an additional blocking read
+            int readLimit = effectiveMax == Integer.MAX_VALUE ? Integer.MAX_VALUE : effectiveMax + 1;
+            byte[] buf = in.readNBytes(readLimit);
+
+            if (buf.length > effectiveMax) {
+                String content = new String(buf, 0, effectiveMax, StandardCharsets.UTF_8);
+                return content + "\n[response truncated at " + effectiveMax + " bytes]";
             }
-            return content;
+            return new String(buf, StandardCharsets.UTF_8);
         }
     }
 
