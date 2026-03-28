@@ -17,6 +17,8 @@ dependencies {
         api(project(":agentensemble-devtools"))
         api(project(":agentensemble-mcp"))
 
+        api(project(":agentensemble-workspace"))
+
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
         api(project(":agentensemble-tools:datetime"))

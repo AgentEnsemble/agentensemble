@@ -42,6 +42,9 @@ include("agentensemble-network")
 // MCP protocol bridge (AgentTool <-> MCP)
 include("agentensemble-mcp")
 
+// Workspace module (git worktree isolation for coding agents -- optional)
+include("agentensemble-workspace")
+
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 

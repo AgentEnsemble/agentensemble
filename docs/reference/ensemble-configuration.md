@@ -237,3 +237,61 @@ the default is static mode with `chunkSize=5`.
 | `run(Map<String,String>)` | `EnsembleOutput` | Runtime variable overrides merged on top of builder inputs. |
 | `toEnsemble()` | `Ensemble` | **Static mode only.** Pre-built inner ensemble for devtools inspection. Throws `UnsupportedOperationException` in adaptive mode. |
 | `isAdaptiveMode()` | `boolean` | Returns `true` when `targetTokenBudget` was set (directly or derived). |
+
+---
+
+## Transport Configuration
+
+The Transport SPI abstracts the message delivery mechanism between ensembles. It is used
+standalone or will be wired into the future `EnsembleNetwork.builder()`.
+
+### Transport Interface
+
+Each transport instance is bound to an ensemble name that identifies its inbox.
+
+| Method | Description |
+|---|---|
+| `send(WorkRequest)` | Send a work request to this transport's inbox |
+| `receive(Duration)` | Receive the next work request from this transport's inbox (blocks up to timeout, returns null on timeout) |
+| `deliver(WorkResponse)` | Deliver a work response back to the requester |
+
+### Factory Methods
+
+| Factory | Description |
+|---|---|
+| `Transport.websocket(ensembleName)` | Simple mode bound to the given ensemble inbox. In-process queues, no external infrastructure. |
+| `Transport.websocket()` | Simple mode with a default ensemble name of `"default"`. Convenience for single-ensemble scenarios. |
+
+### RequestQueue SPI
+
+Pluggable queue for work request delivery between ensembles.
+
+| Method | Description |
+|---|---|
+| `enqueue(queueName, request)` | Enqueue a work request for a target ensemble |
+| `dequeue(queueName, timeout)` | Dequeue the next request (blocking); returns null on timeout |
+| `acknowledge(queueName, requestId)` | Acknowledge successful processing |
+| `RequestQueue.inMemory()` | In-memory implementation for development |
+
+### ResultStore SPI
+
+Pluggable key-value store for work responses.
+
+| Method | Description |
+|---|---|
+| `store(requestId, response, ttl)` | Store a response with a TTL |
+| `retrieve(requestId)` | Retrieve a stored response; returns null if not found |
+| `subscribe(requestId, callback)` | Subscribe for notification when a result is stored |
+| `ResultStore.inMemory()` | In-memory implementation for development |
+
+### WorkResponse
+
+Standardized response envelope mirroring `WorkRequest`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `requestId` | `String` | Yes | Correlation key matching the original request |
+| `status` | `String` | Yes | Outcome: "COMPLETED", "FAILED", or "REJECTED" |
+| `result` | `String` | No | Output on success |
+| `error` | `String` | No | Error message on failure/rejection |
+| `durationMs` | `Long` | No | Execution duration in milliseconds |
