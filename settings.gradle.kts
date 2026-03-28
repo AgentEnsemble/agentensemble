@@ -39,6 +39,9 @@ include("agentensemble-web")
 // Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
 include("agentensemble-network")
 
+// Workspace module (git worktree isolation for coding agents -- optional)
+include("agentensemble-workspace")
+
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 
