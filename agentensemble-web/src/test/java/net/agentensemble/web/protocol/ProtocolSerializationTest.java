@@ -451,7 +451,8 @@ class ProtocolSerializationTest {
                 new DeliverySpec(DeliveryMethod.WEBSOCKET, null),
                 new TraceContext("00-traceparent-01", null),
                 CachePolicy.USE_CACHED,
-                "cache-key-1");
+                "cache-key-1",
+                null);
         String json = serializer.toJson(msg);
 
         assertThat(typeOf(json)).isEqualTo("task_request");

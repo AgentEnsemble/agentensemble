@@ -26,7 +26,8 @@ class RedisCodecTest {
 
     @Test
     void workRequest_minimalFields_roundTrip() {
-        WorkRequest original = new WorkRequest("req-1", "kitchen", "cook", null, null, null, null, null, null, null);
+        WorkRequest original =
+                new WorkRequest("req-1", "kitchen", "cook", null, null, null, null, null, null, null, null);
 
         String json = codec.serialize(original);
         WorkRequest restored = codec.deserialize(json, WorkRequest.class);
@@ -49,7 +50,8 @@ class RedisCodecTest {
                 new DeliverySpec(DeliveryMethod.QUEUE, "maintenance.results"),
                 new TraceContext("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "vendor=value"),
                 null,
-                "cache-key-1");
+                "cache-key-1",
+                null);
 
         String json = codec.serialize(original);
         WorkRequest restored = codec.deserialize(json, WorkRequest.class);
@@ -102,8 +104,8 @@ class RedisCodecTest {
 
     @Test
     void duration_serializesAsNumericSeconds() {
-        WorkRequest original =
-                new WorkRequest("req-5", "test", "task", null, null, Duration.ofSeconds(90), null, null, null, null);
+        WorkRequest original = new WorkRequest(
+                "req-5", "test", "task", null, null, Duration.ofSeconds(90), null, null, null, null, null);
 
         String json = codec.serialize(original);
         assertThat(json).contains("90"); // Duration serialized as numeric

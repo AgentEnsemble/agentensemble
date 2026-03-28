@@ -41,6 +41,21 @@ public interface RequestHandler {
     TaskResult handleTaskRequest(String taskName, String context);
 
     /**
+     * Handle a task request with caching/idempotency metadata.
+     *
+     * <p>Default implementation ignores the context and delegates to
+     * {@link #handleTaskRequest(String, String)}.
+     *
+     * @param taskName       the name of the shared task to execute
+     * @param context        the natural language input/context for the task
+     * @param requestContext caching and idempotency metadata; may be null
+     * @return the execution result; never null
+     */
+    default TaskResult handleTaskRequest(String taskName, String context, RequestContext requestContext) {
+        return handleTaskRequest(taskName, context);
+    }
+
+    /**
      * Handle an incoming tool request by invoking the named shared tool.
      *
      * @param toolName the name of the shared tool to invoke
@@ -48,4 +63,19 @@ public interface RequestHandler {
      * @return the invocation result; never null
      */
     ToolResult handleToolRequest(String toolName, String input);
+
+    /**
+     * Handle a tool request with caching/idempotency metadata.
+     *
+     * <p>Default implementation ignores the context and delegates to
+     * {@link #handleToolRequest(String, String)}.
+     *
+     * @param toolName       the name of the shared tool to invoke
+     * @param input          the input string for the tool
+     * @param requestContext caching and idempotency metadata; may be null
+     * @return the invocation result; never null
+     */
+    default ToolResult handleToolRequest(String toolName, String input, RequestContext requestContext) {
+        return handleToolRequest(toolName, input);
+    }
 }

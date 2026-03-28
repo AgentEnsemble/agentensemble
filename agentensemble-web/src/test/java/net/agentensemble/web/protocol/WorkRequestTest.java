@@ -28,7 +28,8 @@ class WorkRequestTest {
                 delivery,
                 trace,
                 CachePolicy.FORCE_FRESH,
-                "cache-key-1");
+                "cache-key-1",
+                null);
 
         assertThat(req.requestId()).isEqualTo("req-1");
         assertThat(req.from()).isEqualTo("ensemble-a");
@@ -44,31 +45,31 @@ class WorkRequestTest {
 
     @Test
     void nullRequestIdThrows() {
-        assertThatThrownBy(() -> new WorkRequest(null, "from", "task", null, null, null, null, null, null, null))
+        assertThatThrownBy(() -> new WorkRequest(null, "from", "task", null, null, null, null, null, null, null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void nullFromThrows() {
-        assertThatThrownBy(() -> new WorkRequest("id", null, "task", null, null, null, null, null, null, null))
+        assertThatThrownBy(() -> new WorkRequest("id", null, "task", null, null, null, null, null, null, null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void nullTaskThrows() {
-        assertThatThrownBy(() -> new WorkRequest("id", "from", null, null, null, null, null, null, null, null))
+        assertThatThrownBy(() -> new WorkRequest("id", "from", null, null, null, null, null, null, null, null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void defaultPriorityIsNormal() {
-        WorkRequest req = new WorkRequest("id", "from", "task", null, null, null, null, null, null, null);
+        WorkRequest req = new WorkRequest("id", "from", "task", null, null, null, null, null, null, null, null);
         assertThat(req.priority()).isEqualTo(Priority.NORMAL);
     }
 
     @Test
     void defaultDeliveryIsWebsocket() {
-        WorkRequest req = new WorkRequest("id", "from", "task", null, null, null, null, null, null, null);
+        WorkRequest req = new WorkRequest("id", "from", "task", null, null, null, null, null, null, null, null);
         assertThat(req.delivery().method()).isEqualTo(DeliveryMethod.WEBSOCKET);
         assertThat(req.delivery().address()).isNull();
     }
@@ -89,7 +90,8 @@ class WorkRequestTest {
                 new DeliverySpec(DeliveryMethod.WEBHOOK, "https://example.com/hook"),
                 new TraceContext("00-traceparent-01", "vendor=abc"),
                 CachePolicy.USE_CACHED,
-                "cache-42");
+                "cache-42",
+                null);
 
         String json = mapper.writeValueAsString(original);
 

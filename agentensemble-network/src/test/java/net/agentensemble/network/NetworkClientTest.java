@@ -86,7 +86,8 @@ class NetworkClientTest {
     void send_toUnreachableServer_completesExceptionally() {
         // Use port 1 which is almost certainly not running a WebSocket server.
         try (NetworkClient client = new NetworkClient(ENSEMBLE, "ws://localhost:1/ws", Duration.ofSeconds(2))) {
-            var msg = new TaskRequestMessage("req-1", "caller", "myTask", null, null, null, null, null, null, null);
+            var msg =
+                    new TaskRequestMessage("req-1", "caller", "myTask", null, null, null, null, null, null, null, null);
             assertThatThrownBy(() -> client.send(msg, "req-1"))
                     .isInstanceOf(IOException.class)
                     .hasMessageContaining(ENSEMBLE);

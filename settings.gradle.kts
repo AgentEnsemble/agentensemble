@@ -43,6 +43,9 @@ include("agentensemble-network")
 // Redis transport (durable queue + result store -- optional)
 include("agentensemble-transport-redis")
 
+// Kafka transport (RequestQueue, DeliveryHandler, IngressSource backed by Kafka)
+include("agentensemble-transport-kafka")
+
 // MCP protocol bridge (AgentTool <-> MCP)
 include("agentensemble-mcp")
 

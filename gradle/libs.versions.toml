@@ -17,7 +17,8 @@ micrometer       = "1.16.4"
 javalin          = "7.1.0"
 jtoon            = "1.0.9"
 lettuce          = "6.5.5.RELEASE"
-testcontainers   = "1.21.0"
+kafka              = "3.9.0"
+testcontainers     = "1.21.0"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -40,8 +41,11 @@ errorprone-core           = { group = "com.google.errorprone",          name = "
 micrometer-core           = { group = "io.micrometer",                  name = "micrometer-core",          version.ref = "micrometer"      }
 javalin                   = { group = "io.javalin",                     name = "javalin",                  version.ref = "javalin"         }
 lettuce-core              = { group = "io.lettuce",                     name = "lettuce-core",             version.ref = "lettuce"         }
-testcontainers            = { group = "org.testcontainers",             name = "testcontainers",           version.ref = "testcontainers"  }
-testcontainers-junit-jupiter = { group = "org.testcontainers",          name = "junit-jupiter",            version.ref = "testcontainers"  }
+kafka-clients             = { group = "org.apache.kafka",               name = "kafka-clients",            version.ref = "kafka"            }
+testcontainers            = { group = "org.testcontainers",             name = "testcontainers",           version.ref = "testcontainers"   }
+testcontainers-kafka      = { group = "org.testcontainers",             name = "kafka",                    version.ref = "testcontainers"   }
+testcontainers-junit-jupiter = { group = "org.testcontainers",          name = "junit-jupiter",            version.ref = "testcontainers"   }
+testcontainers-junit      = { group = "org.testcontainers",             name = "junit-jupiter",            version.ref = "testcontainers"   }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

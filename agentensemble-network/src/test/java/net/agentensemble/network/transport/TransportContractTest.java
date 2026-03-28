@@ -223,7 +223,7 @@ class TransportContractTest {
     // ========================
 
     private static WorkRequest workRequest(String requestId, String task) {
-        return new WorkRequest(requestId, "test-ensemble", task, null, null, null, null, null, null, null);
+        return new WorkRequest(requestId, "test-ensemble", task, null, null, null, null, null, null, null, null);
     }
 
     /** Extends InMemoryRequestQueue to add AutoCloseable for testing close propagation. */

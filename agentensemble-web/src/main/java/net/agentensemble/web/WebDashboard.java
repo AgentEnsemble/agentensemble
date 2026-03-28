@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
+import net.agentensemble.dashboard.RequestContext;
 import net.agentensemble.dashboard.RequestHandler;
 import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.review.OnTimeoutAction;
@@ -463,7 +464,14 @@ public final class WebDashboard implements EnsembleDashboard {
         // Execute asynchronously on virtual thread
         requestExecutor.submit(() -> {
             try {
-                RequestHandler.TaskResult result = handler.handleTaskRequest(msg.task(), msg.context());
+                // Create RequestContext from message fields
+                RequestContext ctx = new RequestContext(
+                        msg.requestId(),
+                        msg.cacheKey(),
+                        msg.cachePolicy() != null ? msg.cachePolicy().name() : null,
+                        msg.maxAge());
+
+                RequestHandler.TaskResult result = handler.handleTaskRequest(msg.task(), msg.context(), ctx);
 
                 // Only send task_accepted if the request was actually accepted (not rejected)
                 if (!"REJECTED".equals(result.status())) {

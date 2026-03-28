@@ -147,6 +147,21 @@ public interface Transport extends AutoCloseable {
     }
 
     /**
+     * Create a simple mode transport with pluggable delivery routing.
+     *
+     * <p>Responses are routed through the {@link DeliveryRegistry} based on the
+     * {@link net.agentensemble.web.protocol.DeliverySpec} of the original request.
+     * Uses default in-memory queue and store for request handling.
+     *
+     * @param ensembleName     the ensemble name for this transport's inbox; must not be null
+     * @param deliveryRegistry the delivery registry for routing responses; must not be null
+     * @return a new {@link SimpleTransport} with delivery routing
+     */
+    static Transport simple(String ensembleName, DeliveryRegistry deliveryRegistry) {
+        return new SimpleTransport(ensembleName, deliveryRegistry);
+    }
+
+    /**
      * Close this transport and release any resources.
      *
      * <p>The default implementation is a no-op.

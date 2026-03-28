@@ -541,7 +541,7 @@ class PriorityWorkQueueTest {
     }
 
     private static WorkRequest workRequest(String requestId, Priority priority) {
-        return new WorkRequest(requestId, "test-ensemble", "task", null, priority, null, null, null, null, null);
+        return new WorkRequest(requestId, "test-ensemble", "task", null, priority, null, null, null, null, null, null);
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

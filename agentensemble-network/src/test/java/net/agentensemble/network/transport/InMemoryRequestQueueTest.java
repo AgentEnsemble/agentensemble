@@ -170,7 +170,7 @@ class InMemoryRequestQueueTest {
     // ========================
 
     private static WorkRequest workRequest(String requestId, String task) {
-        return new WorkRequest(requestId, "test-ensemble", task, null, null, null, null, null, null, null);
+        return new WorkRequest(requestId, "test-ensemble", task, null, null, null, null, null, null, null, null);
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

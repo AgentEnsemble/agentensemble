@@ -55,8 +55,8 @@ class NetworkClientIntegrationTest {
         NetworkClient client =
                 new NetworkClient("test-ensemble", "ws://localhost:" + port + "/ws", Duration.ofSeconds(5));
         try {
-            TaskRequestMessage request =
-                    new TaskRequestMessage("req-1", "caller", "my-task", "hello", null, null, null, null, null, null);
+            TaskRequestMessage request = new TaskRequestMessage(
+                    "req-1", "caller", "my-task", "hello", null, null, null, null, null, null, null);
             CompletableFuture<ServerMessage> future = client.send(request, "req-1");
 
             ServerMessage response = future.get(5, TimeUnit.SECONDS);
@@ -99,8 +99,8 @@ class NetworkClientIntegrationTest {
         NetworkClient client =
                 new NetworkClient("test-ensemble", "ws://localhost:" + silentPort + "/ws", Duration.ofSeconds(5));
         try {
-            TaskRequestMessage request =
-                    new TaskRequestMessage("req-3", "caller", "my-task", "data", null, null, null, null, null, null);
+            TaskRequestMessage request = new TaskRequestMessage(
+                    "req-3", "caller", "my-task", "data", null, null, null, null, null, null, null);
             CompletableFuture<ServerMessage> future = client.send(request, "req-3");
 
             assertThat(future).isNotDone();
@@ -124,8 +124,8 @@ class NetworkClientIntegrationTest {
         try {
             assertThat(client.pendingCount()).isEqualTo(0);
 
-            TaskRequestMessage request =
-                    new TaskRequestMessage("req-4", "caller", "my-task", "data", null, null, null, null, null, null);
+            TaskRequestMessage request = new TaskRequestMessage(
+                    "req-4", "caller", "my-task", "data", null, null, null, null, null, null, null);
             client.send(request, "req-4");
             assertThat(client.pendingCount()).isEqualTo(1);
         } finally {
@@ -140,11 +140,11 @@ class NetworkClientIntegrationTest {
                 new NetworkClient("test-ensemble", "ws://localhost:" + port + "/ws", Duration.ofSeconds(5));
         try {
             TaskRequestMessage req1 =
-                    new TaskRequestMessage("req-5", "caller", "task", "a", null, null, null, null, null, null);
+                    new TaskRequestMessage("req-5", "caller", "task", "a", null, null, null, null, null, null, null);
             client.send(req1, "req-5").get(5, TimeUnit.SECONDS);
 
             TaskRequestMessage req2 =
-                    new TaskRequestMessage("req-6", "caller", "task", "b", null, null, null, null, null, null);
+                    new TaskRequestMessage("req-6", "caller", "task", "b", null, null, null, null, null, null, null);
             ServerMessage resp2 = client.send(req2, "req-6").get(5, TimeUnit.SECONDS);
             assertThat(resp2).isInstanceOf(TaskResponseMessage.class);
         } finally {
@@ -163,7 +163,7 @@ class NetworkClientIntegrationTest {
                 new NetworkClient("test-ensemble", "ws://localhost:" + tempPort + "/ws", Duration.ofSeconds(5));
         try {
             TaskRequestMessage request =
-                    new TaskRequestMessage("req-7", "caller", "task", "data", null, null, null, null, null, null);
+                    new TaskRequestMessage("req-7", "caller", "task", "data", null, null, null, null, null, null, null);
             CompletableFuture<ServerMessage> future = client.send(request, "req-7");
 
             tempDashboard.stop();

@@ -23,6 +23,7 @@ import java.util.Objects;
  * @param traceContext W3C trace context for distributed tracing; may be null
  * @param cachePolicy  caching policy; may be null (implementation-specific default)
  * @param cacheKey    optional cache key for result caching; may be null
+ * @param maxAge     maximum age for cached results; may be null (no caching)
  *
  * @see Priority
  * @see DeliverySpec
@@ -41,7 +42,8 @@ public record WorkRequest(
         DeliverySpec delivery,
         TraceContext traceContext,
         CachePolicy cachePolicy,
-        String cacheKey) {
+        String cacheKey,
+        Duration maxAge) {
 
     /**
      * Compact constructor with validation and defaults.
