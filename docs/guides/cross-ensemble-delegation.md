@@ -127,22 +127,26 @@ The transport layer is pluggable via the `Transport` SPI. The default is **simpl
 in-process queues with no external infrastructure.
 
 ```java
-// Simple mode (default for development)
-Transport transport = Transport.websocket();
+// Transport for the kitchen ensemble (bound to its inbox)
+Transport kitchenTransport = Transport.websocket("kitchen");
 
-// Send a work request to a target ensemble's inbox
-transport.send(workRequest);
+// Another ensemble sends a work request to the kitchen's inbox
+kitchenTransport.send(workRequest);
 
-// Receive work from this ensemble's inbox (blocking)
-WorkRequest incoming = transport.receive(Duration.ofSeconds(30));
+// Kitchen receives work from its inbox (blocking)
+WorkRequest incoming = kitchenTransport.receive(Duration.ofSeconds(30));
 
-// Deliver a response back to the requester
-transport.deliver(workResponse);
+// Kitchen processes the request and delivers a response
+kitchenTransport.deliver(workResponse);
 ```
+
+Each transport instance is bound to an ensemble name that identifies its inbox.
+`Transport.websocket("kitchen")` creates a transport whose `send()` and `receive()`
+both operate on the `"kitchen"` inbox.
 
 ### Simple mode
 
-`Transport.websocket()` creates a simple transport backed by in-process
+`Transport.websocket(ensembleName)` creates a simple transport backed by in-process
 `LinkedBlockingQueue` instances for request delivery and `ConcurrentHashMap` for response
 storage. No external infrastructure is required.
 

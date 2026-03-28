@@ -91,6 +91,16 @@ class InMemoryRequestQueueTest {
         assertThatNoException().isThrownBy(() -> queue.acknowledge("queue", "req-1"));
     }
 
+    @Test
+    void acknowledge_nullQueueName_throwsNPE() {
+        assertThatThrownBy(() -> queue.acknowledge(null, "req-1")).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void acknowledge_nullRequestId_throwsNPE() {
+        assertThatThrownBy(() -> queue.acknowledge("queue", null)).isInstanceOf(NullPointerException.class);
+    }
+
     // ========================
     // Null validation
     // ========================

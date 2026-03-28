@@ -105,10 +105,10 @@ assertThat(recorder.lastRequest()).contains("wagyu");
 The transport layer is pluggable. The default simple mode uses in-process queues:
 
 ```java
-// Create a simple transport (in-process, no external infrastructure)
-Transport transport = Transport.websocket();
+// Transport for the kitchen ensemble (bound to its inbox)
+Transport kitchenTransport = Transport.websocket("kitchen");
 
-// Send a work request
+// Build a work request
 WorkRequest request = new WorkRequest(
     UUID.randomUUID().toString(),
     "room-service",
@@ -119,12 +119,13 @@ WorkRequest request = new WorkRequest(
     new DeliverySpec(DeliveryMethod.WEBSOCKET, null),
     null, null, null);
 
-transport.send(request);
+// Room service sends the request to the kitchen's inbox
+kitchenTransport.send(request);
 
-// On the receiving side: pull from the inbox
-WorkRequest incoming = transport.receive(Duration.ofSeconds(30));
+// Kitchen receives work from its inbox (blocking)
+WorkRequest incoming = kitchenTransport.receive(Duration.ofSeconds(30));
 
-// After processing: deliver the response
+// Kitchen processes the request and delivers the response
 WorkResponse response = new WorkResponse(
     incoming.requestId(),
     "COMPLETED",
@@ -132,7 +133,7 @@ WorkResponse response = new WorkResponse(
     null,
     25000L);
 
-transport.deliver(response);
+kitchenTransport.deliver(response);
 ```
 
 The `RequestQueue` and `ResultStore` SPIs are also available independently:

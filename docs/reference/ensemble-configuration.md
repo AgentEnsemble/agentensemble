@@ -247,17 +247,20 @@ standalone or will be wired into the future `EnsembleNetwork.builder()`.
 
 ### Transport Interface
 
+Each transport instance is bound to an ensemble name that identifies its inbox.
+
 | Method | Description |
 |---|---|
-| `send(WorkRequest)` | Send a work request to a target ensemble's inbox |
-| `receive(Duration)` | Receive the next work request from this ensemble's inbox (blocks up to timeout, returns null on timeout) |
+| `send(WorkRequest)` | Send a work request to this transport's inbox |
+| `receive(Duration)` | Receive the next work request from this transport's inbox (blocks up to timeout, returns null on timeout) |
 | `deliver(WorkResponse)` | Deliver a work response back to the requester |
 
 ### Factory Methods
 
 | Factory | Description |
 |---|---|
-| `Transport.websocket()` | Simple mode: in-process queues, no external infrastructure. Default for local development. |
+| `Transport.websocket(ensembleName)` | Simple mode bound to the given ensemble inbox. In-process queues, no external infrastructure. |
+| `Transport.websocket()` | Simple mode with a default ensemble name of `"default"`. Convenience for single-ensemble scenarios. |
 
 ### RequestQueue SPI
 

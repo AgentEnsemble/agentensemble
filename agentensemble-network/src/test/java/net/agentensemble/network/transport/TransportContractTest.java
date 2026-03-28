@@ -23,14 +23,30 @@ class TransportContractTest {
 
     @Test
     void websocket_factoryReturnsNonNull() {
-        Transport transport = Transport.websocket();
-        assertThat(transport).isNotNull();
+        try (Transport transport = Transport.websocket()) {
+            assertThat(transport).isNotNull();
+        }
     }
 
     @Test
     void websocket_factoryReturnsSimpleTransport() {
-        Transport transport = Transport.websocket();
-        assertThat(transport).isInstanceOf(SimpleTransport.class);
+        try (Transport transport = Transport.websocket()) {
+            assertThat(transport).isInstanceOf(SimpleTransport.class);
+        }
+    }
+
+    @Test
+    void websocket_withName_factoryReturnsSimpleTransport() {
+        try (Transport transport = Transport.websocket("kitchen")) {
+            assertThat(transport).isInstanceOf(SimpleTransport.class);
+        }
+    }
+
+    @Test
+    void websocket_defaultUsesDefaultEnsembleName() {
+        try (Transport transport = Transport.websocket()) {
+            assertThat(((SimpleTransport) transport).ensembleName()).isEqualTo("default");
+        }
     }
 
     // ========================
@@ -38,17 +54,17 @@ class TransportContractTest {
     // ========================
 
     @Test
-    void send_then_receive_fromTaskQueue() {
-        SimpleTransport transport = new SimpleTransport();
-        WorkRequest request = workRequest("req-1", "prepare-meal");
+    void send_then_receive_roundTrip() {
+        try (Transport transport = Transport.websocket("kitchen")) {
+            WorkRequest request = workRequest("req-1", "prepare-meal");
 
-        transport.send(request);
+            transport.send(request);
 
-        // SimpleTransport.send enqueues under the task name; verify via requestQueue
-        WorkRequest received = transport.requestQueue().dequeue("prepare-meal", Duration.ofSeconds(1));
-        assertThat(received).isNotNull();
-        assertThat(received.requestId()).isEqualTo("req-1");
-        assertThat(received.task()).isEqualTo("prepare-meal");
+            WorkRequest received = transport.receive(Duration.ofSeconds(1));
+            assertThat(received).isNotNull();
+            assertThat(received.requestId()).isEqualTo("req-1");
+            assertThat(received.task()).isEqualTo("prepare-meal");
+        }
     }
 
     // ========================
@@ -57,10 +73,10 @@ class TransportContractTest {
 
     @Test
     void receive_timeout_returnsNull() {
-        Transport transport = Transport.websocket();
-
-        WorkRequest result = transport.receive(Duration.ofMillis(50));
-        assertThat(result).isNull();
+        try (Transport transport = Transport.websocket("kitchen")) {
+            WorkRequest result = transport.receive(Duration.ofMillis(50));
+            assertThat(result).isNull();
+        }
     }
 
     // ========================
@@ -69,7 +85,7 @@ class TransportContractTest {
 
     @Test
     void deliver_storesResponse_retrievableViaResultStore() {
-        SimpleTransport transport = new SimpleTransport();
+        SimpleTransport transport = new SimpleTransport("kitchen");
         WorkResponse response = new WorkResponse("req-42", "COMPLETED", "output", null, 1000L);
 
         transport.deliver(response);
@@ -83,7 +99,7 @@ class TransportContractTest {
 
     @Test
     void deliver_triggersSubscription() {
-        SimpleTransport transport = new SimpleTransport();
+        SimpleTransport transport = new SimpleTransport("kitchen");
         AtomicReference<WorkResponse> captured = new AtomicReference<>();
 
         transport.resultStore().subscribe("req-99", captured::set);
@@ -100,7 +116,7 @@ class TransportContractTest {
 
     @Test
     void close_defaultIsNoOp() {
-        Transport transport = Transport.websocket();
+        Transport transport = Transport.websocket("kitchen");
         transport.close(); // should not throw
     }
 

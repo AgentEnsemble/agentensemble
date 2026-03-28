@@ -44,6 +44,8 @@ class InMemoryRequestQueue implements RequestQueue {
 
     @Override
     public void acknowledge(String queueName, String requestId) {
+        Objects.requireNonNull(queueName, "queueName must not be null");
+        Objects.requireNonNull(requestId, "requestId must not be null");
         // No-op for in-memory: messages are removed on dequeue.
     }
 }
