@@ -148,6 +148,45 @@ try (McpServerLifecycle fs = McpToolFactory.filesystem(workDir)) {
 
 ---
 
+## Coding Agents with MCP
+
+MCP tools integrate naturally with the `agentensemble-coding` module. Start the
+filesystem and git servers, then combine their tools into a coding agent:
+
+```java
+import net.agentensemble.coding.CodingTask;
+import net.agentensemble.mcp.McpToolFactory;
+import net.agentensemble.mcp.McpServerLifecycle;
+
+try (McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+        McpServerLifecycle git = McpToolFactory.git(projectDir)) {
+    fs.start();
+    git.start();
+
+    List<Object> mcpTools = new ArrayList<>();
+    mcpTools.addAll(fs.tools());
+    mcpTools.addAll(git.tools());
+
+    Agent agent = Agent.builder()
+        .role("Senior Software Engineer")
+        .goal("Implement, debug, and refactor code with precision")
+        .tools(mcpTools)
+        .llm(model)
+        .maxIterations(75)
+        .build();
+
+    Task task = CodingTask.fix("Fix the failing authentication test")
+        .toBuilder().agent(agent).build();
+
+    EnsembleOutput output = Ensemble.run(model, task);
+}
+```
+
+For the full walkthrough, see the [MCP Coding Example](../examples/mcp-coding.md) and
+the [Coding Agents Guide](coding-agents.md).
+
+---
+
 ## Complete Example
 
 ```java

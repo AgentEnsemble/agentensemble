@@ -50,6 +50,15 @@ dependencies {
     // reference review types directly in your own code.
     implementation("net.agentensemble:agentensemble-web")
 
+    // Optional: coding agent factory (auto-detects project, assembles coding tools)
+    implementation("net.agentensemble:agentensemble-coding")
+
+    // Optional: Java coding tools (GlobTool, CodeEditTool, ShellTool, etc.)
+    implementation("net.agentensemble:agentensemble-tools-coding")
+
+    // Optional: MCP bridge (filesystem + git via MCP servers; requires Node.js)
+    implementation("net.agentensemble:agentensemble-mcp")
+
     // Optional: Micrometer metrics integration
     implementation("net.agentensemble:agentensemble-metrics-micrometer")
 
@@ -154,7 +163,11 @@ dependencies {
 | `agentensemble-tools-web-scraper` | Web page text extraction |
 | `agentensemble-tools-process` | Subprocess execution (cross-language) |
 | `agentensemble-tools-http` | HTTP endpoint wrapping |
+| `agentensemble-tools-coding` | Coding tools: glob, code search, code edit, shell, git, build runner, test runner |
 | `agentensemble-tools-bom` | Version alignment BOM |
+| `agentensemble-coding` | Coding agent factory: auto-detects project type, assembles tools, generates coding prompts |
+| `agentensemble-mcp` | MCP protocol bridge: adapts MCP server tools to the AgentTool interface |
+| `agentensemble-workspace` | Workspace isolation: git worktree management for coding agents |
 | `agentensemble-memory` | Memory subsystem: task-scoped cross-execution memory with MemoryStore SPI; also includes legacy short-term, long-term, and entity memory |
 | `agentensemble-review` | Human-in-the-loop review gates: ReviewHandler SPI, ConsoleReviewHandler, and HumanInputTool |
 | `agentensemble-web` | Live execution dashboard: embedded WebSocket server that streams real-time task/tool/delegation events to a browser and supports browser-based review gates |

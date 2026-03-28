@@ -80,6 +80,38 @@ Either `workingDirectory(Path)` or `workspace(Workspace)` is required (not both)
 `AUTO` resolves in order: MCP > JAVA > MINIMAL. If neither optional module is on the
 classpath, the agent works with file-read only.
 
+### Using MCP Tools Directly
+
+You can also start MCP servers manually and pass their tools to any agent via
+`Agent.builder().tools(...)`. This gives you full control over server lifecycle:
+
+```java
+try (McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+        McpServerLifecycle git = McpToolFactory.git(projectDir)) {
+    fs.start();
+    git.start();
+
+    List<Object> mcpTools = new ArrayList<>();
+    mcpTools.addAll(fs.tools());
+    mcpTools.addAll(git.tools());
+
+    Agent agent = Agent.builder()
+        .role("Senior Software Engineer")
+        .goal("Implement, debug, and refactor code with precision")
+        .tools(mcpTools)
+        .llm(model)
+        .maxIterations(75)
+        .build();
+
+    Task task = CodingTask.fix("Fix the login timeout bug")
+        .toBuilder().agent(agent).build();
+
+    EnsembleOutput output = Ensemble.run(model, task);
+}
+```
+
+See the [MCP Coding Example](../examples/mcp-coding.md) for a complete walkthrough.
+
 ---
 
 ## CodingTask Convenience Methods
@@ -154,6 +186,9 @@ The workspace module (`agentensemble-workspace`) is included transitively.
 ## See Also
 
 - [Workspace Isolation](workspace-isolation.md) -- Git worktree management
+- [MCP Bridge](mcp.md) -- MCP protocol integration
 - [Tools](tools.md) -- Tool system overview
 - [Coding Agent Example](../examples/coding-agent.md) -- Walkthrough
 - [Isolated Coding Example](../examples/isolated-coding.md) -- Worktree walkthrough
+- [MCP Coding Example](../examples/mcp-coding.md) -- MCP backend walkthrough
+- [Coding Tools Example](../examples/coding-tools.md) -- Java coding tools
