@@ -35,16 +35,26 @@ class WebReviewHandlerTest {
 
     private MessageSerializer serializer;
     private ReviewRequest request;
+    /** Short-timeout request for timeout test paths so they complete in milliseconds, not minutes. */
+    private ReviewRequest shortTimeoutRequest;
 
     @BeforeEach
     void setUp() {
         serializer = new MessageSerializer();
         // A standard after-execution review request used by most tests.
+        // Timeout is 1s (short enough to fail fast if auto-resolve is broken,
+        // long enough to not race with the auto-resolving ConnectionManager).
         request = ReviewRequest.of(
                 "Draft a press release for the product launch",
                 "FOR IMMEDIATE RELEASE: Company announces major product launch.",
                 ReviewTiming.AFTER_EXECUTION,
-                Duration.ofMinutes(5));
+                Duration.ofSeconds(1));
+        // Short-timeout request for timeout tests (request-level timeout takes precedence).
+        shortTimeoutRequest = ReviewRequest.of(
+                "Draft a press release for the product launch",
+                "FOR IMMEDIATE RELEASE: Company announces major product launch.",
+                ReviewTiming.AFTER_EXECUTION,
+                Duration.ofMillis(10));
     }
 
     // ========================
@@ -195,7 +205,7 @@ class WebReviewHandlerTest {
         ConnectionManager cm = new ConnectionManager(serializer);
         WebReviewHandler handler =
                 new WebReviewHandler(cm, serializer, Duration.ofMillis(10), OnTimeoutAction.CONTINUE);
-        ReviewDecision result = handler.review(request);
+        ReviewDecision result = handler.review(shortTimeoutRequest);
         assertThat(result).isEqualTo(ReviewDecision.continueExecution());
     }
 
@@ -204,7 +214,7 @@ class WebReviewHandlerTest {
         ConnectionManager cm = new ConnectionManager(serializer);
         WebReviewHandler handler =
                 new WebReviewHandler(cm, serializer, Duration.ofMillis(10), OnTimeoutAction.EXIT_EARLY);
-        ReviewDecision result = handler.review(request);
+        ReviewDecision result = handler.review(shortTimeoutRequest);
         assertThat(result).isEqualTo(ReviewDecision.exitEarlyTimeout());
     }
 
@@ -212,7 +222,7 @@ class WebReviewHandlerTest {
     void review_timeout_onTimeout_fail_throwsReviewTimeoutException() {
         ConnectionManager cm = new ConnectionManager(serializer);
         WebReviewHandler handler = new WebReviewHandler(cm, serializer, Duration.ofMillis(10), OnTimeoutAction.FAIL);
-        assertThatThrownBy(() -> handler.review(request))
+        assertThatThrownBy(() -> handler.review(shortTimeoutRequest))
                 .isInstanceOf(ReviewTimeoutException.class)
                 .hasMessageContaining("Draft a press release");
     }
@@ -221,7 +231,7 @@ class WebReviewHandlerTest {
     void review_timeout_longDescription_isTruncatedInExceptionMessage() {
         String longDescription = "A".repeat(200);
         ReviewRequest longRequest =
-                ReviewRequest.of(longDescription, "output", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5));
+                ReviewRequest.of(longDescription, "output", ReviewTiming.AFTER_EXECUTION, Duration.ofMillis(10));
         ConnectionManager cm = new ConnectionManager(serializer);
         WebReviewHandler handler = new WebReviewHandler(cm, serializer, Duration.ofMillis(10), OnTimeoutAction.FAIL);
         assertThatThrownBy(() -> handler.review(longRequest))
@@ -235,10 +245,11 @@ class WebReviewHandlerTest {
 
     @Test
     void review_interrupted_returnsExitEarly() throws Exception {
-        // ConnectionManager never resolves -- handler blocks for up to 30 s
+        // ConnectionManager never resolves -- handler blocks until interrupted or timeout.
+        // Request-level timeout (1s from `request`) takes precedence; the interrupt fires at 50ms.
         ConnectionManager cm = new ConnectionManager(serializer);
         WebReviewHandler handler =
-                new WebReviewHandler(cm, serializer, Duration.ofSeconds(30), OnTimeoutAction.CONTINUE);
+                new WebReviewHandler(cm, serializer, Duration.ofSeconds(5), OnTimeoutAction.CONTINUE);
 
         CompletableFuture<ReviewDecision> resultFuture = new CompletableFuture<>();
         Thread reviewThread = Thread.ofVirtual().start(() -> resultFuture.complete(handler.review(request)));
@@ -286,7 +297,7 @@ class WebReviewHandlerTest {
         session.clearMessages();
 
         WebReviewHandler handler = new WebReviewHandler(cm, serializer, Duration.ofMillis(5), OnTimeoutAction.CONTINUE);
-        handler.review(request);
+        handler.review(shortTimeoutRequest);
 
         // At least one message should have been broadcast (review_requested or review_timed_out)
         assertThat(session.sentMessages()).isNotEmpty();
@@ -302,7 +313,7 @@ class WebReviewHandlerTest {
         session.clearMessages();
 
         WebReviewHandler handler = new WebReviewHandler(cm, serializer, Duration.ofMillis(5), OnTimeoutAction.CONTINUE);
-        handler.review(request);
+        handler.review(shortTimeoutRequest);
 
         boolean hasTimedOut = session.sentMessages().stream().anyMatch(m -> m.contains("review_timed_out"));
         assertThat(hasTimedOut).isTrue();
@@ -364,13 +375,13 @@ class WebReviewHandlerTest {
         CompletableFuture<ReviewDecision> f3 = new CompletableFuture<>();
         Thread.ofVirtual()
                 .start(() -> f1.complete(handler.review(
-                        ReviewRequest.of("Task 1", "o1", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+                        ReviewRequest.of("Task 1", "o1", ReviewTiming.AFTER_EXECUTION, Duration.ofSeconds(5)))));
         Thread.ofVirtual()
                 .start(() -> f2.complete(handler.review(
-                        ReviewRequest.of("Task 2", "o2", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+                        ReviewRequest.of("Task 2", "o2", ReviewTiming.AFTER_EXECUTION, Duration.ofSeconds(5)))));
         Thread.ofVirtual()
                 .start(() -> f3.complete(handler.review(
-                        ReviewRequest.of("Task 3", "o3", ReviewTiming.AFTER_EXECUTION, Duration.ofMinutes(5)))));
+                        ReviewRequest.of("Task 3", "o3", ReviewTiming.AFTER_EXECUTION, Duration.ofSeconds(5)))));
 
         // Wait for all 3 to register their futures before resolving.
         // capturedReviewIds() preserves insertion order (CopyOnWriteArrayList) so index access is
