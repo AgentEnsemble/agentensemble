@@ -258,8 +258,7 @@ public class NetworkTask extends AbstractAgentTool {
                     var unused = future.whenComplete((response, err) -> {
                         if (onComplete != null) {
                             if (err != null) {
-                                onComplete.accept(
-                                        ToolResult.failure("Background task failed: " + err.getMessage()));
+                                onComplete.accept(ToolResult.failure("Background task failed: " + err.getMessage()));
                             } else {
                                 onComplete.accept(convertResponse(response));
                             }

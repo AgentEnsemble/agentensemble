@@ -238,8 +238,7 @@ public class NetworkTool extends AbstractAgentTool {
                     var unused = future.whenComplete((response, err) -> {
                         if (onComplete != null) {
                             if (err != null) {
-                                onComplete.accept(
-                                        ToolResult.failure("Background tool failed: " + err.getMessage()));
+                                onComplete.accept(ToolResult.failure("Background tool failed: " + err.getMessage()));
                             } else {
                                 onComplete.accept(convertResponse(response));
                             }

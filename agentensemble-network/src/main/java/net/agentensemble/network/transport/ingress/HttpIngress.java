@@ -99,8 +99,10 @@ public final class HttpIngress implements IngressSource {
                     log.warn("Failed to parse work request: {}", e.getMessage());
                     ctx.status(400);
                     ctx.json(Map.of(
-                            "error", "Bad Request",
-                            "message", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                            "error",
+                            "Bad Request",
+                            "message",
+                            e.getMessage() != null ? e.getMessage() : "Unknown error"));
                 }
             });
         });

@@ -64,9 +64,8 @@ public class EnsembleScheduler implements AutoCloseable {
             ScheduledFuture<?> future = executor.scheduleAtFixedRate(guarded, millis, millis, TimeUnit.MILLISECONDS);
             futures.add(future);
         } else if (schedule instanceof Schedule.CronSchedule cron) {
-            throw new UnsupportedOperationException(
-                    "Cron scheduling is not yet supported; task '" + scheduledTask.name()
-                            + "' with expression '" + cron.expression() + "'");
+            throw new UnsupportedOperationException("Cron scheduling is not yet supported; task '"
+                    + scheduledTask.name() + "' with expression '" + cron.expression() + "'");
         }
     }
 
