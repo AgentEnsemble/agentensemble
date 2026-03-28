@@ -65,6 +65,7 @@ application {
 //   ./gradlew :agentensemble-examples:runDeterministicOnlyPipeline
 //   ./gradlew :agentensemble-examples:runPhases
 //   ./gradlew :agentensemble-examples:runPhaseReview
+//   ./gradlew :agentensemble-examples:runCodingTools --args="/path/to/project"
 //   ./gradlew :agentensemble-examples:runCodingAgent --args="/path/to/project"
 //   ./gradlew :agentensemble-examples:runIsolatedCoding --args="/path/to/git/repo"
 //   ./gradlew :agentensemble-examples:runMcpCoding --args="/path/to/git/project"
@@ -92,6 +93,7 @@ mapOf(
     "runPhaseReview" to "net.agentensemble.examples.PhaseReviewExample",
     "runTypedTools" to "net.agentensemble.examples.TypedToolsExample",
     "runToonFormat" to "net.agentensemble.examples.ToonFormatExample",
+    "runCodingTools" to "net.agentensemble.examples.CodingToolsExample",
     "runCodingAgent" to "net.agentensemble.examples.CodingAgentExample",
     "runIsolatedCoding" to "net.agentensemble.examples.IsolatedCodingExample",
     "runMcpCoding" to "net.agentensemble.examples.McpCodingExample",

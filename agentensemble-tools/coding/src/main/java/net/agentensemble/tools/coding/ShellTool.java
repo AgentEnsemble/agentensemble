@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
@@ -46,7 +47,7 @@ public final class ShellTool extends AbstractTypedAgentTool<ShellInput> {
     }
 
     private static List<String> detectShellPrefix() {
-        String os = System.getProperty("os.name", "").toLowerCase();
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (os.contains("win")) {
             return List.of("cmd", "/c");
         }

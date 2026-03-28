@@ -3,7 +3,6 @@ package net.agentensemble.tools.coding;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -47,8 +46,8 @@ final class SubprocessRunner {
         Process process = pb.start();
 
         // Close stdin immediately -- coding tools do not send input to subprocesses.
-        try (OutputStream stdin = process.getOutputStream()) {
-            // no-op; just close stdin
+        try {
+            process.getOutputStream().close();
         } catch (IOException e) {
             if (log.isDebugEnabled()) {
                 log.debug("Process stdin closed early: {}", e.getMessage());
@@ -97,6 +96,7 @@ final class SubprocessRunner {
      * Drain an input stream into the output buffer up to maxBytes, then discard the rest.
      * This prevents OOM when a subprocess produces very large output.
      */
+    @SuppressWarnings("PMD.AssignmentInOperand") // Standard stream-draining idiom
     private static void drainBounded(InputStream in, ByteArrayOutputStream out, int maxBytes) throws IOException {
         byte[] buf = new byte[8192];
         int totalRead = 0;
