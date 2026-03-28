@@ -39,6 +39,9 @@ include("agentensemble-web")
 // Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
 include("agentensemble-network")
 
+// MCP protocol bridge (AgentTool <-> MCP)
+include("agentensemble-mcp")
+
 // Workspace module (git worktree isolation for coding agents -- optional)
 include("agentensemble-workspace")
 

@@ -7,6 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import java.util.List;
 import net.agentensemble.exception.ExitEarlyException;
 import org.junit.jupiter.api.Test;
 
@@ -242,5 +244,49 @@ class LangChain4jToolAdapterTest {
 
         assertThat(result.isSuccess()).isTrue();
         verify(tool).execute("the value");
+    }
+
+    // ========================
+    // CustomSchemaAgentTool spec generation
+    // ========================
+
+    @Test
+    void toSpecification_customSchema_usesProvidedSchema() {
+        JsonObjectSchema schema = JsonObjectSchema.builder()
+                .addStringProperty("path", "The file path")
+                .addStringProperty("content", "File content")
+                .required(List.of("path", "content"))
+                .build();
+
+        var tool = mock(CustomSchemaAgentTool.class);
+        when(tool.name()).thenReturn("write_file");
+        when(tool.description()).thenReturn("Write a file");
+        when(tool.parameterSchema()).thenReturn(schema);
+
+        var spec = LangChain4jToolAdapter.toSpecification(tool);
+
+        assertThat(spec.name()).isEqualTo("write_file");
+        assertThat(spec.description()).isEqualTo("Write a file");
+        assertThat(spec.parameters().properties()).containsKey("path");
+        assertThat(spec.parameters().properties()).containsKey("content");
+        assertThat(spec.parameters().properties()).doesNotContainKey("input");
+        assertThat(spec.parameters().required()).containsExactlyInAnyOrder("path", "content");
+    }
+
+    @Test
+    void executeForResult_customSchema_passesFullJson() {
+        String fullJson = "{\"path\": \"test.txt\", \"content\": \"hello\"}";
+
+        var tool = mock(CustomSchemaAgentTool.class);
+        when(tool.name()).thenReturn("write_file");
+        when(tool.description()).thenReturn("Write a file");
+        when(tool.execute(fullJson)).thenReturn(ToolResult.success("written"));
+
+        var result = LangChain4jToolAdapter.executeForResult(tool, fullJson);
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("written");
+        // Verify full JSON was passed, not just an extracted "input" key
+        verify(tool).execute(fullJson);
     }
 }

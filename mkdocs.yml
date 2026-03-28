@@ -81,6 +81,7 @@ nav:
     - Built-in Tools: guides/built-in-tools.md
     - Tool Pipeline: guides/tool-pipeline.md
     - Remote Tools: guides/remote-tools.md
+    - MCP Bridge: guides/mcp.md
     - Metrics: guides/metrics.md
     - CaptureMode: guides/capture-mode.md
     - Visualization: guides/visualization.md
