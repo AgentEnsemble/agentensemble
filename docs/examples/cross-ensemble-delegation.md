@@ -100,6 +100,56 @@ assertThat(recorder.callCount()).isEqualTo(1);
 assertThat(recorder.lastRequest()).contains("wagyu");
 ```
 
+## Transport SPI
+
+The transport layer is pluggable. The default simple mode uses in-process queues:
+
+```java
+// Transport for the kitchen ensemble (bound to its inbox)
+Transport kitchenTransport = Transport.websocket("kitchen");
+
+// Build a work request
+WorkRequest request = new WorkRequest(
+    UUID.randomUUID().toString(),
+    "room-service",
+    "prepare-meal",
+    "Wagyu steak, medium-rare, room 403",
+    Priority.NORMAL,
+    Duration.ofMinutes(30),
+    new DeliverySpec(DeliveryMethod.WEBSOCKET, null),
+    null, null, null);
+
+// Room service sends the request to the kitchen's inbox
+kitchenTransport.send(request);
+
+// Kitchen receives work from its inbox (blocking)
+WorkRequest incoming = kitchenTransport.receive(Duration.ofSeconds(30));
+
+// Kitchen processes the request and delivers the response
+WorkResponse response = new WorkResponse(
+    incoming.requestId(),
+    "COMPLETED",
+    "Meal prepared: wagyu steak, medium-rare. Ticket #4071.",
+    null,
+    25000L);
+
+kitchenTransport.deliver(response);
+```
+
+The `RequestQueue` and `ResultStore` SPIs are also available independently:
+
+```java
+// In-memory request queue
+RequestQueue queue = RequestQueue.inMemory();
+queue.enqueue("kitchen", request);
+WorkRequest dequeued = queue.dequeue("kitchen", Duration.ofSeconds(10));
+
+// In-memory result store
+ResultStore store = ResultStore.inMemory();
+store.store("req-42", response, Duration.ofHours(1));
+WorkResponse retrieved = store.retrieve("req-42");
+```
+
 ## Related
 
 - [Cross-Ensemble Delegation Guide](../guides/cross-ensemble-delegation.md)

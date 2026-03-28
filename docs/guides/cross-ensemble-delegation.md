@@ -121,6 +121,58 @@ Both `NetworkTask` and `NetworkTool` implement `AgentTool`. An agent does not kn
 a tool is local or remote. The existing ReAct loop, tool executor, metrics, and tracing
 all work unchanged.
 
+## Transport SPI
+
+The transport layer is pluggable via the `Transport` SPI. The default is **simple mode**:
+in-process queues with no external infrastructure.
+
+```java
+// Transport for the kitchen ensemble (bound to its inbox)
+Transport kitchenTransport = Transport.websocket("kitchen");
+
+// Another ensemble sends a work request to the kitchen's inbox
+kitchenTransport.send(workRequest);
+
+// Kitchen receives work from its inbox (blocking)
+WorkRequest incoming = kitchenTransport.receive(Duration.ofSeconds(30));
+
+// Kitchen processes the request and delivers a response
+kitchenTransport.deliver(workResponse);
+```
+
+Each transport instance is bound to an ensemble name that identifies its inbox.
+`Transport.websocket("kitchen")` creates a transport whose `send()` and `receive()`
+both operate on the `"kitchen"` inbox.
+
+### Simple mode
+
+`Transport.websocket(ensembleName)` creates a simple transport backed by in-process
+`LinkedBlockingQueue` instances for request delivery and `ConcurrentHashMap` for response
+storage. No external infrastructure is required.
+
+This is suitable for local development and testing. It does not survive process restarts
+and does not support horizontal scaling.
+
+### Custom transports
+
+The SPI is open for custom implementations. Implement the `Transport` interface to
+integrate with your messaging infrastructure:
+
+```java
+public class MyCustomTransport implements Transport {
+    @Override public void send(WorkRequest request) { /* ... */ }
+    @Override public WorkRequest receive(Duration timeout) { /* ... */ }
+    @Override public void deliver(WorkResponse response) { /* ... */ }
+}
+```
+
+The companion `RequestQueue` and `ResultStore` SPIs provide finer-grained abstractions
+for the request and response paths independently. Both include `inMemory()` factories
+for development.
+
+> **Note:** Durable transport implementations (Redis Streams, Kafka, SQS) are planned for
+> a future release. The SPI is designed to accommodate them without changes.
+
 ## Related
 
 - [Long-Running Ensembles](long-running-ensembles.md)
