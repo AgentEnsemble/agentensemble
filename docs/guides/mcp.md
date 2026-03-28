@@ -29,23 +29,27 @@ they can be used alongside Java-native tools in any agent's tool list.
 ## Connecting to Any MCP Server
 
 Use `McpToolFactory.fromServer()` to connect to any MCP-compatible server and obtain
-its tools as `AgentTool` instances:
+its tools as `AgentTool` instances. Wrap the transport in try-with-resources to ensure
+the subprocess is cleaned up:
 
 ```java
 import dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport;
 import net.agentensemble.mcp.McpToolFactory;
 
-// Create a transport for a stdio-based MCP server
-StdioMcpTransport transport = new StdioMcpTransport.Builder()
-    .command(List.of("npx", "@modelcontextprotocol/server-filesystem", "/workspace"))
-    .build();
+try (StdioMcpTransport transport = new StdioMcpTransport.Builder()
+        .command(List.of("npx", "--yes", "@modelcontextprotocol/server-filesystem", "/workspace"))
+        .build()) {
 
-// Get all tools from the server
-List<AgentTool> tools = McpToolFactory.fromServer(transport);
+    // Get all tools from the server
+    List<AgentTool> tools = McpToolFactory.fromServer(transport);
 
-// Or filter to specific tools by name
-List<AgentTool> filtered = McpToolFactory.fromServer(transport, "read_file", "write_file");
+    // Or filter to specific tools by name
+    List<AgentTool> filtered = McpToolFactory.fromServer(transport, "read_file", "write_file");
+}
 ```
+
+For managed lifecycle (recommended), prefer `McpServerLifecycle` via
+`McpToolFactory.filesystem()` or `McpToolFactory.git()` -- see below.
 
 Each tool's parameter schema is passed through directly from the MCP server to the LLM --
 the LLM sees properly typed, named parameters just as with `TypedAgentTool` records.
@@ -129,16 +133,14 @@ mixed in a single agent's tool list:
 try (McpServerLifecycle fs = McpToolFactory.filesystem(workDir)) {
     fs.start();
 
+    // Combine MCP tools with Java tools by name
+    List<Object> allTools = new ArrayList<>(fs.tools());
+    allTools.add(new CalculatorTool());
+    allTools.add(WebSearchTool.ofTavily(apiKey));
+
     var agent = Agent.builder()
         .role("Developer")
-        .tools(List.of(
-            // MCP tools
-            fs.tools().get(0),   // read_file
-            fs.tools().get(1),   // write_file
-            // Java tools
-            new CalculatorTool(),
-            WebSearchTool.ofTavily(apiKey)
-        ))
+        .tools(allTools)
         .llm(chatModel)
         .build();
 }

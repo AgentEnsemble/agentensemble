@@ -55,6 +55,9 @@ public final class McpServerLifecycle implements AutoCloseable {
      * the connection with a health check. After this method returns,
      * {@link #tools()} can be called.
      *
+     * <p>If initialization or health check fails, any partially created resources
+     * are cleaned up before the exception propagates.
+     *
      * @throws IllegalStateException if already started or closed
      */
     public void start() {
@@ -65,14 +68,28 @@ public final class McpServerLifecycle implements AutoCloseable {
             throw new IllegalStateException("McpServerLifecycle is already started");
         }
         log.info("Starting MCP server: {}", String.join(" ", command));
-        if (client == null) {
-            StdioMcpTransport transport =
-                    new StdioMcpTransport.Builder().command(command).build();
-            client = new DefaultMcpClient.Builder().transport(transport).build();
+        try {
+            if (client == null) {
+                StdioMcpTransport transport =
+                        new StdioMcpTransport.Builder().command(command).build();
+                client = new DefaultMcpClient.Builder().transport(transport).build();
+            }
+            client.checkHealth();
+            started = true;
+            log.info("MCP server started successfully");
+        } catch (Exception e) {
+            // Clean up partially initialized resources on failure
+            if (client != null) {
+                try {
+                    client.close();
+                } catch (Exception closeEx) {
+                    log.warn("Error closing MCP client after failed start: {}", closeEx.getMessage(), closeEx);
+                } finally {
+                    client = null;
+                }
+            }
+            throw e;
         }
-        client.checkHealth();
-        started = true;
-        log.info("MCP server started successfully");
     }
 
     /**
@@ -109,7 +126,7 @@ public final class McpServerLifecycle implements AutoCloseable {
      * List all tools from the MCP server as {@link AgentTool} instances.
      *
      * <p>The tool list is cached after the first call; subsequent calls return
-     * the same list without re-querying the server.
+     * the same list without re-querying the server. This method is thread-safe.
      *
      * @return an unmodifiable list of AgentTool instances
      * @throws IllegalStateException if not yet started or already closed
@@ -121,10 +138,17 @@ public final class McpServerLifecycle implements AutoCloseable {
         if (closed) {
             throw new IllegalStateException("McpServerLifecycle is closed");
         }
-        if (cachedTools == null) {
-            cachedTools = Collections.unmodifiableList(McpToolFactory.fromClient(client));
+        List<AgentTool> tools = cachedTools;
+        if (tools == null) {
+            synchronized (this) {
+                tools = cachedTools;
+                if (tools == null) {
+                    tools = Collections.unmodifiableList(McpToolFactory.fromClient(client));
+                    cachedTools = tools;
+                }
+            }
         }
-        return cachedTools;
+        return tools;
     }
 
     /**

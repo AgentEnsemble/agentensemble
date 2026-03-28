@@ -88,6 +88,18 @@ class McpServerLifecycleTest {
                 .hasMessageContaining("closed");
     }
 
+    @Test
+    void start_healthCheckFails_cleansUpClient() throws Exception {
+        doThrow(new RuntimeException("health check failed")).when(mockClient).checkHealth();
+
+        assertThatThrownBy(() -> lifecycle.start()).isInstanceOf(RuntimeException.class);
+
+        // Client should have been closed during cleanup
+        verify(mockClient).close();
+        // Lifecycle should not be marked as started
+        assertThat(lifecycle.isAlive()).isFalse();
+    }
+
     // ========================
     // close()
     // ========================

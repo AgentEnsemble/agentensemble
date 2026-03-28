@@ -31,11 +31,16 @@ public final class McpToolFactory {
      * Connect to an MCP server and return all its tools as {@link AgentTool} instances.
      *
      * <p>This method creates a {@link DefaultMcpClient} from the transport, lists all
-     * available tools, and wraps each one as an {@link McpAgentTool}. The caller is
-     * responsible for closing the client when done (or use {@link McpServerLifecycle}).
+     * available tools, and wraps each one as an {@link McpAgentTool}.
+     *
+     * <p><strong>Resource management:</strong> The returned tools capture the MCP client
+     * internally. The caller must close the transport when done to avoid leaking the
+     * subprocess. For managed lifecycle, prefer {@link McpServerLifecycle} via
+     * {@link #filesystem(Path)} or {@link #git(Path)}.
      *
      * @param transport the MCP transport (e.g., {@link dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport})
      * @return a list of AgentTool instances wrapping the server's tools
+     * @throws IllegalArgumentException if transport is null
      */
     public static List<AgentTool> fromServer(McpTransport transport) {
         return fromClient(buildClient(transport));
@@ -44,10 +49,15 @@ public final class McpToolFactory {
     /**
      * Connect to an MCP server and return only the named tools as {@link AgentTool} instances.
      *
+     * <p><strong>Resource management:</strong> The returned tools capture the MCP client
+     * internally. The caller must close the transport when done to avoid leaking the
+     * subprocess. For managed lifecycle, prefer {@link McpServerLifecycle}.
+     *
      * @param transport the MCP transport
-     * @param toolNames the names of tools to include (must match exactly)
+     * @param toolNames the names of tools to include (must match exactly); must not be null
      * @return a filtered list of AgentTool instances
-     * @throws IllegalArgumentException if any requested tool name is not found on the server
+     * @throws IllegalArgumentException if transport is null, toolNames is null, or any
+     *     requested tool name is not found on the server
      */
     public static List<AgentTool> fromServer(McpTransport transport, String... toolNames) {
         return fromClient(buildClient(transport), toolNames);
@@ -70,6 +80,7 @@ public final class McpToolFactory {
         }
         List<String> command = List.of(
                 "npx",
+                "--yes",
                 "@modelcontextprotocol/server-filesystem",
                 allowedDir.toAbsolutePath().toString());
         return new McpServerLifecycle(command);
@@ -92,6 +103,7 @@ public final class McpToolFactory {
         }
         List<String> command = List.of(
                 "npx",
+                "--yes",
                 "@modelcontextprotocol/server-git",
                 "--repository",
                 repoPath.toAbsolutePath().toString());
@@ -118,6 +130,9 @@ public final class McpToolFactory {
      * Convert named tools from an already-connected {@link McpClient} to AgentTool instances.
      */
     static List<AgentTool> fromClient(McpClient client, String... toolNames) {
+        if (toolNames == null) {
+            throw new IllegalArgumentException("toolNames must not be null");
+        }
         List<AgentTool> allTools = fromClient(client);
 
         Set<String> requested = Arrays.stream(toolNames).collect(Collectors.toSet());
@@ -137,6 +152,9 @@ public final class McpToolFactory {
     }
 
     private static McpClient buildClient(McpTransport transport) {
+        if (transport == null) {
+            throw new IllegalArgumentException("transport must not be null");
+        }
         return new DefaultMcpClient.Builder().transport(transport).build();
     }
 }

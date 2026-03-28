@@ -140,6 +140,13 @@ class McpToolFactoryTest {
                 .hasMessageContaining("foo");
     }
 
+    @Test
+    void fromClient_withNullToolNames_throws() {
+        assertThatThrownBy(() -> McpToolFactory.fromClient(mockClient, (String[]) null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolNames");
+    }
+
     // ========================
     // Convenience factory methods
     // ========================
@@ -164,7 +171,7 @@ class McpToolFactoryTest {
         McpServerLifecycle lifecycle = McpToolFactory.filesystem(Path.of("/tmp/workspace"));
 
         assertThat(lifecycle).isNotNull();
-        assertThat(lifecycle.command()).contains("npx", "@modelcontextprotocol/server-filesystem");
+        assertThat(lifecycle.command()).contains("npx", "--yes", "@modelcontextprotocol/server-filesystem");
         assertThat(lifecycle.command()).anyMatch(s -> s.contains("workspace"));
     }
 
@@ -174,7 +181,7 @@ class McpToolFactoryTest {
         McpServerLifecycle lifecycle = McpToolFactory.git(Path.of("/tmp/repo"));
 
         assertThat(lifecycle).isNotNull();
-        assertThat(lifecycle.command()).contains("npx", "@modelcontextprotocol/server-git", "--repository");
+        assertThat(lifecycle.command()).contains("npx", "--yes", "@modelcontextprotocol/server-git", "--repository");
         assertThat(lifecycle.command()).anyMatch(s -> s.contains("repo"));
     }
 }

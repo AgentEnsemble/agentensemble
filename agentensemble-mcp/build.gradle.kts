@@ -35,9 +35,6 @@ dependencies {
     // LangChain4j MCP client -- exposed as api so consumers can supply McpTransport instances.
     api(libs.langchain4j.mcp)
 
-    // JSON serialization for parsing tool arguments.
-    implementation(libs.jackson.databind)
-
     // Logging facade -- no implementation; users bring their own.
     implementation(libs.slf4j.api)
 
