@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.web.protocol.WorkResponse;
 import org.junit.jupiter.api.Test;
@@ -82,7 +83,7 @@ class InMemoryResultStoreTest {
     }
 
     @Test
-    void subscribe_multipleCallbacks_allFired() {
+    void subscribe_secondSubscribe_replacesFirst() {
         List<String> fired = Collections.synchronizedList(new ArrayList<>());
 
         store.subscribe("req-1", r -> fired.add("callback-1"));
@@ -90,7 +91,8 @@ class InMemoryResultStoreTest {
 
         store.store("req-1", new WorkResponse("req-1", "COMPLETED", "done", null, 100L), TTL);
 
-        assertThat(fired).containsExactly("callback-1", "callback-2");
+        // Second subscribe replaces first -- only the latest callback fires.
+        assertThat(fired).containsExactly("callback-2");
     }
 
     @Test
@@ -106,6 +108,42 @@ class InMemoryResultStoreTest {
     }
 
     @Test
+    void subscribe_concurrentStoreRace_callbackFiredExactlyOnce() throws Exception {
+        // Regression test: prior implementation could invoke the callback twice when
+        // store() and subscribe() raced concurrently.
+        int iterations = 500;
+        for (int i = 0; i < iterations; i++) {
+            ResultStore localStore = ResultStore.inMemory();
+            String requestId = "req-race-" + i;
+            AtomicInteger callbackCount = new AtomicInteger();
+            WorkResponse response = new WorkResponse(requestId, "COMPLETED", "done", null, 100L);
+
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch go = new CountDownLatch(1);
+
+            Thread subscriber = Thread.ofVirtual().start(() -> {
+                ready.countDown();
+                awaitQuietly(go);
+                localStore.subscribe(requestId, r -> callbackCount.incrementAndGet());
+            });
+            Thread storer = Thread.ofVirtual().start(() -> {
+                ready.countDown();
+                awaitQuietly(go);
+                localStore.store(requestId, response, TTL);
+            });
+
+            ready.await(5, TimeUnit.SECONDS);
+            go.countDown();
+            subscriber.join(5_000);
+            storer.join(5_000);
+
+            assertThat(callbackCount.get())
+                    .as("Iteration %d: callback must fire exactly once", i)
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
     void subscribe_differentRequestId_notFired() {
         AtomicReference<WorkResponse> captured = new AtomicReference<>();
 
@@ -113,6 +151,28 @@ class InMemoryResultStoreTest {
         store.store("req-2", new WorkResponse("req-2", "COMPLETED", "other", null, 100L), TTL);
 
         assertThat(captured.get()).isNull();
+    }
+
+    // ========================
+    // TTL expiration
+    // ========================
+
+    @Test
+    void retrieve_afterTtlExpires_returnsNull() throws Exception {
+        store.store("req-ttl", new WorkResponse("req-ttl", "COMPLETED", "done", null, 100L), Duration.ofMillis(50));
+        assertThat(store.retrieve("req-ttl")).isNotNull();
+
+        Thread.sleep(100);
+
+        assertThat(store.retrieve("req-ttl")).isNull();
+    }
+
+    @Test
+    void retrieve_beforeTtlExpires_returnsResponse() {
+        store.store("req-ttl2", new WorkResponse("req-ttl2", "COMPLETED", "done", null, 100L), Duration.ofHours(1));
+
+        assertThat(store.retrieve("req-ttl2")).isNotNull();
+        assertThat(store.retrieve("req-ttl2").requestId()).isEqualTo("req-ttl2");
     }
 
     // ========================
