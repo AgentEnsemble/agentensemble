@@ -260,11 +260,17 @@ class WebReviewGateIntegrationTest {
                     .as("WebSocket client did not receive hello within timeout")
                     .isTrue();
 
-            // Start review() on a virtual thread -- no decision is sent, so it will time out
+            // Start review() on a virtual thread -- no decision is sent, so it will time out.
+            // Use a short-timeout request so the request-level timeout fires quickly.
+            ReviewRequest shortTimeoutRequest = ReviewRequest.of(
+                    "Draft a press release for product launch",
+                    "FOR IMMEDIATE RELEASE: Company announces major product.",
+                    ReviewTiming.AFTER_EXECUTION,
+                    Duration.ofMillis(50));
             CompletableFuture<ReviewDecision> decisionFuture = new CompletableFuture<>();
             Thread.ofVirtual()
                     .start(() -> decisionFuture.complete(
-                            shortTimeoutDashboard.reviewHandler().review(standardRequest())));
+                            shortTimeoutDashboard.reviewHandler().review(shortTimeoutRequest)));
 
             // review() must return CONTINUE after the 50 ms timeout expires
             ReviewDecision result = decisionFuture.get(5, TimeUnit.SECONDS);

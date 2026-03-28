@@ -1,5 +1,7 @@
 package net.agentensemble.callback;
 
+import java.time.Duration;
+
 /**
  * Listener interface for observing ensemble execution lifecycle events.
  *
@@ -37,6 +39,25 @@ package net.agentensemble.callback;
  * prevent other listeners from being called.
  */
 public interface EnsembleListener {
+
+    /**
+     * Called at the start of an ensemble run, after configuration is resolved but before
+     * any tasks execute.
+     *
+     * @param ensembleId  unique identifier for this ensemble run
+     * @param workflow    the workflow strategy name (e.g., "SEQUENTIAL", "PARALLEL")
+     * @param totalTasks  total number of tasks in this run
+     */
+    default void onEnsembleStarted(String ensembleId, String workflow, int totalTasks) {}
+
+    /**
+     * Called at the end of an ensemble run, after all tasks have completed (or failed).
+     *
+     * @param ensembleId    unique identifier for this ensemble run
+     * @param totalDuration total elapsed time for the run
+     * @param exitReason    the reason the ensemble run exited (e.g., "COMPLETED", "FAILED")
+     */
+    default void onEnsembleCompleted(String ensembleId, Duration totalDuration, String exitReason) {}
 
     /**
      * Called immediately before an agent begins executing a task.
@@ -133,4 +154,16 @@ public interface EnsembleListener {
      * @param event the token event
      */
     default void onToken(TokenEvent event) {}
+
+    /**
+     * Returns a trace ID associated with this listener, or {@code null} if not applicable.
+     *
+     * <p>This method is used by the framework to populate {@code ExecutionTrace.traceId}
+     * when an OpenTelemetry-based listener is registered.
+     *
+     * @return the W3C trace ID hex string, or {@code null}
+     */
+    default String getTraceId() {
+        return null;
+    }
 }

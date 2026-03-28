@@ -624,6 +624,7 @@ describe('liveReducer', () => {
         prompt: null,
         timeoutMs: 300000,
         onTimeout: 'CONTINUE',
+        requiredRole: null,
       };
       const next = liveReducer(BASE_STATE, msg);
       expect(next.pendingReviews).toHaveLength(1);
@@ -642,6 +643,7 @@ describe('liveReducer', () => {
         prompt: null,
         timeoutMs: 300000,
         onTimeout: 'CONTINUE',
+        requiredRole: null,
       };
       const msg2: ServerMessage = {
         type: 'review_requested',
@@ -652,6 +654,7 @@ describe('liveReducer', () => {
         prompt: null,
         timeoutMs: 300000,
         onTimeout: 'CONTINUE',
+        requiredRole: null,
       };
       const s1 = liveReducer(BASE_STATE, msg1);
       const s2 = liveReducer(s1, msg2);
@@ -672,6 +675,7 @@ describe('liveReducer', () => {
             prompt: null,
             timeoutMs: 300000,
             onTimeout: 'CONTINUE',
+            requiredRole: null,
             receivedAt: Date.now(),
           },
         ],
@@ -697,6 +701,7 @@ describe('liveReducer', () => {
             prompt: null,
             timeoutMs: 300000,
             onTimeout: 'CONTINUE',
+            requiredRole: null,
             receivedAt: Date.now(),
           },
           {
@@ -707,6 +712,7 @@ describe('liveReducer', () => {
             prompt: null,
             timeoutMs: 300000,
             onTimeout: 'CONTINUE',
+            requiredRole: null,
             receivedAt: Date.now(),
           },
         ],
@@ -1176,6 +1182,7 @@ describe('liveActionReducer', () => {
           prompt: null,
           timeoutMs: 300000,
           onTimeout: 'CONTINUE',
+          requiredRole: null,
           receivedAt: Date.now(),
         },
         {
@@ -1186,6 +1193,7 @@ describe('liveActionReducer', () => {
           prompt: null,
           timeoutMs: 300000,
           onTimeout: 'CONTINUE',
+          requiredRole: null,
           receivedAt: Date.now(),
         },
         {
@@ -1196,6 +1204,7 @@ describe('liveActionReducer', () => {
           prompt: null,
           timeoutMs: 300000,
           onTimeout: 'EXIT_EARLY',
+          requiredRole: null,
           receivedAt: Date.now(),
         },
       ],

@@ -29,6 +29,8 @@ import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
 import net.agentensemble.delegation.DelegationContext;
+import net.agentensemble.directive.Directive;
+import net.agentensemble.directive.DirectiveStore;
 import net.agentensemble.exception.AgentExecutionException;
 import net.agentensemble.exception.ExitEarlyException;
 import net.agentensemble.exception.MaxIterationsExceededException;
@@ -190,6 +192,16 @@ public class AgentExecutor {
                         .orElse(null);
             }
 
+            // Retrieve active context directives for injection into the prompt
+            List<Directive> activeDirectives = null;
+            DirectiveStore ds = executionContext.directiveStore();
+            if (ds != null) {
+                List<Directive> fetched = ds.activeContextDirectives();
+                if (!fetched.isEmpty()) {
+                    activeDirectives = fetched;
+                }
+            }
+
             // Time prompt building
             Instant promptStart = Instant.now();
             String systemPrompt = AgentPromptBuilder.buildSystemPrompt(agent);
@@ -198,7 +210,8 @@ public class AgentExecutor {
                     contextOutputs,
                     executionContext.memoryContext(),
                     executionContext.memoryStore(),
-                    priorReflection);
+                    priorReflection,
+                    activeDirectives);
             Duration promptBuildTime = Duration.between(promptStart, Instant.now());
             accumulator.recordPrompts(systemPrompt, userPrompt, promptBuildTime);
 

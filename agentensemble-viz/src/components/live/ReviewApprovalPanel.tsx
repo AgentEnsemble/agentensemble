@@ -127,9 +127,14 @@ export default function ReviewApprovalPanel({
   // ========================
 
   useEffect(() => {
+    // No timeout (Duration.ZERO): wait indefinitely, no countdown needed.
+    if (review.timeoutMs === 0) {
+      return;
+    }
+
     const initial = initialRemainingRef.current;
 
-    // Already timed out (late-join or zero timeout): skip directly to timed-out mode.
+    // Already timed out (late-join): skip directly to timed-out mode.
     if (initial <= 0) {
       setMode('timed-out');
       timedOutCloseRef.current = setTimeout(() => setIsVisible(false), 2000);
@@ -191,23 +196,34 @@ export default function ReviewApprovalPanel({
 
   const timingLabel = formatTiming(review.timing);
   const countdownText = formatCountdown(remainingMs);
+  const hasTimeout = review.timeoutMs > 0;
+
+  // Role-gating: when requiredRole is set, the user cannot act unless they have
+  // the matching role. For now the dashboard does not have user authentication,
+  // so role-gated reviews are shown as read-only with a message.
+  // TODO: once dashboard user roles are implemented, check against the current user's role.
+  const isRoleGated = review.requiredRole !== null && review.requiredRole !== undefined;
 
   // Derive the auto-label from onTimeout. All three server values are handled
   // explicitly; unknown values (e.g., future protocol additions) fall back to a
   // neutral label so the UI is never silently wrong.
   let autoLabel: string;
-  switch (review.onTimeout) {
-    case 'CONTINUE':
-      autoLabel = `Auto-continue in ${countdownText}`;
-      break;
-    case 'EXIT_EARLY':
-      autoLabel = `Auto-exit in ${countdownText}`;
-      break;
-    case 'FAIL':
-      autoLabel = `Auto-fail in ${countdownText}`;
-      break;
-    default:
-      autoLabel = `Auto action in ${countdownText}`;
+  if (!hasTimeout) {
+    autoLabel = 'No timeout \u2014 waiting for reviewer';
+  } else {
+    switch (review.onTimeout) {
+      case 'CONTINUE':
+        autoLabel = `Auto-continue in ${countdownText}`;
+        break;
+      case 'EXIT_EARLY':
+        autoLabel = `Auto-exit in ${countdownText}`;
+        break;
+      case 'FAIL':
+        autoLabel = `Auto-fail in ${countdownText}`;
+        break;
+      default:
+        autoLabel = `Auto action in ${countdownText}`;
+    }
   }
 
   // Use the elapsedMs captured at mount (elapsedMsRef) rather than Date.now()
@@ -311,8 +327,18 @@ export default function ReviewApprovalPanel({
           )}
         </div>
 
-        {/* ---- Countdown progress bar ---- */}
-        {mode !== 'timed-out' && (
+        {/* ---- Role-gating banner ---- */}
+        {isRoleGated && (
+          <div
+            className="mx-6 mb-2 rounded bg-yellow-50 px-3 py-2 text-sm text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+            data-testid="role-gate-banner"
+          >
+            Requires role: <strong>{review.requiredRole}</strong>. Waiting for an authorized reviewer.
+          </div>
+        )}
+
+        {/* ---- Countdown progress bar (hidden when no timeout) ---- */}
+        {mode !== 'timed-out' && hasTimeout && (
           <div className="relative h-1 w-full overflow-hidden bg-gray-200 dark:bg-gray-700">
             <div
               data-testid="countdown-bar"
@@ -337,14 +363,15 @@ export default function ReviewApprovalPanel({
             </p>
           )}
 
-          {/* View mode buttons */}
+          {/* View mode buttons (disabled when role-gated) */}
           {mode === 'view' && (
             <div className="flex gap-2">
               <button
                 type="button"
                 data-testid="approve-button"
                 onClick={handleApprove}
-                className="flex-1 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                disabled={isRoleGated}
+                className="flex-1 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Approve
               </button>
@@ -355,7 +382,8 @@ export default function ReviewApprovalPanel({
                   setEditText(review.taskOutput);
                   setMode('edit');
                 }}
-                className="flex-1 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isRoleGated}
+                className="flex-1 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Edit
               </button>
@@ -363,7 +391,8 @@ export default function ReviewApprovalPanel({
                 type="button"
                 data-testid="exit-early-button"
                 onClick={() => setMode('exit-confirm')}
-                className="flex-1 rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                disabled={isRoleGated}
+                className="flex-1 rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Exit Early
               </button>

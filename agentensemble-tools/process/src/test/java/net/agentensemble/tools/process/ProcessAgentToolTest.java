@@ -257,7 +257,7 @@ class ProcessAgentToolTest {
         var tool = ProcessAgentTool.builder()
                 .name("slow_tool")
                 .description("Takes too long")
-                .command("sh", "-c", "sleep 60")
+                .command("sh", "-c", "sleep 5")
                 .timeout(Duration.ofMillis(300))
                 .build();
 

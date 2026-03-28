@@ -35,6 +35,7 @@ public final class ReviewRequest {
     private final Duration timeout;
     private final OnTimeoutAction onTimeoutAction;
     private final String prompt;
+    private final String requiredRole;
 
     private ReviewRequest(
             String taskDescription,
@@ -42,7 +43,8 @@ public final class ReviewRequest {
             ReviewTiming timing,
             Duration timeout,
             OnTimeoutAction onTimeoutAction,
-            String prompt) {
+            String prompt,
+            String requiredRole) {
         if (taskDescription == null) {
             throw new IllegalArgumentException("taskDescription must not be null");
         }
@@ -55,6 +57,7 @@ public final class ReviewRequest {
         this.timeout = timeout;
         this.onTimeoutAction = onTimeoutAction != null ? onTimeoutAction : OnTimeoutAction.EXIT_EARLY;
         this.prompt = prompt;
+        this.requiredRole = requiredRole;
     }
 
     /**
@@ -69,7 +72,7 @@ public final class ReviewRequest {
      * @return a new ReviewRequest
      */
     public static ReviewRequest of(String taskDescription, String taskOutput, ReviewTiming timing, Duration timeout) {
-        return new ReviewRequest(taskDescription, taskOutput, timing, timeout, OnTimeoutAction.EXIT_EARLY, null);
+        return new ReviewRequest(taskDescription, taskOutput, timing, timeout, OnTimeoutAction.EXIT_EARLY, null, null);
     }
 
     /**
@@ -92,7 +95,31 @@ public final class ReviewRequest {
             Duration timeout,
             OnTimeoutAction onTimeoutAction,
             String prompt) {
-        return new ReviewRequest(taskDescription, taskOutput, timing, timeout, onTimeoutAction, prompt);
+        return new ReviewRequest(taskDescription, taskOutput, timing, timeout, onTimeoutAction, prompt, null);
+    }
+
+    /**
+     * Create a {@link ReviewRequest} with all fields specified, including an optional
+     * required role for role-based gated reviews.
+     *
+     * @param taskDescription  the description of the task being reviewed; must not be null
+     * @param taskOutput       the current task output; may be null or empty
+     * @param timing           when this review is occurring; must not be null
+     * @param timeout          how long to wait before timing out; may be null for no timeout
+     * @param onTimeoutAction  what to do when the timeout expires; defaults to EXIT_EARLY when null
+     * @param prompt           optional custom display message; may be null
+     * @param requiredRole     optional role required to approve; may be null
+     * @return a new ReviewRequest
+     */
+    public static ReviewRequest of(
+            String taskDescription,
+            String taskOutput,
+            ReviewTiming timing,
+            Duration timeout,
+            OnTimeoutAction onTimeoutAction,
+            String prompt,
+            String requiredRole) {
+        return new ReviewRequest(taskDescription, taskOutput, timing, timeout, onTimeoutAction, prompt, requiredRole);
     }
 
     /**
@@ -154,5 +181,17 @@ public final class ReviewRequest {
      */
     public String prompt() {
         return prompt;
+    }
+
+    /**
+     * The optional role that a human must have to approve this review.
+     *
+     * <p>When non-null, only humans connected with this role can approve the review.
+     * Dashboard clients without the matching role should display the review as read-only.
+     *
+     * @return the required role, or {@code null} when any human can approve
+     */
+    public String requiredRole() {
+        return requiredRole;
     }
 }

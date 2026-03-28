@@ -10,15 +10,21 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import net.agentensemble.Ensemble;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.dashboard.RequestContext;
 import net.agentensemble.dashboard.RequestHandler;
+import net.agentensemble.directive.Directive;
+import net.agentensemble.directive.DirectiveStore;
 import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.trace.export.ExecutionTraceExporter;
 import net.agentensemble.trace.export.JsonTraceExporter;
+import net.agentensemble.web.protocol.DirectiveAckMessage;
+import net.agentensemble.web.protocol.DirectiveActiveMessage;
+import net.agentensemble.web.protocol.DirectiveMessage;
 import net.agentensemble.web.protocol.EnsembleCompletedMessage;
 import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
@@ -142,6 +148,12 @@ public final class WebDashboard implements EnsembleDashboard {
     /** Request handler for incoming cross-ensemble work requests. Set via setRequestHandler(). */
     private volatile RequestHandler requestHandler;
 
+    /** Directive store for human-injected directives. Set via setDirectiveStore(). */
+    private volatile DirectiveStore directiveStore;
+
+    /** Ensemble reference for dispatching control-plane directives. Set via setEnsemble(). */
+    private volatile Ensemble ensemble;
+
     /** Virtual-thread executor for processing incoming work requests asynchronously. */
     private final ExecutorService requestExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -221,6 +233,8 @@ public final class WebDashboard implements EnsembleDashboard {
                 handleTaskRequest(sessionId, trm);
             } else if (msg instanceof ToolRequestMessage trm) {
                 handleToolRequest(sessionId, trm);
+            } else if (msg instanceof DirectiveMessage dm) {
+                handleDirective(sessionId, dm);
             }
         });
 
@@ -524,6 +538,106 @@ public final class WebDashboard implements EnsembleDashboard {
                 }
             }
         });
+    }
+
+    // ========================
+    // Directive handling (EN-020: Human directives)
+    // ========================
+
+    /**
+     * Sets the directive store so that incoming {@link DirectiveMessage} messages can
+     * be stored and broadcast to connected clients.
+     *
+     * @param store the directive store; must not be null
+     */
+    @Override
+    public void setDirectiveStore(DirectiveStore store) {
+        Objects.requireNonNull(store, "store must not be null");
+        this.directiveStore = store;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Stores the ensemble reference so that incoming control-plane directives
+     * can be dispatched through the ensemble's {@link net.agentensemble.directive.DirectiveDispatcher}.
+     */
+    @Override
+    public void setEnsemble(Ensemble ensemble) {
+        Objects.requireNonNull(ensemble, "ensemble must not be null");
+        this.ensemble = ensemble;
+    }
+
+    private void handleDirective(String sessionId, DirectiveMessage dm) {
+        DirectiveStore store = this.directiveStore;
+        if (store == null) {
+            log.warn("Received directive but no DirectiveStore is configured");
+            return;
+        }
+
+        try {
+            // Validate: context directives (action == null) must have non-blank content
+            if (dm.action() == null && (dm.content() == null || dm.content().isBlank())) {
+                DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                connectionManager.send(sessionId, serializer.toJson(ack));
+                return;
+            }
+
+            // Validate: control-plane directives (action != null) must have non-blank action
+            if (dm.action() != null && dm.action().isBlank()) {
+                DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                connectionManager.send(sessionId, serializer.toJson(ack));
+                return;
+            }
+
+            // Parse TTL to compute expiry
+            Instant now = Instant.now();
+            Instant expiresAt = null;
+            if (dm.ttl() != null && !dm.ttl().isBlank()) {
+                Duration ttl = Duration.parse(dm.ttl());
+                // Validate: TTL must be positive (not negative)
+                if (ttl.isNegative()) {
+                    DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                    connectionManager.send(sessionId, serializer.toJson(ack));
+                    return;
+                }
+                expiresAt = now.plus(ttl);
+            }
+
+            // Create and store the directive
+            String directiveId = java.util.UUID.randomUUID().toString();
+            Directive directive =
+                    new Directive(directiveId, dm.from(), dm.content(), dm.action(), dm.value(), now, expiresAt);
+            store.add(directive);
+
+            // Dispatch control-plane directives through the ensemble's DirectiveDispatcher
+            if (dm.action() != null) {
+                Ensemble ens = this.ensemble;
+                if (ens != null) {
+                    ens.getDirectiveDispatcher().dispatch(directive, ens);
+                } else {
+                    log.warn(
+                            "Control-plane directive '{}' stored but no Ensemble is configured for dispatch",
+                            dm.action());
+                }
+            }
+
+            // Broadcast to all clients
+            DirectiveActiveMessage activeMsg = new DirectiveActiveMessage(
+                    directiveId,
+                    dm.from(),
+                    dm.content(),
+                    dm.action(),
+                    dm.value(),
+                    expiresAt != null ? expiresAt.toString() : null);
+            connectionManager.broadcast(serializer.toJson(activeMsg));
+
+            // Ack to sender
+            DirectiveAckMessage ack = new DirectiveAckMessage(directiveId, "accepted");
+            connectionManager.send(sessionId, serializer.toJson(ack));
+        } catch (Exception e) {
+            log.warn("Failed to handle directive from '{}': {}", dm.from(), e.getMessage(), e);
+        }
     }
 
     // ========================

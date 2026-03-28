@@ -132,7 +132,7 @@ class ConsoleReviewHandlerTest {
             @Override
             public int read() throws java.io.IOException {
                 try {
-                    Thread.sleep(60_000);
+                    Thread.sleep(5_000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -155,7 +155,7 @@ class ConsoleReviewHandlerTest {
             @Override
             public int read() throws java.io.IOException {
                 try {
-                    Thread.sleep(60_000);
+                    Thread.sleep(5_000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -183,7 +183,7 @@ class ConsoleReviewHandlerTest {
             @Override
             public int read() throws java.io.IOException {
                 try {
-                    Thread.sleep(60_000);
+                    Thread.sleep(5_000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }

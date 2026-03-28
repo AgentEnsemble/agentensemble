@@ -275,6 +275,46 @@ Ensemble.builder()
 
 ---
 
+## Role-Based Gated Reviews
+
+Some reviews require authorization from a human with a specific role. Use
+`Review.builder().requiredRole(role)` to restrict who can approve:
+
+```java
+Task openSafe = Task.builder()
+    .description("Open the hotel safe for cash reconciliation")
+    .review(Review.builder()
+        .prompt("Manager authorization required to open the safe")
+        .requiredRole("manager")
+        .timeout(Duration.ZERO)         // wait indefinitely for a qualified human
+        .build())
+    .build();
+```
+
+When `requiredRole` is set:
+- The dashboard shows the review as **read-only** to users who lack the required role
+- Action buttons (Approve, Edit, Exit Early) are disabled for unqualified users
+- The task blocks until a human with the matching role connects and responds
+
+### Infinite Timeout
+
+`timeout(Duration.ZERO)` means the review gate waits indefinitely -- there is no countdown
+and no auto-action. This is useful for gated reviews where proceeding without authorization
+is not acceptable.
+
+### Out-of-Band Notifications
+
+Use `ReviewNotifier` to alert humans via external channels when a review is pending:
+
+```java
+ReviewNotifier notifier = ReviewNotifier.slack("https://hooks.slack.com/services/...");
+```
+
+The `SlackReviewNotifier` sends a formatted message to the configured Slack incoming
+webhook, including the task description, required role, and timeout information.
+
+---
+
 ## Handling Partial Results
 
 When a reviewer chooses ExitEarly, the pipeline stops and `EnsembleOutput` contains

@@ -149,6 +149,15 @@ public class ExecutionTrace {
     List<MapReduceLevelSummary> mapReduceLevels;
 
     /**
+     * Optional distributed trace identifier linking this execution to an external
+     * distributed trace viewer (e.g., Jaeger, Zipkin). Set when an
+     * {@code OTelTracingListener} is registered with the ensemble.
+     *
+     * <p>{@code null} when no OpenTelemetry integration is configured.
+     */
+    String traceId;
+
+    /**
      * Optional caller-supplied metadata for the entire run.
      * Usable by framework extensions or application code for custom annotations.
      */

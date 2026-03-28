@@ -97,8 +97,9 @@ class ReviewTest {
     }
 
     @Test
-    void builder_zeroTimeout_throwsIllegalArgument() {
-        assertThatThrownBy(() -> Review.builder().timeout(Duration.ZERO)).isInstanceOf(IllegalArgumentException.class);
+    void builder_zeroTimeout_meansWaitIndefinitely() {
+        Review review = Review.builder().timeout(Duration.ZERO).build();
+        assertThat(review.getTimeout()).isEqualTo(Duration.ZERO);
     }
 
     @Test
@@ -115,5 +116,50 @@ class ReviewTest {
     @Test
     void builder_nullPrompt_throwsIllegalArgument() {
         assertThatThrownBy(() -> Review.builder().prompt(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ========================
+    // requiredRole
+    // ========================
+
+    @Test
+    void required_noRequiredRole() {
+        Review review = Review.required();
+        assertThat(review.getRequiredRole()).isNull();
+    }
+
+    @Test
+    void builder_requiredRole_setsRole() {
+        Review review = Review.builder().requiredRole("manager").build();
+        assertThat(review.getRequiredRole()).isEqualTo("manager");
+        assertThat(review.isRequired()).isTrue();
+    }
+
+    @Test
+    void builder_requiredRole_nullThrows() {
+        assertThatThrownBy(() -> Review.builder().requiredRole(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_requiredRole_blankThrows() {
+        assertThatThrownBy(() -> Review.builder().requiredRole("  ")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_requiredRole_withZeroTimeout() {
+        Review review = Review.builder()
+                .requiredRole("manager")
+                .prompt("Manager authorization required")
+                .timeout(Duration.ZERO)
+                .build();
+        assertThat(review.getRequiredRole()).isEqualTo("manager");
+        assertThat(review.getTimeout()).isEqualTo(Duration.ZERO);
+        assertThat(review.getPrompt()).isEqualTo("Manager authorization required");
+    }
+
+    @Test
+    void skip_noRequiredRole() {
+        Review review = Review.skip();
+        assertThat(review.getRequiredRole()).isNull();
     }
 }

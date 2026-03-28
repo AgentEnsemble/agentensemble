@@ -263,7 +263,7 @@ class WebSocketServerTest {
     void reviewRequestedMessageSerializesCorrectly() throws Exception {
         net.agentensemble.web.protocol.ReviewRequestedMessage msg =
                 new net.agentensemble.web.protocol.ReviewRequestedMessage(
-                        "r1", "Task desc", "Task output", "AFTER_EXECUTION", null, 60000L, "CONTINUE");
+                        "r1", "Task desc", "Task output", "AFTER_EXECUTION", null, 60000L, "CONTINUE", null);
         String json = serializer.toJson(msg);
         assertThat(json).contains("\"type\":\"review_requested\"");
         assertThat(json).contains("\"reviewId\":\"r1\"");
