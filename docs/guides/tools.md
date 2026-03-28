@@ -307,12 +307,39 @@ Tool implementations must be **thread-safe**. Prefer immutable state and local v
 
 ---
 
+## Option 5: MCP Tools (External Servers)
+
+Use `agentensemble-mcp` to connect any [MCP](https://modelcontextprotocol.io/)-compatible
+tool server and use its tools as standard `AgentTool` instances:
+
+```java
+import net.agentensemble.mcp.McpToolFactory;
+import net.agentensemble.mcp.McpServerLifecycle;
+
+try (McpServerLifecycle fs = McpToolFactory.filesystem(Path.of("/workspace"))) {
+    fs.start();
+    Agent.builder()
+        .role("Developer")
+        .tools(fs.tools())
+        .llm(chatModel)
+        .build();
+}
+```
+
+MCP tools and Java tools can be freely mixed in the same agent's tool list. The MCP
+tool's parameter schema is passed through directly to the LLM.
+
+See [MCP Bridge](mcp.md) for the full guide.
+
+---
+
 ## Remote Tools
 
 For tools implemented in Python, Node.js, or any other language, see:
 
 - [Remote Tools](remote-tools.md) -- `ProcessAgentTool` and `HttpAgentTool`
 - [Built-in Tools](built-in-tools.md) -- ready-to-use tool library
+- [MCP Bridge](mcp.md) -- MCP protocol bridge
 
 ---
 
