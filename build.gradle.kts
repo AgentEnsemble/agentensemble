@@ -65,6 +65,11 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        systemProperties["junit.jupiter.execution.parallel.enabled"] = "true"
+        systemProperties["junit.jupiter.execution.parallel.mode.default"] = "same_thread"
+        systemProperties["junit.jupiter.execution.parallel.mode.classes.default"] = "concurrent"
+        systemProperties["junit.jupiter.execution.parallel.config.strategy"] = "dynamic"
+        systemProperties["junit.jupiter.execution.parallel.config.dynamic.factor"] = "1"
         testLogging {
             events("passed", "skipped", "failed")
             showStandardStreams = false
