@@ -222,7 +222,7 @@ class AuditingListenerTest {
     }
 
     @Test
-    void escalate_withDuration_revertsAfterTimeout() throws InterruptedException {
+    void escalate_withDuration_revertsToDefaultAfterTimeout() throws InterruptedException {
         AuditingListener l = listener(AuditLevel.MINIMAL);
 
         l.escalate(AuditLevel.FULL, Duration.ofMillis(200));
@@ -232,7 +232,27 @@ class AuditingListenerTest {
         // Wait for revert
         Thread.sleep(500);
 
+        // Reverts to the policy default level, not the previous level
         assertThat(l.currentLevel()).isEqualTo(AuditLevel.MINIMAL);
+    }
+
+    @Test
+    void escalate_subsequentEscalation_preventsStaleRevert() throws InterruptedException {
+        AuditingListener l = listener(AuditLevel.MINIMAL);
+
+        // First escalation with a short duration
+        l.escalate(AuditLevel.STANDARD, Duration.ofMillis(200));
+        assertThat(l.currentLevel()).isEqualTo(AuditLevel.STANDARD);
+
+        // Second escalation before the first one reverts
+        Thread.sleep(50);
+        l.escalate(AuditLevel.FULL, null);
+        assertThat(l.currentLevel()).isEqualTo(AuditLevel.FULL);
+
+        // Wait for the first revert timer to fire -- it should NOT revert because
+        // a newer escalation occurred
+        Thread.sleep(400);
+        assertThat(l.currentLevel()).isEqualTo(AuditLevel.FULL);
     }
 
     // ========================

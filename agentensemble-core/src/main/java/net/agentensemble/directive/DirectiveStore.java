@@ -33,10 +33,14 @@ public class DirectiveStore {
     /**
      * Remove a directive by its ID.
      *
-     * @param directiveId the ID of the directive to remove
+     * @param directiveId the ID of the directive to remove; must not be null
+     * @throws IllegalArgumentException if directiveId is null
      */
     public void remove(String directiveId) {
-        directives.removeIf(d -> d.id().equals(directiveId));
+        if (directiveId == null) {
+            throw new IllegalArgumentException("directiveId must not be null");
+        }
+        directives.removeIf(d -> directiveId.equals(d.id()));
     }
 
     /**

@@ -860,6 +860,15 @@ public class Ensemble {
     }
 
     /**
+     * Returns the directive dispatcher for routing control plane directives.
+     *
+     * @return the directive dispatcher; never null
+     */
+    public DirectiveDispatcher getDirectiveDispatcher() {
+        return directiveDispatcher;
+    }
+
+    /**
      * Execute a scheduled task by running it as a one-shot ensemble and optionally
      * broadcasting the result.
      *
@@ -872,7 +881,7 @@ public class Ensemble {
     private void executeScheduledTask(ScheduledTask st) {
         try {
             EnsembleOutput output = Ensemble.builder()
-                    .chatLanguageModel(getChatLanguageModel())
+                    .chatLanguageModel(getActiveModel())
                     .agentSynthesizer(getAgentSynthesizer())
                     .task(st.task())
                     .build()
@@ -1084,6 +1093,12 @@ public class Ensemble {
                 dashboard.setDirectiveStore(directiveStore);
             }
 
+            // Wire the ensemble reference into the dashboard so that control-plane
+            // directives can be dispatched through the DirectiveDispatcher.
+            if (dashboard != null) {
+                dashboard.setEnsemble(this);
+            }
+
             if (log.isInfoEnabled()) {
                 log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
             }
@@ -1154,6 +1169,39 @@ public class Ensemble {
                         "AuditingListener enabled | Level: {} | Sinks: {}",
                         auditPolicy.defaultLevel(),
                         auditSinks.size());
+            }
+
+            // Step 5c: Wire auto-directive rule listener when rules are configured
+            if (autoDirectiveRules != null && !autoDirectiveRules.isEmpty()) {
+                List<net.agentensemble.task.TaskOutput> completedOutputs =
+                        Collections.synchronizedList(new ArrayList<>());
+                Ensemble self = this;
+                List<EnsembleListener> augmented = new ArrayList<>(effectiveListeners);
+                augmented.add(new EnsembleListener() {
+                    @Override
+                    public void onTaskComplete(TaskCompleteEvent event) {
+                        if (event.taskOutput() != null) {
+                            completedOutputs.add(event.taskOutput());
+                        }
+                        try {
+                            List<net.agentensemble.task.TaskOutput> snapshot;
+                            synchronized (completedOutputs) {
+                                snapshot = List.copyOf(completedOutputs);
+                            }
+                            ExecutionMetrics currentMetrics = ExecutionMetrics.from(snapshot);
+                            for (AutoDirectiveRule rule : autoDirectiveRules) {
+                                if (rule.condition().test(currentMetrics)) {
+                                    log.info("Auto-directive rule '{}' triggered; dispatching directive", rule.name());
+                                    directiveDispatcher.dispatch(rule.directiveToFire(), self);
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Auto-directive rule evaluation failed: {}", e.getMessage(), e);
+                        }
+                    }
+                });
+                effectiveListeners = List.copyOf(augmented);
+                log.info("AutoDirectiveRules enabled | Rules: {}", autoDirectiveRules.size());
             }
 
             // Step 6: Build execution context
@@ -1265,7 +1313,8 @@ public class Ensemble {
                     output,
                     effectiveCaptureMode,
                     effectiveWorkflow,
-                    derivedAgents);
+                    derivedAgents,
+                    effectiveListeners);
 
             // Step 11: Attach trace to EnsembleOutput, preserving exitReason.
             // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
@@ -1350,10 +1399,11 @@ public class Ensemble {
      * all tasks that inherit the ensemble model share the same token bucket.
      */
     private ChatModel buildEffectiveChatModel() {
-        if (rateLimit != null && chatLanguageModel != null) {
-            return RateLimitedChatModel.of(chatLanguageModel, rateLimit);
+        ChatModel model = getActiveModel();
+        if (rateLimit != null && model != null) {
+            return RateLimitedChatModel.of(model, rateLimit);
         }
-        return chatLanguageModel;
+        return model;
     }
 
     /**
@@ -1514,7 +1564,8 @@ public class Ensemble {
             EnsembleOutput output,
             CaptureMode effectiveCaptureMode,
             Workflow effectiveWorkflow,
-            List<Agent> derivedAgents) {
+            List<Agent> derivedAgents,
+            List<EnsembleListener> effectiveListeners) {
 
         List<AgentSummary> agentSummaries = derivedAgents.stream()
                 .map(agent -> AgentSummary.builder()
@@ -1554,6 +1605,17 @@ public class Ensemble {
         }
         if (metrics.getTotalCostEstimate() != null) {
             builder.totalCostEstimate(metrics.getTotalCostEstimate());
+        }
+
+        // Populate traceId from any listener that provides one (e.g. OTelTracingListener)
+        if (effectiveListeners != null) {
+            for (EnsembleListener listener : effectiveListeners) {
+                String listenerTraceId = listener.getTraceId();
+                if (listenerTraceId != null) {
+                    builder.traceId(listenerTraceId);
+                    break;
+                }
+            }
         }
 
         return builder.build();
@@ -1866,7 +1928,8 @@ public class Ensemble {
 
     private ChatModel resolveManagerLlm(List<Agent> derivedAgents) {
         if (managerLlm != null) return managerLlm;
-        if (chatLanguageModel != null) return chatLanguageModel;
+        ChatModel active = getActiveModel();
+        if (active != null) return active;
         if (!derivedAgents.isEmpty()) return derivedAgents.get(0).getLlm();
         throw new ValidationException("No Manager LLM available for hierarchical workflow. "
                 + "Set ensemble-level chatLanguageModel or managerLlm.");

@@ -34,14 +34,19 @@ public final class TraceContextPropagator {
         if (traceparent == null || traceparent.isEmpty()) {
             return SpanContext.getInvalid();
         }
-        String[] parts = traceparent.split("-");
-        if (parts.length < 4) {
+        try {
+            String[] parts = traceparent.split("-");
+            if (parts.length < 4) {
+                return SpanContext.getInvalid();
+            }
+            String traceId = parts[1];
+            String spanId = parts[2];
+            byte flags = Byte.parseByte(parts[3], 16);
+            return SpanContext.createFromRemoteParent(
+                    traceId, spanId, TraceFlags.fromByte(flags), TraceState.getDefault());
+        } catch (Exception e) {
             return SpanContext.getInvalid();
         }
-        String traceId = parts[1];
-        String spanId = parts[2];
-        byte flags = Byte.parseByte(parts[3], 16);
-        return SpanContext.createFromRemoteParent(traceId, spanId, TraceFlags.fromByte(flags), TraceState.getDefault());
     }
 
     /**
@@ -51,6 +56,9 @@ public final class TraceContextPropagator {
      * @return the traceparent header value, or {@code null} if the span context is invalid
      */
     public static String injectTraceparent(Span span) {
+        if (span == null) {
+            return null;
+        }
         SpanContext ctx = span.getSpanContext();
         if (!ctx.isValid()) {
             return null;

@@ -5,6 +5,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import net.agentensemble.callback.DelegationCompletedEvent;
@@ -44,6 +45,7 @@ public final class OTelTracingListener implements EnsembleListener {
     private final Tracer tracer;
     private final ConcurrentHashMap<String, Span> activeSpans = new ConcurrentHashMap<>();
     private volatile String traceId;
+    private volatile Context rootContext;
 
     private OTelTracingListener(Tracer tracer) {
         this.tracer = tracer;
@@ -66,6 +68,7 @@ public final class OTelTracingListener implements EnsembleListener {
      *
      * @return the W3C trace ID hex string, or {@code null}
      */
+    @Override
     public String getTraceId() {
         return traceId;
     }
@@ -79,6 +82,7 @@ public final class OTelTracingListener implements EnsembleListener {
                 .startSpan();
         activeSpans.put("ensemble:" + ensembleId, span);
         traceId = span.getSpanContext().getTraceId();
+        rootContext = Context.current().with(span);
     }
 
     @Override
@@ -87,24 +91,31 @@ public final class OTelTracingListener implements EnsembleListener {
         if (span != null) {
             span.setAttribute(OTelAttributes.DURATION_MS, totalDuration.toMillis());
             span.setAttribute("agentensemble.exit_reason", exitReason);
-            span.setStatus(StatusCode.OK);
+            if ("COMPLETED".equals(exitReason)) {
+                span.setStatus(StatusCode.OK);
+            } else {
+                span.setStatus(StatusCode.ERROR, exitReason);
+            }
             span.end();
         }
     }
 
     @Override
     public void onTaskStart(TaskStartEvent event) {
-        Span span = tracer.spanBuilder("task.execute")
+        var spanBuilder = tracer.spanBuilder("task.execute")
                 .setAttribute(OTelAttributes.TASK_DESCRIPTION, event.taskDescription())
                 .setAttribute(OTelAttributes.AGENT_ROLE, event.agentRole())
-                .setAttribute(OTelAttributes.TASK_INDEX, (long) event.taskIndex())
-                .startSpan();
-        activeSpans.put(taskKey(event.taskDescription(), event.agentRole()), span);
+                .setAttribute(OTelAttributes.TASK_INDEX, (long) event.taskIndex());
+        if (rootContext != null) {
+            spanBuilder.setParent(rootContext);
+        }
+        Span span = spanBuilder.startSpan();
+        activeSpans.put(taskKey(event.taskIndex(), event.taskDescription(), event.agentRole()), span);
     }
 
     @Override
     public void onTaskComplete(TaskCompleteEvent event) {
-        Span span = activeSpans.remove(taskKey(event.taskDescription(), event.agentRole()));
+        Span span = activeSpans.remove(taskKey(event.taskIndex(), event.taskDescription(), event.agentRole()));
         if (span != null) {
             span.setAttribute(OTelAttributes.DURATION_MS, event.duration().toMillis());
             span.setStatus(StatusCode.OK);
@@ -114,7 +125,7 @@ public final class OTelTracingListener implements EnsembleListener {
 
     @Override
     public void onTaskFailed(TaskFailedEvent event) {
-        Span span = activeSpans.remove(taskKey(event.taskDescription(), event.agentRole()));
+        Span span = activeSpans.remove(taskKey(event.taskIndex(), event.taskDescription(), event.agentRole()));
         if (span != null) {
             String reason = event.cause() != null ? event.cause().getMessage() : "unknown";
             span.setStatus(StatusCode.ERROR, reason);
@@ -124,21 +135,27 @@ public final class OTelTracingListener implements EnsembleListener {
 
     @Override
     public void onToolCall(ToolCallEvent event) {
-        Span span = tracer.spanBuilder("tool.execute")
+        var spanBuilder = tracer.spanBuilder("tool.execute")
                 .setAttribute(OTelAttributes.TOOL_NAME, event.toolName())
                 .setAttribute(OTelAttributes.AGENT_ROLE, event.agentRole())
-                .setAttribute(OTelAttributes.DURATION_MS, event.duration().toMillis())
-                .startSpan();
+                .setAttribute(OTelAttributes.DURATION_MS, event.duration().toMillis());
+        if (rootContext != null) {
+            spanBuilder.setParent(rootContext);
+        }
+        Span span = spanBuilder.startSpan();
         span.end();
     }
 
     @Override
     public void onDelegationStarted(DelegationStartedEvent event) {
-        Span span = tracer.spanBuilder("network.delegate")
+        var spanBuilder = tracer.spanBuilder("network.delegate")
                 .setSpanKind(SpanKind.CLIENT)
                 .setAttribute(OTelAttributes.DELEGATION_TARGET, event.workerRole())
-                .setAttribute(OTelAttributes.TASK_DESCRIPTION, event.taskDescription())
-                .startSpan();
+                .setAttribute(OTelAttributes.TASK_DESCRIPTION, event.taskDescription());
+        if (rootContext != null) {
+            spanBuilder.setParent(rootContext);
+        }
+        Span span = spanBuilder.startSpan();
         activeSpans.put("delegation:" + event.delegationId(), span);
     }
 
@@ -161,7 +178,7 @@ public final class OTelTracingListener implements EnsembleListener {
         }
     }
 
-    private static String taskKey(String description, String agentRole) {
-        return "task:" + agentRole + ":" + description;
+    private static String taskKey(int taskIndex, String description, String agentRole) {
+        return "task:" + taskIndex + ":" + agentRole + ":" + description;
     }
 }

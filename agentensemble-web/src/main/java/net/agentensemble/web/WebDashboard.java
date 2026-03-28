@@ -10,6 +10,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import net.agentensemble.Ensemble;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.dashboard.RequestContext;
@@ -149,6 +150,9 @@ public final class WebDashboard implements EnsembleDashboard {
 
     /** Directive store for human-injected directives. Set via setDirectiveStore(). */
     private volatile DirectiveStore directiveStore;
+
+    /** Ensemble reference for dispatching control-plane directives. Set via setEnsemble(). */
+    private volatile Ensemble ensemble;
 
     /** Virtual-thread executor for processing incoming work requests asynchronously. */
     private final ExecutorService requestExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -552,6 +556,18 @@ public final class WebDashboard implements EnsembleDashboard {
         this.directiveStore = store;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Stores the ensemble reference so that incoming control-plane directives
+     * can be dispatched through the ensemble's {@link net.agentensemble.directive.DirectiveDispatcher}.
+     */
+    @Override
+    public void setEnsemble(Ensemble ensemble) {
+        Objects.requireNonNull(ensemble, "ensemble must not be null");
+        this.ensemble = ensemble;
+    }
+
     private void handleDirective(String sessionId, DirectiveMessage dm) {
         DirectiveStore store = this.directiveStore;
         if (store == null) {
@@ -560,11 +576,31 @@ public final class WebDashboard implements EnsembleDashboard {
         }
 
         try {
+            // Validate: context directives (action == null) must have non-blank content
+            if (dm.action() == null && (dm.content() == null || dm.content().isBlank())) {
+                DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                connectionManager.send(sessionId, serializer.toJson(ack));
+                return;
+            }
+
+            // Validate: control-plane directives (action != null) must have non-blank action
+            if (dm.action() != null && dm.action().isBlank()) {
+                DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                connectionManager.send(sessionId, serializer.toJson(ack));
+                return;
+            }
+
             // Parse TTL to compute expiry
             Instant now = Instant.now();
             Instant expiresAt = null;
             if (dm.ttl() != null && !dm.ttl().isBlank()) {
                 Duration ttl = Duration.parse(dm.ttl());
+                // Validate: TTL must be positive (not negative)
+                if (ttl.isNegative()) {
+                    DirectiveAckMessage ack = new DirectiveAckMessage(null, "REJECTED");
+                    connectionManager.send(sessionId, serializer.toJson(ack));
+                    return;
+                }
                 expiresAt = now.plus(ttl);
             }
 
@@ -573,6 +609,18 @@ public final class WebDashboard implements EnsembleDashboard {
             Directive directive =
                     new Directive(directiveId, dm.from(), dm.content(), dm.action(), dm.value(), now, expiresAt);
             store.add(directive);
+
+            // Dispatch control-plane directives through the ensemble's DirectiveDispatcher
+            if (dm.action() != null) {
+                Ensemble ens = this.ensemble;
+                if (ens != null) {
+                    ens.getDirectiveDispatcher().dispatch(directive, ens);
+                } else {
+                    log.warn(
+                            "Control-plane directive '{}' stored but no Ensemble is configured for dispatch",
+                            dm.action());
+                }
+            }
 
             // Broadcast to all clients
             DirectiveActiveMessage activeMsg = new DirectiveActiveMessage(

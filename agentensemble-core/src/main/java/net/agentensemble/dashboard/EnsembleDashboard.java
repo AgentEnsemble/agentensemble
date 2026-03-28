@@ -214,4 +214,16 @@ public interface EnsembleDashboard extends AutoCloseable {
      * @param store the directive store; must not be null
      */
     default void setDirectiveStore(DirectiveStore store) {}
+
+    /**
+     * Sets the ensemble reference so that the dashboard can dispatch control-plane
+     * directives through the ensemble's {@link net.agentensemble.directive.DirectiveDispatcher}.
+     *
+     * <p>Called by {@link net.agentensemble.Ensemble} during initialization.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param ensemble the ensemble instance; must not be null
+     */
+    default void setEnsemble(net.agentensemble.Ensemble ensemble) {}
 }

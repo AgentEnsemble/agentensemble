@@ -154,4 +154,16 @@ public interface EnsembleListener {
      * @param event the token event
      */
     default void onToken(TokenEvent event) {}
+
+    /**
+     * Returns a trace ID associated with this listener, or {@code null} if not applicable.
+     *
+     * <p>This method is used by the framework to populate {@code ExecutionTrace.traceId}
+     * when an OpenTelemetry-based listener is registered.
+     *
+     * @return the W3C trace ID hex string, or {@code null}
+     */
+    default String getTraceId() {
+        return null;
+    }
 }

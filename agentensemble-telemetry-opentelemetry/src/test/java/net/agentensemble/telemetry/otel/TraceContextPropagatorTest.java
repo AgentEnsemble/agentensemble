@@ -95,6 +95,20 @@ class TraceContextPropagatorTest {
     }
 
     @Test
+    void extractFromTraceparent_badHexFlags_returnsInvalid() {
+        // "ZZ" is not valid hex and would throw NumberFormatException without the try-catch
+        SpanContext ctx = TraceContextPropagator.extractFromTraceparent(
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-ZZ");
+        assertThat(ctx.isValid()).isFalse();
+    }
+
+    @Test
+    void injectTraceparent_nullSpan_returnsNull() {
+        String traceparent = TraceContextPropagator.injectTraceparent(null);
+        assertThat(traceparent).isNull();
+    }
+
+    @Test
     void roundtrip_extractThenInject() {
         String originalTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 

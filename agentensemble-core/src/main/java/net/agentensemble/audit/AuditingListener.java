@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.callback.*;
 import org.slf4j.Logger;
@@ -19,28 +20,31 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>MINIMAL: delegation events only</li>
  *   <li>STANDARD: + task start/complete/fail, review decisions</li>
- *   <li>FULL: + tool calls, token events</li>
+ *   <li>FULL: + tool calls</li>
  * </ul>
  */
 public final class AuditingListener implements EnsembleListener {
     private static final Logger log = LoggerFactory.getLogger(AuditingListener.class);
 
+    /** Shared daemon scheduler for all AuditingListener instances to avoid thread leaks. */
+    private static final ScheduledExecutorService SHARED_SCHEDULER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "audit-escalation");
+        t.setDaemon(true);
+        return t;
+    });
+
     private final AuditPolicy policy;
     private final List<AuditSink> sinks;
     private final String ensembleId;
     private final AtomicReference<AuditLevel> currentLevel;
-    private final ScheduledExecutorService scheduler;
+    /** Generation counter to prevent stale escalation reverts from overwriting newer escalations. */
+    private final AtomicLong escalationGeneration = new AtomicLong(0);
 
     public AuditingListener(AuditPolicy policy, List<AuditSink> sinks, String ensembleId) {
         this.policy = policy;
         this.sinks = List.copyOf(sinks);
         this.ensembleId = ensembleId;
         this.currentLevel = new AtomicReference<>(policy.defaultLevel());
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "audit-escalation");
-            t.setDaemon(true);
-            return t;
-        });
     }
 
     public AuditLevel currentLevel() {
@@ -48,9 +52,19 @@ public final class AuditingListener implements EnsembleListener {
     }
 
     public void escalate(AuditLevel level, Duration duration) {
-        AuditLevel previous = currentLevel.getAndSet(level);
+        long generation = escalationGeneration.incrementAndGet();
+        currentLevel.set(level);
         if (duration != null && !duration.isZero()) {
-            scheduler.schedule(() -> currentLevel.set(previous), duration.toMillis(), TimeUnit.MILLISECONDS);
+            AuditLevel revertTo = policy.defaultLevel();
+            SHARED_SCHEDULER.schedule(
+                    () -> {
+                        // Only revert if no newer escalation has occurred since this one was scheduled
+                        if (escalationGeneration.get() == generation) {
+                            currentLevel.set(revertTo);
+                        }
+                    },
+                    duration.toMillis(),
+                    TimeUnit.MILLISECONDS);
         }
     }
 

@@ -61,6 +61,13 @@ class DirectiveStoreTest {
         assertThat(store.all()).hasSize(1);
     }
 
+    @Test
+    void remove_nullThrows() {
+        assertThatThrownBy(() -> store.remove(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be null");
+    }
+
     // ========================
     // activeContextDirectives
     // ========================

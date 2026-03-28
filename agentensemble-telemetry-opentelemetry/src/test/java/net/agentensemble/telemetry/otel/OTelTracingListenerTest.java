@@ -163,6 +163,99 @@ class OTelTracingListenerTest {
     }
 
     @Test
+    void ensembleCompleted_failedRun_setsErrorStatus() {
+        listener.onEnsembleStarted("ens-fail", "SEQUENTIAL", 1);
+        listener.onEnsembleCompleted("ens-fail", Duration.ofMillis(200), "FAILED");
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans).hasSize(1);
+        SpanData span = spans.get(0);
+        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+        assertThat(span.getStatus().getDescription()).isEqualTo("FAILED");
+    }
+
+    @Test
+    void ensembleCompleted_cancelledRun_setsErrorStatus() {
+        listener.onEnsembleStarted("ens-cancel", "PARALLEL", 2);
+        listener.onEnsembleCompleted("ens-cancel", Duration.ofMillis(100), "CANCELLED");
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans).hasSize(1);
+        SpanData span = spans.get(0);
+        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+        assertThat(span.getStatus().getDescription()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void taskSpans_areChildrenOfEnsembleSpan() {
+        listener.onEnsembleStarted("ens-hierarchy", "SEQUENTIAL", 2);
+        listener.onTaskStart(new TaskStartEvent("Task 1", "agent-a", 1, 2));
+        listener.onTaskComplete(new TaskCompleteEvent("Task 1", "agent-a", null, Duration.ofMillis(500), 1, 2));
+        listener.onEnsembleCompleted("ens-hierarchy", Duration.ofMillis(1000), "COMPLETED");
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans).hasSize(2);
+
+        SpanData taskSpan = spans.stream()
+                .filter(s -> s.getName().equals("task.execute"))
+                .findFirst()
+                .orElseThrow();
+        SpanData ensembleSpan = spans.stream()
+                .filter(s -> s.getName().equals("ensemble.run"))
+                .findFirst()
+                .orElseThrow();
+
+        // Task span's parent should be the ensemble span
+        assertThat(taskSpan.getParentSpanId()).isEqualTo(ensembleSpan.getSpanId());
+        // Both should share the same trace ID
+        assertThat(taskSpan.getTraceId()).isEqualTo(ensembleSpan.getTraceId());
+    }
+
+    @Test
+    void toolAndDelegationSpans_areChildrenOfEnsembleSpan() {
+        listener.onEnsembleStarted("ens-child", "SEQUENTIAL", 1);
+        listener.onToolCall(new ToolCallEvent("search", "{}", "found", null, "agent-a", Duration.ofMillis(50)));
+        listener.onDelegationStarted(new DelegationStartedEvent("del-c", "agent-a", "agent-b", "Sub-task", 1, null));
+        listener.onDelegationCompleted(
+                new DelegationCompletedEvent("del-c", "agent-a", "agent-b", null, Duration.ofMillis(300)));
+        listener.onEnsembleCompleted("ens-child", Duration.ofMillis(500), "COMPLETED");
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        SpanData ensembleSpan = spans.stream()
+                .filter(s -> s.getName().equals("ensemble.run"))
+                .findFirst()
+                .orElseThrow();
+        SpanData toolSpan = spans.stream()
+                .filter(s -> s.getName().equals("tool.execute"))
+                .findFirst()
+                .orElseThrow();
+        SpanData delegationSpan = spans.stream()
+                .filter(s -> s.getName().equals("network.delegate"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(toolSpan.getParentSpanId()).isEqualTo(ensembleSpan.getSpanId());
+        assertThat(delegationSpan.getParentSpanId()).isEqualTo(ensembleSpan.getSpanId());
+    }
+
+    @Test
+    void taskKey_includesTaskIndex_noConcurrentCollision() {
+        // Two tasks with the same description and agent role but different indices
+        listener.onEnsembleStarted("ens-idx", "SEQUENTIAL", 2);
+        listener.onTaskStart(new TaskStartEvent("Summarize", "analyst", 1, 2));
+        listener.onTaskStart(new TaskStartEvent("Summarize", "analyst", 2, 2));
+        listener.onTaskComplete(new TaskCompleteEvent("Summarize", "analyst", null, Duration.ofMillis(100), 1, 2));
+        listener.onTaskComplete(new TaskCompleteEvent("Summarize", "analyst", null, Duration.ofMillis(200), 2, 2));
+        listener.onEnsembleCompleted("ens-idx", Duration.ofMillis(500), "COMPLETED");
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        // Should have 3 spans: 2 tasks + 1 ensemble (no collision)
+        long taskSpanCount =
+                spans.stream().filter(s -> s.getName().equals("task.execute")).count();
+        assertThat(taskSpanCount).isEqualTo(2);
+    }
+
+    @Test
     void multipleSpanTypes_createdCorrectly() {
         // Simulate a full run with ensemble, task, tool, and delegation
         listener.onEnsembleStarted("ens-full", "SEQUENTIAL", 2);
