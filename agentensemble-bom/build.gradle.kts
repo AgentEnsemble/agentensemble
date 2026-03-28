@@ -19,6 +19,7 @@ dependencies {
 
         api(project(":agentensemble-workspace"))
         api(project(":agentensemble-transport-redis"))
+        api(project(":agentensemble-coding"))
 
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
@@ -30,6 +31,7 @@ dependencies {
         api(project(":agentensemble-tools:web-scraper"))
         api(project(":agentensemble-tools:process"))
         api(project(":agentensemble-tools:http"))
+        api(project(":agentensemble-tools:coding"))
     }
 }
 

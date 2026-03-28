@@ -14,6 +14,7 @@ dependencies {
         api(project(":agentensemble-tools:web-scraper"))
         api(project(":agentensemble-tools:process"))
         api(project(":agentensemble-tools:http"))
+        api(project(":agentensemble-tools:coding"))
     }
 }
 

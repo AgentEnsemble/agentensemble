@@ -120,9 +120,8 @@ class RedisResultStoreTest {
             latch.countDown();
         });
 
-        // Small delay to let subscription activate
-        Thread.sleep(100);
-
+        // subscribe() is synchronous -- the SUBSCRIBE ack has been received, so we can
+        // publish immediately without a sleep.
         store.store("req-sub", new WorkResponse("req-sub", "COMPLETED", "done", null, 100L), Duration.ofHours(1));
 
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -139,14 +138,12 @@ class RedisResultStoreTest {
         AtomicReference<WorkResponse> captured = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        // Subscribe after the result is already stored
+        // Subscribe after the result is already stored -- subscribe() checks for
+        // an already-stored result per the SPI contract and invokes the callback.
         store.subscribe("req-race", response -> {
             captured.set(response);
             latch.countDown();
         });
-
-        // The subscribe method does a GET check after subscribing, so the callback
-        // should be invoked with the already-stored result.
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(captured.get()).isNotNull();
         assertThat(captured.get().requestId()).isEqualTo("req-race");

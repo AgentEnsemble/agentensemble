@@ -53,5 +53,11 @@ class InMemoryResultStore implements ResultStore {
         subscribers
                 .computeIfAbsent(requestId, k -> new CopyOnWriteArrayList<>())
                 .add(callback);
+
+        // Check for already-stored result to prevent lost notifications from race conditions.
+        WorkResponse existing = store.get(requestId);
+        if (existing != null) {
+            callback.accept(existing);
+        }
     }
 }

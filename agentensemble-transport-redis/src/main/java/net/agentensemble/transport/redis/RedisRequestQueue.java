@@ -143,13 +143,20 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
         String streamKey = streamKey(queueName);
         String groupName = groupName(queueName);
 
-        // 1. Try to reclaim timed-out messages from other consumers
+        // 1. Resume pending entries for this consumer (e.g., after crash/restart with same consumerName).
+        //    Offset "0" reads messages already delivered to this consumer but not yet acknowledged.
+        WorkRequest pending = readPending(commands, streamKey, groupName);
+        if (pending != null) {
+            return pending;
+        }
+
+        // 2. Try to reclaim timed-out messages from other consumers
         WorkRequest reclaimed = tryAutoClaim(commands, streamKey, groupName);
         if (reclaimed != null) {
             return reclaimed;
         }
 
-        // 2. Read new messages from the stream
+        // 3. Read new messages from the stream
         List<StreamMessage<String, String>> messages = commands.xreadgroup(
                 io.lettuce.core.Consumer.from(groupName, consumerName),
                 XReadArgs.Builder.count(1).block(timeout.toMillis()),
@@ -200,6 +207,27 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
     // Internal
     // ========================
 
+    private WorkRequest readPending(RedisCommands<String, String> commands, String streamKey, String groupName) {
+        try {
+            // Read up to 10 pending entries and return the first one not already tracked
+            // in this session (i.e., from a previous session with the same consumerName).
+            List<StreamMessage<String, String>> pending = commands.xreadgroup(
+                    io.lettuce.core.Consumer.from(groupName, consumerName),
+                    XReadArgs.Builder.count(10),
+                    XReadArgs.StreamOffset.from(streamKey, "0"));
+            if (pending != null) {
+                for (StreamMessage<String, String> msg : pending) {
+                    if (!pendingMessageIds.containsValue(msg.getId())) {
+                        return parseMessage(msg);
+                    }
+                }
+            }
+        } catch (RedisCommandExecutionException e) {
+            log.debug("XREADGROUP pending failed for stream={}: {}", streamKey, e.getMessage());
+        }
+        return null;
+    }
+
     private WorkRequest tryAutoClaim(RedisCommands<String, String> commands, String streamKey, String groupName) {
         try {
             XAutoClaimArgs<String> args = new XAutoClaimArgs<String>()
@@ -237,7 +265,8 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
                         groupName(queueName),
                         io.lettuce.core.XGroupCreateArgs.Builder.mkstream());
             } catch (RedisCommandExecutionException e) {
-                if (!e.getMessage().contains("BUSYGROUP")) {
+                String message = e.getMessage();
+                if (message == null || !message.startsWith("BUSYGROUP ")) {
                     initializedGroups.remove(queueName);
                     throw e;
                 }

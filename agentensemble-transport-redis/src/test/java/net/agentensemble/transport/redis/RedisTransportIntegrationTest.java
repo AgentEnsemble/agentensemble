@@ -81,14 +81,12 @@ class RedisTransportIntegrationTest {
 
         try (Transport transport = Transport.durable("kitchen", RedisRequestQueue.create(redisClient), store)) {
 
-            // Subscribe before delivering
+            // Subscribe before delivering -- subscribe() is synchronous (waits for
+            // SUBSCRIBE ack), so no sleep is needed before publishing.
             store.subscribe("req-notify", response -> {
                 captured.set(response);
                 latch.countDown();
             });
-
-            // Small delay to let subscription activate
-            Thread.sleep(100);
 
             // Deliver a response through the transport
             transport.deliver(new WorkResponse("req-notify", "COMPLETED", "notified", null, 100L));

@@ -8,6 +8,7 @@ import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import net.agentensemble.network.transport.ResultStore;
 import net.agentensemble.web.protocol.WorkResponse;
@@ -51,11 +52,15 @@ public final class RedisResultStore implements ResultStore, AutoCloseable {
     private final StatefulRedisPubSubConnection<String, String> pubSubConnection;
     private final RedisCodec codec;
 
+    /** Single shared map of channel -> callback; one entry per active subscription. */
+    private final ConcurrentHashMap<String, Consumer<WorkResponse>> subscriptions = new ConcurrentHashMap<>();
+
     private RedisResultStore(RedisClient client) {
         Objects.requireNonNull(client, "client must not be null");
         this.connection = client.connect();
         this.pubSubConnection = client.connectPubSub();
         this.codec = new RedisCodec();
+        installSharedListener();
     }
 
     /**
@@ -104,36 +109,24 @@ public final class RedisResultStore implements ResultStore, AutoCloseable {
 
         String channel = notifyChannel(requestId);
 
-        // Add listener for this channel
-        pubSubConnection.addListener(new RedisPubSubAdapter<String, String>() {
-            @Override
-            public void message(String ch, String message) {
-                if (channel.equals(ch)) {
-                    try {
-                        WorkResponse response = codec.deserialize(message, WorkResponse.class);
-                        callback.accept(response);
-                    } catch (Exception e) {
-                        log.warn(
-                                "Failed to deserialize result notification for requestId={}: {}",
-                                requestId,
-                                e.getMessage(),
-                                e);
-                    }
-                }
-            }
-        });
-
+        // Register callback in shared map before subscribing
+        subscriptions.put(channel, callback);
         pubSubConnection.sync().subscribe(channel);
 
-        // Race condition mitigation: check if the result was stored before we subscribed
+        // Check for already-stored result to prevent lost notifications from race conditions.
         WorkResponse existing = retrieve(requestId);
         if (existing != null) {
-            callback.accept(existing);
+            Consumer<WorkResponse> removed = subscriptions.remove(channel);
+            if (removed != null) {
+                pubSubConnection.async().unsubscribe(channel);
+                removed.accept(existing);
+            }
         }
     }
 
     @Override
     public void close() {
+        subscriptions.clear();
         pubSubConnection.close();
         connection.close();
     }
@@ -141,6 +134,31 @@ public final class RedisResultStore implements ResultStore, AutoCloseable {
     // ========================
     // Internal
     // ========================
+
+    /**
+     * Installs a single shared Pub/Sub listener that dispatches to per-channel callbacks.
+     */
+    private void installSharedListener() {
+        pubSubConnection.addListener(new RedisPubSubAdapter<String, String>() {
+            @Override
+            public void message(String channel, String message) {
+                Consumer<WorkResponse> callback = subscriptions.remove(channel);
+                if (callback != null) {
+                    try {
+                        WorkResponse response = codec.deserialize(message, WorkResponse.class);
+                        pubSubConnection.async().unsubscribe(channel);
+                        callback.accept(response);
+                    } catch (Exception e) {
+                        log.warn(
+                                "Failed to deserialize result notification on channel {}: {}",
+                                channel,
+                                e.getMessage(),
+                                e);
+                    }
+                }
+            }
+        });
+    }
 
     static String resultKey(String requestId) {
         return KEY_PREFIX + requestId;

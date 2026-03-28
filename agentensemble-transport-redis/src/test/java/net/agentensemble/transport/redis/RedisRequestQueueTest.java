@@ -193,6 +193,31 @@ class RedisRequestQueueTest {
     }
 
     // ========================
+    // Pending entry recovery (same consumerName after restart)
+    // ========================
+
+    @Test
+    void pendingRecovery_sameConsumerName_resumesPendingEntries() {
+        // Simulate a consumer that dequeues but crashes before acknowledging
+        try (RedisRequestQueue session1 = RedisRequestQueue.create(redisClient, "stable-consumer")) {
+            session1.enqueue("kitchen", workRequest("req-pending", "cook"));
+            WorkRequest received = session1.dequeue("kitchen", Duration.ofSeconds(1));
+            assertThat(received).isNotNull();
+            assertThat(received.requestId()).isEqualTo("req-pending");
+            // Session 1 "crashes" without acknowledging (close without ack)
+        }
+
+        // New session with the SAME consumer name picks up the pending entry immediately
+        try (RedisRequestQueue session2 = RedisRequestQueue.create(redisClient, "stable-consumer")) {
+            WorkRequest resumed = session2.dequeue("kitchen", Duration.ofSeconds(2));
+            assertThat(resumed).isNotNull();
+            assertThat(resumed.requestId()).isEqualTo("req-pending");
+
+            session2.acknowledge("kitchen", "req-pending");
+        }
+    }
+
+    // ========================
     // Null validation
     // ========================
 
@@ -259,6 +284,41 @@ class RedisRequestQueueTest {
         }
 
         assertThat(receivedIds).hasSize(count);
+    }
+
+    // ========================
+    // Key scheme
+    // ========================
+
+    @Test
+    void streamKey_includesPrefix() {
+        assertThat(RedisRequestQueue.streamKey("kitchen")).isEqualTo("agentensemble:queue:kitchen");
+    }
+
+    @Test
+    void groupName_includesPrefix() {
+        assertThat(RedisRequestQueue.groupName("kitchen")).isEqualTo("agentensemble:group:kitchen");
+    }
+
+    // ========================
+    // Consumer group idempotent creation
+    // ========================
+
+    @Test
+    void ensureConsumerGroup_idempotent_secondCallIgnoresBusyGroup() {
+        // First enqueue creates the consumer group; second enqueue on same queue should not fail
+        queue.enqueue("kitchen", workRequest("req-a", "task"));
+        queue.enqueue("kitchen", workRequest("req-b", "task"));
+
+        // Create a second queue instance to trigger BUSYGROUP on ensureConsumerGroup
+        try (RedisRequestQueue queue2 = RedisRequestQueue.create(redisClient, "consumer-2")) {
+            queue2.enqueue("kitchen", workRequest("req-c", "task"));
+        }
+
+        // All three messages should be dequeuable
+        assertThat(queue.dequeue("kitchen", Duration.ofSeconds(1))).isNotNull();
+        assertThat(queue.dequeue("kitchen", Duration.ofSeconds(1))).isNotNull();
+        assertThat(queue.dequeue("kitchen", Duration.ofSeconds(1))).isNotNull();
     }
 
     // ========================
