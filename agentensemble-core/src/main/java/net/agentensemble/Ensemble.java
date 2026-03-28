@@ -474,6 +474,26 @@ public class Ensemble {
     private final List<SharedCapability> sharedCapabilities;
 
     /**
+     * Registry mapping shared task names to their {@link Task} instances.
+     *
+     * <p>Populated by {@link EnsembleBuilder#shareTask(String, Task)} in parallel with
+     * {@link #sharedCapabilities}. Used by the request handler to look up tasks for
+     * incoming cross-ensemble work requests.
+     */
+    @Getter(lombok.AccessLevel.PUBLIC)
+    private final Map<String, Task> sharedTaskRegistry;
+
+    /**
+     * Registry mapping shared tool names to their {@link AgentTool} instances.
+     *
+     * <p>Populated by {@link EnsembleBuilder#shareTool(String, AgentTool)} in parallel with
+     * {@link #sharedCapabilities}. Used by the request handler to look up tools for
+     * incoming cross-ensemble work requests.
+     */
+    @Getter(lombok.AccessLevel.PUBLIC)
+    private final Map<String, AgentTool> sharedToolRegistry;
+
+    /**
      * Internal lifecycle state for long-running mode.
      *
      * <p>Not exposed via the builder; managed internally by {@link #start(int)} and
@@ -556,6 +576,13 @@ public class Ensemble {
             }
             if (!dashboard.isRunning()) {
                 dashboard.start();
+            }
+
+            // Wire lifecycle state, drain action, and request handler into the dashboard
+            dashboard.setLifecycleStateProvider(this::getLifecycleState);
+            dashboard.setDrainAction(this::stop);
+            if (!sharedTaskRegistry.isEmpty() || !sharedToolRegistry.isEmpty()) {
+                dashboard.setRequestHandler(new net.agentensemble.ensemble.EnsembleRequestHandler(this));
             }
 
             // Use CAS to transition STARTING -> READY. If stop() was called concurrently
@@ -1633,6 +1660,10 @@ public class Ensemble {
         // Shared capabilities accumulator (same pattern as phases).
         private List<SharedCapability> sharedCapabilities = List.of();
 
+        // Shared task/tool registries (name -> instance).
+        private Map<String, Task> sharedTaskRegistry = Map.of();
+        private Map<String, AgentTool> sharedToolRegistry = Map.of();
+
         /**
          * Share a named task with the network.
          *
@@ -1653,6 +1684,10 @@ public class Ensemble {
             List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
             updated.add(new SharedCapability(name, description, SharedCapabilityType.TASK));
             this.sharedCapabilities = List.copyOf(updated);
+            // Also store the Task instance for request handling
+            Map<String, Task> updatedRegistry = new HashMap<>(this.sharedTaskRegistry);
+            updatedRegistry.put(name, task);
+            this.sharedTaskRegistry = Map.copyOf(updatedRegistry);
             return this;
         }
 
@@ -1676,6 +1711,10 @@ public class Ensemble {
             List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
             updated.add(new SharedCapability(name, description, SharedCapabilityType.TOOL));
             this.sharedCapabilities = List.copyOf(updated);
+            // Also store the AgentTool instance for request handling
+            Map<String, AgentTool> updatedRegistry = new HashMap<>(this.sharedToolRegistry);
+            updatedRegistry.put(name, tool);
+            this.sharedToolRegistry = Map.copyOf(updatedRegistry);
             return this;
         }
 

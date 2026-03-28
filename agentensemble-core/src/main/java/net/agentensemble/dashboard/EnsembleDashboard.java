@@ -1,7 +1,9 @@
 package net.agentensemble.dashboard;
 
 import java.time.Instant;
+import java.util.function.Supplier;
 import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.trace.export.ExecutionTraceExporter;
 
@@ -158,4 +160,44 @@ public interface EnsembleDashboard extends AutoCloseable {
             String exitReason,
             long totalTokens,
             int totalToolCalls) {}
+
+    /**
+     * Sets a supplier that provides the current ensemble lifecycle state.
+     *
+     * <p>Used by dashboard implementations to power K8s health and readiness endpoints.
+     * Called by {@link net.agentensemble.Ensemble#start(int)} after the ensemble transitions
+     * to {@link EnsembleLifecycleState#READY}.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param provider a supplier returning the current lifecycle state; must not be null
+     */
+    default void setLifecycleStateProvider(Supplier<EnsembleLifecycleState> provider) {}
+
+    /**
+     * Sets the handler for incoming cross-ensemble work requests.
+     *
+     * <p>Used by dashboard implementations to dispatch incoming {@code task_request} and
+     * {@code tool_request} wire-protocol messages to the appropriate shared task or tool.
+     * Called by {@link net.agentensemble.Ensemble#start(int)} after the ensemble transitions
+     * to {@link EnsembleLifecycleState#READY}.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param handler the request handler; must not be null
+     */
+    default void setRequestHandler(RequestHandler handler) {}
+
+    /**
+     * Sets an action to trigger ensemble draining.
+     *
+     * <p>Used by dashboard implementations to power the {@code POST /api/lifecycle/drain}
+     * endpoint. Called by {@link net.agentensemble.Ensemble#start(int)} after the ensemble
+     * transitions to {@link EnsembleLifecycleState#READY}.
+     *
+     * <p>Default implementation is a no-op.
+     *
+     * @param drainAction a runnable that initiates graceful shutdown; must not be null
+     */
+    default void setDrainAction(Runnable drainAction) {}
 }
