@@ -170,6 +170,28 @@ public class NetworkTool extends AbstractAgentTool {
         return new RecordingNetworkTool(ensemble, toolName, defaultResult);
     }
 
+    /**
+     * Discover a tool by name from any ensemble on the network.
+     *
+     * <p>Queries the {@link CapabilityRegistry} for the first ensemble that provides
+     * the named tool and creates a {@code NetworkTool} connected to that provider.
+     *
+     * @param toolName       the tool name to discover
+     * @param clientRegistry the client registry with capability information
+     * @return a NetworkTool connected to the discovered provider
+     * @throws IllegalStateException if no provider is found
+     */
+    public static NetworkTool discover(String toolName, NetworkClientRegistry clientRegistry) {
+        Objects.requireNonNull(toolName, "toolName must not be null");
+        Objects.requireNonNull(clientRegistry, "clientRegistry must not be null");
+        String provider = clientRegistry
+                .getCapabilityRegistry()
+                .findProvider(toolName)
+                .orElseThrow(() ->
+                        new IllegalStateException("No provider found for tool '" + toolName + "' on the network"));
+        return new NetworkTool(provider, toolName, DEFAULT_EXECUTION_TIMEOUT, clientRegistry);
+    }
+
     @Override
     public String name() {
         return ensembleName + "." + toolName;

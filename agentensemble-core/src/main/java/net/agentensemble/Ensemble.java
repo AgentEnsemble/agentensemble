@@ -2065,6 +2065,21 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder shareTask(String name, Task task) {
+            return shareTask(name, task, new String[0]);
+        }
+
+        /**
+         * Share a named task with the network, attaching discovery tags.
+         *
+         * <p>Other ensembles can discover and delegate work to this task via
+         * {@code NetworkTask.from(ensembleName, taskName)}.
+         *
+         * @param name unique name for this shared task
+         * @param task the task definition to share
+         * @param tags optional classification tags for capability-based discovery
+         * @return this builder
+         */
+        public EnsembleBuilder shareTask(String name, Task task, String... tags) {
             Objects.requireNonNull(name, "Shared task name must not be null");
             Objects.requireNonNull(task, "Shared task must not be null");
             if (name.isBlank()) {
@@ -2072,7 +2087,7 @@ public class Ensemble {
             }
             String description = task.getDescription() != null ? task.getDescription() : "";
             List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
-            updated.add(new SharedCapability(name, description, SharedCapabilityType.TASK));
+            updated.add(new SharedCapability(name, description, SharedCapabilityType.TASK, List.of(tags)));
             this.sharedCapabilities = List.copyOf(updated);
             // Also store the Task instance for request handling
             Map<String, Task> updatedRegistry = new HashMap<>(this.sharedTaskRegistry);
@@ -2092,6 +2107,21 @@ public class Ensemble {
          * @return this builder
          */
         public EnsembleBuilder shareTool(String name, AgentTool tool) {
+            return shareTool(name, tool, new String[0]);
+        }
+
+        /**
+         * Share a named tool with the network, attaching discovery tags.
+         *
+         * <p>Other ensembles' agents can invoke this tool remotely via
+         * {@code NetworkTool.from(ensembleName, toolName)}.
+         *
+         * @param name unique name for this shared tool
+         * @param tool the tool to share
+         * @param tags optional classification tags for capability-based discovery
+         * @return this builder
+         */
+        public EnsembleBuilder shareTool(String name, AgentTool tool, String... tags) {
             Objects.requireNonNull(name, "Shared tool name must not be null");
             Objects.requireNonNull(tool, "Shared tool must not be null");
             if (name.isBlank()) {
@@ -2099,7 +2129,7 @@ public class Ensemble {
             }
             String description = tool.description() != null ? tool.description() : "";
             List<SharedCapability> updated = new ArrayList<>(this.sharedCapabilities);
-            updated.add(new SharedCapability(name, description, SharedCapabilityType.TOOL));
+            updated.add(new SharedCapability(name, description, SharedCapabilityType.TOOL, List.of(tags)));
             this.sharedCapabilities = List.copyOf(updated);
             // Also store the AgentTool instance for request handling
             Map<String, AgentTool> updatedRegistry = new HashMap<>(this.sharedToolRegistry);

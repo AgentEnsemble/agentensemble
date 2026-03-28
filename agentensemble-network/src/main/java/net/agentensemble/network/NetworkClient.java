@@ -11,7 +11,10 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import net.agentensemble.network.federation.FederationRegistry;
+import net.agentensemble.web.protocol.CapacityUpdateMessage;
 import net.agentensemble.web.protocol.ClientMessage;
+import net.agentensemble.web.protocol.HelloMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ServerMessage;
 import net.agentensemble.web.protocol.TaskAcceptedMessage;
@@ -47,6 +50,8 @@ public class NetworkClient implements AutoCloseable {
             new ConcurrentHashMap<>();
     private final AtomicReference<WebSocket> wsRef = new AtomicReference<>();
     private final AtomicReference<HttpClient> httpClientRef = new AtomicReference<>();
+    private volatile CapabilityRegistry capabilityRegistry;
+    private volatile FederationRegistry federationRegistry;
 
     /**
      * Create a new client for the given ensemble with the default request timeout (30 minutes).
@@ -173,6 +178,30 @@ public class NetworkClient implements AutoCloseable {
         return wsUrl;
     }
 
+    /**
+     * Set the {@link CapabilityRegistry} to populate when a {@link HelloMessage} is received.
+     *
+     * <p>Package-private: called by {@link NetworkClientRegistry} to wire the shared
+     * registry into each client.
+     *
+     * @param registry the capability registry, or {@code null} to disable
+     */
+    void setCapabilityRegistry(CapabilityRegistry registry) {
+        this.capabilityRegistry = registry;
+    }
+
+    /**
+     * Set the {@link FederationRegistry} to update when a {@link CapacityUpdateMessage} is received.
+     *
+     * <p>Package-private: called by {@link NetworkClientRegistry} to wire the shared
+     * federation registry into each client.
+     *
+     * @param registry the federation registry, or {@code null} to disable
+     */
+    void setFederationRegistry(FederationRegistry registry) {
+        this.federationRegistry = registry;
+    }
+
     // ========================
     // Connection management
     // ========================
@@ -248,6 +277,16 @@ public class NetworkClient implements AutoCloseable {
         private void handleMessage(String json) {
             try {
                 ServerMessage msg = serializer.fromJson(json, ServerMessage.class);
+
+                if (msg instanceof HelloMessage hello
+                        && hello.sharedCapabilities() != null
+                        && capabilityRegistry != null) {
+                    capabilityRegistry.register(ensembleName, hello.sharedCapabilities());
+                }
+
+                if (msg instanceof CapacityUpdateMessage update && federationRegistry != null) {
+                    federationRegistry.updateCapacity(update);
+                }
 
                 String requestId = extractRequestId(msg);
                 if (requestId != null) {

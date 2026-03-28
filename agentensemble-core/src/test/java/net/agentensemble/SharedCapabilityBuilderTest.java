@@ -163,4 +163,62 @@ class SharedCapabilityBuilderTest {
         assertThatThrownBy(() -> caps.add(new SharedCapability("hacked", "hacked", SharedCapabilityType.TASK)))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test
+    void shareTaskWithTagsAddsCapabilityWithTags() {
+        Task task = Task.of("Prepare a meal as specified");
+        Ensemble ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .task(Task.of("main task"))
+                .shareTask("prepare-meal", task, "food", "kitchen")
+                .build();
+
+        List<SharedCapability> caps = ensemble.getSharedCapabilities();
+        assertThat(caps).hasSize(1);
+        assertThat(caps.get(0).name()).isEqualTo("prepare-meal");
+        assertThat(caps.get(0).type()).isEqualTo(SharedCapabilityType.TASK);
+        assertThat(caps.get(0).tags()).containsExactly("food", "kitchen");
+    }
+
+    @Test
+    void shareToolWithTagsAddsCapabilityWithTags() {
+        AgentTool tool = mock(AgentTool.class);
+        Ensemble ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .task(Task.of("main task"))
+                .shareTool("check-inventory", tool, "inventory", "database")
+                .build();
+
+        List<SharedCapability> caps = ensemble.getSharedCapabilities();
+        assertThat(caps).hasSize(1);
+        assertThat(caps.get(0).name()).isEqualTo("check-inventory");
+        assertThat(caps.get(0).type()).isEqualTo(SharedCapabilityType.TOOL);
+        assertThat(caps.get(0).tags()).containsExactly("inventory", "database");
+    }
+
+    @Test
+    void shareTaskWithoutTagsDefaultsToEmptyTags() {
+        Task task = Task.of("Prepare a meal");
+        Ensemble ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .task(Task.of("main task"))
+                .shareTask("prepare-meal", task)
+                .build();
+
+        List<SharedCapability> caps = ensemble.getSharedCapabilities();
+        assertThat(caps.get(0).tags()).isEmpty();
+    }
+
+    @Test
+    void shareToolWithoutTagsDefaultsToEmptyTags() {
+        AgentTool tool = mock(AgentTool.class);
+        Ensemble ensemble = Ensemble.builder()
+                .chatLanguageModel(model)
+                .task(Task.of("main task"))
+                .shareTool("check-inventory", tool)
+                .build();
+
+        List<SharedCapability> caps = ensemble.getSharedCapabilities();
+        assertThat(caps.get(0).tags()).isEmpty();
+    }
 }

@@ -3,6 +3,7 @@ package net.agentensemble.ensemble;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -17,6 +18,26 @@ class SharedCapabilityTest {
         assertThat(cap.name()).isEqualTo("prepare-meal");
         assertThat(cap.description()).isEqualTo("Prepare a meal as specified");
         assertThat(cap.type()).isEqualTo(SharedCapabilityType.TASK);
+        assertThat(cap.tags()).isEmpty();
+    }
+
+    @Test
+    void constructionWithTags() {
+        SharedCapability cap = new SharedCapability(
+                "prepare-meal", "Prepare a meal", SharedCapabilityType.TASK, List.of("food", "kitchen"));
+        assertThat(cap.tags()).containsExactly("food", "kitchen");
+    }
+
+    @Test
+    void nullTagsDefaultsToEmptyList() {
+        SharedCapability cap = new SharedCapability("prepare-meal", "Prepare a meal", SharedCapabilityType.TASK, null);
+        assertThat(cap.tags()).isEmpty();
+    }
+
+    @Test
+    void threeArgConstructorDefaultsTagsToEmpty() {
+        SharedCapability cap = new SharedCapability("prepare-meal", "Prepare a meal", SharedCapabilityType.TASK);
+        assertThat(cap.tags()).isEmpty();
     }
 
     @Test
@@ -60,6 +81,16 @@ class SharedCapabilityTest {
         SharedCapability b = new SharedCapability("name", "desc", SharedCapabilityType.TASK);
         assertThat(a).isEqualTo(b);
         assertThat(a.hashCode()).isEqualTo(b.hashCode());
+    }
+
+    @Test
+    void equalityIncludesTags() {
+        SharedCapability a = new SharedCapability("name", "desc", SharedCapabilityType.TASK, List.of("tag1"));
+        SharedCapability b = new SharedCapability("name", "desc", SharedCapabilityType.TASK, List.of("tag1"));
+        SharedCapability c = new SharedCapability("name", "desc", SharedCapabilityType.TASK, List.of("tag2"));
+        assertThat(a).isEqualTo(b);
+        assertThat(a.hashCode()).isEqualTo(b.hashCode());
+        assertThat(a).isNotEqualTo(c);
     }
 
     @Test

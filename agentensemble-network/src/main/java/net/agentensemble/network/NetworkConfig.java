@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import net.agentensemble.network.federation.FederationConfig;
+import net.agentensemble.network.memory.SharedMemory;
 
 /**
  * Configuration for cross-ensemble network communication.
@@ -22,12 +24,17 @@ import java.util.Objects;
  * @param defaultConnectTimeout connect timeout for new WebSocket connections
  * @param defaultTaskTimeout    default execution timeout for {@link NetworkTask}
  * @param defaultToolTimeout    default execution timeout for {@link NetworkTool}
+ * @param sharedMemories       named {@link SharedMemory} instances available at the network level
+ * @param federationConfig     optional federation configuration for cross-realm capability sharing;
+ *                             {@code null} means federation is disabled
  */
 public record NetworkConfig(
         Map<String, String> ensembleUrls,
         Duration defaultConnectTimeout,
         Duration defaultTaskTimeout,
-        Duration defaultToolTimeout) {
+        Duration defaultToolTimeout,
+        Map<String, SharedMemory> sharedMemories,
+        FederationConfig federationConfig) {
 
     /** Default connect timeout: 10 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -52,6 +59,7 @@ public record NetworkConfig(
         if (defaultToolTimeout == null) {
             defaultToolTimeout = DEFAULT_TOOL_TIMEOUT;
         }
+        sharedMemories = sharedMemories != null ? Map.copyOf(sharedMemories) : Map.of();
     }
 
     /**
@@ -81,6 +89,8 @@ public record NetworkConfig(
         private Duration connectTimeout = DEFAULT_CONNECT_TIMEOUT;
         private Duration taskTimeout = DEFAULT_TASK_TIMEOUT;
         private Duration toolTimeout = DEFAULT_TOOL_TIMEOUT;
+        private final Map<String, SharedMemory> sharedMemories = new HashMap<>();
+        private FederationConfig federationConfig;
 
         private Builder() {}
 
@@ -132,12 +142,37 @@ public record NetworkConfig(
         }
 
         /**
+         * Register a named {@link SharedMemory} instance.
+         *
+         * @param name         the shared memory name; must not be null
+         * @param sharedMemory the shared memory instance; must not be null
+         * @return this builder
+         */
+        public Builder sharedMemory(String name, SharedMemory sharedMemory) {
+            Objects.requireNonNull(name, "name must not be null");
+            Objects.requireNonNull(sharedMemory, "sharedMemory must not be null");
+            sharedMemories.put(name, sharedMemory);
+            return this;
+        }
+
+        /**
+         * Set the federation configuration for cross-realm capability sharing.
+         *
+         * @param federationConfig the federation config; may be null to disable federation
+         * @return this builder
+         */
+        public Builder federationConfig(FederationConfig federationConfig) {
+            this.federationConfig = federationConfig;
+            return this;
+        }
+
+        /**
          * Build the configuration.
          *
          * @return a new NetworkConfig
          */
         public NetworkConfig build() {
-            return new NetworkConfig(urls, connectTimeout, taskTimeout, toolTimeout);
+            return new NetworkConfig(urls, connectTimeout, taskTimeout, toolTimeout, sharedMemories, federationConfig);
         }
     }
 }

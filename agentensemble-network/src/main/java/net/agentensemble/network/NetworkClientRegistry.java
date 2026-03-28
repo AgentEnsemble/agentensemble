@@ -31,6 +31,7 @@ public class NetworkClientRegistry implements AutoCloseable {
 
     private final NetworkConfig config;
     private final ConcurrentHashMap<String, NetworkClient> clients = new ConcurrentHashMap<>();
+    private final CapabilityRegistry capabilityRegistry = new CapabilityRegistry();
 
     /**
      * Create a registry backed by the given configuration.
@@ -59,8 +60,20 @@ public class NetworkClientRegistry implements AutoCloseable {
                 throw new IllegalArgumentException("No WebSocket URL configured for ensemble '" + name + "'. "
                         + "Add it via NetworkConfig.builder().ensemble(\"" + name + "\", \"ws://...\").");
             }
-            return new NetworkClient(name, url, config.defaultConnectTimeout());
+            NetworkClient client = new NetworkClient(name, url, config.defaultConnectTimeout());
+            client.setCapabilityRegistry(capabilityRegistry);
+            return client;
         });
+    }
+
+    /**
+     * Returns the {@link CapabilityRegistry} for discovering shared capabilities across
+     * the network.
+     *
+     * @return the capability registry; never null
+     */
+    public CapabilityRegistry getCapabilityRegistry() {
+        return capabilityRegistry;
     }
 
     /**
