@@ -69,6 +69,7 @@ public final class GlobTool extends AbstractTypedAgentTool<GlobInput> {
     }
 
     @Override
+    @SuppressWarnings("PMD.CloseResource") // Default FileSystem must not be closed
     public ToolResult execute(GlobInput input) {
         String pattern = input.pattern();
         if (pattern == null || pattern.isBlank()) {

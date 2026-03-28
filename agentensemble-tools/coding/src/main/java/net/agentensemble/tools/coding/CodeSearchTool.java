@@ -231,10 +231,10 @@ public final class CodeSearchTool extends AbstractTypedAgentTool<CodeSearchInput
         if (lines.length <= MAX_MATCHES) {
             return output;
         }
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(MAX_MATCHES * 80);
         for (int i = 0; i < MAX_MATCHES; i++) {
             if (i > 0) {
-                sb.append("\n");
+                sb.append('\n');
             }
             sb.append(lines[i]);
         }
@@ -270,7 +270,7 @@ public final class CodeSearchTool extends AbstractTypedAgentTool<CodeSearchInput
                     }
                     searchFile(file, regex, contextSize, results);
                 } catch (IOException e) {
-                    // Skip unreadable files
+                    log().trace("Skipping unreadable file: {}", file, e);
                 }
                 return results.size() >= MAX_MATCHES ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
             }

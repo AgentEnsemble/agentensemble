@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import net.agentensemble.exception.ToolConfigurationException;
@@ -105,7 +106,7 @@ public final class GitTool extends AbstractTypedAgentTool<GitInput> {
             return ToolResult.failure("Git command must not be blank");
         }
 
-        String command = input.command().trim().toLowerCase();
+        String command = input.command().trim().toLowerCase(Locale.ROOT);
         if (!ALLOWED_COMMANDS.contains(command)) {
             return ToolResult.failure("Unknown git command: " + command + ". Allowed: "
                     + String.join(", ", ALLOWED_COMMANDS.stream().sorted().toList()));

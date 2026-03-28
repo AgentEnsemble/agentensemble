@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,7 +44,7 @@ public final class BuildRunnerTool extends AbstractTypedAgentTool<BuildRunnerInp
     private BuildRunnerTool(SandboxValidator sandbox, Duration timeout) {
         this.sandbox = sandbox;
         this.timeout = timeout;
-        String os = System.getProperty("os.name", "").toLowerCase();
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         this.shellPrefix = os.contains("win") ? List.of("cmd", "/c") : List.of("sh", "-c");
     }
 
