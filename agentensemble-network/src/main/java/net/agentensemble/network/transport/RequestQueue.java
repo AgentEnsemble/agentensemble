@@ -82,7 +82,7 @@ public interface RequestQueue {
      * @see AgingPolicy#every(Duration)
      * @see AgingPolicy#none()
      */
-    static RequestQueue priority(AgingPolicy agingPolicy) {
+    static PriorityWorkQueue priority(AgingPolicy agingPolicy) {
         return new PriorityWorkQueue(agingPolicy);
     }
 
@@ -95,7 +95,7 @@ public interface RequestQueue {
      *
      * @return a new {@link PriorityWorkQueue} with no aging
      */
-    static RequestQueue priority() {
+    static PriorityWorkQueue priority() {
         return new PriorityWorkQueue();
     }
 }

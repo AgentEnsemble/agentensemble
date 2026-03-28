@@ -26,8 +26,9 @@ import net.agentensemble.web.protocol.Priority;
  *         .register(registry);
  * </pre>
  *
- * <p>Implementations must be thread-safe. Callbacks are invoked while holding the queue's
- * internal lock, so they should complete quickly and avoid blocking operations.
+ * <p>Implementations must be thread-safe. Callbacks may be invoked from internal queue
+ * operations, should complete quickly, avoid blocking operations, and must not assume
+ * that any particular lock is held when they are called.
  *
  * @see PriorityWorkQueue
  */

@@ -206,7 +206,7 @@ The `PriorityWorkQueue` provides queue position and ETA for populating `task_acc
 messages:
 
 ```java
-PriorityWorkQueue queue = (PriorityWorkQueue) RequestQueue.priority(
+PriorityWorkQueue queue = RequestQueue.priority(
     AgingPolicy.every(Duration.ofMinutes(30)));
 
 queue.enqueue("kitchen", workRequest);
@@ -221,11 +221,23 @@ QueueStatus status = queue.queueStatus("kitchen", workRequest.requestId());
 Pass a `QueueMetrics` callback to receive queue depth reports after each enqueue/dequeue:
 
 ```java
-QueueMetrics metrics = (queueName, priority, depth) ->
-    Gauge.builder("agentensemble.queue.depth", () -> depth)
-        .tag("ensemble", queueName)
-        .tag("priority", priority.name())
-        .register(meterRegistry);
+QueueMetrics metrics = new QueueMetrics() {
+    private final Map<String, AtomicInteger> depths = new ConcurrentHashMap<>();
+
+    @Override
+    public void recordQueueDepth(String queueName, Priority priority, int depth) {
+        String key = queueName + ":" + priority.name();
+        AtomicInteger gaugeValue = depths.computeIfAbsent(key, k -> {
+            AtomicInteger value = new AtomicInteger(depth);
+            Gauge.builder("agentensemble.queue.depth", value, AtomicInteger::get)
+                .tag("ensemble", queueName)
+                .tag("priority", priority.name())
+                .register(meterRegistry);
+            return value;
+        });
+        gaugeValue.set(depth);
+    }
+};
 ```
 
 ## Related

@@ -55,7 +55,7 @@ import net.agentensemble.web.protocol.WorkRequest;
  * @see QueueStatus
  * @see RequestQueue#priority(AgingPolicy)
  */
-class PriorityWorkQueue implements RequestQueue {
+public class PriorityWorkQueue implements RequestQueue {
 
     private static final Duration DEFAULT_AVG_PROCESSING_TIME = Duration.ofSeconds(30);
     private static final Priority[] PRIORITIES = Priority.values();
@@ -122,30 +122,37 @@ class PriorityWorkQueue implements RequestQueue {
 
         PriorityBuckets buckets = bucketsFor(queueName);
         long remainingNanos = timeout.toNanos();
+        WorkRequest result = null;
 
         buckets.lock.lock();
         try {
             while (true) {
                 QueueEntry best = findBestEntry(buckets);
                 if (best != null) {
-                    reportMetrics(queueName, buckets);
-                    return best.request;
+                    result = best.request;
+                    break;
                 }
 
                 if (remainingNanos <= 0) {
-                    return null;
+                    break;
                 }
 
                 try {
                     remainingNanos = buckets.notEmpty.awaitNanos(remainingNanos);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    return null;
+                    break;
                 }
             }
         } finally {
             buckets.lock.unlock();
         }
+
+        if (result != null) {
+            reportMetrics(queueName, buckets);
+        }
+
+        return result;
     }
 
     @Override
@@ -262,12 +269,25 @@ class PriorityWorkQueue implements RequestQueue {
      *
      * <p>Each elapsed {@link AgingPolicy#promotionInterval()} reduces the ordinal by one
      * (moving toward {@link Priority#CRITICAL}). The result is clamped to 0 (CRITICAL).
+     * Uses nanosecond precision to avoid division by zero with sub-millisecond intervals.
+     * Negative elapsed time (clock moved backwards) is treated as zero.
      */
     private int effectiveOrdinal(QueueEntry entry, Instant now) {
-        long elapsedMs = Duration.between(entry.enqueuedAt, now).toMillis();
-        long intervalMs = agingPolicy.promotionInterval().toMillis();
-        int promotions = (int) (elapsedMs / intervalMs);
-        return Math.max(0, entry.originalPriority.ordinal() - promotions);
+        long elapsedNanos = Duration.between(entry.enqueuedAt, now).toNanos();
+        if (elapsedNanos < 0L) {
+            elapsedNanos = 0L;
+        }
+
+        long intervalNanos = agingPolicy.promotionInterval().toNanos();
+        if (intervalNanos <= 0L) {
+            return entry.originalPriority.ordinal();
+        }
+
+        long rawPromotions = elapsedNanos / intervalNanos;
+        int originalOrdinal = entry.originalPriority.ordinal();
+        long cappedPromotions = Math.min(rawPromotions, (long) originalOrdinal);
+
+        return originalOrdinal - (int) cappedPromotions;
     }
 
     /**
@@ -311,15 +331,19 @@ class PriorityWorkQueue implements RequestQueue {
 
     /** Report queue depth metrics for all priority levels. Must NOT hold the lock. */
     private void reportMetrics(String queueName, PriorityBuckets buckets) {
-        for (int i = 0; i < PRIORITIES.length; i++) {
-            int depth;
-            buckets.lock.lock();
-            try {
-                depth = buckets.buckets[i].size();
-            } finally {
-                buckets.lock.unlock();
+        int[] depths = new int[PRIORITIES.length];
+
+        buckets.lock.lock();
+        try {
+            for (int i = 0; i < PRIORITIES.length; i++) {
+                depths[i] = buckets.buckets[i].size();
             }
-            metrics.recordQueueDepth(queueName, PRIORITIES[i], depth);
+        } finally {
+            buckets.lock.unlock();
+        }
+
+        for (int i = 0; i < PRIORITIES.length; i++) {
+            metrics.recordQueueDepth(queueName, PRIORITIES[i], depths[i]);
         }
     }
 }

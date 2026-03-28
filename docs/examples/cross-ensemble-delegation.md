@@ -158,7 +158,7 @@ to prevent starvation of low-priority requests.
 ```java
 // Create a priority queue with 30-minute aging intervals.
 // LOW requests are promoted to NORMAL after 30 min, HIGH after 60 min, CRITICAL after 90 min.
-RequestQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMinutes(30)));
+PriorityWorkQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMinutes(30)));
 
 // Enqueue requests with different priorities
 queue.enqueue("kitchen", new WorkRequest(
@@ -176,8 +176,7 @@ WorkRequest next = queue.dequeue("kitchen", Duration.ofSeconds(30));
 // next.requestId() -> "req-vip-1"
 
 // Get queue status for task_accepted responses
-PriorityWorkQueue priorityQueue = (PriorityWorkQueue) queue;
-QueueStatus status = priorityQueue.queueStatus("kitchen", "req-4071");
+QueueStatus status = queue.queueStatus("kitchen", "req-4071");
 // status.queuePosition()       -> 0 (it's next)
 // status.estimatedCompletion()  -> PT30S
 ```
