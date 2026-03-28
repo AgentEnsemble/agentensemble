@@ -42,6 +42,9 @@ include("agentensemble-network")
 // Workspace module (git worktree isolation for coding agents -- optional)
 include("agentensemble-workspace")
 
+// Coding agent factory (high-level CodingAgent, CodingTask, CodingEnsemble)
+include("agentensemble-coding")
+
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 

@@ -17,6 +17,7 @@ dependencies {
         api(project(":agentensemble-devtools"))
 
         api(project(":agentensemble-workspace"))
+        api(project(":agentensemble-coding"))
 
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
