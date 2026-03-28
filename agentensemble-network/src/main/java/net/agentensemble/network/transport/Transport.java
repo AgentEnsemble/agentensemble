@@ -105,6 +105,48 @@ public interface Transport extends AutoCloseable {
     }
 
     /**
+     * Create a durable mode transport backed by an external request queue and result store,
+     * bound to the given ensemble name.
+     *
+     * <p>The ensemble name identifies this transport's inbox. Requests sent via
+     * {@link #send(WorkRequest)} are enqueued to this inbox; {@link #receive(Duration)}
+     * dequeues from the same inbox.
+     *
+     * <p>Suitable for production deployments with Redis, Kafka, or other durable
+     * infrastructure. Survives process restarts and supports horizontal scaling via
+     * consumer groups.
+     *
+     * <p><strong>Usage:</strong>
+     * <pre>
+     * Transport transport = Transport.durable(
+     *     "kitchen",
+     *     RedisRequestQueue.create(redisClient),
+     *     RedisResultStore.create(redisClient));
+     * </pre>
+     *
+     * @param ensembleName the ensemble name for this transport's inbox; must not be null
+     * @param queue        the durable request queue; must not be null
+     * @param store        the durable result store; must not be null
+     * @return a new {@link Transport}
+     */
+    static Transport durable(String ensembleName, RequestQueue queue, ResultStore store) {
+        return new SimpleTransport(ensembleName, queue, store);
+    }
+
+    /**
+     * Create a durable mode transport with a default ensemble name of {@code "default"}.
+     *
+     * <p>Convenience factory equivalent to {@code Transport.durable("default", queue, store)}.
+     *
+     * @param queue the durable request queue; must not be null
+     * @param store the durable result store; must not be null
+     * @return a new {@link Transport}
+     */
+    static Transport durable(RequestQueue queue, ResultStore store) {
+        return new SimpleTransport("default", queue, store);
+    }
+
+    /**
      * Close this transport and release any resources.
      *
      * <p>The default implementation is a no-op.

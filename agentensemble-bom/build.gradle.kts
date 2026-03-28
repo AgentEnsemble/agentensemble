@@ -18,6 +18,7 @@ dependencies {
         api(project(":agentensemble-mcp"))
 
         api(project(":agentensemble-workspace"))
+        api(project(":agentensemble-transport-redis"))
         api(project(":agentensemble-coding"))
 
         // Individual tool modules

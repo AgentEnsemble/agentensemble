@@ -45,7 +45,12 @@ public interface ResultStore {
      * Subscribe for notification when a result for the given request ID is stored.
      *
      * <p>The callback is invoked when {@link #store} is called with a matching request ID.
-     * If the result was already stored before subscribing, the callback is not invoked.
+     * Implementations should also check for an already-stored result immediately after
+     * subscribing and invoke the callback if one exists, to prevent lost notifications
+     * due to subscribe/store race conditions.
+     *
+     * <p>Callers must tolerate the callback being invoked for results that were stored
+     * before subscribing.
      *
      * @param requestId the request ID to watch; must not be null
      * @param callback  the callback to invoke; must not be null

@@ -94,6 +94,18 @@ class InMemoryResultStoreTest {
     }
 
     @Test
+    void subscribe_afterStore_callbackFiredImmediately() {
+        store.store("req-1", new WorkResponse("req-1", "COMPLETED", "done", null, 100L), TTL);
+
+        AtomicReference<WorkResponse> captured = new AtomicReference<>();
+        store.subscribe("req-1", captured::set);
+
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().requestId()).isEqualTo("req-1");
+        assertThat(captured.get().result()).isEqualTo("done");
+    }
+
+    @Test
     void subscribe_differentRequestId_notFired() {
         AtomicReference<WorkResponse> captured = new AtomicReference<>();
 

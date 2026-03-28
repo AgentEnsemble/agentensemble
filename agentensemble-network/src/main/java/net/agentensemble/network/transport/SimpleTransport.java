@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.Objects;
 import net.agentensemble.web.protocol.WorkRequest;
 import net.agentensemble.web.protocol.WorkResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Simple mode {@link Transport}: in-process queues for request delivery, in-process store
@@ -32,6 +34,7 @@ import net.agentensemble.web.protocol.WorkResponse;
  */
 class SimpleTransport implements Transport {
 
+    private static final Logger log = LoggerFactory.getLogger(SimpleTransport.class);
     private static final Duration DEFAULT_RESULT_TTL = Duration.ofHours(1);
 
     private final String ensembleName;
@@ -69,6 +72,26 @@ class SimpleTransport implements Transport {
     public void deliver(WorkResponse response) {
         Objects.requireNonNull(response, "response must not be null");
         resultStore.store(response.requestId(), response, DEFAULT_RESULT_TTL);
+    }
+
+    @Override
+    public void close() {
+        closeIfAutoCloseable(requestQueue);
+        closeIfAutoCloseable(resultStore);
+    }
+
+    private static void closeIfAutoCloseable(Object resource) {
+        if (resource instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                log.warn(
+                        "Error closing transport resource {}: {}",
+                        resource.getClass().getSimpleName(),
+                        e.getMessage(),
+                        e);
+            }
+        }
     }
 
     /**
