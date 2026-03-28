@@ -379,6 +379,228 @@ List<AgentTool> tools = McpToolFactory.fromServer(transport);
 
 ---
 
+## Coding Tools
+
+The `agentensemble-tools-coding` module provides 7 coding-specific tools for agents
+that need to read, search, edit, and build code. All tools are sandboxed to a base
+directory and support optional approval gates for destructive operations.
+
+### Installation
+
+=== "Gradle"
+
+    ```kotlin
+    implementation("net.agentensemble:agentensemble-tools-coding:VERSION")
+    ```
+
+=== "Maven"
+
+    ```xml
+    <dependency>
+      <groupId>net.agentensemble</groupId>
+      <artifactId>agentensemble-tools-coding</artifactId>
+      <version>VERSION</version>
+    </dependency>
+    ```
+
+---
+
+### GlobTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Finds files matching a glob pattern within a sandboxed workspace. Uses
+`java.nio.file.PathMatcher` with `Files.walkFileTree`. Results are sorted
+alphabetically and capped at 200 entries.
+
+```java
+import net.agentensemble.tools.coding.GlobTool;
+
+var glob = GlobTool.of(Path.of("/workspace/project"));
+```
+
+**Input examples:**
+- `{"pattern": "**/*.java"}` -- find all Java files recursively
+- `{"pattern": "**/*.ts", "path": "src"}` -- find TypeScript files under `src/`
+
+---
+
+### CodeSearchTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Searches code content using regex patterns. Detects `rg` > `grep` > pure-Java
+fallback at construction time. Returns matches formatted as `file:line:content`,
+capped at 100 results.
+
+```java
+import net.agentensemble.tools.coding.CodeSearchTool;
+
+var search = CodeSearchTool.of(Path.of("/workspace/project"));
+```
+
+**Input examples:**
+- `{"pattern": "class\\s+\\w+Service"}` -- find service classes
+- `{"pattern": "TODO", "glob": "*.java", "ignoreCase": true}` -- find TODOs in Java files
+- `{"pattern": "import", "contextLines": 2, "path": "src/main"}` -- search with context
+
+---
+
+### CodeEditTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Performs surgical code edits with three modes: `replace_lines` (line range replacement),
+`find_replace` (text/regex find and replace), and `write` (full file overwrite).
+
+```java
+import net.agentensemble.tools.coding.CodeEditTool;
+
+// Without approval gate
+var edit = CodeEditTool.of(Path.of("/workspace/project"));
+
+// With approval gate
+var edit = CodeEditTool.builder(Path.of("/workspace/project"))
+    .requireApproval(true)
+    .build();
+```
+
+**Input examples:**
+- `{"path": "Foo.java", "command": "replace_lines", "startLine": 5, "endLine": 7, "content": "new code"}` -- replace lines 5-7
+- `{"path": "Foo.java", "command": "find_replace", "find": "oldMethod", "content": "newMethod"}` -- literal find/replace
+- `{"path": "Foo.java", "command": "find_replace", "find": "log\\.\\w+", "content": "logger.info", "regex": true}` -- regex find/replace
+- `{"path": "new.txt", "command": "write", "content": "file content"}` -- write new file
+
+#### Approval Gate
+
+When `requireApproval(true)` is set, the reviewer sees the file path, edit mode,
+and a content preview. On `ExitEarly`, no edit is made.
+
+---
+
+### ShellTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Executes shell commands within the workspace. Uses `sh -c` on Unix, `cmd /c` on
+Windows. Output is truncated at a configurable limit (default 10,000 characters).
+
+```java
+import net.agentensemble.tools.coding.ShellTool;
+
+var shell = ShellTool.builder(Path.of("/workspace/project"))
+    .requireApproval(true)          // default: true
+    .timeout(Duration.ofSeconds(60))
+    .maxOutputLength(10_000)
+    .build();
+```
+
+**Input examples:**
+- `{"command": "ls -la src/main/java"}` -- list files
+- `{"command": "wc -l **/*.java", "workingDir": "src"}` -- count lines in subdirectory
+- `{"command": "curl -s https://example.com", "timeoutSeconds": 10}` -- with custom timeout
+
+#### Approval Gate
+
+Shell execution requires approval by default. The reviewer sees the command and
+working directory.
+
+---
+
+### GitTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Executes git operations in the workspace repository. Supports commands: `status`,
+`diff`, `log`, `commit`, `add`, `branch`, `stash`, `checkout`, `show`, `tag`,
+`merge`, `fetch`, `pull`, `push`, `reset`. Destructive operations (`push`,
+`reset --hard`, `rebase`, `clean`, `force-push`) require approval when enabled.
+
+```java
+import net.agentensemble.tools.coding.GitTool;
+
+var git = GitTool.builder(Path.of("/workspace/repo"))
+    .requireApproval(true)  // for destructive ops only
+    .build();
+```
+
+**Input examples:**
+- `{"command": "status"}` -- check working tree status
+- `{"command": "diff"}` -- show unstaged changes
+- `{"command": "log", "args": "--oneline -10"}` -- recent commits
+- `{"command": "add", "args": "src/main/java/Foo.java"}` -- stage a file
+- `{"command": "commit", "message": "Fix null check in UserService"}` -- commit
+- `{"command": "branch", "args": "-a"}` -- list branches
+
+#### Approval Gate
+
+When `requireApproval(true)` is set, only destructive operations trigger the
+approval gate. Safe operations (status, diff, log, add, commit) proceed without
+approval.
+
+---
+
+### BuildRunnerTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Runs build commands and parses the output into structured results. Heuristically
+extracts errors and warnings, producing both human-readable output and a structured
+JSON payload: `{"success": true, "errors": [], "warnings": []}`.
+
+```java
+import net.agentensemble.tools.coding.BuildRunnerTool;
+
+var build = BuildRunnerTool.of(Path.of("/workspace/project"));
+
+// With custom timeout
+var build = BuildRunnerTool.builder(Path.of("/workspace/project"))
+    .timeout(Duration.ofSeconds(300))
+    .build();
+```
+
+**Input examples:**
+- `{"command": "gradle build"}` -- run Gradle build
+- `{"command": "mvn compile", "workingDir": "submodule"}` -- Maven build in subdirectory
+- `{"command": "npm run build"}` -- npm build
+
+---
+
+### TestRunnerTool
+
+**Module:** `agentensemble-tools-coding` |
+**Package:** `net.agentensemble.tools.coding`
+
+Runs tests and parses the results into structured output. Recognizes JUnit/Gradle,
+Maven Surefire, and npm/Jest output patterns. Falls back to exit-code-based
+success/failure when no pattern matches. Returns a structured `TestResult` with
+pass/fail/skip counts and failure details.
+
+```java
+import net.agentensemble.tools.coding.TestRunnerTool;
+
+var test = TestRunnerTool.of(Path.of("/workspace/project"));
+
+// With custom timeout
+var test = TestRunnerTool.builder(Path.of("/workspace/project"))
+    .timeout(Duration.ofSeconds(600))
+    .build();
+```
+
+**Input examples:**
+- `{"command": "gradle test"}` -- run all tests
+- `{"command": "gradle test", "testFilter": "--tests 'com.example.FooTest'"}` -- run specific test
+- `{"command": "mvn test", "workingDir": "submodule"}` -- Maven tests in subdirectory
+- `{"command": "npm test"}` -- npm tests
+
+---
+
 ## Using Multiple Tools
 
 ```java
