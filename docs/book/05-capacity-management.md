@@ -107,6 +107,18 @@ The aging algorithm is configurable. The simplest approach: every N minutes, unp
 work gets promoted one level. A LOW request submitted at 9am becomes NORMAL at 9:30am,
 HIGH at 10am, and CRITICAL at 10:30am. The exact intervals are configurable per ensemble.
 
+```java
+// Create a priority queue with 30-minute aging intervals
+RequestQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMinutes(30)));
+
+// Or disable aging entirely
+RequestQueue noAgingQueue = RequestQueue.priority(AgingPolicy.none());
+```
+
+Aging is computed lazily at dequeue time -- no background threads are involved. The
+`PriorityWorkQueue` stores the enqueue timestamp with each entry and calculates the
+effective priority when selecting the next item to process.
+
 ### Human Re-Prioritization
 
 A human connected to the dashboard can see the queue and manually re-prioritize individual
