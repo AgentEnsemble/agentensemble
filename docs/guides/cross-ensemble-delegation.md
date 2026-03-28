@@ -170,8 +170,47 @@ The companion `RequestQueue` and `ResultStore` SPIs provide finer-grained abstra
 for the request and response paths independently. Both include `inMemory()` factories
 for development.
 
-> **Note:** Durable transport implementations (Redis Streams, Kafka, SQS) are planned for
-> a future release. The SPI is designed to accommodate them without changes.
+### Durable mode (Redis)
+
+For production deployments that need to survive pod restarts and support horizontal
+scaling, use the Redis-backed transport from the `agentensemble-transport-redis` module:
+
+```gradle
+implementation("net.agentensemble:agentensemble-transport-redis:${agentensembleVersion}")
+```
+
+```java
+RedisClient redisClient = RedisClient.create("redis://localhost:6379");
+
+Transport transport = Transport.durable(
+    "kitchen",
+    RedisRequestQueue.create(redisClient),
+    RedisResultStore.create(redisClient));
+```
+
+`RedisRequestQueue` uses Redis Streams with consumer groups for durable, at-least-once
+delivery. `RedisResultStore` uses Redis key-value storage with TTL for automatic cleanup
+and Pub/Sub for result notifications.
+
+#### Consumer groups for horizontal scaling
+
+When running multiple replicas, each replica uses a different consumer name so that Redis
+distributes messages across consumers:
+
+```java
+String consumerName = InetAddress.getLocalHost().getHostName();
+
+Transport transport = Transport.durable(
+    "kitchen",
+    RedisRequestQueue.create(redisClient, consumerName),
+    RedisResultStore.create(redisClient));
+```
+
+If a consumer crashes before acknowledging a message, the visibility timeout (default
+5 minutes) expires and the message is automatically redelivered to a healthy consumer.
+
+See [Chapter 6: Durable Transport](../book/06-durable-transport.md) for a detailed
+explanation of the asymmetric routing pattern and consumer group semantics.
 
 ## Priority Queue
 
