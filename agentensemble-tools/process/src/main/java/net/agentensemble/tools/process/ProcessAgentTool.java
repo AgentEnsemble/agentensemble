@@ -3,7 +3,6 @@ package net.agentensemble.tools.process;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -92,11 +91,13 @@ public final class ProcessAgentTool extends AbstractAgentTool {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final int DEFAULT_MAX_OUTPUT_BYTES = 1_048_576; // 1 MB
 
     private final String toolName;
     private final String toolDescription;
     private final List<String> command;
     private final Duration timeout;
+    private final int maxOutputBytes;
     private final boolean requireApproval;
 
     private ProcessAgentTool(Builder builder) {
@@ -104,6 +105,7 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         this.toolDescription = builder.description;
         this.command = Collections.unmodifiableList(new ArrayList<>(builder.command));
         this.timeout = builder.timeout;
+        this.maxOutputBytes = builder.maxOutputBytes;
         this.requireApproval = builder.requireApproval;
     }
 
@@ -178,8 +180,9 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         // Drain stdout and stderr concurrently on virtual threads before waiting.
         // Without concurrent draining a process that writes more than the OS pipe
         // buffer (~64 KB on Linux) will block on write and waitFor() will deadlock.
-        ByteArrayOutputStream stdoutCapture = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderrCapture = new ByteArrayOutputStream();
+        // Output is bounded to prevent OOM from runaway subprocesses.
+        BoundedOutputStream stdoutCapture = new BoundedOutputStream(maxOutputBytes);
+        BoundedOutputStream stderrCapture = new BoundedOutputStream(maxOutputBytes);
         Thread stdoutDrain = Thread.ofVirtual().start(() -> {
             try {
                 process.getInputStream().transferTo(stdoutCapture);
@@ -282,6 +285,7 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         private String description;
         private List<String> command;
         private Duration timeout = DEFAULT_TIMEOUT;
+        private int maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES;
         private boolean requireApproval = false;
 
         private Builder() {}
@@ -351,6 +355,25 @@ public final class ProcessAgentTool extends AbstractAgentTool {
                 throw new IllegalArgumentException("timeout must be positive");
             }
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Set the maximum number of bytes to capture from stdout and stderr.
+         *
+         * <p>Output beyond this limit is silently discarded and a truncation marker is
+         * appended. This prevents OOM when a subprocess produces excessive output.
+         *
+         * <p>Default: 1 MB ({@code 1_048_576} bytes).
+         *
+         * @param maxOutputBytes the maximum bytes to capture; must be positive
+         * @return this builder
+         */
+        public Builder maxOutputBytes(int maxOutputBytes) {
+            if (maxOutputBytes <= 0) {
+                throw new IllegalArgumentException("maxOutputBytes must be positive");
+            }
+            this.maxOutputBytes = maxOutputBytes;
             return this;
         }
 

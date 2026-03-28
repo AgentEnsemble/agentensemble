@@ -8,7 +8,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -38,7 +40,7 @@ import org.mockito.ArgumentCaptor;
 class HttpAgentToolTest {
 
     private HttpClient mockClient;
-    private HttpResponse<String> mockResponse;
+    private HttpResponse<InputStream> mockResponse;
 
     @BeforeEach
     void setUp() {
@@ -69,7 +71,9 @@ class HttpAgentToolTest {
     /** Configure the mock HttpClient to return a response with the given status and body. */
     private void stubHttpResponse(int statusCode, String body) throws Exception {
         when(mockResponse.statusCode()).thenReturn(statusCode);
-        when(mockResponse.body()).thenReturn(body);
+        InputStream bodyStream =
+                new ByteArrayInputStream(body != null ? body.getBytes(StandardCharsets.UTF_8) : new byte[0]);
+        when(mockResponse.body()).thenReturn(bodyStream);
         // Use org.mockito.Mockito.doReturn to avoid generic type issues with HttpResponse<T>
         org.mockito.Mockito.doReturn(mockResponse)
                 .when(mockClient)
@@ -373,7 +377,8 @@ class HttpAgentToolTest {
                 .when(mockClient)
                 .send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
         when(mockResponse.statusCode()).thenReturn(200);
-        when(mockResponse.body()).thenReturn("edit response");
+        when(mockResponse.body())
+                .thenReturn(new ByteArrayInputStream("edit response".getBytes(StandardCharsets.UTF_8)));
 
         var result = tool.execute("original body");
 
@@ -432,6 +437,58 @@ class HttpAgentToolTest {
 
         assertThat(capturedRequest[0]).isNotNull();
         assertThat(capturedRequest[0].taskDescription()).contains("...");
+    }
+
+    // ========================
+    // Response size limits
+    // ========================
+
+    @Test
+    void execute_largeResponse_truncatedAtMaxResponseBytes() throws Exception {
+        String largeBody = "x".repeat(200);
+        stubHttpResponse(200, largeBody);
+
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("bounded")
+                        .description("test")
+                        .url("https://example.com/api")
+                        .maxResponseBytes(50),
+                mockClient);
+
+        var result = tool.execute("input");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).contains("[response truncated at 50 bytes]");
+    }
+
+    @Test
+    void execute_smallResponse_notTruncated() throws Exception {
+        stubHttpResponse(200, "short response");
+
+        var tool = HttpAgentTool.withHttpClient(
+                HttpAgentTool.builder()
+                        .name("bounded")
+                        .description("test")
+                        .url("https://example.com/api")
+                        .maxResponseBytes(1000),
+                mockClient);
+
+        var result = tool.execute("input");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).isEqualTo("short response");
+        assertThat(result.getOutput()).doesNotContain("truncated");
+    }
+
+    @Test
+    void builder_zeroMaxResponseBytes_throws() {
+        assertThatThrownBy(() -> HttpAgentTool.builder().maxResponseBytes(0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_negativeMaxResponseBytes_throws() {
+        assertThatThrownBy(() -> HttpAgentTool.builder().maxResponseBytes(-1))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // ========================

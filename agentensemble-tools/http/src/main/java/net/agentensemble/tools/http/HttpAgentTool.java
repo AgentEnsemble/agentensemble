@@ -2,6 +2,7 @@ package net.agentensemble.tools.http;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -91,6 +92,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final long DEFAULT_MAX_RESPONSE_BYTES = 1_048_576L; // 1 MB
     private static final String INPUT_QUERY_PARAM = "input";
     private static final int APPROVAL_BODY_PREVIEW_LENGTH = 200;
 
@@ -100,6 +102,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
     private final String method;
     private final Map<String, String> headers;
     private final Duration timeout;
+    private final long maxResponseBytes;
     private final HttpClient httpClient;
     private final boolean requireApproval;
 
@@ -110,6 +113,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
         this.method = builder.method.toUpperCase(Locale.ROOT);
         this.headers = Collections.unmodifiableMap(new LinkedHashMap<>(builder.headers));
         this.timeout = builder.timeout;
+        this.maxResponseBytes = builder.maxResponseBytes;
         this.httpClient = httpClient;
         this.requireApproval = builder.requireApproval;
     }
@@ -211,11 +215,10 @@ public final class HttpAgentTool extends AbstractAgentTool {
 
     private ToolResult executeRequest(String input) throws IOException, InterruptedException {
         HttpRequest request = buildRequest(input);
-        HttpResponse<String> response =
-                httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 
         int statusCode = response.statusCode();
-        String body = response.body();
+        String body = readBounded(response.body(), maxResponseBytes);
 
         if (statusCode >= 400) {
             String errorMsg = "HTTP " + statusCode;
@@ -227,6 +230,22 @@ public final class HttpAgentTool extends AbstractAgentTool {
         }
 
         return ToolResult.success(body != null ? body : "");
+    }
+
+    /**
+     * Read up to {@code maxBytes} from the input stream. If the stream contains more data,
+     * the output is truncated and a marker is appended.
+     */
+    private static String readBounded(InputStream in, long maxBytes) throws IOException {
+        try (in) {
+            byte[] buf = in.readNBytes((int) Math.min(maxBytes, Integer.MAX_VALUE));
+            String content = new String(buf, StandardCharsets.UTF_8);
+            // Check if there was more data
+            if (buf.length >= maxBytes && in.read() != -1) {
+                return content + "\n[response truncated at " + maxBytes + " bytes]";
+            }
+            return content;
+        }
     }
 
     private HttpRequest buildRequest(String input) {
@@ -289,6 +308,7 @@ public final class HttpAgentTool extends AbstractAgentTool {
         private String method = "POST";
         private final Map<String, String> headers = new LinkedHashMap<>();
         private Duration timeout = DEFAULT_TIMEOUT;
+        private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
         private boolean requireApproval = false;
 
         private Builder() {}
@@ -363,6 +383,25 @@ public final class HttpAgentTool extends AbstractAgentTool {
                 throw new IllegalArgumentException("timeout must be positive");
             }
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Set the maximum number of bytes to read from the response body.
+         *
+         * <p>Responses larger than this limit are truncated and a marker is appended.
+         * This prevents OOM when a remote endpoint returns an unexpectedly large payload.
+         *
+         * <p>Default: 1 MB ({@code 1_048_576} bytes).
+         *
+         * @param maxResponseBytes the maximum bytes to read; must be positive
+         * @return this builder
+         */
+        public Builder maxResponseBytes(long maxResponseBytes) {
+            if (maxResponseBytes <= 0) {
+                throw new IllegalArgumentException("maxResponseBytes must be positive");
+            }
+            this.maxResponseBytes = maxResponseBytes;
             return this;
         }
 

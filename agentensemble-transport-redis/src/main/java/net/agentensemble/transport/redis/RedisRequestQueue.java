@@ -223,7 +223,12 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
                 }
             }
         } catch (RedisCommandExecutionException e) {
-            log.debug("XREADGROUP pending failed for stream={}: {}", streamKey, e.getMessage());
+            if (isExpectedStreamError(e)) {
+                log.debug("XREADGROUP pending: stream not ready for {}: {}", streamKey, e.getMessage());
+            } else {
+                log.warn("XREADGROUP pending failed unexpectedly for stream={}: {}", streamKey, e.getMessage());
+                throw e;
+            }
         }
         return null;
     }
@@ -243,10 +248,26 @@ public final class RedisRequestQueue implements RequestQueue, AutoCloseable {
                 return parseMessage(claimed.getMessages().get(0));
             }
         } catch (RedisCommandExecutionException e) {
-            // Consumer group might not exist yet or stream is empty
-            log.debug("XAUTOCLAIM failed for stream={}: {}", streamKey, e.getMessage());
+            if (isExpectedStreamError(e)) {
+                log.debug("XAUTOCLAIM: stream not ready for {}: {}", streamKey, e.getMessage());
+            } else {
+                log.warn("XAUTOCLAIM failed unexpectedly for stream={}: {}", streamKey, e.getMessage());
+                throw e;
+            }
         }
         return null;
+    }
+
+    /**
+     * Returns {@code true} if the Redis error is an expected condition that should be
+     * silently handled (e.g., consumer group or stream does not exist yet).
+     */
+    static boolean isExpectedStreamError(RedisCommandExecutionException e) {
+        String msg = e.getMessage();
+        if (msg == null) {
+            return false;
+        }
+        return msg.startsWith("NOGROUP ") || msg.contains("no such key");
     }
 
     private WorkRequest parseMessage(StreamMessage<String, String> message) {

@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.web.protocol.ClientMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
@@ -34,9 +35,13 @@ public class NetworkClient implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(NetworkClient.class);
 
+    /** Default request timeout: 30 minutes. */
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofMinutes(30);
+
     private final String ensembleName;
     private final String wsUrl;
     private final Duration connectTimeout;
+    private final Duration requestTimeout;
     private final MessageSerializer serializer;
     private final ConcurrentHashMap<String, CompletableFuture<ServerMessage>> pendingRequests =
             new ConcurrentHashMap<>();
@@ -44,26 +49,47 @@ public class NetworkClient implements AutoCloseable {
     private final AtomicReference<HttpClient> httpClientRef = new AtomicReference<>();
 
     /**
-     * Create a new client for the given ensemble.
+     * Create a new client for the given ensemble with the default request timeout (30 minutes).
      *
      * @param ensembleName   the ensemble name (for logging)
      * @param wsUrl          the WebSocket URL to connect to
      * @param connectTimeout timeout for establishing the WebSocket connection
      */
     public NetworkClient(String ensembleName, String wsUrl, Duration connectTimeout) {
-        this.ensembleName = Objects.requireNonNull(ensembleName, "ensembleName must not be null");
-        this.wsUrl = Objects.requireNonNull(wsUrl, "wsUrl must not be null");
-        this.connectTimeout = Objects.requireNonNull(connectTimeout, "connectTimeout must not be null");
-        this.serializer = new MessageSerializer();
+        this(ensembleName, wsUrl, connectTimeout, DEFAULT_REQUEST_TIMEOUT, new MessageSerializer());
+    }
+
+    /**
+     * Create a new client for the given ensemble with a custom request timeout.
+     *
+     * @param ensembleName   the ensemble name (for logging)
+     * @param wsUrl          the WebSocket URL to connect to
+     * @param connectTimeout timeout for establishing the WebSocket connection
+     * @param requestTimeout timeout for pending requests; futures are failed with
+     *                       {@link java.util.concurrent.TimeoutException} if no response
+     *                       arrives within this duration
+     */
+    public NetworkClient(String ensembleName, String wsUrl, Duration connectTimeout, Duration requestTimeout) {
+        this(ensembleName, wsUrl, connectTimeout, requestTimeout, new MessageSerializer());
     }
 
     /**
      * Package-private constructor for testing with a custom serializer.
      */
     NetworkClient(String ensembleName, String wsUrl, Duration connectTimeout, MessageSerializer serializer) {
+        this(ensembleName, wsUrl, connectTimeout, DEFAULT_REQUEST_TIMEOUT, serializer);
+    }
+
+    private NetworkClient(
+            String ensembleName,
+            String wsUrl,
+            Duration connectTimeout,
+            Duration requestTimeout,
+            MessageSerializer serializer) {
         this.ensembleName = Objects.requireNonNull(ensembleName, "ensembleName must not be null");
         this.wsUrl = Objects.requireNonNull(wsUrl, "wsUrl must not be null");
         this.connectTimeout = Objects.requireNonNull(connectTimeout, "connectTimeout must not be null");
+        this.requestTimeout = Objects.requireNonNull(requestTimeout, "requestTimeout must not be null");
         this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
     }
 
@@ -80,6 +106,13 @@ public class NetworkClient implements AutoCloseable {
      */
     public CompletableFuture<ServerMessage> send(ClientMessage message, String requestId) throws IOException {
         CompletableFuture<ServerMessage> future = new CompletableFuture<>();
+
+        // Apply request timeout and ensure map cleanup on any completion (success,
+        // timeout, error, or close). orTimeout completes exceptionally with
+        // TimeoutException if no response arrives within the configured duration.
+        future.orTimeout(requestTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                .whenComplete((result, ex) -> pendingRequests.remove(requestId));
+
         pendingRequests.put(requestId, future);
 
         try {
