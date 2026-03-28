@@ -36,6 +36,8 @@ class GitWorktreeProviderTest {
         repoDir = tempDir.resolve("repo");
         Files.createDirectories(repoDir);
         exec(repoDir, "git", "init");
+        exec(repoDir, "git", "config", "user.email", "test@example.com");
+        exec(repoDir, "git", "config", "user.name", "Test User");
         exec(repoDir, "git", "commit", "--allow-empty", "-m", "initial");
     }
 

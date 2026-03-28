@@ -45,7 +45,7 @@ Controls how workspaces are created:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `namePrefix` | `"agent"` | Prefix for generated branch/directory names |
+| `namePrefix` | `null` (provider defaults to `"agent"`) | Prefix for generated branch/directory names |
 | `baseRef` | `"HEAD"` | Git ref to branch from (ignored by `DirectoryWorkspace`) |
 | `autoCleanup` | `true` | Whether `close()` removes the worktree/directory |
 | `workspacesDir` | `<repoRoot>/.agentensemble/workspaces/` | Where to create workspaces |
@@ -167,7 +167,7 @@ EnsembleOutput result = Ensemble.builder()
 During task execution, tools can look up their workspace:
 
 ```java
-Optional<Workspace> ws = listener.getWorkspace(taskDescription);
+Optional<Workspace> ws = listener.getWorkspace(taskIndex, taskDescription);
 ws.ifPresent(workspace -> {
     Path workDir = workspace.path();
     // Use workDir for file operations, builds, etc.

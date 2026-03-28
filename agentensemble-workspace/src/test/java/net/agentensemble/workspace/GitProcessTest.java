@@ -48,14 +48,24 @@ class GitProcessTest {
     }
 
     @Test
-    void run_timeout(@TempDir Path tempDir) {
+    void run_timeout(@TempDir Path tempDir) throws Exception {
         assumeTrue(gitAvailable, "Git not available");
 
-        // git gc with a very short timeout should trigger the timeout path.
-        // We use a command that takes at least a moment.
-        assertThatThrownBy(() -> GitProcess.run(tempDir, Duration.ofMillis(1), "gc", "--aggressive"))
+        // Create a real git repo so the command starts successfully, then use
+        // hash-object --stdin which blocks waiting for input, reliably triggering
+        // the timeout path.
+        exec(tempDir, "git", "init");
+        assertThatThrownBy(() -> GitProcess.run(tempDir, Duration.ofMillis(1), "hash-object", "--stdin"))
                 .isInstanceOf(WorkspaceException.class)
                 .hasMessageContaining("timed out");
+    }
+
+    private static void exec(Path dir, String... command) throws Exception {
+        Process p =
+                new ProcessBuilder(command).directory(dir.toFile()).inheritIO().start();
+        if (p.waitFor() != 0) {
+            throw new RuntimeException("Command failed: " + String.join(" ", command));
+        }
     }
 
     @Test

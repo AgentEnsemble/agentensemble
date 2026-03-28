@@ -27,8 +27,11 @@ import org.slf4j.LoggerFactory;
  *     .run();
  *
  * // During task execution, tools can look up their workspace:
- * Optional&lt;Workspace&gt; ws = listener.getWorkspace(taskDescription);
+ * Optional&lt;Workspace&gt; ws = listener.getWorkspace(1, "Fix the bug");
  * </pre>
+ *
+ * <p>Workspaces are keyed by a composite of {@code taskIndex} and {@code taskDescription} to
+ * handle retries and parallel tasks with identical descriptions correctly.
  *
  * <p>This class is thread-safe. Multiple tasks running in parallel each get their own
  * independent workspace.
@@ -69,21 +72,23 @@ public final class WorkspaceLifecycleListener implements EnsembleListener {
     }
 
     /**
-     * Look up the workspace for a task by its description.
+     * Look up the workspace for a task by its index and description.
      *
-     * @param taskDescription the task description used as the lookup key
+     * @param taskIndex the 1-based task index
+     * @param taskDescription the task description
      * @return the workspace if the task is active, or empty if not found
      */
-    public Optional<Workspace> getWorkspace(String taskDescription) {
-        return Optional.ofNullable(active.get(taskDescription));
+    public Optional<Workspace> getWorkspace(int taskIndex, String taskDescription) {
+        return Optional.ofNullable(active.get(taskKey(taskIndex, taskDescription)));
     }
 
     /**
      * Return an unmodifiable view of all currently active workspaces.
      *
-     * <p>Useful for monitoring and debugging.
+     * <p>Keys are composite strings of the form {@code "<taskIndex>:<taskDescription>"}.
+     * Useful for monitoring and debugging.
      *
-     * @return unmodifiable map of task description to workspace
+     * @return unmodifiable map of task key to workspace
      */
     public Map<String, Workspace> activeWorkspaces() {
         return Collections.unmodifiableMap(active);
@@ -91,27 +96,28 @@ public final class WorkspaceLifecycleListener implements EnsembleListener {
 
     @Override
     public void onTaskStart(TaskStartEvent event) {
+        String key = taskKey(event.taskIndex(), event.taskDescription());
         try {
             Workspace ws = provider.create(config);
-            active.put(event.taskDescription(), ws);
+            active.put(key, ws);
             LOG.info("Created workspace {} for task '{}'", ws.id(), event.taskDescription());
-        } catch (WorkspaceException e) {
+        } catch (Exception e) {
             LOG.error("Failed to create workspace for task '{}': {}", event.taskDescription(), e.getMessage(), e);
         }
     }
 
     @Override
     public void onTaskComplete(TaskCompleteEvent event) {
-        closeWorkspace(event.taskDescription());
+        closeWorkspace(taskKey(event.taskIndex(), event.taskDescription()), event.taskDescription());
     }
 
     @Override
     public void onTaskFailed(TaskFailedEvent event) {
-        closeWorkspace(event.taskDescription());
+        closeWorkspace(taskKey(event.taskIndex(), event.taskDescription()), event.taskDescription());
     }
 
-    private void closeWorkspace(String taskDescription) {
-        Workspace ws = active.remove(taskDescription);
+    private void closeWorkspace(String key, String taskDescription) {
+        Workspace ws = active.remove(key);
         if (ws == null) {
             return;
         }
@@ -121,5 +127,9 @@ public final class WorkspaceLifecycleListener implements EnsembleListener {
         } catch (Exception e) {
             LOG.warn("Exception closing workspace {} for task '{}': {}", ws.id(), taskDescription, e.getMessage(), e);
         }
+    }
+
+    private static String taskKey(int taskIndex, String taskDescription) {
+        return taskIndex + ":" + taskDescription;
     }
 }

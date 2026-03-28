@@ -82,7 +82,7 @@ final class GitWorktreeWorkspace implements Workspace {
                         forceResult.stderr());
             }
         } catch (WorkspaceException e) {
-            LOG.warn("Exception removing worktree {}: {}", worktreePath, e.getMessage());
+            LOG.warn("Exception removing worktree {}: {}", worktreePath, e.getMessage(), e);
         }
     }
 
@@ -95,7 +95,7 @@ final class GitWorktreeWorkspace implements Workspace {
                 LOG.warn("Failed to delete branch {} (exit {}): {}", branchName, result.exitCode(), result.stderr());
             }
         } catch (WorkspaceException e) {
-            LOG.warn("Exception deleting branch {}: {}", branchName, e.getMessage());
+            LOG.warn("Exception deleting branch {}: {}", branchName, e.getMessage(), e);
         }
     }
 }

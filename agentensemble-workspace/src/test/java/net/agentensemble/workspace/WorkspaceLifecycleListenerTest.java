@@ -40,7 +40,7 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskStart(event);
 
         verify(provider).create(any(WorkspaceConfig.class));
-        assertThat(listener.getWorkspace("Fix the bug")).isPresent().contains(workspace);
+        assertThat(listener.getWorkspace(1, "Fix the bug")).isPresent().contains(workspace);
     }
 
     @Test
@@ -53,7 +53,7 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskComplete(completeEvent);
 
         verify(workspace).close();
-        assertThat(listener.getWorkspace("Fix the bug")).isEmpty();
+        assertThat(listener.getWorkspace(1, "Fix the bug")).isEmpty();
     }
 
     @Test
@@ -66,7 +66,7 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskFailed(failedEvent);
 
         verify(workspace).close();
-        assertThat(listener.getWorkspace("Fix the bug")).isEmpty();
+        assertThat(listener.getWorkspace(1, "Fix the bug")).isEmpty();
     }
 
     @Test
@@ -91,7 +91,7 @@ class WorkspaceLifecycleListenerTest {
 
     @Test
     void getWorkspace_empty_whenNoTaskStarted() {
-        assertThat(listener.getWorkspace("nonexistent")).isEmpty();
+        assertThat(listener.getWorkspace(1, "nonexistent")).isEmpty();
     }
 
     @Test
@@ -100,7 +100,7 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskStart(event);
 
         assertThat(listener.activeWorkspaces()).hasSize(1);
-        assertThat(listener.activeWorkspaces()).containsKey("Task A");
+        assertThat(listener.activeWorkspaces()).containsKey("1:Task A");
     }
 
     @Test
@@ -123,8 +123,8 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskStart(new TaskStartEvent("Task A", "Agent1", 1, 2));
         listener.onTaskStart(new TaskStartEvent("Task B", "Agent2", 2, 2));
 
-        assertThat(listener.getWorkspace("Task A")).isPresent().contains(ws1);
-        assertThat(listener.getWorkspace("Task B")).isPresent().contains(ws2);
+        assertThat(listener.getWorkspace(1, "Task A")).isPresent().contains(ws1);
+        assertThat(listener.getWorkspace(2, "Task B")).isPresent().contains(ws2);
         assertThat(listener.activeWorkspaces()).hasSize(2);
 
         // Complete Task A -- Task B should remain active
@@ -133,8 +133,25 @@ class WorkspaceLifecycleListenerTest {
 
         verify(ws1).close();
         verify(ws2, never()).close();
-        assertThat(listener.getWorkspace("Task A")).isEmpty();
-        assertThat(listener.getWorkspace("Task B")).isPresent().contains(ws2);
+        assertThat(listener.getWorkspace(1, "Task A")).isEmpty();
+        assertThat(listener.getWorkspace(2, "Task B")).isPresent().contains(ws2);
+    }
+
+    @Test
+    void duplicateDescriptions_differentIndices_areIndependent() {
+        Workspace ws1 = mock(Workspace.class);
+        Workspace ws2 = mock(Workspace.class);
+        when(ws1.id()).thenReturn("ws-1");
+        when(ws2.id()).thenReturn("ws-2");
+        when(provider.create(any(WorkspaceConfig.class))).thenReturn(ws1, ws2);
+
+        // Same description, different task indices (e.g., retries)
+        listener.onTaskStart(new TaskStartEvent("Fix the bug", "Developer", 1, 2));
+        listener.onTaskStart(new TaskStartEvent("Fix the bug", "Developer", 2, 2));
+
+        assertThat(listener.getWorkspace(1, "Fix the bug")).isPresent().contains(ws1);
+        assertThat(listener.getWorkspace(2, "Fix the bug")).isPresent().contains(ws2);
+        assertThat(listener.activeWorkspaces()).hasSize(2);
     }
 
     @Test
@@ -172,7 +189,18 @@ class WorkspaceLifecycleListenerTest {
         listener.onTaskStart(new TaskStartEvent("Task", "Developer", 1, 1));
 
         // Should not propagate, and workspace should not be in the active map
-        assertThat(listener.getWorkspace("Task")).isEmpty();
+        assertThat(listener.getWorkspace(1, "Task")).isEmpty();
+        assertThat(listener.activeWorkspaces()).isEmpty();
+    }
+
+    @Test
+    void providerThrowsRuntimeException_doesNotPropagate() {
+        when(provider.create(any(WorkspaceConfig.class))).thenThrow(new IllegalArgumentException("unexpected error"));
+
+        listener.onTaskStart(new TaskStartEvent("Task", "Developer", 1, 1));
+
+        // Catches all exceptions, not just WorkspaceException
+        assertThat(listener.getWorkspace(1, "Task")).isEmpty();
         assertThat(listener.activeWorkspaces()).isEmpty();
     }
 
