@@ -334,6 +334,34 @@ class GitToolTest {
         assertThat(GitTool.isDangerous("add", "something -f more")).isTrue();
     }
 
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsGitInputClass() {
+        assertThat(tool.inputType()).isEqualTo(GitInput.class);
+    }
+
+    // --- null input ---
+
+    @Test
+    void execute_nullInput_returnsFailure() {
+        var result = tool.execute((String) null);
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_missingCommand_returnsFailure() {
+        var result = tool.execute("{\"args\": \"something\"}");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    // --- allowed commands list is complete ---
+
+    @Test
+    void allowedCommands_containsExpectedCommands() {
+        assertThat(GitTool.ALLOWED_COMMANDS).contains("status", "diff", "log", "commit", "add", "branch", "push");
+    }
+
     // --- factory/builder validation ---
 
     @Test

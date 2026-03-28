@@ -192,6 +192,16 @@ class GlobToolTest {
         assertThat(tool.inputType()).isEqualTo(GlobInput.class);
     }
 
+    // --- path is a file, not directory ---
+
+    @Test
+    void execute_pathIsFile_returnsFailure() {
+        var result = tool.execute("{\"pattern\": \"*\", \"path\": \"build.gradle\"}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("not a directory");
+    }
+
     // --- factory method validation ---
 
     @Test

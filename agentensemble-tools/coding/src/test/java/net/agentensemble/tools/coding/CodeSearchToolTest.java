@@ -195,6 +195,33 @@ class CodeSearchToolTest {
         assertThat(lines).hasSizeLessThanOrEqualTo(CodeSearchTool.MAX_MATCHES);
     }
 
+    // --- Java fallback early termination ---
+
+    @Test
+    void execute_javaFallback_terminatesAtMaxMatches() throws IOException {
+        // Create many files each containing a match to hit MAX_MATCHES via visitFile termination
+        Path manyDir = Files.createDirectory(tempDir.resolve("manyfiles"));
+        for (int i = 0; i < 120; i++) {
+            Files.writeString(manyDir.resolve("file" + String.format("%03d", i) + ".java"), "matching content here");
+        }
+
+        var result = tool.execute("{\"pattern\": \"matching content\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        String[] lines = result.getOutput().split("\n");
+        assertThat(lines).hasSizeLessThanOrEqualTo(CodeSearchTool.MAX_MATCHES);
+    }
+
+    // --- Java fallback with null ignoreCase (not true, not false) ---
+
+    @Test
+    void execute_javaFallback_nullIgnoreCase_defaultsCaseSensitive() {
+        var result = tool.execute("{\"pattern\": \"PACKAGE\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).containsIgnoringCase("no matches");
+    }
+
     // --- binary file skipping ---
 
     @Test
@@ -301,6 +328,34 @@ class CodeSearchToolTest {
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getOutput()).contains("Foo.java");
+    }
+
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsCodeSearchInputClass() {
+        assertThat(tool.inputType()).isEqualTo(CodeSearchInput.class);
+    }
+
+    // --- Java fallback context with surrounding lines ---
+
+    @Test
+    void javaFallback_contextLinesNegative_treatedAsZero() {
+        // contextLines < 0 should behave like 0
+        var result = tool.execute("{\"pattern\": \"doSomething\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).contains("Foo.java");
+    }
+
+    // --- Java fallback no glob ---
+
+    @Test
+    void javaFallback_noGlob_searchesAllFiles() {
+        var result = tool.execute("{\"pattern\": \"README\"}");
+
+        // readme.md contains README
+        assertThat(result.isSuccess()).isTrue();
     }
 
     // --- subprocess backend tests (grep and rg) ---

@@ -317,6 +317,35 @@ class CodeEditToolTest {
                 .hasMessageContaining("requires approval");
     }
 
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsCodeEditInputClass() {
+        assertThat(tool.inputType()).isEqualTo(CodeEditInput.class);
+    }
+
+    // --- null content ---
+
+    @Test
+    void execute_nullContent_returnsFailure() {
+        // Content field is required by ToolParam, but null can reach execute if deserialized oddly
+        var input = new CodeEditInput("example.java", "write", null, null, null, null, null);
+        var result = tool.execute(input);
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("null");
+    }
+
+    // --- find_replace with empty find string ---
+
+    @Test
+    void findReplace_emptyFind_returnsFailure() {
+        var result = tool.execute(
+                "{\"path\": \"example.java\", \"command\": \"find_replace\", \"find\": \"\", \"content\": \"x\"}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).containsIgnoringCase("find");
+    }
+
     // --- factory/builder validation ---
 
     @Test

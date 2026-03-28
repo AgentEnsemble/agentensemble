@@ -159,6 +159,21 @@ class BuildRunnerToolTest {
         assertThat(result.isSuccess()).isFalse();
     }
 
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsBuildRunnerInputClass() {
+        assertThat(tool.inputType()).isEqualTo(BuildRunnerInput.class);
+    }
+
+    // --- null input ---
+
+    @Test
+    void execute_nullInput_returnsFailure() {
+        var result = tool.execute((String) null);
+        assertThat(result.isSuccess()).isFalse();
+    }
+
     // --- factory/builder validation ---
 
     @Test

@@ -231,6 +231,27 @@ class ShellToolTest {
         assertThat(result.getOutput()).contains("warning");
     }
 
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsShellInputClass() {
+        assertThat(tool.inputType()).isEqualTo(ShellInput.class);
+    }
+
+    // --- null input ---
+
+    @Test
+    void execute_nullInput_returnsFailure() {
+        var result = tool.execute((String) null);
+        assertThat(result.isSuccess()).isFalse();
+    }
+
+    @Test
+    void execute_missingCommand_returnsFailure() {
+        var result = tool.execute("{\"workingDir\": \".\"}");
+        assertThat(result.isSuccess()).isFalse();
+    }
+
     // --- builder validation ---
 
     @Test
@@ -247,6 +268,18 @@ class ShellToolTest {
     @Test
     void builder_zeroMaxOutput_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> ShellTool.builder(tempDir).maxOutputLength(0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_zeroTimeout_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ShellTool.builder(tempDir).timeout(Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void builder_nonExistentDirectory_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ShellTool.builder(tempDir.resolve("nope")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }
