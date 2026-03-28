@@ -96,8 +96,8 @@ var ensemble = Ensemble.builder()
 ## Workspace Scoping
 
 All coding tools accept a `Path baseDir` at construction time. When combined
-with workspace isolation (coming in a future module), all tools are automatically
-scoped to the isolated working directory:
+with the `agentensemble-workspace` module (see [Workspace Isolation](../guides/workspace-isolation.md)),
+all tools are automatically scoped to the isolated working directory:
 
 ```java
 Path isolatedDir = workspace; // or a git worktree path

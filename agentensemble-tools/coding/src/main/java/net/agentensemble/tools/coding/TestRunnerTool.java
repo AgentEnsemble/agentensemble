@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,6 +30,7 @@ import net.agentensemble.tool.ToolResult;
  * TestRunnerTool tool = TestRunnerTool.of(Path.of("/workspace/project"));
  * </pre>
  */
+@SuppressWarnings("PMD.TestClassWithoutTestCases") // Not a test class; 'Test' refers to test-runner functionality
 public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput> {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -55,7 +57,7 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
     private TestRunnerTool(SandboxValidator sandbox, Duration timeout) {
         this.sandbox = sandbox;
         this.timeout = timeout;
-        String os = System.getProperty("os.name", "").toLowerCase();
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         this.shellPrefix = os.contains("win") ? List.of("cmd", "/c") : List.of("sh", "-c");
     }
 
@@ -190,6 +192,7 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
         return new TestResult(exitSuccess, 0, exitSuccess ? 0 : 1, 0, failures);
     }
 
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops") // Each failure is a distinct result object
     private List<TestFailure> extractFailures(String output) {
         List<TestFailure> failures = new ArrayList<>();
         String[] lines = output.split("\n");
@@ -205,10 +208,10 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
                     message = lines[i + 1].trim();
                 }
                 if (i + 2 < lines.length && lines[i + 2].trim().startsWith("at ")) {
-                    StringBuilder sb = new StringBuilder();
+                    StringBuilder sb = new StringBuilder(256);
                     for (int j = i + 2; j < Math.min(i + 7, lines.length); j++) {
                         if (lines[j].trim().startsWith("at ") || lines[j].trim().startsWith("Caused by:")) {
-                            sb.append(lines[j].trim()).append("\n");
+                            sb.append(lines[j].trim()).append('\n');
                         }
                     }
                     stackTrace = sb.toString().trim();
@@ -223,7 +226,7 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
     private static final int MAX_RAW_OUTPUT_LENGTH = 10_000;
 
     private String buildSummary(TestResult testResult, String rawOutput) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(256);
         sb.append("Tests: ")
                 .append(testResult.passed())
                 .append(" passed, ")
@@ -247,8 +250,8 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
         // Append raw output for context, truncated to prevent overwhelming the LLM
         sb.append("\n\n--- Raw Output ---\n");
         if (rawOutput.length() > MAX_RAW_OUTPUT_LENGTH) {
-            sb.append(rawOutput, 0, MAX_RAW_OUTPUT_LENGTH);
-            sb.append("\n... (output truncated at ")
+            sb.append(rawOutput, 0, MAX_RAW_OUTPUT_LENGTH)
+                    .append("\n... (output truncated at ")
                     .append(MAX_RAW_OUTPUT_LENGTH)
                     .append(" characters)");
         } else {
