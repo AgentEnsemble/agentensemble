@@ -2,6 +2,7 @@ package net.agentensemble.network;
 
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import net.agentensemble.network.federation.FederationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,6 +33,7 @@ public class NetworkClientRegistry implements AutoCloseable {
     private final NetworkConfig config;
     private final ConcurrentHashMap<String, NetworkClient> clients = new ConcurrentHashMap<>();
     private final CapabilityRegistry capabilityRegistry = new CapabilityRegistry();
+    private volatile FederationRegistry federationRegistry;
 
     /**
      * Create a registry backed by the given configuration.
@@ -62,6 +64,9 @@ public class NetworkClientRegistry implements AutoCloseable {
             }
             NetworkClient client = new NetworkClient(name, url, config.defaultConnectTimeout());
             client.setCapabilityRegistry(capabilityRegistry);
+            if (federationRegistry != null) {
+                client.setFederationRegistry(federationRegistry);
+            }
             return client;
         });
     }
@@ -74,6 +79,27 @@ public class NetworkClientRegistry implements AutoCloseable {
      */
     public CapabilityRegistry getCapabilityRegistry() {
         return capabilityRegistry;
+    }
+
+    /**
+     * Sets the {@link FederationRegistry} for federation-aware routing.
+     *
+     * <p>When set, newly created clients will have the federation registry wired in
+     * so they can process {@code CapacityUpdateMessage}s.
+     *
+     * @param federationRegistry the federation registry; may be null to clear
+     */
+    public void setFederationRegistry(FederationRegistry federationRegistry) {
+        this.federationRegistry = federationRegistry;
+    }
+
+    /**
+     * Returns the {@link FederationRegistry}, or {@code null} if not set.
+     *
+     * @return the federation registry, or null
+     */
+    public FederationRegistry getFederationRegistry() {
+        return federationRegistry;
     }
 
     /**

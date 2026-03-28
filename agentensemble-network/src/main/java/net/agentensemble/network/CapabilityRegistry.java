@@ -2,7 +2,9 @@ package net.agentensemble.network;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -152,6 +154,40 @@ public class CapabilityRegistry {
         List<SharedCapabilityInfo> result = new ArrayList<>();
         capabilitiesByEnsemble.values().forEach(result::addAll);
         return Collections.unmodifiableList(result);
+    }
+
+    /** Return all capabilities grouped by ensemble name. */
+    public Map<String, List<SharedCapabilityInfo>> allByEnsemble() {
+        return Map.copyOf(capabilitiesByEnsemble);
+    }
+
+    /**
+     * Find all capabilities with a given tag, grouped by ensemble name.
+     *
+     * @param tag the tag to search for
+     * @return an unmodifiable map of ensemble name to matching capabilities; never null, may be empty
+     */
+    public Map<String, List<SharedCapabilityInfo>> findByTagWithEnsemble(String tag) {
+        Set<String> ensembles = ensemblesByTag.get(tag);
+        if (ensembles == null) {
+            return Map.of();
+        }
+        Map<String, List<SharedCapabilityInfo>> result = new HashMap<>();
+        for (String ensemble : ensembles) {
+            List<SharedCapabilityInfo> caps = capabilitiesByEnsemble.get(ensemble);
+            if (caps != null) {
+                List<SharedCapabilityInfo> matched = new ArrayList<>();
+                for (SharedCapabilityInfo cap : caps) {
+                    if (cap.tags() != null && cap.tags().contains(tag)) {
+                        matched.add(cap);
+                    }
+                }
+                if (!matched.isEmpty()) {
+                    result.put(ensemble, Collections.unmodifiableList(matched));
+                }
+            }
+        }
+        return Collections.unmodifiableMap(result);
     }
 
     /**

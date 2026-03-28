@@ -20,6 +20,12 @@ import net.agentensemble.memory.MemoryStore;
  *     .lockProvider(LockProvider.inMemory())
  *     .build();
  * </pre>
+ *
+ * <p><strong>Note:</strong> {@link Consistency#OPTIMISTIC} mode uses an in-process version
+ * counter. This detects conflicts within a single JVM but does not provide cross-JVM
+ * conflict detection. For distributed optimistic concurrency, use a {@link net.agentensemble.memory.MemoryStore}
+ * implementation with native CAS support (e.g., Redis) or implement a custom
+ * version provider.
  */
 public class SharedMemory {
 
@@ -95,6 +101,10 @@ public class SharedMemory {
     /** Retrieve with version info for optimistic mode. */
     public VersionedResult retrieveVersioned(String scope, String query, int maxResults) {
         Objects.requireNonNull(scope, "scope must not be null");
+        if (consistency != Consistency.OPTIMISTIC) {
+            throw new UnsupportedOperationException(
+                    "retrieveVersioned() is only supported with OPTIMISTIC consistency");
+        }
         long version = versions.computeIfAbsent(scope, k -> new AtomicLong(0)).get();
         List<MemoryEntry> entries = store.retrieve(scope, query, maxResults);
         return new VersionedResult(entries, version);

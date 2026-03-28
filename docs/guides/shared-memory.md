@@ -1,6 +1,6 @@
 # Shared Memory
 
-AgentEnsemble v4.0 introduces cross-ensemble shared memory with configurable consistency
+AgentEnsemble v3.0.0 introduces cross-ensemble shared memory with configurable consistency
 models. `SharedMemory` wraps a standard `MemoryStore` with consistency-aware read/write
 semantics, enabling multiple ensembles to safely share state across a network.
 

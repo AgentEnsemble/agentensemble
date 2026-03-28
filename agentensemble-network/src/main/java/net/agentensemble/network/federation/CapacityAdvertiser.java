@@ -49,10 +49,17 @@ public class CapacityAdvertiser implements AutoCloseable {
     }
 
     /** Start periodic capacity broadcasting at the given interval. */
-    public void start(Duration interval) {
+    public synchronized void start(Duration interval) {
         Objects.requireNonNull(interval);
-        future = scheduler.scheduleAtFixedRate(this::advertise, 0, interval.toMillis(), TimeUnit.MILLISECONDS);
-        log.debug("Capacity advertiser started for ensemble '{}' at {}ms interval", ensembleName, interval.toMillis());
+        long periodMillis = interval.toMillis();
+        if (periodMillis <= 0) {
+            throw new IllegalArgumentException("interval must be positive");
+        }
+        if (future != null && !future.isCancelled() && !future.isDone()) {
+            future.cancel(false);
+        }
+        future = scheduler.scheduleAtFixedRate(this::advertise, 0, periodMillis, TimeUnit.MILLISECONDS);
+        log.debug("Capacity advertiser started for ensemble '{}' at {}ms interval", ensembleName, periodMillis);
     }
 
     /** Stop broadcasting and shut down. */

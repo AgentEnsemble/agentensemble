@@ -1,8 +1,9 @@
 package net.agentensemble.network;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import net.agentensemble.tool.AgentTool;
 import net.agentensemble.tool.DynamicToolProvider;
 import net.agentensemble.web.protocol.SharedCapabilityInfo;
@@ -59,15 +60,18 @@ public final class NetworkToolCatalog implements DynamicToolProvider {
     @Override
     public List<AgentTool> resolve() {
         CapabilityRegistry registry = clientRegistry.getCapabilityRegistry();
-        List<SharedCapabilityInfo> caps = tagFilter != null ? registry.findByTag(tagFilter) : registry.all();
-        return caps.stream()
-                .filter(c -> "TOOL".equals(c.type()))
-                .map(c -> {
-                    String ensemble = registry.findProvider(c.name())
-                            .orElseThrow(() -> new IllegalStateException("No provider for tool '" + c.name() + "'"));
-                    return (AgentTool) NetworkTool.from(ensemble, c.name(), clientRegistry);
-                })
-                .collect(Collectors.toList());
+        Map<String, List<SharedCapabilityInfo>> byEnsemble =
+                tagFilter != null ? registry.findByTagWithEnsemble(tagFilter) : registry.allByEnsemble();
+        List<AgentTool> tools = new ArrayList<>();
+        for (Map.Entry<String, List<SharedCapabilityInfo>> entry : byEnsemble.entrySet()) {
+            String ensemble = entry.getKey();
+            for (SharedCapabilityInfo cap : entry.getValue()) {
+                if ("TOOL".equals(cap.type())) {
+                    tools.add(NetworkTool.from(ensemble, cap.name(), clientRegistry));
+                }
+            }
+        }
+        return tools;
     }
 
     /**

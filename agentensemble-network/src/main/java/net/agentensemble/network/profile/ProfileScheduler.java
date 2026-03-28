@@ -42,6 +42,14 @@ public class ProfileScheduler implements AutoCloseable {
         Objects.requireNonNull(profile);
         Objects.requireNonNull(initialDelay);
         Objects.requireNonNull(interval);
+        long periodMillis = interval.toMillis();
+        if (periodMillis <= 0) {
+            throw new IllegalArgumentException("interval must be positive");
+        }
+        long delayMillis = initialDelay.toMillis();
+        if (delayMillis < 0) {
+            throw new IllegalArgumentException("initialDelay must be non-negative");
+        }
         ScheduledFuture<?> future = executor.scheduleAtFixedRate(
                 () -> {
                     try {
@@ -50,8 +58,8 @@ public class ProfileScheduler implements AutoCloseable {
                         log.warn("Failed to apply scheduled profile '{}': {}", profile.name(), e.getMessage());
                     }
                 },
-                initialDelay.toMillis(),
-                interval.toMillis(),
+                delayMillis,
+                periodMillis,
                 TimeUnit.MILLISECONDS);
         futures.add(future);
         log.debug("Scheduled profile '{}' with interval {}", profile.name(), interval);

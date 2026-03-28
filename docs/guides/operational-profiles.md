@@ -1,6 +1,6 @@
 # Operational Profiles
 
-AgentEnsemble v4.0 introduces operational profiles for pre-planned capacity adjustments
+AgentEnsemble v3.0.0 introduces operational profiles for pre-planned capacity adjustments
 in anticipation of known load changes. A `NetworkProfile` defines per-ensemble capacity
 targets and shared memory pre-load directives that can be applied manually, via the
 directive system, or on a schedule.

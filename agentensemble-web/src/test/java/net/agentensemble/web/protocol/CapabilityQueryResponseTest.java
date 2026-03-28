@@ -33,7 +33,7 @@ class CapabilityQueryResponseTest {
         assertThat(msg.from()).isEqualTo("ensemble-alpha");
         assertThat(msg.toolName()).isEqualTo("prepare-meal");
         assertThat(msg.tag()).isEqualTo("food");
-        assertThat(msg.type()).isEqualTo("TASK");
+        assertThat(msg.capabilityType()).isEqualTo("TASK");
     }
 
     @Test
@@ -43,7 +43,7 @@ class CapabilityQueryResponseTest {
         assertThat(msg.from()).isEqualTo("ensemble-beta");
         assertThat(msg.toolName()).isNull();
         assertThat(msg.tag()).isNull();
-        assertThat(msg.type()).isNull();
+        assertThat(msg.capabilityType()).isNull();
     }
 
     @Test
@@ -62,9 +62,7 @@ class CapabilityQueryResponseTest {
 
     @Test
     void queryRoundTrip() throws Exception {
-        // Use null type filter — the common discovery case. When the record "type" field is
-        // null, @JsonInclude(NON_NULL) omits it and Jackson's @JsonTypeInfo discriminator
-        // ("type":"capability_query") survives in the JSON.
+        // Use null capabilityType filter — the common discovery case.
         CapabilityQueryMessage msg =
                 new CapabilityQueryMessage("req-3", "ensemble-alpha", "prepare-meal", "food", null);
         String json = serializer.toJson(msg);
@@ -85,18 +83,21 @@ class CapabilityQueryResponseTest {
     }
 
     @Test
-    void queryRoundTripWithTypeFilter() throws Exception {
-        // When the record "type" field is non-null it collides with Jackson's @JsonTypeInfo
-        // discriminator property (both named "type"). The record field overwrites the
-        // discriminator in the serialised JSON. Deserialising via ClientMessage.class requires
-        // the discriminator, so we round-trip through the concrete class instead.
+    void queryRoundTripWithCapabilityTypeFilter() throws Exception {
+        // The capabilityType field no longer collides with Jackson's @JsonTypeInfo discriminator
+        // (which uses "type"), so we can round-trip through ClientMessage.class.
         CapabilityQueryMessage msg = new CapabilityQueryMessage("req-7", "ensemble-alpha", null, null, "TASK");
         String json = serializer.toJson(msg);
 
-        CapabilityQueryMessage rt = serializer.fromJson(json, CapabilityQueryMessage.class);
+        assertThat(typeOf(json)).isEqualTo("capability_query");
+        assertThat(json).contains("\"capabilityType\":\"TASK\"");
+
+        ClientMessage deserialized = serializer.fromJson(json, ClientMessage.class);
+        assertThat(deserialized).isInstanceOf(CapabilityQueryMessage.class);
+        CapabilityQueryMessage rt = (CapabilityQueryMessage) deserialized;
         assertThat(rt.requestId()).isEqualTo("req-7");
         assertThat(rt.from()).isEqualTo("ensemble-alpha");
-        assertThat(rt.type()).isEqualTo("TASK");
+        assertThat(rt.capabilityType()).isEqualTo("TASK");
     }
 
     @Test
@@ -107,8 +108,7 @@ class CapabilityQueryResponseTest {
         assertThat(typeOf(json)).isEqualTo("capability_query");
         assertThat(json).doesNotContain("\"toolName\"");
         assertThat(json).doesNotContain("\"tag\"");
-        // "type" is the Jackson discriminator, so check for the field key specifically
-        // The toolName/tag/type optional fields should be omitted when null
+        assertThat(json).doesNotContain("\"capabilityType\"");
 
         ClientMessage deserialized = serializer.fromJson(json, ClientMessage.class);
         assertThat(deserialized).isInstanceOf(CapabilityQueryMessage.class);

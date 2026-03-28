@@ -1,6 +1,6 @@
 # Discovery
 
-AgentEnsemble v4.0 introduces dynamic capability discovery on the ensemble network.
+AgentEnsemble v3.0.0 introduces dynamic capability discovery on the ensemble network.
 Ensembles advertise their shared tasks and tools with optional tags, and other ensembles
 can discover providers at runtime without hardcoding names or URLs.
 

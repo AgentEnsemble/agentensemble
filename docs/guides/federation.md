@@ -1,6 +1,6 @@
 # Federation
 
-AgentEnsemble v4.0 supports federation for cross-namespace and cross-cluster capability
+AgentEnsemble v3.0.0 supports federation for cross-namespace and cross-cluster capability
 sharing. Federation organizes ensembles into **realms** (typically Kubernetes namespaces)
 and enables routing requests to providers in other realms when local capacity is
 insufficient.

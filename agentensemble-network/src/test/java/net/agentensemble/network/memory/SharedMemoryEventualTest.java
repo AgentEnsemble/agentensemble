@@ -1,6 +1,7 @@
 package net.agentensemble.network.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
@@ -66,6 +67,14 @@ class SharedMemoryEventualTest {
     @Test
     void store_accessorReturnsUnderlyingStore() {
         assertThat(sharedMemory.store()).isNotNull();
+    }
+
+    @Test
+    void retrieveVersioned_throwsForEventualConsistency() {
+        assertThatThrownBy(() -> sharedMemory.retrieveVersioned("scope1", null, 10))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("retrieveVersioned()")
+                .hasMessageContaining("OPTIMISTIC");
     }
 
     @Test
