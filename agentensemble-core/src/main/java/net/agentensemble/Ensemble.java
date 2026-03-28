@@ -35,8 +35,11 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.delegation.policy.DelegationPolicy;
+import net.agentensemble.ensemble.BroadcastHandler;
 import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.ensemble.EnsembleOutput;
+import net.agentensemble.ensemble.EnsembleScheduler;
+import net.agentensemble.ensemble.ScheduledTask;
 import net.agentensemble.ensemble.SharedCapability;
 import net.agentensemble.ensemble.SharedCapabilityType;
 import net.agentensemble.exception.AgentEnsembleException;
@@ -494,6 +497,44 @@ public class Ensemble {
     private final Map<String, AgentTool> sharedToolRegistry;
 
     /**
+     * Tasks that fire on a schedule in long-running mode.
+     *
+     * <p>Populated via {@link EnsembleBuilder#scheduledTask(ScheduledTask)}. Each task fires
+     * according to its {@link net.agentensemble.ensemble.Schedule} after {@link #start(int)}
+     * transitions the ensemble to {@link EnsembleLifecycleState#READY}.
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we
+     * provide a custom accumulator method in {@link EnsembleBuilder}. Managed identically
+     * to {@link #phases} and {@link #sharedCapabilities}.
+     *
+     * @see ScheduledTask
+     */
+    private final List<ScheduledTask> scheduledTasks;
+
+    /**
+     * Optional handler for broadcasting scheduled task results to named topics.
+     *
+     * <p>When set and a {@link ScheduledTask} has a non-null {@code broadcastTo}, the
+     * result string is forwarded to this handler after the task completes.
+     *
+     * <p>Default: null (no broadcasting).
+     *
+     * @see BroadcastHandler
+     */
+    private final BroadcastHandler broadcastHandler;
+
+    /**
+     * Internal scheduler for proactive/scheduled tasks in long-running mode.
+     *
+     * <p>Not exposed via the builder; created and managed internally by
+     * {@link #start(int)} and {@link #stop()}. Volatile because it is set in
+     * {@code start()} and read in {@code stop()} potentially from different threads.
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final AtomicReference<EnsembleScheduler> schedulerRef = new AtomicReference<>();
+
+    /**
      * Internal lifecycle state for long-running mode.
      *
      * <p>Not exposed via the builder; managed internally by {@link #start(int)} and
@@ -593,6 +634,16 @@ public class Ensemble {
             }
             log.info("Ensemble started in long-running mode on port {}", port);
 
+            // Start scheduler for any registered scheduled tasks
+            if (scheduledTasks != null && !scheduledTasks.isEmpty()) {
+                EnsembleScheduler scheduler = new EnsembleScheduler(this::getLifecycleState);
+                schedulerRef.set(scheduler);
+                for (ScheduledTask st : scheduledTasks) {
+                    scheduler.schedule(st, () -> executeScheduledTask(st));
+                }
+                log.info("Started {} scheduled task(s)", scheduledTasks.size());
+            }
+
             // Register shutdown hook, deregistering any previous one to avoid accumulation
             // when the ensemble is stopped and restarted within the same JVM.
             Thread oldHook = shutdownHookRef.getAndSet(null);
@@ -658,6 +709,12 @@ public class Ensemble {
             }
         }
 
+        // Stop scheduler before dashboard
+        EnsembleScheduler sched = schedulerRef.getAndSet(null);
+        if (sched != null) {
+            sched.stop();
+        }
+
         try {
             // Only stop the dashboard when this ensemble owns the lifecycle. An externally-
             // managed dashboard (ownsDashboardLifecycle=false) must not be stopped here, since
@@ -668,6 +725,38 @@ public class Ensemble {
         } finally {
             lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
             log.info("Ensemble stopped");
+        }
+    }
+
+    /**
+     * Execute a scheduled task by running it as a one-shot ensemble and optionally
+     * broadcasting the result.
+     *
+     * <p>Called by the {@link EnsembleScheduler} on each firing. Creates a minimal
+     * one-shot ensemble with the scheduled task's {@link Task} definition, executes
+     * it, and forwards the result to the {@link BroadcastHandler} if configured.
+     *
+     * @param st the scheduled task definition
+     */
+    private void executeScheduledTask(ScheduledTask st) {
+        try {
+            EnsembleOutput output = Ensemble.builder()
+                    .chatLanguageModel(getChatLanguageModel())
+                    .agentSynthesizer(getAgentSynthesizer())
+                    .task(st.task())
+                    .build()
+                    .run();
+
+            String result = output.lastCompletedOutput().map(TaskOutput::getRaw).orElse("");
+
+            // Broadcast if configured
+            if (st.broadcastTo() != null && broadcastHandler != null) {
+                broadcastHandler.broadcast(st.broadcastTo(), result);
+            }
+
+            log.info("Scheduled task '{}' completed", st.name());
+        } catch (Exception e) {
+            log.warn("Scheduled task '{}' execution failed: {}", st.name(), e.getMessage(), e);
         }
     }
 
@@ -1663,6 +1752,42 @@ public class Ensemble {
         // Shared task/tool registries (name -> instance).
         private Map<String, Task> sharedTaskRegistry = Map.of();
         private Map<String, AgentTool> sharedToolRegistry = Map.of();
+
+        // Scheduled tasks accumulator (same pattern as phases and sharedCapabilities).
+        private List<ScheduledTask> scheduledTasks = List.of();
+
+        // Broadcast handler for scheduled task results.
+        private BroadcastHandler broadcastHandler;
+
+        /**
+         * Add a scheduled task that fires on the given schedule in long-running mode.
+         *
+         * <p>May be called multiple times; each call adds a task to the list.
+         *
+         * @param scheduledTask the scheduled task to register; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder scheduledTask(ScheduledTask scheduledTask) {
+            Objects.requireNonNull(scheduledTask, "scheduledTask must not be null");
+            List<ScheduledTask> updated = new ArrayList<>(this.scheduledTasks);
+            updated.add(scheduledTask);
+            this.scheduledTasks = List.copyOf(updated);
+            return this;
+        }
+
+        /**
+         * Set the broadcast handler for scheduled task results.
+         *
+         * <p>When a {@link ScheduledTask} has a non-null {@code broadcastTo}, the handler
+         * is invoked with the topic name and result string after the task completes.
+         *
+         * @param broadcastHandler the broadcast handler; may be null to disable broadcasting
+         * @return this builder
+         */
+        public EnsembleBuilder broadcastHandler(BroadcastHandler broadcastHandler) {
+            this.broadcastHandler = broadcastHandler;
+            return this;
+        }
 
         /**
          * Share a named task with the network.
