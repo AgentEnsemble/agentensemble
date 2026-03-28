@@ -150,6 +150,37 @@ store.store("req-42", response, Duration.ofHours(1));
 WorkResponse retrieved = store.retrieve("req-42");
 ```
 
+## Priority Queue
+
+Use `RequestQueue.priority()` to order incoming work by priority with optional aging
+to prevent starvation of low-priority requests.
+
+```java
+// Create a priority queue with 30-minute aging intervals.
+// LOW requests are promoted to NORMAL after 30 min, HIGH after 60 min, CRITICAL after 90 min.
+PriorityWorkQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMinutes(30)));
+
+// Enqueue requests with different priorities
+queue.enqueue("kitchen", new WorkRequest(
+    "req-vip-1", "room-service", "prepare-meal",
+    "Wagyu steak for penthouse suite", Priority.CRITICAL,
+    null, null, null, null, null));
+
+queue.enqueue("kitchen", new WorkRequest(
+    "req-4071", "room-service", "prepare-meal",
+    "Club sandwich, room 205", Priority.NORMAL,
+    null, null, null, null, null));
+
+// Dequeue returns CRITICAL request first
+WorkRequest next = queue.dequeue("kitchen", Duration.ofSeconds(30));
+// next.requestId() -> "req-vip-1"
+
+// Get queue status for task_accepted responses
+QueueStatus status = queue.queueStatus("kitchen", "req-4071");
+// status.queuePosition()       -> 0 (it's next)
+// status.estimatedCompletion()  -> PT30S
+```
+
 ## Related
 
 - [Cross-Ensemble Delegation Guide](../guides/cross-ensemble-delegation.md)

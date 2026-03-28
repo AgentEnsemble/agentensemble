@@ -173,6 +173,73 @@ for development.
 > **Note:** Durable transport implementations (Redis Streams, Kafka, SQS) are planned for
 > a future release. The SPI is designed to accommodate them without changes.
 
+## Priority Queue
+
+The `RequestQueue` SPI includes a priority-aware implementation that orders requests by
+priority level (CRITICAL > HIGH > NORMAL > LOW) with FIFO ordering within the same level.
+
+### Basic usage
+
+```java
+// Priority queue with aging disabled
+RequestQueue queue = RequestQueue.priority();
+queue.enqueue("kitchen", workRequest);
+WorkRequest next = queue.dequeue("kitchen", Duration.ofSeconds(30));
+```
+
+### Aging (starvation prevention)
+
+Low-priority requests can be promoted over time to prevent starvation. Configure
+an `AgingPolicy` to control how frequently promotions occur:
+
+```java
+// Promote unprocessed requests one priority level every 30 minutes
+// LOW -> NORMAL (30 min) -> HIGH (60 min) -> CRITICAL (90 min)
+RequestQueue queue = RequestQueue.priority(AgingPolicy.every(Duration.ofMinutes(30)));
+```
+
+Use `AgingPolicy.none()` to disable aging (the default).
+
+### Queue status for task_accepted responses
+
+The `PriorityWorkQueue` provides queue position and ETA for populating `task_accepted`
+messages:
+
+```java
+PriorityWorkQueue queue = RequestQueue.priority(
+    AgingPolicy.every(Duration.ofMinutes(30)));
+
+queue.enqueue("kitchen", workRequest);
+
+QueueStatus status = queue.queueStatus("kitchen", workRequest.requestId());
+// status.queuePosition()       -> 0 (next to be processed)
+// status.estimatedCompletion()  -> PT30S (estimated time)
+```
+
+### Metrics
+
+Pass a `QueueMetrics` callback to receive queue depth reports after each enqueue/dequeue:
+
+```java
+QueueMetrics metrics = new QueueMetrics() {
+    private final Map<String, AtomicInteger> depths = new ConcurrentHashMap<>();
+
+    @Override
+    public void recordQueueDepth(String queueName, Priority priority, int depth) {
+        String key = queueName + ":" + priority.name();
+        AtomicInteger gaugeValue = depths.computeIfAbsent(key, k -> {
+            AtomicInteger value = new AtomicInteger(depth);
+            Gauge.builder("agentensemble.queue.depth", value, AtomicInteger::get)
+                .tag("ensemble", queueName)
+                .tag("priority", priority.name())
+                .register(meterRegistry);
+            return value;
+        });
+        gaugeValue.set(depth);
+    }
+};
+```
+
 ## Related
 
 - [Long-Running Ensembles](long-running-ensembles.md)

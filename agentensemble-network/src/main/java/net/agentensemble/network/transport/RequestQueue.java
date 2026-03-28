@@ -11,15 +11,19 @@ import net.agentensemble.web.protocol.WorkRequest;
  * should support consumer groups for horizontal scaling (multiple replicas reading from the
  * same queue with at-least-once delivery).
  *
- * <p>Use the built-in factory for development:
+ * <p>Use the built-in factories:
  * <ul>
- *   <li>{@link #inMemory()} -- in-process queues, single-JVM only</li>
+ *   <li>{@link #inMemory()} -- FIFO in-process queues, single-JVM only</li>
+ *   <li>{@link #priority()} -- priority-ordered with aging disabled</li>
+ *   <li>{@link #priority(AgingPolicy)} -- priority-ordered with configurable aging</li>
  * </ul>
  *
  * <p>Implementations must be thread-safe.
  *
  * @see Transport
  * @see WorkRequest
+ * @see PriorityWorkQueue
+ * @see AgingPolicy
  */
 public interface RequestQueue {
 
@@ -55,10 +59,43 @@ public interface RequestQueue {
      * Create an in-memory request queue backed by {@link java.util.concurrent.LinkedBlockingQueue}.
      *
      * <p>Suitable for development and testing. Does not survive process restarts.
+     * Requests are dequeued in FIFO order regardless of priority.
      *
      * @return a new {@link InMemoryRequestQueue}
      */
     static RequestQueue inMemory() {
         return new InMemoryRequestQueue();
+    }
+
+    /**
+     * Create a priority work queue with the given aging policy.
+     *
+     * <p>Requests are dequeued by priority ({@link net.agentensemble.web.protocol.Priority#CRITICAL}
+     * first, {@link net.agentensemble.web.protocol.Priority#LOW} last) with FIFO ordering
+     * within the same priority. The aging policy promotes unprocessed requests to higher
+     * priorities over time, preventing starvation.
+     *
+     * <p>Suitable for development and testing. Does not survive process restarts.
+     *
+     * @param agingPolicy the aging configuration; must not be null
+     * @return a new {@link PriorityWorkQueue}
+     * @see AgingPolicy#every(Duration)
+     * @see AgingPolicy#none()
+     */
+    static PriorityWorkQueue priority(AgingPolicy agingPolicy) {
+        return new PriorityWorkQueue(agingPolicy);
+    }
+
+    /**
+     * Create a priority work queue with aging disabled.
+     *
+     * <p>Equivalent to {@code priority(AgingPolicy.none())}. Requests are dequeued by
+     * priority with FIFO within the same level, but low-priority requests are never
+     * promoted.
+     *
+     * @return a new {@link PriorityWorkQueue} with no aging
+     */
+    static PriorityWorkQueue priority() {
+        return new PriorityWorkQueue();
     }
 }
