@@ -19,6 +19,9 @@ dependencies {
     implementation(project(":agentensemble-tools:process"))
     implementation(project(":agentensemble-tools:http"))
 
+    // Coding agent factory for coding examples
+    implementation(project(":agentensemble-coding"))
+
     // Metrics integration for MetricsExample
     implementation(project(":agentensemble-metrics-micrometer"))
     implementation(libs.micrometer.core)
@@ -60,6 +63,8 @@ application {
 //   ./gradlew :agentensemble-examples:runDeterministicOnlyPipeline
 //   ./gradlew :agentensemble-examples:runPhases
 //   ./gradlew :agentensemble-examples:runPhaseReview
+//   ./gradlew :agentensemble-examples:runCodingAgent --args="/path/to/project"
+//   ./gradlew :agentensemble-examples:runIsolatedCoding --args="/path/to/git/repo"
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -84,6 +89,8 @@ mapOf(
     "runPhaseReview" to "net.agentensemble.examples.PhaseReviewExample",
     "runTypedTools" to "net.agentensemble.examples.TypedToolsExample",
     "runToonFormat" to "net.agentensemble.examples.ToonFormatExample",
+    "runCodingAgent" to "net.agentensemble.examples.CodingAgentExample",
+    "runIsolatedCoding" to "net.agentensemble.examples.IsolatedCodingExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"
