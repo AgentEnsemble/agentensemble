@@ -60,7 +60,6 @@ public final class CodingAgent {
         private Path workingDirectory;
         private Workspace workspace;
         private ToolBackend toolBackend = ToolBackend.AUTO;
-        private boolean requireApproval;
         private int maxIterations = DEFAULT_MAX_ITERATIONS;
         private List<Object> additionalTools = List.of();
 
@@ -86,13 +85,7 @@ public final class CodingAgent {
 
         /** Tool backend selection. Default: {@link ToolBackend#AUTO}. */
         public Builder toolBackend(ToolBackend toolBackend) {
-            this.toolBackend = toolBackend;
-            return this;
-        }
-
-        /** Whether destructive tool operations require human approval. Default: {@code false}. */
-        public Builder requireApproval(boolean requireApproval) {
-            this.requireApproval = requireApproval;
+            this.toolBackend = Objects.requireNonNull(toolBackend, "toolBackend must not be null");
             return this;
         }
 
@@ -104,6 +97,15 @@ public final class CodingAgent {
 
         /** Additional tools to include alongside the coding tool set. */
         public Builder additionalTools(Object... tools) {
+            if (tools == null) {
+                throw new IllegalArgumentException("additionalTools varargs array must not be null");
+            }
+            for (int i = 0; i < tools.length; i++) {
+                if (tools[i] == null) {
+                    throw new IllegalArgumentException(
+                            "additionalTools must not contain null elements (null at index " + i + ')');
+                }
+            }
             this.additionalTools = List.of(tools);
             return this;
         }
@@ -156,18 +158,16 @@ public final class CodingAgent {
 
             switch (resolved) {
                 case MINIMAL -> tools.add(FileReadTool.of(baseDir));
-                case JAVA -> {
-                    // When agentensemble-tools-coding ships, load tools via reflection here.
-                    // For now, ToolBackendDetector.resolve() will have already thrown if JAVA
-                    // was explicitly requested and the module is not on the classpath.
-                    tools.add(FileReadTool.of(baseDir));
-                }
-                case MCP -> {
-                    // When agentensemble-mcp ships, load MCP tools via reflection here.
-                    // For now, ToolBackendDetector.resolve() will have already thrown if MCP
-                    // was explicitly requested and the module is not on the classpath.
-                    tools.add(FileReadTool.of(baseDir));
-                }
+                case JAVA ->
+                // When agentensemble-tools-coding ships, wire real Java tools here.
+                // Until then, fail fast rather than silently degrading to MINIMAL.
+                throw new UnsupportedOperationException("ToolBackend.JAVA is not yet implemented: "
+                        + "Java-specific coding tools are not wired in this build");
+                case MCP ->
+                // When agentensemble-mcp ships, wire real MCP tools here.
+                // Until then, fail fast rather than silently degrading to MINIMAL.
+                throw new UnsupportedOperationException(
+                        "ToolBackend.MCP is not yet implemented: " + "MCP tools are not wired in this build");
                 default -> tools.add(FileReadTool.of(baseDir));
             }
 

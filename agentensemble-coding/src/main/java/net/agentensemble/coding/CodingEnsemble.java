@@ -97,10 +97,10 @@ public final class CodingEnsemble {
 
             LOG.info("Coding ensemble completed successfully. Workspace preserved at: {}", workspace.path());
             return output;
-        } catch (Exception e) {
-            LOG.warn("Coding ensemble failed. Cleaning up workspace: {}", workspace.id());
+        } catch (Throwable t) {
+            LOG.warn("Coding ensemble failed. Cleaning up workspace: {}", workspace.id(), t);
             workspace.close();
-            throw e;
+            throw t;
         }
     }
 

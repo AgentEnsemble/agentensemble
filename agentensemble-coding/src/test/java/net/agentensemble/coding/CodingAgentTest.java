@@ -85,24 +85,6 @@ class CodingAgentTest {
     }
 
     @Test
-    void build_requireApprovalDefaultsFalse() {
-        Agent agent = CodingAgent.builder().llm(model).workingDirectory(tempDir).build();
-
-        assertThat(agent).isNotNull();
-    }
-
-    @Test
-    void build_requireApprovalCanBeSet() {
-        Agent agent = CodingAgent.builder()
-                .llm(model)
-                .workingDirectory(tempDir)
-                .requireApproval(true)
-                .build();
-
-        assertThat(agent).isNotNull();
-    }
-
-    @Test
     void build_autoBackend_defaultsToMinimalWhenNoOptionalModules() {
         Agent agent = CodingAgent.builder()
                 .llm(model)
@@ -173,6 +155,27 @@ class CodingAgentTest {
                         .maxIterations(-1)
                         .build())
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void build_nullToolBackend_throwsNpe() {
+        assertThatThrownBy(() -> CodingAgent.builder().toolBackend(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("toolBackend");
+    }
+
+    @Test
+    void additionalTools_nullArray_throwsIae() {
+        assertThatThrownBy(() -> CodingAgent.builder().additionalTools((Object[]) null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be null");
+    }
+
+    @Test
+    void additionalTools_nullElement_throwsIae() {
+        assertThatThrownBy(() -> CodingAgent.builder().additionalTools(new Object[] {null}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("null at index 0");
     }
 
     // ---- Helper ----

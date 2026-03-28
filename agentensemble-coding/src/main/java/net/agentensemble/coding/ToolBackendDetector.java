@@ -68,19 +68,26 @@ final class ToolBackendDetector {
     }
 
     static boolean isMcpAvailable() {
-        try {
-            Class.forName(MCP_MARKER_CLASS);
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
+        return isClassAvailable(MCP_MARKER_CLASS);
     }
 
     static boolean isJavaToolsAvailable() {
+        return isClassAvailable(JAVA_TOOLS_MARKER_CLASS);
+    }
+
+    /**
+     * Check if a class is loadable on the classpath. Returns {@code false} for
+     * {@link ClassNotFoundException} (class absent) and {@link LinkageError}
+     * (class present but a dependency is missing or incompatible).
+     */
+    private static boolean isClassAvailable(String className) {
         try {
-            Class.forName(JAVA_TOOLS_MARKER_CLASS);
+            Class.forName(className);
             return true;
         } catch (ClassNotFoundException e) {
+            return false;
+        } catch (LinkageError e) {
+            LOG.debug("Class {} found but failed to link: {}", className, e.getMessage());
             return false;
         }
     }
