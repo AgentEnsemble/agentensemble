@@ -30,9 +30,12 @@ var agent = Agent.builder()
     .build();
 ```
 
-## Read-Only Agent (No Approval Needed)
+## Search-Only Agent
 
-For agents that only read and search code without making changes:
+For agents that only read and search code. Note: `GlobTool`, `CodeSearchTool`,
+and `GitTool` with `of()` do not have approval gates. If you need to prevent
+the agent from running destructive git commands (push, reset, etc.), use
+`builder().requireApproval(true)` instead.
 
 ```java
 var reviewer = Agent.builder()
@@ -41,7 +44,7 @@ var reviewer = Agent.builder()
     .tools(List.of(
         GlobTool.of(workspace),
         CodeSearchTool.of(workspace),
-        GitTool.of(workspace)   // of() -- no approval gate, read-only commands still work
+        GitTool.of(workspace)   // of() -- no approval gate; safe AND destructive commands allowed
     ))
     .llm(chatModel)
     .build();

@@ -7,6 +7,7 @@ dependencies {
 
     // Review module -- compileOnly so it is not shipped transitively
     compileOnly(project(":agentensemble-review"))
+    testImplementation(project(":agentensemble-review"))
 }
 
 mavenPublishing {

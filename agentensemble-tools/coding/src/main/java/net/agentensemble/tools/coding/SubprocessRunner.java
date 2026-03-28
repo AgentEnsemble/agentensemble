@@ -2,6 +2,7 @@ package net.agentensemble.tools.coding;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -17,6 +18,9 @@ import org.slf4j.Logger;
  * pattern from {@code ProcessAgentTool} to avoid duplication across tools.
  */
 final class SubprocessRunner {
+
+    /** Maximum bytes captured per stream to prevent OOM on large output. */
+    static final int MAX_CAPTURE_BYTES = 1_000_000; // 1 MB
 
     /** Result of a subprocess execution. */
     record SubprocessResult(int exitCode, String stdout, String stderr) {}
@@ -52,18 +56,19 @@ final class SubprocessRunner {
         }
 
         // Drain stdout and stderr concurrently on virtual threads to prevent deadlock.
+        // Capture is bounded to MAX_CAPTURE_BYTES to prevent OOM on large output.
         ByteArrayOutputStream stdoutCapture = new ByteArrayOutputStream();
         ByteArrayOutputStream stderrCapture = new ByteArrayOutputStream();
         Thread stdoutDrain = Thread.ofVirtual().start(() -> {
             try {
-                process.getInputStream().transferTo(stdoutCapture);
+                drainBounded(process.getInputStream(), stdoutCapture, MAX_CAPTURE_BYTES);
             } catch (IOException e) {
                 log.debug("Exception draining stdout from subprocess", e);
             }
         });
         Thread stderrDrain = Thread.ofVirtual().start(() -> {
             try {
-                process.getErrorStream().transferTo(stderrCapture);
+                drainBounded(process.getErrorStream(), stderrCapture, MAX_CAPTURE_BYTES);
             } catch (IOException e) {
                 log.debug("Exception draining stderr from subprocess", e);
             }
@@ -86,5 +91,22 @@ final class SubprocessRunner {
         String stdout = stdoutCapture.toString(StandardCharsets.UTF_8).trim();
         String stderr = stderrCapture.toString(StandardCharsets.UTF_8).trim();
         return new SubprocessResult(exitCode, stdout, stderr);
+    }
+
+    /**
+     * Drain an input stream into the output buffer up to maxBytes, then discard the rest.
+     * This prevents OOM when a subprocess produces very large output.
+     */
+    private static void drainBounded(InputStream in, ByteArrayOutputStream out, int maxBytes) throws IOException {
+        byte[] buf = new byte[8192];
+        int totalRead = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            int remaining = maxBytes - totalRead;
+            if (remaining > 0) {
+                out.write(buf, 0, Math.min(n, remaining));
+            }
+            totalRead += n;
+        }
     }
 }

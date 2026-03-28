@@ -87,6 +87,19 @@ class SubprocessRunnerTest {
                 .isInstanceOf(IOException.class);
     }
 
+    // --- bounded output ---
+
+    @Test
+    void run_largeOutput_isBounded() throws IOException, InterruptedException {
+        assumeTrue(shellAvailable, "Shell not available");
+
+        // Generate output larger than a small buffer
+        var result = SubprocessRunner.run(List.of("sh", "-c", "seq 1 10000"), tempDir, Duration.ofSeconds(10), LOG);
+
+        assertThat(result.exitCode()).isEqualTo(0);
+        assertThat(result.stdout()).isNotBlank();
+    }
+
     // --- working directory ---
 
     @Test

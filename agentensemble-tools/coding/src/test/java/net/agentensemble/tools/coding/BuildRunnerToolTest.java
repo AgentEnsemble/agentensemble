@@ -69,12 +69,15 @@ class BuildRunnerToolTest {
     // --- failed build ---
 
     @Test
-    void execute_failedBuild_returnsFailure() {
+    void execute_failedBuild_returnsSuccessWithStructuredFailure() {
         assumeTrue(shellAvailable, "Shell not available");
 
-        var result = tool.execute("{\"command\": \"exit 1\"}");
+        var result = tool.execute("{\"command\": \"echo 'BUILD FAILED' && exit 1\"}");
 
-        assertThat(result.isSuccess()).isFalse();
+        // Tool returns success so structured output is available to listeners
+        assertThat(result.isSuccess()).isTrue();
+        JsonNode structured = (JsonNode) result.getStructuredOutput();
+        assertThat(structured.get("success").asBoolean()).isFalse();
     }
 
     // --- structured output with errors/warnings ---

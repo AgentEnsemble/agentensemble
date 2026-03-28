@@ -187,13 +187,17 @@ class TestRunnerToolTest {
     }
 
     @Test
-    void execute_failedTestRun_returnsFailure() {
+    void execute_failedTestRun_returnsSuccessWithStructuredFailure() {
         assumeTrue(shellAvailable, "Shell not available");
 
         var result = tool.execute(
                 "{\"command\": \"echo '3 tests completed, 1 failed' && echo 'FAILED FooTest' && exit 1\"}");
 
-        assertThat(result.isSuccess()).isFalse();
+        // Tool returns success so structured output is available to listeners
+        assertThat(result.isSuccess()).isTrue();
+        JsonNode structured = (JsonNode) result.getStructuredOutput();
+        assertThat(structured.get("success").asBoolean()).isFalse();
+        assertThat(structured.get("failed").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -239,6 +243,19 @@ class TestRunnerToolTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorMessage()).containsIgnoringCase("timed out");
+    }
+
+    // --- raw output truncation ---
+
+    @Test
+    void execute_largeOutput_truncatesRawOutput() {
+        assumeTrue(shellAvailable, "Shell not available");
+
+        // Generate large output to test truncation in buildSummary
+        var result = tool.execute("{\"command\": \"seq 1 50000\"}");
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getOutput()).contains("truncated");
     }
 
     // --- blank command ---

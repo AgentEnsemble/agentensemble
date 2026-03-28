@@ -211,8 +211,26 @@ public final class CodeSearchTool extends AbstractTypedAgentTool<CodeSearchInput
 
     private String relativizePaths(String output, Path searchRoot) {
         String basePath = sandbox.baseDir().toString();
-        // Replace absolute paths with relative ones
-        return output.replace(basePath + "/", "").replace(basePath + "\\", "");
+        String unixPrefix = basePath + "/";
+        String windowsPrefix = basePath + "\\";
+
+        // Strip base-path prefix from the path segment of each line only,
+        // to avoid rewriting base-path occurrences within matched line content.
+        String[] lines = output.split("\n", -1);
+        StringBuilder sb = new StringBuilder(output.length());
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.startsWith(unixPrefix)) {
+                line = line.substring(unixPrefix.length());
+            } else if (line.startsWith(windowsPrefix)) {
+                line = line.substring(windowsPrefix.length());
+            }
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append(line);
+        }
+        return sb.toString();
     }
 
     private String capMatches(String output) {

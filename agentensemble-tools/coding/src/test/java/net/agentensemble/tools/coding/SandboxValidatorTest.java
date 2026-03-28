@@ -91,6 +91,12 @@ class SandboxValidatorTest {
     }
 
     @Test
+    void isSymlinkEscape_existingFileInsideSandbox_returnsFalse() throws IOException {
+        Path file = Files.writeString(tempDir.resolve("real.txt"), "content");
+        assertThat(validator.isSymlinkEscape(file)).isFalse();
+    }
+
+    @Test
     void isSymlinkEscape_symlinkOutsideSandbox_returnsTrue() throws IOException {
         Path outsideDir = Files.createTempDirectory("agentensemble-outside");
         Path symlinkPath = tempDir.resolve("link");

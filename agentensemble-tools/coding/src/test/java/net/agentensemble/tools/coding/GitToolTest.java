@@ -330,7 +330,7 @@ class GitToolTest {
     }
 
     @Test
-    void isDangerous_pushForceShortFlag_isTrue() {
+    void isDangerous_addForceShortFlag_isTrue() {
         assertThat(GitTool.isDangerous("add", "something -f more")).isTrue();
     }
 

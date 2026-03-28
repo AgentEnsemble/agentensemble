@@ -140,12 +140,10 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
             TestResult testResult = parseTestOutput(output, exitSuccess);
             ObjectNode structured = toStructuredOutput(testResult);
 
+            // Always return structured output so listeners/agents can consume
+            // test counts and failure details. structured.success=false signals failure.
             String summary = buildSummary(testResult, output);
-            if (testResult.success()) {
-                return ToolResult.success(summary, structured);
-            } else {
-                return ToolResult.failure(summary);
-            }
+            return ToolResult.success(summary, structured);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.failure("Test execution was interrupted");
@@ -222,6 +220,8 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
         return failures;
     }
 
+    private static final int MAX_RAW_OUTPUT_LENGTH = 10_000;
+
     private String buildSummary(TestResult testResult, String rawOutput) {
         StringBuilder sb = new StringBuilder();
         sb.append("Tests: ")
@@ -244,8 +244,16 @@ public final class TestRunnerTool extends AbstractTypedAgentTool<TestRunnerInput
             }
         }
 
-        // Append raw output for full context
-        sb.append("\n\n--- Raw Output ---\n").append(rawOutput);
+        // Append raw output for context, truncated to prevent overwhelming the LLM
+        sb.append("\n\n--- Raw Output ---\n");
+        if (rawOutput.length() > MAX_RAW_OUTPUT_LENGTH) {
+            sb.append(rawOutput, 0, MAX_RAW_OUTPUT_LENGTH);
+            sb.append("\n... (output truncated at ")
+                    .append(MAX_RAW_OUTPUT_LENGTH)
+                    .append(" characters)");
+        } else {
+            sb.append(rawOutput);
+        }
         return sb.toString();
     }
 

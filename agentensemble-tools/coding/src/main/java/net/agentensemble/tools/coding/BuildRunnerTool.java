@@ -124,11 +124,9 @@ public final class BuildRunnerTool extends AbstractTypedAgentTool<BuildRunnerInp
 
             ObjectNode structured = buildStructuredOutput(success, errors, warnings);
 
-            if (success) {
-                return ToolResult.success(output, structured);
-            } else {
-                return ToolResult.failure(output);
-            }
+            // Always return structured output so listeners can consume errors/warnings
+            // even when the build fails. structured.success=false signals failure.
+            return ToolResult.success(output, structured);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.failure("Build was interrupted");

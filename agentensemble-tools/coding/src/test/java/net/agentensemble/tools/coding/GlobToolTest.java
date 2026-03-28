@@ -185,6 +185,13 @@ class GlobToolTest {
         assertThat(result.getErrorMessage()).containsIgnoringCase("invalid");
     }
 
+    // --- inputType ---
+
+    @Test
+    void inputType_returnsGlobInputClass() {
+        assertThat(tool.inputType()).isEqualTo(GlobInput.class);
+    }
+
     // --- factory method validation ---
 
     @Test

@@ -174,7 +174,13 @@ public final class GitTool extends AbstractTypedAgentTool<GitInput> {
         if ("branch".equals(command) && args.contains("-D")) {
             return true;
         }
-        return args.contains("--force") || args.contains(" -f ");
+        // Tokenize args to check for exact --force or -f flags
+        for (String arg : args.split("\\s+")) {
+            if ("--force".equals(arg) || "-f".equals(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<String> buildGitCommand(String command, String args, String message) {
@@ -188,7 +194,7 @@ public final class GitTool extends AbstractTypedAgentTool<GitInput> {
         }
 
         if (!args.isBlank()) {
-            // Split args by whitespace, respecting simple quoting
+            // Split args by whitespace (no quote handling -- callers should use simple args)
             for (String arg : args.split("\\s+")) {
                 if (!arg.isBlank()) {
                     gitCommand.add(arg);

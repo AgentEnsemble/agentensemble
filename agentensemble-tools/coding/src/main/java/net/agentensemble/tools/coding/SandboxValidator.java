@@ -47,8 +47,19 @@ final class SandboxValidator {
      * fully resolve the path. Returns {@code true} if the real path is outside the sandbox.
      */
     boolean isSymlinkEscape(Path resolved) throws IOException {
+        Path baseReal = baseDir.toRealPath();
+
+        // If the resolved path already exists, validate its real path directly.
+        if (Files.exists(resolved)) {
+            Path resolvedReal = resolved.toRealPath();
+            return !resolvedReal.startsWith(baseReal);
+        }
+
+        // For non-existent paths (e.g., files about to be created), validate the parent
+        // directory's real path, as that is what the new path will be created under.
         Path checkDir = resolved.getParent() != null ? resolved.getParent() : baseDir;
-        return !checkDir.toRealPath().startsWith(baseDir.toRealPath());
+        Path checkReal = checkDir.toRealPath();
+        return !checkReal.startsWith(baseReal);
     }
 
     /** Returns the normalized, absolute base directory. */
