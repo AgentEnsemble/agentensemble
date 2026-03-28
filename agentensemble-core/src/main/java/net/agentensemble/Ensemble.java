@@ -23,6 +23,9 @@ import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
+import net.agentensemble.audit.AuditPolicy;
+import net.agentensemble.audit.AuditSink;
+import net.agentensemble.audit.AuditingListener;
 import net.agentensemble.callback.DelegationCompletedEvent;
 import net.agentensemble.callback.DelegationFailedEvent;
 import net.agentensemble.callback.DelegationStartedEvent;
@@ -35,6 +38,9 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.config.TemplateResolver;
 import net.agentensemble.dashboard.EnsembleDashboard;
 import net.agentensemble.delegation.policy.DelegationPolicy;
+import net.agentensemble.directive.AutoDirectiveRule;
+import net.agentensemble.directive.DirectiveDispatcher;
+import net.agentensemble.directive.DirectiveStore;
 import net.agentensemble.ensemble.BroadcastHandler;
 import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.ensemble.EnsembleOutput;
@@ -524,6 +530,93 @@ public class Ensemble {
     private final BroadcastHandler broadcastHandler;
 
     /**
+     * Optional audit policy for leveled audit trail with dynamic rules.
+     *
+     * <p>When set alongside {@link #auditSinks}, an {@link AuditingListener} is automatically
+     * created and added to the listeners list at the start of each {@link #runWithInputs} call.
+     * The listener records audit events at the configured verbosity level and supports dynamic
+     * escalation via rules defined in the policy.
+     *
+     * <p>Default: null (no auditing).
+     *
+     * @see AuditPolicy
+     * @see AuditingListener
+     */
+    private final AuditPolicy auditPolicy;
+
+    /**
+     * Audit sinks for writing audit records to backends.
+     *
+     * <p>Used in conjunction with {@link #auditPolicy} to create an {@link AuditingListener}.
+     * Multiple sinks can be registered to write records to different backends simultaneously
+     * (e.g. SLF4J logging and a database).
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we provide
+     * a custom {@code auditSink()} accumulator method in {@link EnsembleBuilder}. Managed
+     * identically to {@link #phases} and {@link #sharedCapabilities}.
+     *
+     * <p>Default: empty list.
+     *
+     * @see AuditSink
+     */
+    private final List<AuditSink> auditSinks;
+
+    /**
+     * Thread-safe store of active human directives for this ensemble.
+     *
+     * <p>Directives are injected by humans (or automated policies) at runtime and included
+     * in agent prompts as an {@code ## Active Directives} section. This store is shared
+     * across all tasks in a single ensemble run and supports concurrent reads during
+     * prompt building.
+     *
+     * <p>Default: a new empty {@link DirectiveStore}.
+     *
+     * @see net.agentensemble.directive.Directive
+     */
+    @Builder.Default
+    private final DirectiveStore directiveStore = new DirectiveStore();
+
+    /**
+     * Optional fallback LLM for cost-saving model tier switching at runtime.
+     *
+     * <p>When set, control plane directives ({@code SET_MODEL_TIER FALLBACK}) can switch
+     * the ensemble to this cheaper model without restarting. The switch applies to new tasks
+     * only; in-flight tasks continue with their current model.
+     *
+     * <p>Default: null (no fallback model available).
+     *
+     * @see #switchToFallbackModel()
+     * @see #switchToPrimaryModel()
+     */
+    private final ChatModel fallbackModel;
+
+    /**
+     * Runtime-switchable model reference. Reads are lock-free via AtomicReference.
+     * When null, {@link #chatLanguageModel} is used.
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final AtomicReference<ChatModel> activeModel = new AtomicReference<>();
+
+    /**
+     * Dispatcher for control plane directives (SET_MODEL_TIER, APPLY_PROFILE, etc.).
+     */
+    @Builder.Default
+    @Getter(lombok.AccessLevel.NONE)
+    private final DirectiveDispatcher directiveDispatcher = new DirectiveDispatcher();
+
+    /**
+     * Rules that automatically fire control plane directives based on execution metrics.
+     *
+     * <p>Evaluated after each task completion. When a rule's condition is met, its
+     * associated directive is dispatched through the {@link DirectiveDispatcher}.
+     *
+     * <p>Not annotated with {@code @Singular} or {@code @Builder.Default} because we
+     * provide a custom {@code autoDirectiveRule()} accumulator in {@link EnsembleBuilder}.
+     */
+    private final List<AutoDirectiveRule> autoDirectiveRules;
+
+    /**
      * Internal scheduler for proactive/scheduled tasks in long-running mode.
      *
      * <p>Not exposed via the builder; created and managed internally by
@@ -619,9 +712,10 @@ public class Ensemble {
                 dashboard.start();
             }
 
-            // Wire lifecycle state, drain action, and request handler into the dashboard
+            // Wire lifecycle state, drain action, request handler, and directive store into the dashboard
             dashboard.setLifecycleStateProvider(this::getLifecycleState);
             dashboard.setDrainAction(this::stop);
+            dashboard.setDirectiveStore(directiveStore);
             if (!sharedTaskRegistry.isEmpty() || !sharedToolRegistry.isEmpty()) {
                 dashboard.setRequestHandler(new net.agentensemble.ensemble.EnsembleRequestHandler(this));
             }
@@ -726,6 +820,43 @@ public class Ensemble {
             lifecycleStateRef.set(EnsembleLifecycleState.STOPPED);
             log.info("Ensemble stopped");
         }
+    }
+
+    /**
+     * Switch the active chat model to the fallback model configured via
+     * {@code Ensemble.builder().fallbackModel(...)}.
+     *
+     * <p>The switch applies to new tasks only; in-flight tasks continue with their
+     * current model. Has no effect if no fallback model was configured.
+     */
+    public void switchToFallbackModel() {
+        if (fallbackModel != null) {
+            activeModel.set(fallbackModel);
+            log.info("Switched to fallback model");
+        } else {
+            log.warn("switchToFallbackModel() called but no fallback model is configured");
+        }
+    }
+
+    /**
+     * Switch the active chat model back to the primary model.
+     *
+     * <p>The switch applies to new tasks only; in-flight tasks continue with their
+     * current model.
+     */
+    public void switchToPrimaryModel() {
+        activeModel.set(null); // null means use the primary chatLanguageModel
+        log.info("Switched to primary model");
+    }
+
+    /**
+     * Returns the currently active chat model, respecting any runtime model switches.
+     *
+     * @return the active chat model (primary or fallback)
+     */
+    public ChatModel getActiveModel() {
+        ChatModel active = activeModel.get();
+        return active != null ? active : chatLanguageModel;
     }
 
     /**
@@ -947,6 +1078,12 @@ public class Ensemble {
                 }
             }
 
+            // Wire directive store into the dashboard so incoming directives are routed
+            // to the ensemble's store regardless of how the dashboard was started.
+            if (dashboard != null && directiveStore != null) {
+                dashboard.setDirectiveStore(directiveStore);
+            }
+
             if (log.isInfoEnabled()) {
                 log.info("Ensemble run initializing | Workflow config: {} | Tasks: {}", workflow, tasks.size());
             }
@@ -1006,11 +1143,24 @@ public class Ensemble {
                         + "Configure a durable store via Ensemble.builder().reflectionStore(...).");
             }
 
+            // Step 5b: Wire audit listener when audit policy and sinks are configured
+            List<EnsembleListener> effectiveListeners = listeners != null ? listeners : List.of();
+            if (auditPolicy != null && auditSinks != null && !auditSinks.isEmpty()) {
+                AuditingListener auditingListener = new AuditingListener(auditPolicy, auditSinks, ensembleId);
+                List<EnsembleListener> augmented = new ArrayList<>(effectiveListeners);
+                augmented.add(auditingListener);
+                effectiveListeners = List.copyOf(augmented);
+                log.info(
+                        "AuditingListener enabled | Level: {} | Sinks: {}",
+                        auditPolicy.defaultLevel(),
+                        auditSinks.size());
+            }
+
             // Step 6: Build execution context
             ExecutionContext executionContext = ExecutionContext.of(
                     memoryContext,
                     verbose,
-                    listeners != null ? listeners : List.of(),
+                    effectiveListeners,
                     toolExecutor,
                     toolMetrics,
                     costConfiguration,
@@ -1020,7 +1170,8 @@ public class Ensemble {
                     reviewPolicy,
                     streamingChatLanguageModel,
                     effectiveReflectionStore,
-                    contextFormat != null ? ContextFormatters.forFormat(contextFormat) : null);
+                    contextFormat != null ? ContextFormatters.forFormat(contextFormat) : null,
+                    directiveStore);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);
@@ -1045,6 +1196,9 @@ public class Ensemble {
                     }
                 }
             }
+
+            // Step 7b: Notify EnsembleListeners that the ensemble run is starting.
+            executionContext.fireEnsembleStarted(ensembleId, effectiveWorkflow.name(), agentResolvedTasks.size());
 
             // Step 8: Select and execute WorkflowExecutor (flat tasks) or PhaseDagExecutor (phases)
             EnsembleOutput output;
@@ -1092,6 +1246,14 @@ public class Ensemble {
                         log.warn("Dashboard.onEnsembleCompleted threw an exception: {}", e.getMessage(), e);
                     }
                 }
+            }
+
+            // Step 9b: Notify EnsembleListeners that the ensemble run has completed.
+            {
+                java.time.Duration totalDuration = java.time.Duration.between(runStartedAt, runCompletedAt);
+                String exitReason =
+                        output.getExitReason() != null ? output.getExitReason().name() : "COMPLETED";
+                executionContext.fireEnsembleCompleted(ensembleId, totalDuration, exitReason);
             }
 
             // Step 10: Build ExecutionTrace
@@ -1759,6 +1921,12 @@ public class Ensemble {
         // Broadcast handler for scheduled task results.
         private BroadcastHandler broadcastHandler;
 
+        // Audit sinks accumulator (same pattern as phases and sharedCapabilities).
+        private List<AuditSink> auditSinks = List.of();
+
+        // Auto-directive rules accumulator (same pattern as phases and sharedCapabilities).
+        private List<AutoDirectiveRule> autoDirectiveRules = List.of();
+
         /**
          * Add a scheduled task that fires on the given schedule in long-running mode.
          *
@@ -1786,6 +1954,40 @@ public class Ensemble {
          */
         public EnsembleBuilder broadcastHandler(BroadcastHandler broadcastHandler) {
             this.broadcastHandler = broadcastHandler;
+            return this;
+        }
+
+        /**
+         * Add an audit sink for writing audit records.
+         *
+         * <p>May be called multiple times; each call adds a sink to the list. Used in
+         * conjunction with {@code auditPolicy(AuditPolicy)} to enable the leveled audit trail.
+         *
+         * @param sink the audit sink to register; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder auditSink(AuditSink sink) {
+            Objects.requireNonNull(sink, "auditSink must not be null");
+            List<AuditSink> updated = new ArrayList<>(this.auditSinks);
+            updated.add(sink);
+            this.auditSinks = List.copyOf(updated);
+            return this;
+        }
+
+        /**
+         * Add an auto-directive rule that fires a control plane directive when a
+         * condition is met during task completion.
+         *
+         * <p>May be called multiple times; each call adds a rule to the list.
+         *
+         * @param rule the auto-directive rule; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder autoDirectiveRule(AutoDirectiveRule rule) {
+            Objects.requireNonNull(rule, "autoDirectiveRule must not be null");
+            List<AutoDirectiveRule> updated = new ArrayList<>(this.autoDirectiveRules);
+            updated.add(rule);
+            this.autoDirectiveRules = List.copyOf(updated);
             return this;
         }
 

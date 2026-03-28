@@ -147,6 +147,8 @@ export interface LiveReviewRequest {
   prompt: string | null;
   timeoutMs: number;
   onTimeout: string;
+  /** Optional role that a human must have to approve this review. */
+  requiredRole: string | null;
   /** Client-side epoch ms when the request was received (for countdown). */
   receivedAt: number;
 }
@@ -324,8 +326,11 @@ export interface ReviewRequestedMessage {
   taskOutput: string;
   timing: string;
   prompt: string | null;
+  /** Milliseconds before timeout; 0 means wait indefinitely. */
   timeoutMs: number;
   onTimeout: string;
+  /** Optional role that a human must have to approve. Null when any human can approve. */
+  requiredRole: string | null;
 }
 
 /** Sent when the review timeout expires. */

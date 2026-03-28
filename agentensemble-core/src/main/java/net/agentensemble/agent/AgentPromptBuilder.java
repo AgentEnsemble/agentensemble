@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.directive.Directive;
 import net.agentensemble.memory.MemoryContext;
 import net.agentensemble.memory.MemoryEntry;
 import net.agentensemble.memory.MemoryScope;
@@ -152,7 +153,33 @@ public final class AgentPromptBuilder {
             MemoryContext memoryContext,
             MemoryStore memoryStore,
             TaskReflection priorReflection) {
-        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, priorReflection);
+        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, priorReflection, null);
+    }
+
+    /**
+     * Build the user prompt for a task, injecting task-scoped memory entries, reflection
+     * notes from prior runs, active directives, and legacy memory sections as applicable.
+     *
+     * <p>When {@code directives} is non-null and non-empty, an {@code ## Active Directives}
+     * section is injected before the task description, providing agents with real-time
+     * human guidance.
+     *
+     * @param task           the task to build the prompt for
+     * @param contextOutputs outputs from prior tasks to include as context
+     * @param memoryContext  runtime legacy memory state
+     * @param memoryStore    optional v2.0.0 scoped memory store; may be {@code null}
+     * @param priorReflection optional reflection from the previous run; may be {@code null}
+     * @param directives     optional list of active context directives; may be {@code null}
+     * @return the user prompt string
+     */
+    public static String buildUserPrompt(
+            Task task,
+            List<TaskOutput> contextOutputs,
+            MemoryContext memoryContext,
+            MemoryStore memoryStore,
+            TaskReflection priorReflection,
+            List<Directive> directives) {
+        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, priorReflection, directives);
     }
 
     /**
@@ -174,7 +201,7 @@ public final class AgentPromptBuilder {
      */
     public static String buildUserPrompt(
             Task task, List<TaskOutput> contextOutputs, MemoryContext memoryContext, MemoryStore memoryStore) {
-        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, null);
+        return buildUserPromptInternal(task, contextOutputs, memoryContext, memoryStore, null, null);
     }
 
     private static String buildUserPromptInternal(
@@ -182,7 +209,8 @@ public final class AgentPromptBuilder {
             List<TaskOutput> contextOutputs,
             MemoryContext memoryContext,
             MemoryStore memoryStore,
-            TaskReflection priorReflection) {
+            TaskReflection priorReflection,
+            List<Directive> directives) {
         StringBuilder sb = new StringBuilder(1024);
 
         // Task-scoped memory sections (v2.0.0 MemoryStore API)
@@ -319,6 +347,23 @@ public final class AgentPromptBuilder {
                 sb.append("\n\n### Previous Output\n").append(task.getPriorAttemptOutput());
             }
             sb.append("\n\n");
+        }
+
+        // Active directives section -- injected from human directives that are currently active
+        if (directives != null && !directives.isEmpty()) {
+            sb.append("## Active Directives\n"
+                    + "The following directives from human operators are currently active.\n"
+                    + "Incorporate them into your approach as applicable.\n\n");
+            for (Directive d : directives) {
+                sb.append("[")
+                        .append(d.from() != null ? d.from() : "unknown")
+                        .append(" | ")
+                        .append(d.createdAt() != null ? d.createdAt().toString() : "")
+                        .append("] ")
+                        .append(d.content())
+                        .append('\n');
+            }
+            sb.append('\n');
         }
 
         // Task section

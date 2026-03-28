@@ -58,6 +58,9 @@ include("agentensemble-coding")
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 
+// OpenTelemetry integration (optional span creation at framework boundaries)
+include("agentensemble-telemetry-opentelemetry")
+
 // Developer tooling module (DAG export, trace utilities)
 include("agentensemble-devtools")
 

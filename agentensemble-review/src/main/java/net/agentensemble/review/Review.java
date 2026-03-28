@@ -47,12 +47,15 @@ public final class Review {
     private final String prompt;
     private final Duration timeout;
     private final OnTimeoutAction onTimeoutAction;
+    private final String requiredRole;
 
-    private Review(boolean skip, String prompt, Duration timeout, OnTimeoutAction onTimeoutAction) {
+    private Review(
+            boolean skip, String prompt, Duration timeout, OnTimeoutAction onTimeoutAction, String requiredRole) {
         this.skip = skip;
         this.prompt = prompt;
         this.timeout = timeout;
         this.onTimeoutAction = onTimeoutAction;
+        this.requiredRole = requiredRole;
     }
 
     // ========================
@@ -69,7 +72,7 @@ public final class Review {
      * @return a required Review configuration
      */
     public static Review required() {
-        return new Review(false, null, DEFAULT_TIMEOUT, DEFAULT_ON_TIMEOUT);
+        return new Review(false, null, DEFAULT_TIMEOUT, DEFAULT_ON_TIMEOUT, null);
     }
 
     /**
@@ -83,7 +86,7 @@ public final class Review {
         if (prompt == null) {
             throw new IllegalArgumentException("prompt must not be null");
         }
-        return new Review(false, prompt, DEFAULT_TIMEOUT, DEFAULT_ON_TIMEOUT);
+        return new Review(false, prompt, DEFAULT_TIMEOUT, DEFAULT_ON_TIMEOUT, null);
     }
 
     /**
@@ -93,7 +96,7 @@ public final class Review {
      * @return a skip Review configuration
      */
     public static Review skip() {
-        return new Review(true, null, null, null);
+        return new Review(true, null, null, null, null);
     }
 
     /**
@@ -154,6 +157,18 @@ public final class Review {
         return onTimeoutAction;
     }
 
+    /**
+     * The optional role that a human must have to approve this review.
+     *
+     * <p>When non-null, only humans connected with this role can approve
+     * the review. The review is queued until a qualified human connects.
+     *
+     * @return the required role, or {@code null} when any human can approve
+     */
+    public String getRequiredRole() {
+        return requiredRole;
+    }
+
     // ========================
     // Builder
     // ========================
@@ -166,6 +181,7 @@ public final class Review {
         private String prompt;
         private Duration timeout = DEFAULT_TIMEOUT;
         private OnTimeoutAction onTimeoutAction = DEFAULT_ON_TIMEOUT;
+        private String requiredRole;
 
         private ReviewBuilder() {}
 
@@ -187,15 +203,18 @@ public final class Review {
         /**
          * Set how long to wait for a human response before executing the timeout action.
          *
-         * @param timeout the timeout duration; must not be null or non-positive
+         * <p>{@link Duration#ZERO} means wait indefinitely -- the review gate will never
+         * time out and the task will block until a qualified human approves or rejects.
+         *
+         * @param timeout the timeout duration; must not be null or negative
          * @return this builder
          */
         public ReviewBuilder timeout(Duration timeout) {
             if (timeout == null) {
                 throw new IllegalArgumentException("timeout must not be null");
             }
-            if (timeout.isZero() || timeout.isNegative()) {
-                throw new IllegalArgumentException("timeout must be positive");
+            if (timeout.isNegative()) {
+                throw new IllegalArgumentException("timeout must not be negative");
             }
             this.timeout = timeout;
             return this;
@@ -216,12 +235,30 @@ public final class Review {
         }
 
         /**
+         * Set the role that a human must have to approve this review gate.
+         *
+         * <p>When set, the review is shown as non-actionable to dashboard users who
+         * lack this role. The task blocks until a human with the matching role connects
+         * and approves.
+         *
+         * @param role the required role; must not be null or blank
+         * @return this builder
+         */
+        public ReviewBuilder requiredRole(String role) {
+            if (role == null || role.isBlank()) {
+                throw new IllegalArgumentException("requiredRole must not be null or blank");
+            }
+            this.requiredRole = role;
+            return this;
+        }
+
+        /**
          * Build and return the {@link Review} configuration.
          *
          * @return a new required Review
          */
         public Review build() {
-            return new Review(false, prompt, timeout, onTimeoutAction);
+            return new Review(false, prompt, timeout, onTimeoutAction, requiredRole);
         }
     }
 }

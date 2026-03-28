@@ -19,6 +19,7 @@ jtoon            = "1.0.9"
 lettuce          = "6.5.5.RELEASE"
 kafka              = "3.9.0"
 testcontainers     = "1.21.0"
+opentelemetry      = "1.47.0"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
@@ -46,6 +47,9 @@ testcontainers            = { group = "org.testcontainers",             name = "
 testcontainers-kafka      = { group = "org.testcontainers",             name = "kafka",                    version.ref = "testcontainers"   }
 testcontainers-junit-jupiter = { group = "org.testcontainers",          name = "junit-jupiter",            version.ref = "testcontainers"   }
 testcontainers-junit      = { group = "org.testcontainers",             name = "junit-jupiter",            version.ref = "testcontainers"   }
+opentelemetry-api         = { group = "io.opentelemetry",               name = "opentelemetry-api",        version.ref = "opentelemetry"    }
+opentelemetry-sdk         = { group = "io.opentelemetry",               name = "opentelemetry-sdk",        version.ref = "opentelemetry"    }
+opentelemetry-sdk-testing = { group = "io.opentelemetry",               name = "opentelemetry-sdk-testing", version.ref = "opentelemetry"   }
 
 [plugins]
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

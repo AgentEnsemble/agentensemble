@@ -324,6 +324,7 @@ function applyReviewRequested(state: LiveState, msg: ReviewRequestedMessage): Li
         prompt: msg.prompt,
         timeoutMs: msg.timeoutMs,
         onTimeout: msg.onTimeout,
+        requiredRole: msg.requiredRole ?? null,
         receivedAt: Date.now(),
       },
     ],
