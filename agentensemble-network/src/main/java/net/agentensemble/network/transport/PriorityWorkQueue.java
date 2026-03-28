@@ -64,6 +64,7 @@ public class PriorityWorkQueue implements RequestQueue {
     private final Clock clock;
     private final QueueMetrics metrics;
     private final Duration averageProcessingTime;
+    private final int maxCapacity;
     private final ConcurrentHashMap<String, PriorityBuckets> queues = new ConcurrentHashMap<>();
 
     /**
@@ -73,13 +74,31 @@ public class PriorityWorkQueue implements RequestQueue {
      * @param clock                 clock for timestamps (inject a fixed clock for testing); must not be null
      * @param metrics               queue depth callback; must not be null
      * @param averageProcessingTime estimated time per request for ETA calculation; must not be null
+     * @param maxCapacity           maximum number of entries per queue name; use
+     *                              {@link Integer#MAX_VALUE} for unbounded
      */
-    PriorityWorkQueue(AgingPolicy agingPolicy, Clock clock, QueueMetrics metrics, Duration averageProcessingTime) {
+    PriorityWorkQueue(
+            AgingPolicy agingPolicy,
+            Clock clock,
+            QueueMetrics metrics,
+            Duration averageProcessingTime,
+            int maxCapacity) {
         this.agingPolicy = Objects.requireNonNull(agingPolicy, "agingPolicy must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
         this.averageProcessingTime =
                 Objects.requireNonNull(averageProcessingTime, "averageProcessingTime must not be null");
+        if (maxCapacity <= 0) {
+            throw new IllegalArgumentException("maxCapacity must be positive");
+        }
+        this.maxCapacity = maxCapacity;
+    }
+
+    /**
+     * Create a priority work queue with full configuration and unbounded capacity.
+     */
+    PriorityWorkQueue(AgingPolicy agingPolicy, Clock clock, QueueMetrics metrics, Duration averageProcessingTime) {
+        this(agingPolicy, clock, metrics, averageProcessingTime, Integer.MAX_VALUE);
     }
 
     /**
@@ -88,7 +107,7 @@ public class PriorityWorkQueue implements RequestQueue {
      * @param agingPolicy aging configuration; must not be null
      */
     PriorityWorkQueue(AgingPolicy agingPolicy) {
-        this(agingPolicy, Clock.systemUTC(), QueueMetrics.noOp(), DEFAULT_AVG_PROCESSING_TIME);
+        this(agingPolicy, Clock.systemUTC(), QueueMetrics.noOp(), DEFAULT_AVG_PROCESSING_TIME, Integer.MAX_VALUE);
     }
 
     /** Create a priority work queue with aging disabled and all defaults. */
@@ -104,6 +123,9 @@ public class PriorityWorkQueue implements RequestQueue {
         PriorityBuckets buckets = bucketsFor(queueName);
         buckets.lock.lock();
         try {
+            if (maxCapacity < Integer.MAX_VALUE && totalSize(buckets) >= maxCapacity) {
+                throw new QueueFullException(queueName, maxCapacity);
+            }
             Priority priority = request.priority();
             QueueEntry entry = new QueueEntry(request, clock.instant(), priority);
             buckets.buckets[priority.ordinal()].addLast(entry);
@@ -219,8 +241,22 @@ public class PriorityWorkQueue implements RequestQueue {
     // Private helpers
     // ========================
 
+    /** Returns the configured maximum capacity per queue name. */
+    public int maxCapacity() {
+        return maxCapacity;
+    }
+
     private PriorityBuckets bucketsFor(String queueName) {
         return queues.computeIfAbsent(queueName, k -> new PriorityBuckets());
+    }
+
+    /** Total entries across all priority buckets. Must be called while holding the lock. */
+    private static int totalSize(PriorityBuckets buckets) {
+        int total = 0;
+        for (LinkedList<QueueEntry> bucket : buckets.buckets) {
+            total += bucket.size();
+        }
+        return total;
     }
 
     /**

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
@@ -719,14 +720,10 @@ public class AgentExecutor {
 
         List<PendingTool> pending = new ArrayList<>();
         for (ToolExecutionRequest req : toolRequests) {
-            // Atomically check-and-increment: only increment if within limit
-            int current = toolCallCounter.get();
-            if (current < maxIterations) {
-                toolCallCounter.incrementAndGet();
-                pending.add(new PendingTool(req, true));
-            } else {
-                pending.add(new PendingTool(req, false));
-            }
+            // Atomically check-and-increment via getAndUpdate: the counter only
+            // advances if the current value is below the limit (CAS loop).
+            boolean withinLimit = toolCallCounter.getAndUpdate(c -> c < maxIterations ? c + 1 : c) < maxIterations;
+            pending.add(new PendingTool(req, withinLimit));
         }
 
         // Launch all executable tools in parallel
@@ -760,14 +757,24 @@ public class AgentExecutor {
             }
         }
 
-        // Wait for all futures then process in order.
+        // Wait for all futures then process in order. A global timeout prevents
+        // indefinite blocking when a user-provided tool has no built-in timeout.
         // If any tool threw ExitEarlyException, CompletableFuture wraps it in CompletionException.
         // Unwrap and re-throw so the workflow executor can assemble partial results.
         try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .orTimeout(5, TimeUnit.MINUTES)
+                    .join();
         } catch (java.util.concurrent.CompletionException ce) {
             if (ce.getCause() instanceof ExitEarlyException exitEarly) {
                 throw exitEarly;
+            }
+            if (ce.getCause() instanceof java.util.concurrent.TimeoutException) {
+                throw new AgentExecutionException(
+                        "Parallel tool execution for agent '" + agentRole + "' timed out after 5 minutes",
+                        agentRole,
+                        task.getDescription(),
+                        ce);
             }
             throw ce; // NOPMD PreserveStackTrace - direct re-throw preserves the full CompletionException chain
         }

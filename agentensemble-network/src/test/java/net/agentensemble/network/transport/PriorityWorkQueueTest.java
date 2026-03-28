@@ -483,6 +483,50 @@ class PriorityWorkQueueTest {
     }
 
     // ========================
+    // Capacity limits
+    // ========================
+
+    @Test
+    void enqueue_atCapacity_throwsQueueFullException() {
+        PriorityWorkQueue queue = new PriorityWorkQueue(
+                AgingPolicy.none(),
+                Clock.fixed(BASE_TIME, ZoneOffset.UTC),
+                QueueMetrics.noOp(),
+                Duration.ofSeconds(30),
+                2);
+
+        queue.enqueue("q", workRequest("req-1", Priority.NORMAL));
+        queue.enqueue("q", workRequest("req-2", Priority.HIGH));
+
+        assertThatThrownBy(() -> queue.enqueue("q", workRequest("req-3", Priority.CRITICAL)))
+                .isInstanceOf(QueueFullException.class)
+                .hasMessageContaining("capacity (2)");
+    }
+
+    @Test
+    void enqueue_afterDequeue_succeedsAgain() {
+        PriorityWorkQueue queue = new PriorityWorkQueue(
+                AgingPolicy.none(),
+                Clock.fixed(BASE_TIME, ZoneOffset.UTC),
+                QueueMetrics.noOp(),
+                Duration.ofSeconds(30),
+                1);
+
+        queue.enqueue("q", workRequest("req-1", Priority.NORMAL));
+        queue.dequeue("q", Duration.ofSeconds(1));
+
+        // Capacity freed: should succeed
+        queue.enqueue("q", workRequest("req-2", Priority.NORMAL));
+        assertThat(queue.dequeue("q", Duration.ofSeconds(1)).requestId()).isEqualTo("req-2");
+    }
+
+    @Test
+    void capacityFactory_createsCorrectly() {
+        PriorityWorkQueue queue = RequestQueue.priority(AgingPolicy.none(), 50);
+        assertThat(queue.maxCapacity()).isEqualTo(50);
+    }
+
+    // ========================
     // Thread safety
     // ========================
 

@@ -120,6 +120,32 @@ class ProcessAgentToolTest {
     }
 
     @Test
+    void builder_zeroMaxOutputBytes_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ProcessAgentTool.builder().maxOutputBytes(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive");
+    }
+
+    @Test
+    void builder_negativeMaxOutputBytes_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ProcessAgentTool.builder().maxOutputBytes(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive");
+    }
+
+    @Test
+    void builder_customMaxOutputBytes_accepted() {
+        var tool = ProcessAgentTool.builder()
+                .name("tool")
+                .description("desc")
+                .command("echo", "hi")
+                .maxOutputBytes(512)
+                .build();
+
+        assertThat(tool).isNotNull();
+    }
+
+    @Test
     void builder_setsNameAndDescription() {
         var tool = ProcessAgentTool.builder()
                 .name("my_tool")

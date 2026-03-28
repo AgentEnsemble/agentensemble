@@ -98,4 +98,23 @@ public interface RequestQueue {
     static PriorityWorkQueue priority() {
         return new PriorityWorkQueue();
     }
+
+    /**
+     * Create a capacity-bounded priority work queue.
+     *
+     * <p>When a queue reaches {@code maxCapacity} entries, subsequent
+     * {@link #enqueue(String, WorkRequest)} calls throw {@link QueueFullException}.
+     *
+     * @param agingPolicy the aging configuration; must not be null
+     * @param maxCapacity maximum entries per queue name; must be positive
+     * @return a new bounded {@link PriorityWorkQueue}
+     */
+    static PriorityWorkQueue priority(AgingPolicy agingPolicy, int maxCapacity) {
+        return new PriorityWorkQueue(
+                agingPolicy,
+                java.time.Clock.systemUTC(),
+                QueueMetrics.noOp(),
+                java.time.Duration.ofSeconds(30),
+                maxCapacity);
+    }
 }
