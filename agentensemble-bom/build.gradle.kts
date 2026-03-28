@@ -16,6 +16,8 @@ dependencies {
         api(project(":agentensemble-metrics-micrometer"))
         api(project(":agentensemble-devtools"))
 
+        api(project(":agentensemble-workspace"))
+
         // Individual tool modules
         api(project(":agentensemble-tools:calculator"))
         api(project(":agentensemble-tools:datetime"))
