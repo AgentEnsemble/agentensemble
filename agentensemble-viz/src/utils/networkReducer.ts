@@ -89,6 +89,34 @@ export function networkReducer(state: NetworkState, action: NetworkAction): Netw
         connections: [...state.connections, action.connection],
       };
 
+    case 'TASK_STARTED': {
+      const existing = state.ensembles[action.name];
+      if (!existing) return state;
+      return {
+        ...state,
+        ensembles: {
+          ...state.ensembles,
+          [action.name]: { ...existing, activeTasks: existing.activeTasks + 1 },
+        },
+      };
+    }
+
+    case 'TASK_ENDED': {
+      const existing = state.ensembles[action.name];
+      if (!existing) return state;
+      return {
+        ...state,
+        ensembles: {
+          ...state.ensembles,
+          [action.name]: {
+            ...existing,
+            activeTasks: Math.max(0, existing.activeTasks - 1),
+            completedTasks: existing.completedTasks + 1,
+          },
+        },
+      };
+    }
+
     default:
       return state;
   }

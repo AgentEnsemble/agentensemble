@@ -78,4 +78,6 @@ export type NetworkAction =
   | { type: 'SET_CONNECTION_STATUS'; name: string; status: ConnectionStatus }
   | { type: 'UPDATE_STATUS'; name: string; status: Partial<NetworkEnsemble> }
   | { type: 'SELECT_ENSEMBLE'; name: string | null }
-  | { type: 'ADD_CONNECTION'; connection: NetworkConnection };
+  | { type: 'ADD_CONNECTION'; connection: NetworkConnection }
+  | { type: 'TASK_STARTED'; name: string }
+  | { type: 'TASK_ENDED'; name: string };

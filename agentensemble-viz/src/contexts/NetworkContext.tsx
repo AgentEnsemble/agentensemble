@@ -7,7 +7,7 @@
  */
 
 import { createContext, useContext, useReducer, useRef, useCallback, useEffect, type ReactNode } from 'react';
-import type { NetworkState, NetworkEnsemble } from '../types/network.js';
+import type { NetworkState } from '../types/network.js';
 import { initialNetworkState, networkReducer } from '../utils/networkReducer.js';
 
 // ========================
@@ -92,27 +92,10 @@ export function NetworkProvider({ children, initialEnsembles }: NetworkProviderP
           });
         }
         if (msg.type === 'task_started') {
-          const ensemble = state.ensembles[name];
-          if (ensemble) {
-            dispatch({
-              type: 'UPDATE_STATUS',
-              name,
-              status: { activeTasks: ensemble.activeTasks + 1 },
-            });
-          }
+          dispatch({ type: 'TASK_STARTED', name });
         }
         if (msg.type === 'task_completed' || msg.type === 'task_failed') {
-          const ensemble = state.ensembles[name];
-          if (ensemble) {
-            dispatch({
-              type: 'UPDATE_STATUS',
-              name,
-              status: {
-                activeTasks: Math.max(0, ensemble.activeTasks - 1),
-                completedTasks: ensemble.completedTasks + 1,
-              },
-            });
-          }
+          dispatch({ type: 'TASK_ENDED', name });
         }
       } catch {
         // Ignore malformed messages
