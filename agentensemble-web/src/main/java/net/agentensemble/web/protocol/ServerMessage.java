@@ -46,6 +46,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = HeartbeatMessage.class, name = "heartbeat"),
     @JsonSubTypes.Type(value = PongMessage.class, name = "pong"),
     @JsonSubTypes.Type(value = TokenMessage.class, name = "token"),
+    @JsonSubTypes.Type(value = TaskAcceptedMessage.class, name = "task_accepted"),
+    @JsonSubTypes.Type(value = TaskProgressMessage.class, name = "task_progress"),
+    @JsonSubTypes.Type(value = TaskResponseMessage.class, name = "task_response"),
+    @JsonSubTypes.Type(value = ToolResponseMessage.class, name = "tool_response"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -62,4 +66,8 @@ public sealed interface ServerMessage
                 EnsembleCompletedMessage,
                 HeartbeatMessage,
                 PongMessage,
-                TokenMessage {}
+                TokenMessage,
+                TaskAcceptedMessage,
+                TaskProgressMessage,
+                TaskResponseMessage,
+                ToolResponseMessage {}

@@ -16,5 +16,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ReviewDecisionMessage.class, name = "review_decision"),
     @JsonSubTypes.Type(value = PingMessage.class, name = "ping"),
+    @JsonSubTypes.Type(value = TaskRequestMessage.class, name = "task_request"),
+    @JsonSubTypes.Type(value = ToolRequestMessage.class, name = "tool_request"),
 })
-public sealed interface ClientMessage permits ReviewDecisionMessage, PingMessage {}
+public sealed interface ClientMessage
+        permits ReviewDecisionMessage, PingMessage, TaskRequestMessage, ToolRequestMessage {}

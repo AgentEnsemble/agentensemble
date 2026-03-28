@@ -20,6 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import net.agentensemble.ensemble.EnsembleLifecycleState;
 import net.agentensemble.web.protocol.ClientMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import org.junit.jupiter.api.AfterEach;
@@ -608,5 +610,218 @@ class WebSocketServerTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains("running");
+    }
+
+    // ========================
+    // EN-008: K8s health and lifecycle endpoints
+    // ========================
+
+    @Test
+    void livenessEndpoint_returns200() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health/live"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"status\":\"UP\"");
+    }
+
+    @Test
+    void readinessEndpoint_returnsReadyWhenReady() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setLifecycleStateProvider(() -> EnsembleLifecycleState.READY);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health/ready"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"status\":\"READY\"");
+        assertThat(response.body()).contains("\"lifecycleState\":\"READY\"");
+    }
+
+    @Test
+    void readinessEndpoint_returns503WhenStarting() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setLifecycleStateProvider(() -> EnsembleLifecycleState.STARTING);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health/ready"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(response.body()).contains("\"status\":\"NOT_READY\"");
+        assertThat(response.body()).contains("\"lifecycleState\":\"STARTING\"");
+    }
+
+    @Test
+    void readinessEndpoint_returns503WhenDraining() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setLifecycleStateProvider(() -> EnsembleLifecycleState.DRAINING);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health/ready"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(response.body()).contains("\"status\":\"NOT_READY\"");
+        assertThat(response.body()).contains("\"lifecycleState\":\"DRAINING\"");
+    }
+
+    @Test
+    void readinessEndpoint_returns503WhenNoProvider() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        // No lifecycleStateProvider set
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health/ready"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(response.body()).contains("\"status\":\"NOT_READY\"");
+        assertThat(response.body()).contains("\"lifecycleState\":\"UNKNOWN\"");
+    }
+
+    @Test
+    void drainEndpoint_triggersCallback() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        CountDownLatch drainLatch = new CountDownLatch(1);
+        server.setDrainAction(drainLatch::countDown);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/lifecycle/drain"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"status\":\"DRAINING\"");
+        // Drain runs asynchronously; wait for it to complete
+        assertThat(drainLatch.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void drainEndpoint_returns404WhenNoDrainAction() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        // No drainAction set
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/lifecycle/drain"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("error");
+    }
+
+    @Test
+    void sessionAwareHandler_receivesSessionIdAndMessage() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+
+        CountDownLatch handlerLatch = new CountDownLatch(1);
+        AtomicBoolean handlerCalled = new AtomicBoolean(false);
+        server.setSessionAwareClientMessageHandler((sessionId, msg) -> {
+            assertThat(sessionId).isNotNull();
+            assertThat(msg).isNotNull();
+            handlerCalled.set(true);
+            handlerLatch.countDown();
+        });
+
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        CountDownLatch connected = new CountDownLatch(1);
+
+        java.net.http.WebSocket ws = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new java.net.http.WebSocket.Listener() {
+                    @Override
+                    public void onOpen(java.net.http.WebSocket webSocket) {
+                        connected.countDown();
+                        webSocket.request(1);
+                    }
+
+                    @Override
+                    public java.util.concurrent.CompletionStage<?> onText(
+                            java.net.http.WebSocket webSocket, CharSequence data, boolean last) {
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(connected.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // Send a task_request -- should go to session-aware handler
+        ws.sendText(
+                        "{\"type\":\"task_request\",\"requestId\":\"r1\",\"from\":\"c\",\"task\":\"t\",\"context\":\"x\"}",
+                        true)
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(handlerLatch.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(handlerCalled.get()).isTrue();
+
+        ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void statusEndpoint_includesLifecycleState() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setLifecycleStateProvider(() -> EnsembleLifecycleState.READY);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/status"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"lifecycleState\":\"READY\"");
     }
 }

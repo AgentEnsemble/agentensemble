@@ -36,6 +36,9 @@ include("agentensemble-tools:bom")
 // Web module (WebSocket server + live dashboard -- optional)
 include("agentensemble-web")
 
+// Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
+include("agentensemble-network")
+
 // Metrics integration modules
 include("agentensemble-metrics-micrometer")
 
