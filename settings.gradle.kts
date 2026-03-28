@@ -31,6 +31,7 @@ include("agentensemble-tools:web-search")
 include("agentensemble-tools:web-scraper")
 include("agentensemble-tools:process")
 include("agentensemble-tools:http")
+include("agentensemble-tools:coding")
 include("agentensemble-tools:bom")
 
 // Web module (WebSocket server + live dashboard -- optional)
