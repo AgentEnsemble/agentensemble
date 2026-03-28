@@ -83,7 +83,7 @@ classpath, the agent works with file-read only.
 ### Using MCP Tools Directly
 
 You can also start MCP servers manually and pass their tools to any agent via
-`additionalTools()`. This gives you full control over server lifecycle:
+`Agent.builder().tools(...)`. This gives you full control over server lifecycle:
 
 ```java
 try (McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);

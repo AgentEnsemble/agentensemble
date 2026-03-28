@@ -16,7 +16,8 @@ for filesystem and git operations instead of Java-native tools.
 ## Code
 
 ```java
-Path projectDir = Path.of("/path/to/project");
+// Use the first CLI argument as the project directory, or default to "."
+Path projectDir = args.length > 0 ? Path.of(args[0]) : Path.of(".");
 
 ChatModel model = OpenAiChatModel.builder()
     .apiKey(System.getenv("OPENAI_API_KEY"))
@@ -80,8 +81,11 @@ The MCP reference servers are installed automatically via `npx --yes` on first r
 
 ## MCP Tools Available
 
+The exact tool names are defined by the MCP reference servers. You can discover them
+at runtime via `fs.tools()` and `git.tools()`. Typical tools include:
+
 ### Filesystem server tools
-`read_text_file`, `write_file`, `edit_file`, `search_files`, `list_directory`,
+`read_file`, `write_file`, `edit_file`, `search_files`, `list_directory`,
 `directory_tree`, `get_file_info`
 
 ### Git server tools
