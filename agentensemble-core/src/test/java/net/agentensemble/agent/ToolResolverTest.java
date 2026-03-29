@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.AgentTool;
+import net.agentensemble.tool.DynamicToolProvider;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolResult;
 import org.junit.jupiter.api.Test;
@@ -259,5 +260,47 @@ class ToolResolverTest {
         Object stored = tool.capturedReviewHandler();
         assertThat(stored).isInstanceOf(ReviewHandler.class);
         assertThat((ReviewHandler) stored).isSameAs(handler);
+    }
+
+    // ========================
+    // DynamicToolProvider expansion
+    // ========================
+
+    @Test
+    void resolve_dynamicToolProvider_expandsIntoIndividualTools() {
+        AgentTool toolA = mockAgentTool("tool-a");
+        AgentTool toolB = mockAgentTool("tool-b");
+        DynamicToolProvider provider = () -> List.of(toolA, toolB);
+
+        ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(provider));
+
+        assertThat(resolved.hasTools()).isTrue();
+        assertThat(resolved.allSpecifications()).hasSize(2);
+        assertThat(resolved.allSpecifications())
+                .extracting(spec -> spec.name())
+                .containsExactlyInAnyOrder("tool-a", "tool-b");
+        assertThat(resolved.agentToolMap()).containsKeys("tool-a", "tool-b");
+    }
+
+    @Test
+    void resolve_dynamicToolProvider_mixedWithRegularTools() {
+        AgentTool regular = mockAgentTool("regular");
+        AgentTool dynamic = mockAgentTool("dynamic");
+        DynamicToolProvider provider = () -> List.of(dynamic);
+
+        ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(regular, provider));
+
+        assertThat(resolved.allSpecifications()).hasSize(2);
+        assertThat(resolved.agentToolMap()).containsKeys("regular", "dynamic");
+    }
+
+    @Test
+    void resolve_emptyDynamicToolProvider_addsNoTools() {
+        DynamicToolProvider provider = List::of;
+
+        ToolResolver.ResolvedTools resolved = ToolResolver.resolve(List.of(provider));
+
+        assertThat(resolved.hasTools()).isFalse();
+        assertThat(resolved.allSpecifications()).isEmpty();
     }
 }

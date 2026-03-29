@@ -19,6 +19,12 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = TaskRequestMessage.class, name = "task_request"),
     @JsonSubTypes.Type(value = ToolRequestMessage.class, name = "tool_request"),
     @JsonSubTypes.Type(value = DirectiveMessage.class, name = "directive"),
+    @JsonSubTypes.Type(value = CapabilityQueryMessage.class, name = "capability_query"),
 })
 public sealed interface ClientMessage
-        permits ReviewDecisionMessage, PingMessage, TaskRequestMessage, ToolRequestMessage, DirectiveMessage {}
+        permits ReviewDecisionMessage,
+                PingMessage,
+                TaskRequestMessage,
+                ToolRequestMessage,
+                DirectiveMessage,
+                CapabilityQueryMessage {}

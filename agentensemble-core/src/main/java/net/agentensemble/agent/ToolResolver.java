@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 import net.agentensemble.tool.AbstractAgentTool;
 import net.agentensemble.tool.AgentTool;
+import net.agentensemble.tool.DynamicToolProvider;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import net.agentensemble.tool.NoOpToolMetrics;
 import net.agentensemble.tool.ToolContext;
@@ -56,6 +57,17 @@ final class ToolResolver {
         List<ToolSpecification> allSpecs = new ArrayList<>();
 
         for (Object tool : tools) {
+            if (tool instanceof DynamicToolProvider provider) {
+                for (AgentTool resolved : provider.resolve()) {
+                    agentToolMap.put(resolved.name(), resolved);
+                    allSpecs.add(LangChain4jToolAdapter.toSpecification(resolved));
+                    if (resolved instanceof AbstractAgentTool abstractTool) {
+                        ToolContext ctx = ToolContext.of(resolved.name(), metrics, executor, reviewHandler);
+                        ToolContextInjector.injectContext(abstractTool, ctx);
+                    }
+                }
+                continue;
+            }
             if (tool instanceof AgentTool agentTool) {
                 agentToolMap.put(agentTool.name(), agentTool);
                 allSpecs.add(LangChain4jToolAdapter.toSpecification(agentTool));
