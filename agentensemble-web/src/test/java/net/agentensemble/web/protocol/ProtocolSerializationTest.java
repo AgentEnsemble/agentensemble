@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -572,6 +573,190 @@ class ProtocolSerializationTest {
         assertThat(rt.result()).isEqualTo("In stock: 5kg");
         assertThat(rt.error()).isNull();
         assertThat(rt.durationMs()).isEqualTo(1200L);
+    }
+
+    // ========================
+    // LlmIterationStartedMessage
+    // ========================
+
+    @Test
+    void llmIterationStartedMessageRoundTrip() throws Exception {
+        LlmIterationStartedMessage.ToolCallDto toolCall =
+                new LlmIterationStartedMessage.ToolCallDto("web_search", "{\"query\":\"AI\"}");
+        LlmIterationStartedMessage.MessageDto msg1 =
+                new LlmIterationStartedMessage.MessageDto("system", "You are helpful", null, null);
+        LlmIterationStartedMessage.MessageDto msg2 =
+                new LlmIterationStartedMessage.MessageDto("assistant", null, List.of(toolCall), null);
+        LlmIterationStartedMessage.MessageDto msg3 =
+                new LlmIterationStartedMessage.MessageDto("tool", "search results", null, "web_search");
+
+        LlmIterationStartedMessage message =
+                new LlmIterationStartedMessage("Researcher", "Find papers", 0, List.of(msg1, msg2, msg3));
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("llm_iteration_started");
+        assertThat(json).contains("Researcher");
+        assertThat(json).contains("Find papers");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(LlmIterationStartedMessage.class);
+        LlmIterationStartedMessage rt = (LlmIterationStartedMessage) deserialized;
+        assertThat(rt.agentRole()).isEqualTo("Researcher");
+        assertThat(rt.taskDescription()).isEqualTo("Find papers");
+        assertThat(rt.iterationIndex()).isEqualTo(0);
+        assertThat(rt.messages()).hasSize(3);
+        assertThat(rt.messages().get(0).role()).isEqualTo("system");
+        assertThat(rt.messages().get(1).toolCalls()).hasSize(1);
+        assertThat(rt.messages().get(1).toolCalls().get(0).name()).isEqualTo("web_search");
+        assertThat(rt.messages().get(2).toolName()).isEqualTo("web_search");
+    }
+
+    @Test
+    void llmIterationStartedMessage_emptyMessages_roundTrip() throws Exception {
+        LlmIterationStartedMessage message = new LlmIterationStartedMessage("Agent", "Task", 3, List.of());
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("llm_iteration_started");
+
+        LlmIterationStartedMessage rt = (LlmIterationStartedMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.messages()).isEmpty();
+        assertThat(rt.iterationIndex()).isEqualTo(3);
+    }
+
+    // ========================
+    // LlmIterationCompletedMessage
+    // ========================
+
+    @Test
+    void llmIterationCompletedMessageRoundTrip() throws Exception {
+        LlmIterationCompletedMessage.ToolRequestDto toolReq =
+                new LlmIterationCompletedMessage.ToolRequestDto("calculator", "{\"expr\":\"2+2\"}");
+
+        LlmIterationCompletedMessage message = new LlmIterationCompletedMessage(
+                "Analyst", "Analyze data", 1, "TOOL_CALLS", null, List.of(toolReq), 500L, 200L, 1200L);
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("llm_iteration_completed");
+        assertThat(json).contains("Analyst");
+        assertThat(json).contains("TOOL_CALLS");
+        assertThat(json).contains("\"inputTokens\":500");
+        assertThat(json).contains("\"outputTokens\":200");
+        assertThat(json).contains("\"latencyMs\":1200");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(LlmIterationCompletedMessage.class);
+        LlmIterationCompletedMessage rt = (LlmIterationCompletedMessage) deserialized;
+        assertThat(rt.agentRole()).isEqualTo("Analyst");
+        assertThat(rt.responseType()).isEqualTo("TOOL_CALLS");
+        assertThat(rt.toolRequests()).hasSize(1);
+        assertThat(rt.toolRequests().get(0).name()).isEqualTo("calculator");
+        assertThat(rt.inputTokens()).isEqualTo(500L);
+        assertThat(rt.outputTokens()).isEqualTo(200L);
+        assertThat(rt.latencyMs()).isEqualTo(1200L);
+    }
+
+    @Test
+    void llmIterationCompletedMessage_finalAnswer_roundTrip() throws Exception {
+        LlmIterationCompletedMessage message = new LlmIterationCompletedMessage(
+                "Writer", "Write report", 2, "FINAL_ANSWER", "The report is...", null, 1000L, 800L, 2500L);
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("llm_iteration_completed");
+        assertThat(json).contains("FINAL_ANSWER");
+        assertThat(json).contains("The report is...");
+
+        LlmIterationCompletedMessage rt = (LlmIterationCompletedMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.responseType()).isEqualTo("FINAL_ANSWER");
+        assertThat(rt.responseText()).isEqualTo("The report is...");
+        assertThat(rt.toolRequests()).isNull();
+    }
+
+    // ========================
+    // FileChangedMessage
+    // ========================
+
+    @Test
+    void fileChangedMessageRoundTrip() throws Exception {
+        Instant ts = Instant.parse("2026-03-05T14:30:00Z");
+        FileChangedMessage message = new FileChangedMessage("Coder", "src/Main.java", "MODIFIED", 10, 3, ts);
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("file_changed");
+        assertThat(json).contains("Coder");
+        assertThat(json).contains("src/Main.java");
+        assertThat(json).contains("MODIFIED");
+        assertThat(json).contains("\"linesAdded\":10");
+        assertThat(json).contains("\"linesRemoved\":3");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(FileChangedMessage.class);
+        FileChangedMessage rt = (FileChangedMessage) deserialized;
+        assertThat(rt.agentRole()).isEqualTo("Coder");
+        assertThat(rt.filePath()).isEqualTo("src/Main.java");
+        assertThat(rt.changeType()).isEqualTo("MODIFIED");
+        assertThat(rt.linesAdded()).isEqualTo(10);
+        assertThat(rt.linesRemoved()).isEqualTo(3);
+        assertThat(rt.timestamp()).isEqualTo(ts);
+    }
+
+    @Test
+    void fileChangedMessage_created_roundTrip() throws Exception {
+        FileChangedMessage message =
+                new FileChangedMessage("Writer", "docs/README.md", "CREATED", 25, 0, Instant.now());
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("file_changed");
+        assertThat(json).contains("CREATED");
+
+        FileChangedMessage rt = (FileChangedMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.changeType()).isEqualTo("CREATED");
+        assertThat(rt.linesAdded()).isEqualTo(25);
+        assertThat(rt.linesRemoved()).isEqualTo(0);
+    }
+
+    // ========================
+    // MetricsSnapshotMessage
+    // ========================
+
+    @Test
+    void metricsSnapshotMessageRoundTrip() throws Exception {
+        MetricsSnapshotMessage message =
+                new MetricsSnapshotMessage("Researcher", 1, 5000L, 2000L, 3500L, 1200L, 4, "$0.05");
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("metrics_snapshot");
+        assertThat(json).contains("Researcher");
+        assertThat(json).contains("\"inputTokens\":5000");
+        assertThat(json).contains("\"outputTokens\":2000");
+        assertThat(json).contains("\"llmLatencyMs\":3500");
+        assertThat(json).contains("\"toolExecutionTimeMs\":1200");
+        assertThat(json).contains("\"iterationCount\":4");
+        assertThat(json).contains("\"costEstimate\":\"$0.05\"");
+
+        ServerMessage deserialized = serializer.fromJson(json, ServerMessage.class);
+        assertThat(deserialized).isInstanceOf(MetricsSnapshotMessage.class);
+        MetricsSnapshotMessage rt = (MetricsSnapshotMessage) deserialized;
+        assertThat(rt.agentRole()).isEqualTo("Researcher");
+        assertThat(rt.taskIndex()).isEqualTo(1);
+        assertThat(rt.inputTokens()).isEqualTo(5000L);
+        assertThat(rt.outputTokens()).isEqualTo(2000L);
+        assertThat(rt.llmLatencyMs()).isEqualTo(3500L);
+        assertThat(rt.toolExecutionTimeMs()).isEqualTo(1200L);
+        assertThat(rt.iterationCount()).isEqualTo(4);
+        assertThat(rt.costEstimate()).isEqualTo("$0.05");
+    }
+
+    @Test
+    void metricsSnapshotMessage_nullCostEstimate_roundTrip() throws Exception {
+        MetricsSnapshotMessage message = new MetricsSnapshotMessage("Agent", 0, 100L, 50L, 200L, 100L, 1, null);
+        String json = serializer.toJson(message);
+
+        assertThat(typeOf(json)).isEqualTo("metrics_snapshot");
+        // null costEstimate omitted due to @JsonInclude(NON_NULL)
+        assertThat(json).doesNotContain("costEstimate");
+
+        MetricsSnapshotMessage rt = (MetricsSnapshotMessage) serializer.fromJson(json, ServerMessage.class);
+        assertThat(rt.costEstimate()).isNull();
     }
 
     // ========================

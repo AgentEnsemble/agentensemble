@@ -172,13 +172,8 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                         m.getToolName()))
                 .toList();
 
-        // Cap messages at last 20 to limit wire payload
-        List<LlmIterationStartedMessage.MessageDto> capped = messageDtos.size() > 20
-                ? messageDtos.subList(messageDtos.size() - 20, messageDtos.size())
-                : messageDtos;
-
         broadcastEphemeral(new LlmIterationStartedMessage(
-                event.agentRole(), event.taskDescription(), event.iterationIndex(), capped));
+                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos));
     }
 
     @Override

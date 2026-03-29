@@ -147,6 +147,15 @@ public final class FileWriteTool extends AbstractTypedAgentTool<FileWriteInput> 
 
         try {
             boolean existed = Files.exists(resolved);
+            int oldLineCount = 0;
+            if (existed) {
+                try {
+                    oldLineCount =
+                            Files.readAllLines(resolved, StandardCharsets.UTF_8).size();
+                } catch (IOException ignored) {
+                    // Best effort: if we can't read, report 0 removed
+                }
+            }
             if (resolved.getParent() != null) {
                 Files.createDirectories(resolved.getParent());
             }
@@ -160,8 +169,14 @@ public final class FileWriteTool extends AbstractTypedAgentTool<FileWriteInput> 
                 return ToolResult.failure("Access denied: path resolves outside the sandbox directory");
             }
             Files.writeString(resolved, content, StandardCharsets.UTF_8);
-            int lineCount = content.split("\n", -1).length;
-            fireFileChanged(relativePath, existed ? "MODIFIED" : "CREATED", lineCount, 0);
+            int newLineCount = content.split("\n", -1).length;
+            if (existed) {
+                int added = Math.max(0, newLineCount - oldLineCount);
+                int removed = Math.max(0, oldLineCount - newLineCount);
+                fireFileChanged(relativePath, "MODIFIED", added, removed);
+            } else {
+                fireFileChanged(relativePath, "CREATED", newLineCount, 0);
+            }
             return ToolResult.success("Successfully wrote to: " + relativePath);
         } catch (IOException e) {
             return ToolResult.failure("Failed to write file: " + e.getMessage());

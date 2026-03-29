@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,12 +18,16 @@ import java.util.concurrent.TimeUnit;
 import net.agentensemble.callback.DelegationCompletedEvent;
 import net.agentensemble.callback.DelegationFailedEvent;
 import net.agentensemble.callback.DelegationStartedEvent;
+import net.agentensemble.callback.FileChangedEvent;
+import net.agentensemble.callback.LlmIterationCompletedEvent;
+import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.task.TaskOutput;
+import net.agentensemble.trace.CapturedMessage;
 import net.agentensemble.trace.LlmInteraction;
 import net.agentensemble.trace.TaskTrace;
 import net.agentensemble.trace.ToolCallOutcome;
@@ -458,5 +463,224 @@ class WebSocketStreamingListenerTest {
             idx++;
         }
         assertThat(count).isEqualTo(3);
+    }
+
+    // ========================
+    // LLM iteration lifecycle events
+    // ========================
+
+    @Test
+    void onLlmIterationStarted_broadcastsLlmIterationStartedMessage() {
+        CapturedMessage sysMsg = CapturedMessage.builder()
+                .role("system")
+                .content("You are helpful")
+                .build();
+        CapturedMessage userMsg = CapturedMessage.builder()
+                .role("user")
+                .content("Tell me about AI")
+                .build();
+
+        LlmIterationStartedEvent event =
+                new LlmIterationStartedEvent("Researcher", "Find AI papers", 0, List.of(sysMsg, userMsg));
+        listener.onLlmIterationStarted(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"llm_iteration_started\"");
+        assertThat(json).contains("Researcher");
+        assertThat(json).contains("Find AI papers");
+        assertThat(json).contains("\"iterationIndex\":0");
+    }
+
+    @Test
+    void onLlmIterationStarted_withToolCallMessages_convertsToolCalls() {
+        Map<String, Object> toolCall = new java.util.LinkedHashMap<>();
+        toolCall.put("name", "web_search");
+        toolCall.put("arguments", "{\"query\":\"AI\"}");
+        CapturedMessage assistantMsg =
+                CapturedMessage.builder().role("assistant").toolCall(toolCall).build();
+
+        LlmIterationStartedEvent event = new LlmIterationStartedEvent("Agent", "Task", 1, List.of(assistantMsg));
+        listener.onLlmIterationStarted(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"llm_iteration_started\"");
+        assertThat(json).contains("web_search");
+    }
+
+    @Test
+    void onLlmIterationStarted_isEphemeral_notInSnapshot() {
+        CapturedMessage msg =
+                CapturedMessage.builder().role("user").content("hi").build();
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+        listener.onLlmIterationStarted(new LlmIterationStartedEvent("Agent", "Task", 0, List.of(msg)));
+
+        // Late-joining client should not see llm_iteration_started in snapshot
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).doesNotContain("llm_iteration_started");
+    }
+
+    @Test
+    void onLlmIterationCompleted_broadcastsLlmIterationCompletedMessage() {
+        LlmIterationCompletedEvent.ToolCallRequest toolReq =
+                new LlmIterationCompletedEvent.ToolCallRequest("calculator", "{\"expr\":\"2+2\"}");
+        LlmIterationCompletedEvent event = new LlmIterationCompletedEvent(
+                "Analyst",
+                "Analyze data",
+                2,
+                "TOOL_CALLS",
+                null,
+                List.of(toolReq),
+                500L,
+                200L,
+                Duration.ofMillis(1200));
+        listener.onLlmIterationCompleted(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"llm_iteration_completed\"");
+        assertThat(json).contains("Analyst");
+        assertThat(json).contains("TOOL_CALLS");
+        assertThat(json).contains("calculator");
+        assertThat(json).contains("\"inputTokens\":500");
+        assertThat(json).contains("\"outputTokens\":200");
+        assertThat(json).contains("\"latencyMs\":1200");
+    }
+
+    @Test
+    void onLlmIterationCompleted_finalAnswer_broadcastsCorrectly() {
+        LlmIterationCompletedEvent event = new LlmIterationCompletedEvent(
+                "Writer",
+                "Write report",
+                3,
+                "FINAL_ANSWER",
+                "Here is the report...",
+                null,
+                1000L,
+                800L,
+                Duration.ofSeconds(2));
+        listener.onLlmIterationCompleted(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"llm_iteration_completed\"");
+        assertThat(json).contains("FINAL_ANSWER");
+        assertThat(json).contains("Here is the report...");
+    }
+
+    @Test
+    void onLlmIterationCompleted_nullLatency_broadcastsZero() {
+        LlmIterationCompletedEvent event =
+                new LlmIterationCompletedEvent("Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, null);
+        listener.onLlmIterationCompleted(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"latencyMs\":0");
+    }
+
+    @Test
+    void onLlmIterationCompleted_nullToolRequests_broadcastsNullToolRequests() {
+        LlmIterationCompletedEvent event = new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100));
+        listener.onLlmIterationCompleted(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"llm_iteration_completed\"");
+    }
+
+    @Test
+    void onLlmIterationCompleted_isEphemeral_notInSnapshot() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+        listener.onLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100)));
+
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).doesNotContain("llm_iteration_completed");
+    }
+
+    // ========================
+    // File change events
+    // ========================
+
+    @Test
+    void onFileChanged_broadcastsFileChangedMessage() {
+        Instant ts = Instant.parse("2026-03-05T14:30:00Z");
+        FileChangedEvent event = new FileChangedEvent("Coder", "src/Main.java", "MODIFIED", 10, 3, ts);
+        listener.onFileChanged(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"file_changed\"");
+        assertThat(json).contains("Coder");
+        assertThat(json).contains("src/Main.java");
+        assertThat(json).contains("MODIFIED");
+        assertThat(json).contains("\"linesAdded\":10");
+        assertThat(json).contains("\"linesRemoved\":3");
+    }
+
+    @Test
+    void onFileChanged_isPersistedInSnapshot() {
+        // File change events ARE persisted (unlike ephemeral LLM iteration events)
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+        listener.onFileChanged(new FileChangedEvent("Coder", "src/App.java", "CREATED", 50, 0, Instant.now()));
+
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("file_changed");
+        assertThat(helloJson).contains("src/App.java");
+    }
+
+    @Test
+    void onFileChanged_multipleFiles_allBroadcast() {
+        listener.onFileChanged(new FileChangedEvent("Dev", "a.java", "CREATED", 10, 0, Instant.now()));
+        listener.onFileChanged(new FileChangedEvent("Dev", "b.java", "MODIFIED", 5, 2, Instant.now()));
+        listener.onFileChanged(new FileChangedEvent("Dev", "c.java", "DELETED", 0, 20, Instant.now()));
+
+        assertThat(session.sentMessages()).hasSize(3);
+        assertThat(session.sentMessages()).allMatch(m -> m.contains("\"type\":\"file_changed\""));
+    }
+
+    @Test
+    void onFileChanged_serializerThrows_doesNotPropagateException() {
+        MessageSerializer failingSerializer = mock(MessageSerializer.class);
+        when(failingSerializer.toJson(any())).thenThrow(new IllegalStateException("serialize failed"));
+        WebSocketStreamingListener faultyListener =
+                new WebSocketStreamingListener(connectionManager, failingSerializer);
+
+        // Should not throw
+        faultyListener.onFileChanged(new FileChangedEvent("Agent", "file.txt", "CREATED", 1, 0, Instant.now()));
+        assertThat(session.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void onLlmIterationStarted_serializerThrows_doesNotPropagateException() {
+        MessageSerializer failingSerializer = mock(MessageSerializer.class);
+        when(failingSerializer.toJson(any())).thenThrow(new IllegalStateException("serialize failed"));
+        WebSocketStreamingListener faultyListener =
+                new WebSocketStreamingListener(connectionManager, failingSerializer);
+
+        CapturedMessage msg =
+                CapturedMessage.builder().role("user").content("hi").build();
+        faultyListener.onLlmIterationStarted(new LlmIterationStartedEvent("Agent", "Task", 0, List.of(msg)));
+        assertThat(session.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void onLlmIterationCompleted_serializerThrows_doesNotPropagateException() {
+        MessageSerializer failingSerializer = mock(MessageSerializer.class);
+        when(failingSerializer.toJson(any())).thenThrow(new IllegalStateException("serialize failed"));
+        WebSocketStreamingListener faultyListener =
+                new WebSocketStreamingListener(connectionManager, failingSerializer);
+
+        faultyListener.onLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100)));
+        assertThat(session.sentMessages()).isEmpty();
     }
 }

@@ -206,25 +206,40 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Workspace not configured"));
                     return;
                 }
+                if (isLocalBinding && !isLocalClient(ctx)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
+                    return;
+                }
                 String relativePath = ctx.queryParam("path");
                 if (relativePath == null) {
                     relativePath = "";
                 }
 
-                java.nio.file.Path dir = wsPath.resolve(relativePath).normalize();
-                if (!dir.startsWith(wsPath)) {
+                // Resolve with symlink protection: use toRealPath to prevent symlink escapes
+                java.nio.file.Path wsReal;
+                java.nio.file.Path dirReal;
+                try {
+                    wsReal = wsPath.toRealPath();
+                    dirReal = wsPath.resolve(relativePath).normalize().toRealPath();
+                } catch (java.io.IOException e) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Path not found"));
+                    return;
+                }
+                if (!dirReal.startsWith(wsReal)) {
                     ctx.status(403);
                     ctx.json(Map.of("error", "Path traversal denied"));
                     return;
                 }
-                if (!java.nio.file.Files.isDirectory(dir)) {
+                if (!java.nio.file.Files.isDirectory(dirReal)) {
                     ctx.status(404);
                     ctx.json(Map.of("error", "Not a directory"));
                     return;
                 }
 
                 java.util.List<Map<String, Object>> entries = new java.util.ArrayList<>();
-                try (var stream = java.nio.file.Files.list(dir)) {
+                try (var stream = java.nio.file.Files.list(dirReal)) {
                     stream.forEach(p -> {
                         Map<String, Object> entry = new java.util.HashMap<>();
                         entry.put("name", p.getFileName().toString());
@@ -243,6 +258,61 @@ class WebSocketServer {
                     });
                 }
                 ctx.json(entries);
+            });
+
+            config.routes.get("/api/workspace/file", ctx -> {
+                java.nio.file.Path wsPath = workspacePath;
+                if (wsPath == null) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Workspace not configured"));
+                    return;
+                }
+                if (isLocalBinding && !isLocalClient(ctx)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
+                    return;
+                }
+                String relativePath = ctx.queryParam("path");
+                if (relativePath == null || relativePath.isEmpty()) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "Missing 'path' query parameter"));
+                    return;
+                }
+
+                java.nio.file.Path wsReal;
+                java.nio.file.Path fileReal;
+                try {
+                    wsReal = wsPath.toRealPath();
+                    fileReal = wsPath.resolve(relativePath).normalize().toRealPath();
+                } catch (java.io.IOException e) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "File not found"));
+                    return;
+                }
+                if (!fileReal.startsWith(wsReal)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Path traversal denied"));
+                    return;
+                }
+                if (!java.nio.file.Files.isRegularFile(fileReal)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Not a file"));
+                    return;
+                }
+                // Limit to 100KB to prevent serving large binaries
+                long size = java.nio.file.Files.size(fileReal);
+                if (size > 100_000) {
+                    ctx.status(413);
+                    ctx.json(Map.of("error", "File too large (max 100KB)"));
+                    return;
+                }
+                try {
+                    ctx.contentType("text/plain; charset=utf-8");
+                    ctx.result(java.nio.file.Files.readString(fileReal, java.nio.charset.StandardCharsets.UTF_8));
+                } catch (java.io.IOException e) {
+                    ctx.status(500);
+                    ctx.json(Map.of("error", "Failed to read file"));
+                }
             });
         });
 
@@ -399,6 +469,14 @@ class WebSocketServer {
         } catch (IllegalArgumentException e) {
             return false;
         }
+    }
+
+    /**
+     * Check if the HTTP request originates from a local client.
+     */
+    private static boolean isLocalClient(io.javalin.http.Context ctx) {
+        String remoteAddr = ctx.req().getRemoteAddr();
+        return "127.0.0.1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr);
     }
 
     // ========================

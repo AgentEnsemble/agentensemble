@@ -448,13 +448,19 @@ function applyLlmIterationCompleted(state: LiveState, msg: LlmIterationCompleted
 // ========================
 
 function applyFileChanged(state: LiveState, msg: FileChangedMessage): LiveState {
+  // Prefer server-provided timestamp; fall back to client time
+  let timestamp = Date.now();
+  if (msg.timestamp != null) {
+    const parsed = typeof msg.timestamp === 'number' ? msg.timestamp : Date.parse(msg.timestamp);
+    if (!Number.isNaN(parsed)) timestamp = parsed;
+  }
   const change = {
     filePath: msg.filePath,
     changeType: msg.changeType,
     linesAdded: msg.linesAdded,
     linesRemoved: msg.linesRemoved,
     agentRole: msg.agentRole,
-    timestamp: Date.now(),
+    timestamp,
   };
   return { ...state, fileChanges: [...state.fileChanges, change] };
 }

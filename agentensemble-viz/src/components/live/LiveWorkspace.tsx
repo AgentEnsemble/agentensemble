@@ -38,9 +38,21 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>('coding');
 
-  // Find the most recent conversation for the selected agent
+  // Find the most recent conversation for the selected agent (by last message timestamp)
   const selectedConversation = selectedAgent
-    ? Object.values(liveState.conversations).find((c) => c.agentRole === selectedAgent) ?? null
+    ? (() => {
+        const matches = Object.values(liveState.conversations).filter(
+          (c) => c.agentRole === selectedAgent,
+        );
+        if (matches.length === 0) return null;
+        if (matches.length === 1) return matches[0];
+        // Pick the one with the most recent message
+        return matches.reduce((best, c) => {
+          const bestTs = best.messages.length > 0 ? best.messages[best.messages.length - 1].timestamp : 0;
+          const cTs = c.messages.length > 0 ? c.messages[c.messages.length - 1].timestamp : 0;
+          return cTs > bestTs ? c : best;
+        });
+      })()
     : null;
 
   return (
