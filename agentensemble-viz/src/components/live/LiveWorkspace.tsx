@@ -56,7 +56,7 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
     : null;
 
   return (
-    <Group orientation="horizontal" className="flex-1">
+    <Group orientation="horizontal" style={{ width: '100%', height: '100%' }}>
       {/* Left sidebar: Agent list */}
       <Panel
         defaultSize="15%"
@@ -76,10 +76,10 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
 
       {/* Center + right area */}
       <Panel defaultSize={selectedAgent ? '55%' : '85%'} minSize="40%">
-        <Group orientation="vertical">
+        <Group orientation="vertical" style={{ height: '100%' }}>
           {/* Main view */}
           <Panel defaultSize="65%" minSize="30%">
-            <div className="h-full">
+            <div className="h-full overflow-hidden">
               {activeView === 'timeline' && <TimelineView trace={null} isLive />}
               {activeView === 'flow' && (
                 <FlowView
