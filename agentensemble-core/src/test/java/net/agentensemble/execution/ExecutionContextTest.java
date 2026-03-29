@@ -6,9 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.callback.FileChangedEvent;
+import net.agentensemble.callback.LlmIterationCompletedEvent;
+import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
@@ -386,5 +390,187 @@ class ExecutionContextTest {
         ExecutionContext ctx = ExecutionContext.disabled();
         assertThat(ctx.reviewHandler()).isNull();
         assertThat(ctx.reviewPolicy()).isEqualTo(ReviewPolicy.NEVER);
+    }
+
+    // ========================
+    // Fire methods: LlmIterationStarted
+    // ========================
+
+    @Test
+    void fireLlmIterationStarted_callsAllListeners() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener l1 = new EnsembleListener() {
+            @Override
+            public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+        EnsembleListener l2 = new EnsembleListener() {
+            @Override
+            public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l1, l2));
+        LlmIterationStartedEvent event =
+                new LlmIterationStartedEvent("Researcher", "Find papers", 0, Collections.emptyList());
+        ctx.fireLlmIterationStarted(event);
+
+        assertThat(callCount.get()).isEqualTo(2);
+    }
+
+    @Test
+    void fireLlmIterationStarted_listenerExceptionDoesNotPropagate() {
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+                throw new RuntimeException("listener boom");
+            }
+        };
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
+        LlmIterationStartedEvent event = new LlmIterationStartedEvent("Agent", "Task", 0, Collections.emptyList());
+
+        // Must not throw
+        ctx.fireLlmIterationStarted(event);
+    }
+
+    @Test
+    void fireLlmIterationStarted_subsequentListenersCalledEvenIfOneThrows() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+                throw new RuntimeException("boom");
+            }
+        };
+        EnsembleListener counting = new EnsembleListener() {
+            @Override
+            public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing, counting));
+        ctx.fireLlmIterationStarted(new LlmIterationStartedEvent("Agent", "Task", 0, Collections.emptyList()));
+
+        assertThat(callCount.get()).isEqualTo(1);
+    }
+
+    // ========================
+    // Fire methods: LlmIterationCompleted
+    // ========================
+
+    @Test
+    void fireLlmIterationCompleted_callsAllListeners() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener l = new EnsembleListener() {
+            @Override
+            public void onLlmIterationCompleted(LlmIterationCompletedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
+        LlmIterationCompletedEvent event = new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "result", List.of(), 100L, 50L, Duration.ofMillis(200));
+        ctx.fireLlmIterationCompleted(event);
+
+        assertThat(callCount.get()).isEqualTo(2);
+    }
+
+    @Test
+    void fireLlmIterationCompleted_listenerExceptionDoesNotPropagate() {
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onLlmIterationCompleted(LlmIterationCompletedEvent event) {
+                throw new RuntimeException("boom");
+            }
+        };
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
+
+        // Must not throw
+        ctx.fireLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "result", List.of(), 100L, 50L, Duration.ofMillis(200)));
+    }
+
+    @Test
+    void fireLlmIterationCompleted_subsequentListenersCalledEvenIfOneThrows() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onLlmIterationCompleted(LlmIterationCompletedEvent event) {
+                throw new RuntimeException("boom");
+            }
+        };
+        EnsembleListener counting = new EnsembleListener() {
+            @Override
+            public void onLlmIterationCompleted(LlmIterationCompletedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing, counting));
+        ctx.fireLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "result", List.of(), 100L, 50L, Duration.ofMillis(200)));
+
+        assertThat(callCount.get()).isEqualTo(1);
+    }
+
+    // ========================
+    // Fire methods: FileChanged
+    // ========================
+
+    @Test
+    void fireFileChanged_callsAllListeners() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener l = new EnsembleListener() {
+            @Override
+            public void onFileChanged(FileChangedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(l, l));
+        FileChangedEvent event = new FileChangedEvent("Coder", "src/Main.java", "MODIFIED", 5, 2, Instant.now());
+        ctx.fireFileChanged(event);
+
+        assertThat(callCount.get()).isEqualTo(2);
+    }
+
+    @Test
+    void fireFileChanged_listenerExceptionDoesNotPropagate() {
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onFileChanged(FileChangedEvent event) {
+                throw new RuntimeException("boom");
+            }
+        };
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing));
+
+        // Must not throw
+        ctx.fireFileChanged(new FileChangedEvent("Agent", "file.txt", "CREATED", 1, 0, Instant.now()));
+    }
+
+    @Test
+    void fireFileChanged_subsequentListenersCalledEvenIfOneThrows() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        EnsembleListener throwing = new EnsembleListener() {
+            @Override
+            public void onFileChanged(FileChangedEvent event) {
+                throw new RuntimeException("boom");
+            }
+        };
+        EnsembleListener counting = new EnsembleListener() {
+            @Override
+            public void onFileChanged(FileChangedEvent event) {
+                callCount.incrementAndGet();
+            }
+        };
+
+        ExecutionContext ctx = ExecutionContext.of(MemoryContext.disabled(), false, List.of(throwing, counting));
+        ctx.fireFileChanged(new FileChangedEvent("Agent", "file.txt", "DELETED", 0, 10, Instant.now()));
+
+        assertThat(callCount.get()).isEqualTo(1);
     }
 }

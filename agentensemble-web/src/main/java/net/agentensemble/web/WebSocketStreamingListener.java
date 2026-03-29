@@ -1,10 +1,14 @@
 package net.agentensemble.web;
 
 import java.time.Instant;
+import java.util.List;
 import net.agentensemble.callback.DelegationCompletedEvent;
 import net.agentensemble.callback.DelegationFailedEvent;
 import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.callback.FileChangedEvent;
+import net.agentensemble.callback.LlmIterationCompletedEvent;
+import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
@@ -13,6 +17,9 @@ import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.web.protocol.DelegationCompletedMessage;
 import net.agentensemble.web.protocol.DelegationFailedMessage;
 import net.agentensemble.web.protocol.DelegationStartedMessage;
+import net.agentensemble.web.protocol.FileChangedMessage;
+import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
+import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.TaskCompletedMessage;
 import net.agentensemble.web.protocol.TaskFailedMessage;
@@ -144,6 +151,81 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     @Override
     public void onToken(TokenEvent event) {
         broadcastEphemeral(new TokenMessage(event.token(), event.agentRole(), event.taskDescription(), Instant.now()));
+    }
+
+    // ========================
+    // LLM iteration lifecycle
+    // ========================
+
+    /** Maximum number of messages to include in the wire buffer sent to clients. */
+    private static final int MAX_WIRE_MESSAGES = 20;
+
+    @Override
+    public void onLlmIterationStarted(LlmIterationStartedEvent event) {
+        List<net.agentensemble.trace.CapturedMessage> allMessages = event.messages();
+        int totalCount = allMessages.size();
+
+        // Cap the wire buffer to the last MAX_WIRE_MESSAGES to bound payload size.
+        List<net.agentensemble.trace.CapturedMessage> capped = totalCount > MAX_WIRE_MESSAGES
+                ? allMessages.subList(totalCount - MAX_WIRE_MESSAGES, totalCount)
+                : allMessages;
+
+        List<LlmIterationStartedMessage.MessageDto> messageDtos = capped.stream()
+                .map(m -> new LlmIterationStartedMessage.MessageDto(
+                        m.getRole(),
+                        m.getContent(),
+                        m.getToolCalls() != null
+                                ? m.getToolCalls().stream()
+                                        .map(tc -> new LlmIterationStartedMessage.ToolCallDto(
+                                                (String) tc.get("name"), (String) tc.get("arguments")))
+                                        .toList()
+                                : null,
+                        m.getToolName()))
+                .toList();
+
+        broadcastEphemeral(new LlmIterationStartedMessage(
+                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos, totalCount));
+    }
+
+    @Override
+    public void onLlmIterationCompleted(LlmIterationCompletedEvent event) {
+        List<LlmIterationCompletedMessage.ToolRequestDto> toolDtos = event.toolRequests() != null
+                ? event.toolRequests().stream()
+                        .map(tr -> new LlmIterationCompletedMessage.ToolRequestDto(tr.name(), tr.arguments()))
+                        .toList()
+                : null;
+
+        broadcastEphemeral(new LlmIterationCompletedMessage(
+                event.agentRole(),
+                event.taskDescription(),
+                event.iterationIndex(),
+                event.responseType(),
+                event.responseText(),
+                toolDtos,
+                event.inputTokens(),
+                event.outputTokens(),
+                event.latency() != null ? event.latency().toMillis() : 0));
+    }
+
+    // ========================
+    // File change events
+    // ========================
+
+    /**
+     * Broadcasts a {@link FileChangedMessage} when a coding tool modifies a file.
+     *
+     * <p>File change messages are broadcast <em>and</em> appended to the late-join snapshot
+     * so that clients connecting mid-run can reconstruct the set of changed files.
+     */
+    @Override
+    public void onFileChanged(FileChangedEvent event) {
+        broadcast(new FileChangedMessage(
+                event.agentRole(),
+                event.filePath(),
+                event.changeType(),
+                event.linesAdded(),
+                event.linesRemoved(),
+                event.timestamp()));
     }
 
     // ========================

@@ -30,6 +30,8 @@ interface FlowViewProps {
   trace: ExecutionTrace | null;
   /** When true, renders in live mode using LiveServerContext instead of a static dag. */
   isLive?: boolean;
+  /** Optional callback when a node is clicked; receives the agent role of the clicked node. */
+  onNodeClick?: (agentRole: string) => void;
 }
 
 /**
@@ -42,11 +44,11 @@ interface FlowViewProps {
  * When `isLive` is false (default), renders from the supplied static DagModel with
  * optional trace enrichment.
  */
-export default function FlowView({ dag, trace, isLive }: FlowViewProps) {
+export default function FlowView({ dag, trace, isLive, onNodeClick: onExternalNodeClick }: FlowViewProps) {
   if (isLive) {
     return (
       <ReactFlowProvider>
-        <LiveFlowViewInner />
+        <LiveFlowViewInner onExternalNodeClick={onExternalNodeClick} />
       </ReactFlowProvider>
     );
   }
@@ -205,7 +207,7 @@ function HistoricalFlowViewInner({ dag, trace }: { dag: DagModel; trace: Executi
  * - failed    -> red header
  * - completed -> normal agent color (same as historical mode)
  */
-function LiveFlowViewInner() {
+function LiveFlowViewInner({ onExternalNodeClick }: { onExternalNodeClick?: (agentRole: string) => void }) {
   const { liveState } = useLiveServer();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
@@ -288,7 +290,11 @@ function LiveFlowViewInner() {
 
   const onNodeClick: NodeMouseHandler = useCallback((_event, node: Node) => {
     setSelectedTaskId((prev) => (prev === node.id ? null : node.id));
-  }, []);
+    const data = node.data as TaskNodeData;
+    if (data.task?.agentRole && onExternalNodeClick) {
+      onExternalNodeClick(data.task.agentRole);
+    }
+  }, [onExternalNodeClick]);
 
   if (liveState.tasks.length === 0) {
     return (

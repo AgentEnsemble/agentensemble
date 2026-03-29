@@ -72,6 +72,9 @@ class WebSocketServer {
     /** Action to trigger ensemble draining (for lifecycle/drain endpoint). Null if not configured. */
     private volatile Runnable drainAction;
 
+    /** Optional workspace root path for file browsing endpoints. Null if not configured. */
+    private volatile java.nio.file.Path workspacePath;
+
     WebSocketServer(
             ConnectionManager connectionManager,
             MessageSerializer serializer,
@@ -195,6 +198,122 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Drain not available (ensemble not in long-running mode)"));
                 }
             });
+
+            config.routes.get("/api/workspace/files", ctx -> {
+                java.nio.file.Path wsPath = workspacePath;
+                if (wsPath == null) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Workspace not configured"));
+                    return;
+                }
+                if (!isLocalBinding || !isLocalClient(ctx)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
+                    return;
+                }
+                String relativePath = ctx.queryParam("path");
+                if (relativePath == null) {
+                    relativePath = "";
+                }
+
+                // Resolve with symlink protection: use toRealPath to prevent symlink escapes
+                java.nio.file.Path wsReal;
+                java.nio.file.Path dirReal;
+                try {
+                    wsReal = wsPath.toRealPath();
+                    dirReal = wsPath.resolve(relativePath).normalize().toRealPath();
+                } catch (java.io.IOException e) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Path not found"));
+                    return;
+                }
+                if (!dirReal.startsWith(wsReal)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Path traversal denied"));
+                    return;
+                }
+                if (!java.nio.file.Files.isDirectory(dirReal)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Not a directory"));
+                    return;
+                }
+
+                java.util.List<Map<String, Object>> entries = new java.util.ArrayList<>();
+                try (var stream = java.nio.file.Files.list(dirReal)) {
+                    stream.forEach(p -> {
+                        Map<String, Object> entry = new java.util.HashMap<>();
+                        entry.put("name", p.getFileName().toString());
+                        entry.put("type", java.nio.file.Files.isDirectory(p) ? "directory" : "file");
+                        try {
+                            entry.put("size", java.nio.file.Files.size(p));
+                            entry.put(
+                                    "lastModified",
+                                    java.nio.file.Files.getLastModifiedTime(p)
+                                            .toInstant()
+                                            .toString());
+                        } catch (java.io.IOException ignored) {
+                            // Skip metadata if unavailable
+                        }
+                        entries.add(entry);
+                    });
+                }
+                ctx.json(entries);
+            });
+
+            config.routes.get("/api/workspace/file", ctx -> {
+                java.nio.file.Path wsPath = workspacePath;
+                if (wsPath == null) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Workspace not configured"));
+                    return;
+                }
+                if (!isLocalBinding || !isLocalClient(ctx)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
+                    return;
+                }
+                String relativePath = ctx.queryParam("path");
+                if (relativePath == null || relativePath.isEmpty()) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "Missing 'path' query parameter"));
+                    return;
+                }
+
+                java.nio.file.Path wsReal;
+                java.nio.file.Path fileReal;
+                try {
+                    wsReal = wsPath.toRealPath();
+                    fileReal = wsPath.resolve(relativePath).normalize().toRealPath();
+                } catch (java.io.IOException e) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "File not found"));
+                    return;
+                }
+                if (!fileReal.startsWith(wsReal)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Path traversal denied"));
+                    return;
+                }
+                if (!java.nio.file.Files.isRegularFile(fileReal)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Not a file"));
+                    return;
+                }
+                // Limit to 1MB to prevent serving large binaries
+                long size = java.nio.file.Files.size(fileReal);
+                if (size > 1_048_576) {
+                    ctx.status(413);
+                    ctx.json(Map.of("error", "File too large (max 1MB)"));
+                    return;
+                }
+                try {
+                    ctx.contentType("text/plain; charset=utf-8");
+                    ctx.result(java.nio.file.Files.readString(fileReal, java.nio.charset.StandardCharsets.UTF_8));
+                } catch (java.io.IOException e) {
+                    ctx.status(500);
+                    ctx.json(Map.of("error", "Failed to read file"));
+                }
+            });
         });
 
         app.start(host, port);
@@ -297,6 +416,15 @@ class WebSocketServer {
         this.drainAction = action;
     }
 
+    /**
+     * Sets the workspace root path for the {@code GET /api/workspace/files} endpoint.
+     *
+     * @param path the workspace root directory; may be null to disable the endpoint
+     */
+    void setWorkspacePath(java.nio.file.Path path) {
+        this.workspacePath = path;
+    }
+
     // ========================
     // Origin validation
     // ========================
@@ -341,6 +469,14 @@ class WebSocketServer {
         } catch (IllegalArgumentException e) {
             return false;
         }
+    }
+
+    /**
+     * Check if the HTTP request originates from a local client.
+     */
+    private static boolean isLocalClient(io.javalin.http.Context ctx) {
+        String remoteAddr = ctx.req().getRemoteAddr();
+        return "127.0.0.1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr);
     }
 
     // ========================

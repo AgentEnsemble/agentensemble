@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.agentensemble.Agent;
 import net.agentensemble.Task;
+import net.agentensemble.callback.LlmIterationCompletedEvent;
+import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.delegation.AgentDelegationTool;
@@ -237,12 +239,25 @@ public class AgentExecutor {
                         agent.isAllowDelegation());
             }
 
-            // Resolve tools, injecting ToolContext (including reviewHandler) into AbstractAgentTool instances
+            // Build a file change listener that delegates to all registered ensemble listeners.
+            // Capture executionContext in a final local because it may have been reassigned above.
+            final ExecutionContext execCtxForListener = executionContext;
+            net.agentensemble.callback.EnsembleListener fileChangeListener =
+                    new net.agentensemble.callback.EnsembleListener() {
+                        @Override
+                        public void onFileChanged(net.agentensemble.callback.FileChangedEvent event) {
+                            execCtxForListener.fireFileChanged(event);
+                        }
+                    };
+
+            // Resolve tools, injecting ToolContext (including reviewHandler and fileChangeListener)
+            // into AbstractAgentTool instances
             ToolResolver.ResolvedTools resolvedTools = ToolResolver.resolve(
                     effectiveTools,
                     executionContext.toolMetrics(),
                     executionContext.toolExecutor(),
-                    executionContext.reviewHandler());
+                    executionContext.reviewHandler(),
+                    fileChangeListener);
             AtomicInteger toolCallCounter = new AtomicInteger(0);
 
             String finalResponse;
@@ -509,6 +524,11 @@ public class AgentExecutor {
             String taskDescription) {
         List<ChatMessage> messages = List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt));
         ChatRequest request = ChatRequest.builder().messages(messages).build();
+
+        // Fire LLM iteration started event (iteration 0 for the single-shot path)
+        executionContext.fireLlmIterationStarted(
+                new LlmIterationStartedEvent(agent.getRole(), taskDescription, 0, CapturedMessage.fromAll(messages)));
+
         Instant llmStart = Instant.now();
         accumulator.beginLlmCall(llmStart);
         ChatResponse response;
@@ -521,6 +541,23 @@ public class AgentExecutor {
             response = agent.getLlm().chat(request);
         }
         accumulator.endLlmCall(Instant.now(), response.tokenUsage());
+
+        // Fire LLM iteration completed event
+        Duration llmLatency = Duration.between(llmStart, Instant.now());
+        long inputTokens = response.tokenUsage() != null ? response.tokenUsage().inputTokenCount() : 0;
+        long outputTokens =
+                response.tokenUsage() != null ? response.tokenUsage().outputTokenCount() : 0;
+        executionContext.fireLlmIterationCompleted(new LlmIterationCompletedEvent(
+                agent.getRole(),
+                taskDescription,
+                0,
+                "FINAL_ANSWER",
+                response.aiMessage().text(),
+                null,
+                inputTokens,
+                outputTokens,
+                llmLatency));
+
         String text = response.aiMessage().text();
         // Snapshot messages at STANDARD+ -- includes system + user (+ assistant final answer)
         if (captureMode.isAtLeast(CaptureMode.STANDARD)) {
@@ -553,12 +590,18 @@ public class AgentExecutor {
         int maxIterations = agent.getMaxIterations();
         Executor toolExecutor = executionContext.toolExecutor();
         String agentRole = agent.getRole();
+        String taskDescription = task.getDescription();
+        int iterationIndex = 0;
 
         while (true) {
             ChatRequest request = ChatRequest.builder()
                     .messages(messages)
                     .toolSpecifications(resolvedTools.allSpecifications())
                     .build();
+
+            // Fire LLM iteration started event
+            executionContext.fireLlmIterationStarted(new LlmIterationStartedEvent(
+                    agentRole, taskDescription, iterationIndex, CapturedMessage.fromAll(messages)));
 
             // Time the LLM call
             Instant llmStart = Instant.now();
@@ -568,6 +611,30 @@ public class AgentExecutor {
 
             AiMessage aiMessage = response.aiMessage();
             messages.add(aiMessage);
+
+            // Fire LLM iteration completed event
+            Duration llmLatency = Duration.between(llmStart, Instant.now());
+            long inputTokens =
+                    response.tokenUsage() != null ? response.tokenUsage().inputTokenCount() : 0;
+            long outputTokens =
+                    response.tokenUsage() != null ? response.tokenUsage().outputTokenCount() : 0;
+            String responseType = aiMessage.hasToolExecutionRequests() ? "TOOL_CALLS" : "FINAL_ANSWER";
+            List<LlmIterationCompletedEvent.ToolCallRequest> iterToolRequests = aiMessage.hasToolExecutionRequests()
+                    ? aiMessage.toolExecutionRequests().stream()
+                            .map(tr -> new LlmIterationCompletedEvent.ToolCallRequest(tr.name(), tr.arguments()))
+                            .toList()
+                    : null;
+            executionContext.fireLlmIterationCompleted(new LlmIterationCompletedEvent(
+                    agentRole,
+                    taskDescription,
+                    iterationIndex,
+                    responseType,
+                    aiMessage.text(),
+                    iterToolRequests,
+                    inputTokens,
+                    outputTokens,
+                    llmLatency));
+            iterationIndex++;
 
             // Snapshot messages at STANDARD+ before finalizing
             if (captureMode.isAtLeast(CaptureMode.STANDARD)) {

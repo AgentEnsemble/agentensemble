@@ -105,4 +105,76 @@ class ToolContextTest {
         var ctx = ToolContext.of("tool", NOOP, executor);
         assertThat(ctx.executor()).isSameAs(executor);
     }
+
+    // ========================
+    // Five-argument factory -- with reviewHandler and fileChangeListener
+    // ========================
+
+    @Test
+    void of_fiveArg_withNullFileChangeListener_fileChangeListenerIsNull() {
+        var ctx = ToolContext.of("tool", NOOP, Executors.newVirtualThreadPerTaskExecutor(), null, null);
+        assertThat(ctx.fileChangeListener()).isNull();
+    }
+
+    @Test
+    void of_fiveArg_withFileChangeListener_returnsListener() {
+        Object listener = new Object();
+        var ctx = ToolContext.of("tool", NOOP, Executors.newVirtualThreadPerTaskExecutor(), null, listener);
+        assertThat(ctx.fileChangeListener()).isSameAs(listener);
+    }
+
+    @Test
+    void of_fiveArg_withBothHandlerAndListener_storesBoth() {
+        ReviewHandler handler = ReviewHandler.autoApprove();
+        Object listener = "fake-listener";
+        var ctx = ToolContext.of("tool", NOOP, Executors.newVirtualThreadPerTaskExecutor(), handler, listener);
+        assertThat(ctx.reviewHandler()).isSameAs(handler);
+        assertThat(ctx.fileChangeListener()).isSameAs(listener);
+    }
+
+    @Test
+    void of_fiveArg_storesAllFields() {
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        ReviewHandler handler = ReviewHandler.autoApprove();
+        Object listener = "listener";
+        var ctx = ToolContext.of("myTool", NOOP, executor, handler, listener);
+        assertThat(ctx.logger().getName()).isEqualTo("net.agentensemble.tool.myTool");
+        assertThat(ctx.metrics()).isSameAs(NOOP);
+        assertThat(ctx.executor()).isSameAs(executor);
+        assertThat(ctx.reviewHandler()).isSameAs(handler);
+        assertThat(ctx.fileChangeListener()).isSameAs(listener);
+    }
+
+    @Test
+    void of_fiveArg_nullToolName_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ToolContext.of(null, NOOP, Executors.newVirtualThreadPerTaskExecutor(), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolName");
+    }
+
+    @Test
+    void of_fiveArg_nullMetrics_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ToolContext.of("tool", null, Executors.newVirtualThreadPerTaskExecutor(), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("metrics");
+    }
+
+    @Test
+    void of_fiveArg_nullExecutor_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ToolContext.of("tool", NOOP, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("executor");
+    }
+
+    @Test
+    void of_threeArg_fileChangeListenerIsNull() {
+        var ctx = ToolContext.of("tool", NOOP, Executors.newVirtualThreadPerTaskExecutor());
+        assertThat(ctx.fileChangeListener()).isNull();
+    }
+
+    @Test
+    void of_fourArg_fileChangeListenerIsNull() {
+        var ctx = ToolContext.of("tool", NOOP, Executors.newVirtualThreadPerTaskExecutor(), null);
+        assertThat(ctx.fileChangeListener()).isNull();
+    }
 }

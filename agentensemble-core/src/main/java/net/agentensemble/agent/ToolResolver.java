@@ -52,6 +52,32 @@ final class ToolResolver {
      * @return a ResolvedTools value encapsulating all resolution results
      */
     static ResolvedTools resolve(List<Object> tools, ToolMetrics metrics, Executor executor, Object reviewHandler) {
+        return resolve(tools, metrics, executor, reviewHandler, null);
+    }
+
+    /**
+     * Resolve a mixed list of tools into AgentTool and @Tool-annotated object maps,
+     * plus the complete list of LangChain4j ToolSpecifications.
+     *
+     * <p>{@link AbstractAgentTool} instances in the list are automatically injected with
+     * a {@link ToolContext} built from the supplied {@code metrics}, {@code executor},
+     * {@code reviewHandler}, and {@code fileChangeListener}.
+     *
+     * @param tools              list of AgentTool instances and/or @Tool-annotated objects
+     * @param metrics            the ToolMetrics backend to inject into AbstractAgentTool instances
+     * @param executor           the Executor to inject into AbstractAgentTool instances
+     * @param reviewHandler      the ReviewHandler for tool-level approval gates (stored as Object
+     *                           to avoid runtime class loading); may be null
+     * @param fileChangeListener the file change listener for workspace file events (stored as Object
+     *                           to avoid hard dependency); may be null
+     * @return a ResolvedTools value encapsulating all resolution results
+     */
+    static ResolvedTools resolve(
+            List<Object> tools,
+            ToolMetrics metrics,
+            Executor executor,
+            Object reviewHandler,
+            Object fileChangeListener) {
         Map<String, AgentTool> agentToolMap = new HashMap<>();
         Map<String, Object> annotatedObjectMap = new HashMap<>();
         List<ToolSpecification> allSpecs = new ArrayList<>();
@@ -62,7 +88,8 @@ final class ToolResolver {
                     agentToolMap.put(resolved.name(), resolved);
                     allSpecs.add(LangChain4jToolAdapter.toSpecification(resolved));
                     if (resolved instanceof AbstractAgentTool abstractTool) {
-                        ToolContext ctx = ToolContext.of(resolved.name(), metrics, executor, reviewHandler);
+                        ToolContext ctx =
+                                ToolContext.of(resolved.name(), metrics, executor, reviewHandler, fileChangeListener);
                         ToolContextInjector.injectContext(abstractTool, ctx);
                     }
                 }
@@ -74,7 +101,8 @@ final class ToolResolver {
 
                 // Inject ToolContext into AbstractAgentTool instances
                 if (agentTool instanceof AbstractAgentTool abstractTool) {
-                    ToolContext ctx = ToolContext.of(agentTool.name(), metrics, executor, reviewHandler);
+                    ToolContext ctx =
+                            ToolContext.of(agentTool.name(), metrics, executor, reviewHandler, fileChangeListener);
                     ToolContextInjector.injectContext(abstractTool, ctx);
                 }
             } else {

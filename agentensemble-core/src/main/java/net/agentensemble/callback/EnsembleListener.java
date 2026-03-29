@@ -156,6 +156,33 @@ public interface EnsembleListener {
     default void onToken(TokenEvent event) {}
 
     /**
+     * Called at the beginning of each ReAct iteration, just before the LLM is called.
+     *
+     * <p>Contains the full message buffer being sent to the LLM. Useful for observing
+     * the conversation state at each step of the agent's reasoning loop.
+     *
+     * @param event the LLM iteration started event
+     */
+    default void onLlmIterationStarted(LlmIterationStartedEvent event) {}
+
+    /**
+     * Called after the LLM responds in each ReAct iteration.
+     *
+     * <p>Contains the response type (TOOL_CALLS or FINAL_ANSWER), text or tool requests,
+     * token usage, and latency. Useful for monitoring LLM performance and reasoning steps.
+     *
+     * @param event the LLM iteration completed event
+     */
+    default void onLlmIterationCompleted(LlmIterationCompletedEvent event) {}
+
+    /**
+     * Called when a coding tool modifies a file in the workspace.
+     *
+     * @param event details of the file change
+     */
+    default void onFileChanged(FileChangedEvent event) {}
+
+    /**
      * Returns a trace ID associated with this listener, or {@code null} if not applicable.
      *
      * <p>This method is used by the framework to populate {@code ExecutionTrace.traceId}

@@ -13,6 +13,8 @@ import type {
   LiveState,
   LiveTask,
   LiveDelegation,
+  LiveConversation,
+  LiveConversationMessage,
   CompletedRun,
   ServerMessage,
   HelloMessage,
@@ -28,6 +30,10 @@ import type {
   ReviewRequestedMessage,
   ReviewTimedOutMessage,
   EnsembleCompletedMessage,
+  LlmIterationStartedMessage,
+  LlmIterationCompletedMessage,
+  FileChangedMessage,
+  MetricsSnapshotMessage,
   LiveAction,
 } from '../types/live.js';
 
@@ -45,6 +51,9 @@ export const initialLiveState: LiveState = {
   pendingReviews: [],
   ensembleComplete: false,
   completedRuns: [],
+  conversations: {},
+  fileChanges: [],
+  metricsHistory: [],
 };
 
 // ========================
@@ -149,6 +158,9 @@ function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): Li
     ensembleComplete: false,
     completedAt: null,
     completedRuns: updatedCompletedRuns,
+    conversations: {},
+    fileChanges: [],
+    metricsHistory: [],
   };
 }
 
@@ -347,6 +359,169 @@ function applyEnsembleCompleted(state: LiveState, msg: EnsembleCompletedMessage)
 }
 
 // ========================
+// Conversation handlers
+// ========================
+
+/** Key for conversation lookup: "agentRole:taskDescription" */
+function conversationKey(agentRole: string, taskDescription: string): string {
+  return `${agentRole}:${taskDescription}`;
+}
+
+/**
+ * Convert wire MessageDto objects to LiveConversationMessage objects.
+ * Performs smart deduplication: only returns messages that are new compared
+ * to the existing conversation's message count.
+ *
+ * When totalMessageCount is present and existingCount exceeds wireMessages.length,
+ * the server is sending a capped sliding-window buffer. In that case, return null
+ * to signal that the caller should replace (not append) the stored messages.
+ */
+function convertMessages(
+  wireMessages: LlmIterationStartedMessage['messages'],
+  existingCount: number,
+  totalMessageCount: number | undefined,
+): { messages: LiveConversationMessage[]; replace: boolean } {
+  const now = Date.now();
+
+  // Capped buffer detection: when the server provides totalMessageCount and the
+  // client already has more messages than the wire buffer contains, the server
+  // has evicted older messages. Treat the wire buffer as a sliding window and
+  // replace the stored conversation entirely.
+  if (totalMessageCount !== undefined && existingCount > wireMessages.length) {
+    const replaced = wireMessages.map((m) => ({
+      role: m.role as LiveConversationMessage['role'],
+      content: m.content,
+      toolCalls: m.toolCalls ?? undefined,
+      toolName: m.toolName ?? undefined,
+      timestamp: now,
+    }));
+    return { messages: replaced, replace: true };
+  }
+
+  // Normal path: the wire messages are the full (or growing) buffer; skip
+  // messages we already have and return only new ones for appending.
+  const newMessages = wireMessages.slice(existingCount);
+  const converted = newMessages.map((m) => ({
+    role: m.role as LiveConversationMessage['role'],
+    content: m.content,
+    toolCalls: m.toolCalls ?? undefined,
+    toolName: m.toolName ?? undefined,
+    timestamp: now,
+  }));
+  return { messages: converted, replace: false };
+}
+
+function applyLlmIterationStarted(state: LiveState, msg: LlmIterationStartedMessage): LiveState {
+  const key = conversationKey(msg.agentRole, msg.taskDescription);
+  const existing = state.conversations[key];
+  const existingCount = existing?.messages.length ?? 0;
+  const { messages: newMessages, replace } = convertMessages(
+    msg.messages,
+    existingCount,
+    msg.totalMessageCount,
+  );
+
+  let messages: LiveConversationMessage[];
+  if (replace) {
+    // Capped buffer: the server evicted older messages — replace entirely
+    messages = newMessages;
+  } else {
+    messages = existing ? [...existing.messages, ...newMessages] : newMessages;
+  }
+
+  const conversation: LiveConversation = {
+    agentRole: msg.agentRole,
+    taskDescription: msg.taskDescription,
+    iterationIndex: msg.iterationIndex,
+    messages,
+    isThinking: true,
+  };
+
+  return {
+    ...state,
+    conversations: { ...state.conversations, [key]: conversation },
+  };
+}
+
+function applyLlmIterationCompleted(state: LiveState, msg: LlmIterationCompletedMessage): LiveState {
+  const key = conversationKey(msg.agentRole, msg.taskDescription);
+  const existing = state.conversations[key];
+  if (!existing) return state;
+
+  const now = Date.now();
+
+  // Append the assistant's response as a conversation message
+  const assistantMessage: LiveConversationMessage = {
+    role: 'assistant',
+    content: msg.responseText,
+    toolCalls: msg.toolRequests ?? undefined,
+    timestamp: now,
+  };
+
+  // Cap conversation at 500 messages
+  const MAX_MESSAGES = 500;
+  let messages = [...existing.messages, assistantMessage];
+  if (messages.length > MAX_MESSAGES) {
+    messages = messages.slice(messages.length - MAX_MESSAGES);
+  }
+
+  const conversation: LiveConversation = {
+    ...existing,
+    iterationIndex: msg.iterationIndex,
+    messages,
+    isThinking: false,
+  };
+
+  return {
+    ...state,
+    conversations: { ...state.conversations, [key]: conversation },
+  };
+}
+
+// ========================
+// File change handlers
+// ========================
+
+function applyFileChanged(state: LiveState, msg: FileChangedMessage): LiveState {
+  // Prefer server-provided timestamp; fall back to client time
+  let timestamp = Date.now();
+  if (msg.timestamp != null) {
+    const parsed = typeof msg.timestamp === 'number' ? msg.timestamp : Date.parse(msg.timestamp);
+    if (!Number.isNaN(parsed)) timestamp = parsed;
+  }
+  const change = {
+    filePath: msg.filePath,
+    changeType: msg.changeType,
+    linesAdded: msg.linesAdded,
+    linesRemoved: msg.linesRemoved,
+    agentRole: msg.agentRole,
+    timestamp,
+  };
+  return { ...state, fileChanges: [...state.fileChanges, change] };
+}
+
+// ========================
+// Metrics handlers
+// ========================
+
+function applyMetricsSnapshot(state: LiveState, msg: MetricsSnapshotMessage): LiveState {
+  const snapshot = {
+    agentRole: msg.agentRole,
+    inputTokens: msg.inputTokens,
+    outputTokens: msg.outputTokens,
+    llmLatencyMs: msg.llmLatencyMs,
+    iterationCount: msg.iterationCount,
+    timestamp: Date.now(),
+  };
+  // Cap at 1000 entries
+  const history = [...state.metricsHistory, snapshot];
+  return {
+    ...state,
+    metricsHistory: history.length > 1000 ? history.slice(history.length - 1000) : history,
+  };
+}
+
+// ========================
 // Delegation handlers
 // ========================
 
@@ -468,6 +643,14 @@ export function liveReducer(state: LiveState, message: ServerMessage): LiveState
       return applyDelegationCompleted(state, message);
     case 'delegation_failed':
       return applyDelegationFailed(state, message);
+    case 'llm_iteration_started':
+      return applyLlmIterationStarted(state, message);
+    case 'llm_iteration_completed':
+      return applyLlmIterationCompleted(state, message);
+    case 'file_changed':
+      return applyFileChanged(state, message);
+    case 'metrics_snapshot':
+      return applyMetricsSnapshot(state, message);
     // heartbeat, pong: no state change needed.
     default:
       return state;

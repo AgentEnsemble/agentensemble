@@ -1051,6 +1051,661 @@ describe('liveReducer', () => {
   });
 
   // ========================
+  // llm_iteration_started
+  // ========================
+
+  describe('llm_iteration_started', () => {
+    it('creates a new conversation entry when none exists for the agent', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        messages: [
+          { role: 'system', content: 'You are a researcher.', toolCalls: null, toolName: null },
+          { role: 'user', content: 'Research AI trends', toolCalls: null, toolName: null },
+        ],
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      const key = 'Researcher:Research AI trends';
+      expect(next.conversations[key]).toBeDefined();
+      expect(next.conversations[key].agentRole).toBe('Researcher');
+      expect(next.conversations[key].taskDescription).toBe('Research AI trends');
+      expect(next.conversations[key].iterationIndex).toBe(0);
+      expect(next.conversations[key].isThinking).toBe(true);
+      expect(next.conversations[key].messages).toHaveLength(2);
+      expect(next.conversations[key].messages[0].role).toBe('system');
+      expect(next.conversations[key].messages[0].content).toBe('You are a researcher.');
+      expect(next.conversations[key].messages[0].timestamp).toBe(now);
+      expect(next.conversations[key].messages[1].role).toBe('user');
+      expect(next.conversations[key].messages[1].content).toBe('Research AI trends');
+    });
+
+    it('appends new messages to an existing conversation using dedup by existingCount', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const key = 'Researcher:Research AI trends';
+      // Pre-populate the conversation with 2 messages (simulating a prior iteration)
+      const stateWithConversation: LiveState = {
+        ...BASE_STATE,
+        conversations: {
+          [key]: {
+            agentRole: 'Researcher',
+            taskDescription: 'Research AI trends',
+            iterationIndex: 0,
+            messages: [
+              { role: 'system', content: 'You are a researcher.', timestamp: now - 5000 },
+              { role: 'user', content: 'Research AI trends', timestamp: now - 5000 },
+            ],
+            isThinking: false,
+          },
+        },
+      };
+
+      // Server sends 3 messages: the 2 existing + 1 new
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 1,
+        messages: [
+          { role: 'system', content: 'You are a researcher.', toolCalls: null, toolName: null },
+          { role: 'user', content: 'Research AI trends', toolCalls: null, toolName: null },
+          { role: 'assistant', content: 'Let me research that.', toolCalls: null, toolName: null },
+        ],
+      };
+      const next = liveReducer(stateWithConversation, msg);
+      // Should have original 2 + 1 new = 3 total
+      expect(next.conversations[key].messages).toHaveLength(3);
+      // The first 2 messages should be the originals (unchanged timestamps)
+      expect(next.conversations[key].messages[0].timestamp).toBe(now - 5000);
+      expect(next.conversations[key].messages[1].timestamp).toBe(now - 5000);
+      // The new message should have the current timestamp
+      expect(next.conversations[key].messages[2].role).toBe('assistant');
+      expect(next.conversations[key].messages[2].content).toBe('Let me research that.');
+      expect(next.conversations[key].messages[2].timestamp).toBe(now);
+      expect(next.conversations[key].iterationIndex).toBe(1);
+      expect(next.conversations[key].isThinking).toBe(true);
+    });
+
+    it('handles capped buffer (existingCount > wireMessages.length) by keeping stored messages', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const key = 'Coder:Write code';
+      // Existing conversation has 5 messages
+      const existingMessages = Array.from({ length: 5 }, (_, i) => ({
+        role: 'user' as const,
+        content: `Message ${i}`,
+        timestamp: now - 10000,
+      }));
+      const stateWithConversation: LiveState = {
+        ...BASE_STATE,
+        conversations: {
+          [key]: {
+            agentRole: 'Coder',
+            taskDescription: 'Write code',
+            iterationIndex: 2,
+            messages: existingMessages,
+            isThinking: false,
+          },
+        },
+      };
+
+      // Server sends only 3 messages (capped buffer, fewer than we have)
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Coder',
+        taskDescription: 'Write code',
+        iterationIndex: 3,
+        messages: [
+          { role: 'system', content: 'You are a coder.', toolCalls: null, toolName: null },
+          { role: 'user', content: 'Write code', toolCalls: null, toolName: null },
+          { role: 'assistant', content: 'Sure thing.', toolCalls: null, toolName: null },
+        ],
+      };
+      const next = liveReducer(stateWithConversation, msg);
+      // existingCount (5) > wireMessages.length (3), so slice(5) returns [],
+      // no new messages are added, existing messages are preserved
+      expect(next.conversations[key].messages).toHaveLength(5);
+      expect(next.conversations[key].messages[0].content).toBe('Message 0');
+      expect(next.conversations[key].isThinking).toBe(true);
+      expect(next.conversations[key].iterationIndex).toBe(3);
+    });
+
+    it('maps tool_calls in messages to proper format', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Coder',
+        taskDescription: 'Write code',
+        iterationIndex: 0,
+        messages: [
+          {
+            role: 'assistant',
+            content: null,
+            toolCalls: [{ name: 'web_search', arguments: '{"query":"React hooks"}' }],
+            toolName: null,
+          },
+          {
+            role: 'tool',
+            content: 'Search results...',
+            toolCalls: null,
+            toolName: 'web_search',
+          },
+        ],
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      const key = 'Coder:Write code';
+      expect(next.conversations[key].messages[0].toolCalls).toEqual([
+        { name: 'web_search', arguments: '{"query":"React hooks"}' },
+      ]);
+      expect(next.conversations[key].messages[0].content).toBeNull();
+      expect(next.conversations[key].messages[1].toolName).toBe('web_search');
+      expect(next.conversations[key].messages[1].content).toBe('Search results...');
+    });
+
+    it('sets isThinking=true and updates iterationIndex', () => {
+      const key = 'Agent:Task';
+      const stateWithConversation: LiveState = {
+        ...BASE_STATE,
+        conversations: {
+          [key]: {
+            agentRole: 'Agent',
+            taskDescription: 'Task',
+            iterationIndex: 0,
+            messages: [],
+            isThinking: false,
+          },
+        },
+      };
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Agent',
+        taskDescription: 'Task',
+        iterationIndex: 5,
+        messages: [],
+      };
+      const next = liveReducer(stateWithConversation, msg);
+      expect(next.conversations[key].isThinking).toBe(true);
+      expect(next.conversations[key].iterationIndex).toBe(5);
+    });
+
+    it('does not mutate the input state conversations object', () => {
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Agent',
+        taskDescription: 'Task',
+        iterationIndex: 0,
+        messages: [{ role: 'user', content: 'Hello', toolCalls: null, toolName: null }],
+      };
+      const before = { ...BASE_STATE.conversations };
+      liveReducer(BASE_STATE, msg);
+      expect(BASE_STATE.conversations).toEqual(before);
+    });
+
+    it('handles null toolCalls and null toolName by converting to undefined', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Agent',
+        taskDescription: 'Task',
+        iterationIndex: 0,
+        messages: [
+          { role: 'user', content: 'Hello', toolCalls: null, toolName: null },
+        ],
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      const key = 'Agent:Task';
+      // null values should be converted to undefined (via ?? undefined)
+      expect(next.conversations[key].messages[0].toolCalls).toBeUndefined();
+      expect(next.conversations[key].messages[0].toolName).toBeUndefined();
+    });
+  });
+
+  // ========================
+  // llm_iteration_completed
+  // ========================
+
+  describe('llm_iteration_completed', () => {
+    const key = 'Researcher:Research AI trends';
+
+    function stateWithConversation(isThinking: boolean): LiveState {
+      return {
+        ...BASE_STATE,
+        conversations: {
+          [key]: {
+            agentRole: 'Researcher',
+            taskDescription: 'Research AI trends',
+            iterationIndex: 0,
+            messages: [
+              { role: 'system', content: 'You are a researcher.', timestamp: Date.now() - 5000 },
+              { role: 'user', content: 'Research AI trends', timestamp: Date.now() - 4000 },
+            ],
+            isThinking,
+          },
+        },
+      };
+    }
+
+    it('sets isThinking=false on the conversation', () => {
+      const state = stateWithConversation(true);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Here are the trends...',
+        toolRequests: null,
+        inputTokens: 500,
+        outputTokens: 200,
+        latencyMs: 1500,
+      };
+      const next = liveReducer(state, msg);
+      expect(next.conversations[key].isThinking).toBe(false);
+    });
+
+    it('stores the response text as an assistant message', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const state = stateWithConversation(true);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Here are the AI trends for 2026.',
+        toolRequests: null,
+        inputTokens: 500,
+        outputTokens: 200,
+        latencyMs: 1500,
+      };
+      const next = liveReducer(state, msg);
+      // Should have 2 existing + 1 new assistant message = 3
+      expect(next.conversations[key].messages).toHaveLength(3);
+      const assistantMsg = next.conversations[key].messages[2];
+      expect(assistantMsg.role).toBe('assistant');
+      expect(assistantMsg.content).toBe('Here are the AI trends for 2026.');
+      expect(assistantMsg.timestamp).toBe(now);
+    });
+
+    it('handles tool_requests properly by storing them as toolCalls', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const state = stateWithConversation(true);
+      const toolRequests = [
+        { name: 'web_search', arguments: '{"query":"latest AI papers"}' },
+        { name: 'calculator', arguments: '{"expression":"2+2"}' },
+      ];
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        responseType: 'TOOL_CALLS',
+        responseText: null,
+        toolRequests,
+        inputTokens: 500,
+        outputTokens: 100,
+        latencyMs: 800,
+      };
+      const next = liveReducer(state, msg);
+      const assistantMsg = next.conversations[key].messages[2];
+      expect(assistantMsg.role).toBe('assistant');
+      expect(assistantMsg.toolCalls).toEqual(toolRequests);
+      expect(assistantMsg.content).toBeNull();
+    });
+
+    it('handles missing conversation gracefully (no crash)', () => {
+      // No conversations exist in state
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Unknown',
+        taskDescription: 'Unknown task',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'some text',
+        toolRequests: null,
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 500,
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      // Should return the same state without crashing
+      expect(next).toBe(BASE_STATE);
+    });
+
+    it('updates iterationIndex on the conversation', () => {
+      const state = stateWithConversation(true);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 7,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Done.',
+        toolRequests: null,
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 300,
+      };
+      const next = liveReducer(state, msg);
+      expect(next.conversations[key].iterationIndex).toBe(7);
+    });
+
+    it('does not mutate the existing conversation messages array', () => {
+      const state = stateWithConversation(true);
+      const originalMessages = [...state.conversations[key].messages];
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Result',
+        toolRequests: null,
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 200,
+      };
+      liveReducer(state, msg);
+      expect(state.conversations[key].messages).toHaveLength(originalMessages.length);
+    });
+
+    it('stores null toolRequests as undefined on the assistant message', () => {
+      const state = stateWithConversation(true);
+      const msg: ServerMessage = {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI trends',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Final answer.',
+        toolRequests: null,
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 200,
+      };
+      const next = liveReducer(state, msg);
+      const assistantMsg = next.conversations[key].messages[2];
+      // null toolRequests becomes undefined via ?? undefined
+      expect(assistantMsg.toolCalls).toBeUndefined();
+    });
+  });
+
+  // ========================
+  // file_changed
+  // ========================
+
+  describe('file_changed', () => {
+    it('adds file change entries with correct fields', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/main.ts',
+        changeType: 'MODIFIED',
+        linesAdded: 10,
+        linesRemoved: 3,
+        timestamp: '2026-03-05T14:00:05Z',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.fileChanges).toHaveLength(1);
+      expect(next.fileChanges[0].filePath).toBe('src/main.ts');
+      expect(next.fileChanges[0].changeType).toBe('MODIFIED');
+      expect(next.fileChanges[0].linesAdded).toBe(10);
+      expect(next.fileChanges[0].linesRemoved).toBe(3);
+      expect(next.fileChanges[0].agentRole).toBe('Coder');
+    });
+
+    it('uses server timestamp when it is a number', () => {
+      const serverTs = 1741186805000;
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/app.ts',
+        changeType: 'CREATED',
+        linesAdded: 50,
+        linesRemoved: 0,
+        // Cast to bypass strict typing since the reducer handles number timestamps
+        timestamp: serverTs as unknown as string,
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.fileChanges[0].timestamp).toBe(serverTs);
+    });
+
+    it('uses server timestamp when it is an ISO string', () => {
+      const isoTimestamp = '2026-03-05T14:00:05Z';
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/index.ts',
+        changeType: 'CREATED',
+        linesAdded: 20,
+        linesRemoved: 0,
+        timestamp: isoTimestamp,
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.fileChanges[0].timestamp).toBe(Date.parse(isoTimestamp));
+    });
+
+    it('falls back to Date.now() when timestamp is missing', () => {
+      const now = 1700000000000;
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/deleted.ts',
+        changeType: 'DELETED',
+        linesAdded: 0,
+        linesRemoved: 15,
+        // null timestamp (missing from server)
+        timestamp: null as unknown as string,
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.fileChanges[0].timestamp).toBe(now);
+    });
+
+    it('falls back to Date.now() when timestamp is invalid', () => {
+      const now = 1700000000000;
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/broken.ts',
+        changeType: 'MODIFIED',
+        linesAdded: 1,
+        linesRemoved: 1,
+        timestamp: 'not-a-valid-date',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.fileChanges[0].timestamp).toBe(now);
+    });
+
+    it('appends multiple file changes in order', () => {
+      const msg1: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/a.ts',
+        changeType: 'CREATED',
+        linesAdded: 10,
+        linesRemoved: 0,
+        timestamp: '2026-03-05T14:00:01Z',
+      };
+      const msg2: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/b.ts',
+        changeType: 'MODIFIED',
+        linesAdded: 5,
+        linesRemoved: 2,
+        timestamp: '2026-03-05T14:00:02Z',
+      };
+      const s1 = liveReducer(BASE_STATE, msg1);
+      const s2 = liveReducer(s1, msg2);
+      expect(s2.fileChanges).toHaveLength(2);
+      expect(s2.fileChanges[0].filePath).toBe('src/a.ts');
+      expect(s2.fileChanges[1].filePath).toBe('src/b.ts');
+    });
+
+    it('does not mutate the existing fileChanges array', () => {
+      const msg: ServerMessage = {
+        type: 'file_changed',
+        agentRole: 'Coder',
+        filePath: 'src/new.ts',
+        changeType: 'CREATED',
+        linesAdded: 5,
+        linesRemoved: 0,
+        timestamp: '2026-03-05T14:00:01Z',
+      };
+      const originalLength = BASE_STATE.fileChanges.length;
+      liveReducer(BASE_STATE, msg);
+      expect(BASE_STATE.fileChanges).toHaveLength(originalLength);
+    });
+  });
+
+  // ========================
+  // metrics_snapshot
+  // ========================
+
+  describe('metrics_snapshot', () => {
+    it('appends metrics snapshots to metricsHistory', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'Researcher',
+        taskIndex: 1,
+        inputTokens: 1500,
+        outputTokens: 800,
+        llmLatencyMs: 2000,
+        toolExecutionTimeMs: 500,
+        iterationCount: 3,
+        costEstimate: '$0.05',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next.metricsHistory).toHaveLength(1);
+      expect(next.metricsHistory[0].agentRole).toBe('Researcher');
+      expect(next.metricsHistory[0].inputTokens).toBe(1500);
+      expect(next.metricsHistory[0].outputTokens).toBe(800);
+      expect(next.metricsHistory[0].llmLatencyMs).toBe(2000);
+      expect(next.metricsHistory[0].iterationCount).toBe(3);
+      expect(next.metricsHistory[0].timestamp).toBe(now);
+    });
+
+    it('stores all per-agent metrics correctly across multiple agents', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+      const msg1: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'Researcher',
+        taskIndex: 1,
+        inputTokens: 1000,
+        outputTokens: 500,
+        llmLatencyMs: 1500,
+        toolExecutionTimeMs: 300,
+        iterationCount: 2,
+        costEstimate: null,
+      };
+      const msg2: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'Writer',
+        taskIndex: 2,
+        inputTokens: 2000,
+        outputTokens: 1500,
+        llmLatencyMs: 3000,
+        toolExecutionTimeMs: 100,
+        iterationCount: 5,
+        costEstimate: '$0.10',
+      };
+      const s1 = liveReducer(BASE_STATE, msg1);
+      const s2 = liveReducer(s1, msg2);
+      expect(s2.metricsHistory).toHaveLength(2);
+      expect(s2.metricsHistory[0].agentRole).toBe('Researcher');
+      expect(s2.metricsHistory[0].inputTokens).toBe(1000);
+      expect(s2.metricsHistory[0].outputTokens).toBe(500);
+      expect(s2.metricsHistory[1].agentRole).toBe('Writer');
+      expect(s2.metricsHistory[1].inputTokens).toBe(2000);
+      expect(s2.metricsHistory[1].outputTokens).toBe(1500);
+      expect(s2.metricsHistory[1].llmLatencyMs).toBe(3000);
+      expect(s2.metricsHistory[1].iterationCount).toBe(5);
+    });
+
+    it('caps metricsHistory at 1000 entries', () => {
+      // Pre-fill with 999 entries
+      const existingSnapshots = Array.from({ length: 999 }, (_, i) => ({
+        agentRole: `Agent-${i}`,
+        inputTokens: i * 10,
+        outputTokens: i * 5,
+        llmLatencyMs: i * 100,
+        iterationCount: i,
+        timestamp: Date.now() - (999 - i) * 1000,
+      }));
+      const stateWith999: LiveState = {
+        ...BASE_STATE,
+        metricsHistory: existingSnapshots,
+      };
+
+      // Add 2 more to exceed 1000
+      const msg1: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'New-Agent-1',
+        taskIndex: 1,
+        inputTokens: 9990,
+        outputTokens: 4995,
+        llmLatencyMs: 99900,
+        toolExecutionTimeMs: 0,
+        iterationCount: 999,
+        costEstimate: null,
+      };
+      const msg2: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'New-Agent-2',
+        taskIndex: 2,
+        inputTokens: 10000,
+        outputTokens: 5000,
+        llmLatencyMs: 100000,
+        toolExecutionTimeMs: 0,
+        iterationCount: 1000,
+        costEstimate: null,
+      };
+      const s1 = liveReducer(stateWith999, msg1);
+      expect(s1.metricsHistory).toHaveLength(1000);
+
+      const s2 = liveReducer(s1, msg2);
+      // Should still be capped at 1000; oldest entry is dropped
+      expect(s2.metricsHistory).toHaveLength(1000);
+      // The very first entry should now be Agent-1 (Agent-0 was dropped)
+      expect(s2.metricsHistory[0].agentRole).toBe('Agent-1');
+      // The last entry is the newly added one
+      expect(s2.metricsHistory[999].agentRole).toBe('New-Agent-2');
+    });
+
+    it('does not mutate the existing metricsHistory array', () => {
+      const msg: ServerMessage = {
+        type: 'metrics_snapshot',
+        agentRole: 'Agent',
+        taskIndex: 1,
+        inputTokens: 100,
+        outputTokens: 50,
+        llmLatencyMs: 500,
+        toolExecutionTimeMs: 100,
+        iterationCount: 1,
+        costEstimate: null,
+      };
+      const originalLength = BASE_STATE.metricsHistory.length;
+      liveReducer(BASE_STATE, msg);
+      expect(BASE_STATE.metricsHistory).toHaveLength(originalLength);
+    });
+  });
+
+  // ========================
   // ensemble_started resets delegations
   // ========================
 

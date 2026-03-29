@@ -90,6 +90,11 @@
   50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
 }
 
+@keyframes ae-edge-flow {
+  0% { stroke-dashoffset: 12; }
+  100% { stroke-dashoffset: 0; }
+}
+
 @layer utilities {
   /** Pulsing opacity animation -- used on the connecting status dot and running task nodes. */
   .ae-pulse {

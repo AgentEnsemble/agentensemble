@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.callback.FileChangedEvent;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -298,6 +300,97 @@ class AbstractAgentToolTest {
         tool.execute("input");
 
         assertThat(recorder.lastAgentRole).isEqualTo(AbstractAgentTool.UNKNOWN_AGENT);
+    }
+
+    // ========================
+    // fireFileChanged
+    // ========================
+
+    @Test
+    void fireFileChanged_invokesListenerViaReflection() {
+        var tool = new EchoTool();
+        var recorder = new RecordingToolMetrics();
+        RecordingFileChangeListener listener = new RecordingFileChangeListener();
+        var ctx = ToolContext.of("echo", recorder, Executors.newVirtualThreadPerTaskExecutor(), null, listener);
+        ToolContextInjector.injectContext(tool, ctx);
+
+        AbstractAgentTool.setCurrentAgentRole("Coder");
+        try {
+            tool.fireFileChanged("src/Main.java", "MODIFIED", 10, 3);
+        } finally {
+            AbstractAgentTool.clearCurrentAgentRole();
+        }
+
+        assertThat(listener.events).hasSize(1);
+        FileChangedEvent event = listener.events.get(0);
+        assertThat(event.agentRole()).isEqualTo("Coder");
+        assertThat(event.filePath()).isEqualTo("src/Main.java");
+        assertThat(event.changeType()).isEqualTo("MODIFIED");
+        assertThat(event.linesAdded()).isEqualTo(10);
+        assertThat(event.linesRemoved()).isEqualTo(3);
+        assertThat(event.timestamp()).isNotNull();
+    }
+
+    @Test
+    void fireFileChanged_withNoAgentRole_usesUnknown() {
+        var tool = new EchoTool();
+        var recorder = new RecordingToolMetrics();
+        RecordingFileChangeListener listener = new RecordingFileChangeListener();
+        var ctx = ToolContext.of("echo", recorder, Executors.newVirtualThreadPerTaskExecutor(), null, listener);
+        ToolContextInjector.injectContext(tool, ctx);
+
+        AbstractAgentTool.clearCurrentAgentRole(); // ensure no role set
+        tool.fireFileChanged("file.txt", "CREATED", 1, 0);
+
+        assertThat(listener.events).hasSize(1);
+        assertThat(listener.events.get(0).agentRole()).isEqualTo(AbstractAgentTool.UNKNOWN_AGENT);
+    }
+
+    @Test
+    void fireFileChanged_noListener_doesNotThrow() {
+        var tool = new EchoTool();
+        var recorder = new RecordingToolMetrics();
+        // No file change listener (null)
+        var ctx = ToolContext.of("echo", recorder, Executors.newVirtualThreadPerTaskExecutor(), null, null);
+        ToolContextInjector.injectContext(tool, ctx);
+
+        // Should not throw
+        tool.fireFileChanged("file.txt", "DELETED", 0, 5);
+    }
+
+    @Test
+    void fireFileChanged_noContext_doesNotThrow() {
+        var tool = new EchoTool();
+        // No context injected at all
+        tool.fireFileChanged("file.txt", "MODIFIED", 1, 1);
+        // Should not throw
+    }
+
+    @Test
+    void fireFileChanged_listenerThrows_doesNotPropagate() {
+        var tool = new EchoTool();
+        var recorder = new RecordingToolMetrics();
+        EnsembleListener throwingListener = new EnsembleListener() {
+            @Override
+            public void onFileChanged(FileChangedEvent event) {
+                throw new RuntimeException("listener boom");
+            }
+        };
+        var ctx = ToolContext.of("echo", recorder, Executors.newVirtualThreadPerTaskExecutor(), null, throwingListener);
+        ToolContextInjector.injectContext(tool, ctx);
+
+        // Should not throw even when listener throws
+        tool.fireFileChanged("file.txt", "MODIFIED", 1, 0);
+    }
+
+    /** Recording listener that implements EnsembleListener to capture FileChangedEvents. */
+    static class RecordingFileChangeListener implements EnsembleListener {
+        final List<FileChangedEvent> events = new ArrayList<>();
+
+        @Override
+        public void onFileChanged(FileChangedEvent event) {
+            events.add(event);
+        }
     }
 
     // ========================
