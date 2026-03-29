@@ -1,5 +1,39 @@
 # Changelog
 
+## [3.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.10.0...v3.0.0) (2026-03-29)
+
+
+### Features
+
+* CA-001 MCP protocol bridge (agentensemble-mcp) ([#262](https://github.com/AgentEnsemble/agentensemble/issues/262)) ([5144d89](https://github.com/AgentEnsemble/agentensemble/commit/5144d89822df3940309af365f67d6a9b1a131abb))
+* CA-002 - Custom Java coding tools (agentensemble-tools/coding) ([#261](https://github.com/AgentEnsemble/agentensemble/issues/261)) ([cfd02d3](https://github.com/AgentEnsemble/agentensemble/commit/cfd02d33391f8d3a84615b18deebeaf55f4f2a3e))
+* CA-003 - Git worktree workspace isolation ([#260](https://github.com/AgentEnsemble/agentensemble/issues/260)) ([2b453db](https://github.com/AgentEnsemble/agentensemble/commit/2b453dbfd6697c5273c059eb53681e87d975ca75))
+* CA-004 - CodingAgent factory (agentensemble-coding) ([#264](https://github.com/AgentEnsemble/agentensemble/issues/264)) ([0f82a4b](https://github.com/AgentEnsemble/agentensemble/commit/0f82a4bd3212ca1d568de6e74c8f7b3d360edac5))
+* CA-005 - Coding agent examples and documentation ([#266](https://github.com/AgentEnsemble/agentensemble/issues/266)) ([9484979](https://github.com/AgentEnsemble/agentensemble/commit/9484979cfda9ef3cbe1d3f688d23241034052a4f))
+* EN-001/002/003 - Long-running mode, shared capabilities, capability handshake ([#249](https://github.com/AgentEnsemble/agentensemble/issues/249)) ([132603d](https://github.com/AgentEnsemble/agentensemble/commit/132603d74be79a0ee6356346f11ca6bafb8d386a))
+* EN-004/005/006/007/008/009 - Network primitives for cross-ensemble communication ([#251](https://github.com/AgentEnsemble/agentensemble/issues/251)) ([e1299d2](https://github.com/AgentEnsemble/agentensemble/commit/e1299d2bc4d1475d612b122f9f77a6e2c8f03691))
+* EN-010 - Transport SPI and simple mode ([#259](https://github.com/AgentEnsemble/agentensemble/issues/259)) ([8c3095c](https://github.com/AgentEnsemble/agentensemble/commit/8c3095cbbc38e5423387fc930cc0dc4b45f21d7b))
+* EN-011 - Redis transport implementation ([#265](https://github.com/AgentEnsemble/agentensemble/issues/265)) ([fb48475](https://github.com/AgentEnsemble/agentensemble/commit/fb4847585824878551658fc9cf8d8aa9e0ca0135)), closes [#226](https://github.com/AgentEnsemble/agentensemble/issues/226)
+* EN-016 - Priority queue with aging ([#263](https://github.com/AgentEnsemble/agentensemble/issues/263)) ([6ef8cbd](https://github.com/AgentEnsemble/agentensemble/commit/6ef8cbdb1ca8a1858e9fd1170c82bfca0cfd0cae))
+* enable parallel test class execution ([#267](https://github.com/AgentEnsemble/agentensemble/issues/267)) ([aacdb28](https://github.com/AgentEnsemble/agentensemble/commit/aacdb28886f2b366186c8d64685f31858d672714))
+* enable parallel test class execution via JUnit 5 ([aacdb28](https://github.com/AgentEnsemble/agentensemble/commit/aacdb28886f2b366186c8d64685f31858d672714))
+* Interactive dashboard overhaul ([#273](https://github.com/AgentEnsemble/agentensemble/issues/273)) ([e6289f0](https://github.com/AgentEnsemble/agentensemble/commit/e6289f0a687f0bf79569935e524bd81f19cc2221))
+* Phase 2 - Durable Transport & Delivery (EN-012/013/014/015/017/018) ([#269](https://github.com/AgentEnsemble/agentensemble/issues/269)) ([2081cac](https://github.com/AgentEnsemble/agentensemble/commit/2081cac6e6f4d165eade11fc4b7dda27889053bf))
+* Phase 3 - Human Participation & Observability (EN-019/020/021/022/023/024) ([#270](https://github.com/AgentEnsemble/agentensemble/issues/270)) ([86eca53](https://github.com/AgentEnsemble/agentensemble/commit/86eca53f43b1ac876c7402f8e2050d66c8d9ebe8))
+* Phase 4 - Advanced Network (EN-025/026/027/028) ([#272](https://github.com/AgentEnsemble/agentensemble/issues/272)) ([cd5c33d](https://github.com/AgentEnsemble/agentensemble/commit/cd5c33dfcfe2379e0c9f182f70c167d72e3bc3e0))
+
+
+### Bug Fixes
+
+* CA-002 PMD cleanup, docs update, CodingTools example ([#271](https://github.com/AgentEnsemble/agentensemble/issues/271)) ([e123867](https://github.com/AgentEnsemble/agentensemble/commit/e123867f779a1474b810c8f6b1777b88be2a9bf8))
+* production readiness — race conditions, OOM, timeouts, error handling ([#268](https://github.com/AgentEnsemble/agentensemble/issues/268)) ([ece51ad](https://github.com/AgentEnsemble/agentensemble/commit/ece51ad807f01047147113f030474f3de3604cdc))
+* resolve PMD warnings in coding tools, update docs, add CodingToolsExample ([e123867](https://github.com/AgentEnsemble/agentensemble/commit/e123867f779a1474b810c8f6b1777b88be2a9bf8))
+
+
+### Miscellaneous Chores
+
+* prepare 3.0.0 release ([0dc2af1](https://github.com/AgentEnsemble/agentensemble/commit/0dc2af1f8a95c9d35de09a9b8b371f5527c956a6))
+
 ## [2.10.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.9.2...v2.10.0) (2026-03-25)
 
 
