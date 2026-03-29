@@ -79,7 +79,7 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
         <Group orientation="vertical" style={{ height: '100%' }}>
           {/* Main view */}
           <Panel defaultSize="65%" minSize="30%">
-            <div className="h-full overflow-hidden">
+            <div className="flex h-full flex-col overflow-hidden">
               {activeView === 'timeline' && <TimelineView trace={null} isLive />}
               {activeView === 'flow' && (
                 <FlowView
