@@ -4,6 +4,9 @@
  * Accessed via the /live route (e.g. /live?server=ws://localhost:7329/ws).
  * Wraps its content in LiveServerProvider and auto-connects to the server URL
  * read from the ?server query parameter.
+ *
+ * Uses an IDE-like multi-panel layout (LiveWorkspace) with resizable panels
+ * for agent list, main view, conversation, and bottom panels.
  */
 
 import { useEffect, useState } from 'react';
@@ -11,8 +14,7 @@ import { LiveServerProvider, useLiveServer } from '../contexts/LiveServerContext
 import LiveHeader, { type LiveView } from '../components/live/LiveHeader.js';
 import ReviewApprovalPanel from '../components/live/ReviewApprovalPanel.js';
 import ConnectionStatusBar from '../components/shared/ConnectionStatusBar.js';
-import TimelineView from './TimelineView.js';
-import FlowView from './FlowView.js';
+import LiveWorkspace from '../components/live/LiveWorkspace.js';
 
 /**
  * Read the WebSocket server URL from the ?server query parameter.
@@ -89,8 +91,7 @@ function LivePageInner({
         serverUrl={liveState.serverUrl}
       />
       <main className="flex min-h-0 flex-1">
-        {activeView === 'timeline' && <TimelineView trace={null} isLive />}
-        {activeView === 'flow' && <FlowView dag={null} trace={null} isLive />}
+        <LiveWorkspace liveState={liveState} activeView={activeView} />
       </main>
 
       {/* Review approval panel -- rendered as a fixed overlay above all other content. */}

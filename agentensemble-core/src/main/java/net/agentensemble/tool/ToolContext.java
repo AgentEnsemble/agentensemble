@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
  * Cross-cutting context injected by the framework into {@link AbstractAgentTool} instances
  * before their first execution.
  *
- * <p>Carries four concerns:
+ * <p>Carries five concerns:
  *
  * <ul>
  *   <li><strong>Logger</strong>: a pre-scoped SLF4J logger named
@@ -24,6 +24,10 @@ import org.slf4j.LoggerFactory;
  *   <li><strong>ReviewHandler</strong>: the human-in-the-loop handler for tool-level
  *       approval gates. {@code null} when no review is configured on the ensemble.
  *       Accessible via {@link #reviewHandler()}.
+ *   <li><strong>FileChangeListener</strong>: an optional callback for file change events.
+ *       {@code null} when no file change tracking is configured. Typed as {@code Object}
+ *       to avoid a hard dependency on the callback package from tool implementations.
+ *       Accessible via {@link #fileChangeListener()}.
  * </ul>
  *
  * <p>The {@code reviewHandler} field is typed as {@code Object} rather than
@@ -41,26 +45,29 @@ public final class ToolContext {
     private final ToolMetrics metrics;
     private final Executor executor;
     private final Object reviewHandler;
+    private final Object fileChangeListener;
 
-    private ToolContext(Logger logger, ToolMetrics metrics, Executor executor, Object reviewHandler) {
+    private ToolContext(
+            Logger logger, ToolMetrics metrics, Executor executor, Object reviewHandler, Object fileChangeListener) {
         this.logger = logger;
         this.metrics = metrics;
         this.executor = executor;
         this.reviewHandler = reviewHandler;
+        this.fileChangeListener = fileChangeListener;
     }
 
     /**
-     * Create a ToolContext for the given tool name without a ReviewHandler.
+     * Create a ToolContext for the given tool name without a ReviewHandler or file change listener.
      *
      * <p>The logger is pre-scoped to {@code net.agentensemble.tool.<toolName>}.
      *
      * @param toolName the tool's {@link AgentTool#name()} value; must not be null
      * @param metrics  the ToolMetrics implementation to use; must not be null
      * @param executor the executor for the tool; must not be null
-     * @return a new ToolContext with a null reviewHandler
+     * @return a new ToolContext with null reviewHandler and fileChangeListener
      */
     public static ToolContext of(String toolName, ToolMetrics metrics, Executor executor) {
-        return of(toolName, metrics, executor, null);
+        return of(toolName, metrics, executor, null, null);
     }
 
     /**
@@ -73,9 +80,29 @@ public final class ToolContext {
      * @param executor      the executor for the tool; must not be null
      * @param reviewHandler the review handler for tool-level approval gates, stored as
      *                      {@code Object} to avoid runtime class loading; may be null
-     * @return a new ToolContext
+     * @return a new ToolContext with null fileChangeListener
      */
     public static ToolContext of(String toolName, ToolMetrics metrics, Executor executor, Object reviewHandler) {
+        return of(toolName, metrics, executor, reviewHandler, null);
+    }
+
+    /**
+     * Create a ToolContext for the given tool name, including an optional ReviewHandler
+     * and an optional file change listener.
+     *
+     * <p>The logger is pre-scoped to {@code net.agentensemble.tool.<toolName>}.
+     *
+     * @param toolName           the tool's {@link AgentTool#name()} value; must not be null
+     * @param metrics            the ToolMetrics implementation to use; must not be null
+     * @param executor           the executor for the tool; must not be null
+     * @param reviewHandler      the review handler for tool-level approval gates, stored as
+     *                           {@code Object} to avoid runtime class loading; may be null
+     * @param fileChangeListener the file change listener for workspace file change events,
+     *                           stored as {@code Object} to avoid hard dependency; may be null
+     * @return a new ToolContext
+     */
+    public static ToolContext of(
+            String toolName, ToolMetrics metrics, Executor executor, Object reviewHandler, Object fileChangeListener) {
         if (toolName == null) {
             throw new IllegalArgumentException("toolName must not be null");
         }
@@ -86,7 +113,7 @@ public final class ToolContext {
             throw new IllegalArgumentException("executor must not be null");
         }
         Logger logger = LoggerFactory.getLogger("net.agentensemble.tool." + toolName);
-        return new ToolContext(logger, metrics, executor, reviewHandler);
+        return new ToolContext(logger, metrics, executor, reviewHandler, fileChangeListener);
     }
 
     /**
@@ -132,5 +159,19 @@ public final class ToolContext {
      */
     public Object reviewHandler() {
         return reviewHandler;
+    }
+
+    /**
+     * The optional file change listener for workspace file change events.
+     *
+     * <p>Stored as {@code Object} to avoid a hard dependency on the callback package
+     * from tool implementations. Tools use
+     * {@link AbstractAgentTool#fireFileChanged(String, String, int, int)} which handles
+     * the casting and invocation via reflection.
+     *
+     * @return the file change listener, or {@code null} when file change tracking is not configured
+     */
+    public Object fileChangeListener() {
+        return fileChangeListener;
     }
 }

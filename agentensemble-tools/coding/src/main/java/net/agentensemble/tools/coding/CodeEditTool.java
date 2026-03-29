@@ -187,6 +187,7 @@ public final class CodeEditTool extends AbstractTypedAgentTool<CodeEditInput> {
                 return ToolResult.failure("Access denied: path resolves outside the workspace directory");
             }
             Files.writeString(resolved, String.join("\n", lines), StandardCharsets.UTF_8);
+            fireFileChanged(relativePath, "MODIFIED", newContentLines.size(), endLine - startLine + 1);
 
             String snippet = buildContextSnippet(lines, startLine - 1, startLine - 1 + newContentLines.size() - 1);
             return ToolResult.success(
@@ -229,7 +230,12 @@ public final class CodeEditTool extends AbstractTypedAgentTool<CodeEditInput> {
             }
             Files.writeString(resolved, newContent, StandardCharsets.UTF_8);
 
+            // Approximate line diff for the find/replace operation
+            int oldLineCount = fileContent.split("\n", -1).length;
             List<String> newLines = List.of(newContent.split("\n", -1));
+            int lineDelta = newLines.size() - oldLineCount;
+            fireFileChanged(relativePath, "MODIFIED", Math.max(0, lineDelta), Math.max(0, -lineDelta));
+
             return ToolResult.success("Replaced in " + relativePath + "\n"
                     + buildContextSnippet(newLines, 0, Math.min(CONTEXT_SIZE, newLines.size() - 1)));
         } catch (java.util.regex.PatternSyntaxException e) {
@@ -241,6 +247,16 @@ public final class CodeEditTool extends AbstractTypedAgentTool<CodeEditInput> {
 
     private ToolResult executeWrite(Path resolved, String relativePath, String content) {
         try {
+            boolean existed = Files.exists(resolved);
+            int oldLineCount = 0;
+            if (existed) {
+                try {
+                    oldLineCount =
+                            Files.readAllLines(resolved, StandardCharsets.UTF_8).size();
+                } catch (IOException ignored) {
+                    // Best effort: if we can't read, report 0 removed
+                }
+            }
             if (resolved.getParent() != null) {
                 Files.createDirectories(resolved.getParent());
             }
@@ -248,6 +264,14 @@ public final class CodeEditTool extends AbstractTypedAgentTool<CodeEditInput> {
                 return ToolResult.failure("Access denied: path resolves outside the workspace directory");
             }
             Files.writeString(resolved, content, StandardCharsets.UTF_8);
+            int newLineCount = content.split("\n", -1).length;
+            if (existed) {
+                int added = Math.max(0, newLineCount - oldLineCount);
+                int removed = Math.max(0, oldLineCount - newLineCount);
+                fireFileChanged(relativePath, "MODIFIED", added, removed);
+            } else {
+                fireFileChanged(relativePath, "CREATED", newLineCount, 0);
+            }
             return ToolResult.success("Successfully wrote to: " + relativePath);
         } catch (IOException e) {
             return ToolResult.failure("Failed to write file: " + e.getMessage());

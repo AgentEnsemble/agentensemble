@@ -127,6 +127,11 @@ public final class WebDashboard implements EnsembleDashboard {
     private final int maxRetainedRuns;
 
     /**
+     * Optional workspace root path for file browsing endpoints. Null when not configured.
+     */
+    private final Path workspacePath;
+
+    /**
      * Eagerly created trace exporter when {@link #traceExportDir} is configured.
      * Null otherwise.
      */
@@ -164,6 +169,7 @@ public final class WebDashboard implements EnsembleDashboard {
         this.onTimeout = builder.onTimeout;
         this.traceExportDir = builder.traceExportDir;
         this.maxRetainedRuns = builder.maxRetainedRuns;
+        this.workspacePath = builder.workspacePath;
         this.configuredTraceExporter = traceExportDir != null ? new JsonTraceExporter(traceExportDir) : null;
 
         this.serializer = new MessageSerializer();
@@ -174,6 +180,9 @@ public final class WebDashboard implements EnsembleDashboard {
             return t;
         });
         this.server = new WebSocketServer(connectionManager, serializer, heartbeatScheduler);
+        if (workspacePath != null) {
+            this.server.setWorkspacePath(workspacePath);
+        }
         this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
         this.reviewHandler = new WebReviewHandler(connectionManager, serializer, reviewTimeout, onTimeout);
     }
@@ -715,6 +724,7 @@ public final class WebDashboard implements EnsembleDashboard {
         private OnTimeoutAction onTimeout = OnTimeoutAction.CONTINUE;
         private Path traceExportDir = null;
         private int maxRetainedRuns = 10;
+        private Path workspacePath = null;
 
         private Builder() {}
 
@@ -823,6 +833,22 @@ public final class WebDashboard implements EnsembleDashboard {
          */
         public Builder maxRetainedRuns(int maxRetainedRuns) {
             this.maxRetainedRuns = maxRetainedRuns;
+            return this;
+        }
+
+        /**
+         * Sets the workspace root path for the file browsing API endpoint.
+         *
+         * <p>When set, the dashboard exposes a {@code GET /api/workspace/files?path=<rel>}
+         * endpoint that lists directory contents within this path. Path traversal outside
+         * the workspace root is denied.
+         *
+         * @param workspacePath the workspace root directory; may be {@code null} to disable
+         *                      the endpoint (the default)
+         * @return this builder
+         */
+        public Builder workspacePath(Path workspacePath) {
+            this.workspacePath = workspacePath;
             return this;
         }
 

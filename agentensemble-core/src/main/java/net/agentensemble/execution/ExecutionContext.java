@@ -8,6 +8,9 @@ import net.agentensemble.callback.DelegationCompletedEvent;
 import net.agentensemble.callback.DelegationFailedEvent;
 import net.agentensemble.callback.DelegationStartedEvent;
 import net.agentensemble.callback.EnsembleListener;
+import net.agentensemble.callback.FileChangedEvent;
+import net.agentensemble.callback.LlmIterationCompletedEvent;
+import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskReflectedEvent;
@@ -946,6 +949,66 @@ public final class ExecutionContext {
             } catch (Exception e) {
                 if (log.isWarnEnabled()) {
                     log.warn("EnsembleListener threw exception in onToken: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link LlmIterationStartedEvent} to all registered listeners.
+     *
+     * <p>Called at the beginning of each ReAct iteration, just before the LLM is called.
+     * Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireLlmIterationStarted(LlmIterationStartedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onLlmIterationStarted(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onLlmIterationStarted: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link LlmIterationCompletedEvent} to all registered listeners.
+     *
+     * <p>Called after the LLM responds in each ReAct iteration. Exceptions from
+     * individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireLlmIterationCompleted(LlmIterationCompletedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onLlmIterationCompleted(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onLlmIterationCompleted: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link FileChangedEvent} to all registered listeners.
+     *
+     * <p>Called when a coding tool modifies a file in the workspace. Exceptions from
+     * individual listeners are caught and logged.
+     *
+     * @param event the file changed event to fire; must not be null
+     */
+    public void fireFileChanged(FileChangedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onFileChanged(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onFileChanged: {}", e.getMessage(), e);
                 }
             }
         }

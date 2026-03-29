@@ -12,6 +12,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -27,6 +29,7 @@ import net.agentensemble.web.protocol.MessageSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for {@link WebSocketServer}.
@@ -823,5 +826,300 @@ class WebSocketServerTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains("\"lifecycleState\":\"READY\"");
+    }
+
+    // ========================
+    // Workspace endpoints
+    // ========================
+
+    @Test
+    void workspaceFiles_returns404WhenWorkspaceNotConfigured() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        // No workspace path configured
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("Workspace not configured");
+    }
+
+    @Test
+    void workspaceFiles_listsDirectoryContents(@TempDir Path tempDir) throws Exception {
+        // Create test files
+        Files.writeString(tempDir.resolve("hello.txt"), "Hello World");
+        Files.createDirectory(tempDir.resolve("subdir"));
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("hello.txt");
+        assertThat(response.body()).contains("subdir");
+        assertThat(response.body()).contains("\"type\":\"file\"");
+        assertThat(response.body()).contains("\"type\":\"directory\"");
+    }
+
+    @Test
+    void workspaceFiles_pathTraversalDenied(@TempDir Path tempDir) throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files?path=../../etc"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        // Either 403 (traversal denied) or 404 (path not found)
+        assertThat(response.statusCode()).isIn(403, 404);
+    }
+
+    @Test
+    void workspaceFiles_notADirectory(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("file.txt"), "content");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files?path=file.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("Not a directory");
+    }
+
+    @Test
+    void workspaceFile_returns404WhenWorkspaceNotConfigured() throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=test.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("Workspace not configured");
+    }
+
+    @Test
+    void workspaceFile_readsFileContent(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("hello.txt"), "Hello World");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=hello.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo("Hello World");
+    }
+
+    @Test
+    void workspaceFile_missingPathParameter(@TempDir Path tempDir) throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("Missing");
+    }
+
+    @Test
+    void workspaceFile_pathTraversalDenied(@TempDir Path tempDir) throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=../../etc/passwd"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        // Either 403 (traversal denied) or 404 (file not found)
+        assertThat(response.statusCode()).isIn(403, 404);
+    }
+
+    @Test
+    void workspaceFile_notAFile(@TempDir Path tempDir) throws Exception {
+        Files.createDirectory(tempDir.resolve("subdir"));
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=subdir"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("Not a file");
+    }
+
+    @Test
+    void workspaceFile_tooLarge(@TempDir Path tempDir) throws Exception {
+        // Create a file larger than 1MB
+        byte[] largeContent = new byte[1_048_577];
+        java.util.Arrays.fill(largeContent, (byte) 'a');
+        Files.write(tempDir.resolve("large.txt"), largeContent);
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=large.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(413);
+        assertThat(response.body()).contains("File too large");
+    }
+
+    @Test
+    void workspaceFile_nonExistentFile(@TempDir Path tempDir) throws Exception {
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=missing.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void workspaceFiles_subDirectory(@TempDir Path tempDir) throws Exception {
+        Path subdir = Files.createDirectory(tempDir.resolve("src"));
+        Files.writeString(subdir.resolve("App.java"), "class App {}");
+        Files.writeString(subdir.resolve("Test.java"), "class Test {}");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "localhost");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files?path=src"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("App.java");
+        assertThat(response.body()).contains("Test.java");
+    }
+
+    @Test
+    void workspaceFiles_returns403WhenBoundToNonLocalHost(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("secret.txt"), "sensitive data");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("Workspace endpoints restricted to localhost");
+    }
+
+    @Test
+    void workspaceFile_returns403WhenBoundToNonLocalHost(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("secret.txt"), "sensitive data");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=secret.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("Workspace endpoints restricted to localhost");
     }
 }
