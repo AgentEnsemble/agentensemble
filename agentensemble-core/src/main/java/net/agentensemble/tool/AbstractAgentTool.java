@@ -407,6 +407,48 @@ public abstract class AbstractAgentTool implements AgentTool {
     }
 
     // ========================
+    // File change event helpers
+    // ========================
+
+    /**
+     * Fire a file change event if a file change listener is available in the {@link ToolContext}.
+     *
+     * <p>The listener is an {@link net.agentensemble.callback.EnsembleListener} obtained from
+     * {@link ToolContext#fileChangeListener()}, typed as {@code Object} to avoid a hard
+     * dependency on the callback package. Invocation is performed via reflection.
+     *
+     * <p>If no listener is configured, or if reflection fails, this method silently does nothing
+     * (debug-level logging only).
+     *
+     * @param filePath    relative path of the changed file within the workspace
+     * @param changeType  type of change: "CREATED", "MODIFIED", or "DELETED"
+     * @param linesAdded  number of lines added (0 for deletions)
+     * @param linesRemoved number of lines removed (0 for creations)
+     */
+    protected void fireFileChanged(String filePath, String changeType, int linesAdded, int linesRemoved) {
+        ToolContext ctx = context;
+        Object listener = ctx != null ? ctx.fileChangeListener() : null;
+        if (listener == null) {
+            return;
+        }
+        try {
+            String agentRole = CURRENT_AGENT_ROLE.get();
+            if (agentRole == null) {
+                agentRole = UNKNOWN_AGENT;
+            }
+            var event = new net.agentensemble.callback.FileChangedEvent(
+                    agentRole, filePath, changeType, linesAdded, linesRemoved, java.time.Instant.now());
+            var method =
+                    listener.getClass().getMethod("onFileChanged", net.agentensemble.callback.FileChangedEvent.class);
+            method.invoke(listener, event);
+        } catch (Exception e) {
+            if (log().isDebugEnabled()) {
+                log().debug("Could not fire file change event: {}", e.getMessage());
+            }
+        }
+    }
+
+    // ========================
     // Framework injection -- package-private
     // ========================
 

@@ -27,6 +27,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *   <li>{@link HeartbeatMessage} -- sent every 15 seconds to keep connections alive</li>
  *   <li>{@link PongMessage} -- sent in response to a client {@link PingMessage}</li>
  *   <li>{@link TokenMessage} -- sent for each token during streaming final response generation</li>
+ *   <li>{@link FileChangedMessage} -- sent when a coding tool modifies a file</li>
+ *   <li>{@link MetricsSnapshotMessage} -- sent with cumulative agent metrics after each LLM iteration</li>
  * </ul>
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.PROPERTY)
@@ -55,6 +57,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = CapabilityResponseMessage.class, name = "capability_response"),
     @JsonSubTypes.Type(value = CapacityUpdateMessage.class, name = "capacity_update"),
     @JsonSubTypes.Type(value = ProfileAppliedMessage.class, name = "profile_applied"),
+    @JsonSubTypes.Type(value = LlmIterationStartedMessage.class, name = "llm_iteration_started"),
+    @JsonSubTypes.Type(value = LlmIterationCompletedMessage.class, name = "llm_iteration_completed"),
+    @JsonSubTypes.Type(value = FileChangedMessage.class, name = "file_changed"),
+    @JsonSubTypes.Type(value = MetricsSnapshotMessage.class, name = "metrics_snapshot"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -80,4 +86,8 @@ public sealed interface ServerMessage
                 DirectiveActiveMessage,
                 CapabilityResponseMessage,
                 CapacityUpdateMessage,
-                ProfileAppliedMessage {}
+                ProfileAppliedMessage,
+                LlmIterationStartedMessage,
+                LlmIterationCompletedMessage,
+                FileChangedMessage,
+                MetricsSnapshotMessage {}

@@ -72,6 +72,9 @@ class WebSocketServer {
     /** Action to trigger ensemble draining (for lifecycle/drain endpoint). Null if not configured. */
     private volatile Runnable drainAction;
 
+    /** Optional workspace root path for file browsing endpoints. Null if not configured. */
+    private volatile java.nio.file.Path workspacePath;
+
     WebSocketServer(
             ConnectionManager connectionManager,
             MessageSerializer serializer,
@@ -195,6 +198,52 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Drain not available (ensemble not in long-running mode)"));
                 }
             });
+
+            config.routes.get("/api/workspace/files", ctx -> {
+                java.nio.file.Path wsPath = workspacePath;
+                if (wsPath == null) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Workspace not configured"));
+                    return;
+                }
+                String relativePath = ctx.queryParam("path");
+                if (relativePath == null) {
+                    relativePath = "";
+                }
+
+                java.nio.file.Path dir = wsPath.resolve(relativePath).normalize();
+                if (!dir.startsWith(wsPath)) {
+                    ctx.status(403);
+                    ctx.json(Map.of("error", "Path traversal denied"));
+                    return;
+                }
+                if (!java.nio.file.Files.isDirectory(dir)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "Not a directory"));
+                    return;
+                }
+
+                java.util.List<Map<String, Object>> entries = new java.util.ArrayList<>();
+                try (var stream = java.nio.file.Files.list(dir)) {
+                    stream.forEach(p -> {
+                        Map<String, Object> entry = new java.util.HashMap<>();
+                        entry.put("name", p.getFileName().toString());
+                        entry.put("type", java.nio.file.Files.isDirectory(p) ? "directory" : "file");
+                        try {
+                            entry.put("size", java.nio.file.Files.size(p));
+                            entry.put(
+                                    "lastModified",
+                                    java.nio.file.Files.getLastModifiedTime(p)
+                                            .toInstant()
+                                            .toString());
+                        } catch (java.io.IOException ignored) {
+                            // Skip metadata if unavailable
+                        }
+                        entries.add(entry);
+                    });
+                }
+                ctx.json(entries);
+            });
         });
 
         app.start(host, port);
@@ -295,6 +344,15 @@ class WebSocketServer {
      */
     void setDrainAction(Runnable action) {
         this.drainAction = action;
+    }
+
+    /**
+     * Sets the workspace root path for the {@code GET /api/workspace/files} endpoint.
+     *
+     * @param path the workspace root directory; may be null to disable the endpoint
+     */
+    void setWorkspacePath(java.nio.file.Path path) {
+        this.workspacePath = path;
     }
 
     // ========================

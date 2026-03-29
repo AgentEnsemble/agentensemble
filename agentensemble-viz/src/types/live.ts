@@ -154,6 +154,60 @@ export interface LiveReviewRequest {
 }
 
 // ========================
+// Live conversation state
+// ========================
+
+/** A single message in a live agent conversation. */
+export interface LiveConversationMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  toolCalls?: Array<{ name: string; arguments: string }>;
+  toolName?: string;
+  /** Client-side epoch ms when this message was received. */
+  timestamp: number;
+}
+
+/** Live conversation state for a single agent+task execution. */
+export interface LiveConversation {
+  agentRole: string;
+  taskDescription: string;
+  iterationIndex: number;
+  messages: LiveConversationMessage[];
+  /** True between iteration_started and iteration_completed (agent is "thinking"). */
+  isThinking: boolean;
+}
+
+// ========================
+// Live file change state
+// ========================
+
+/** A file change event from a coding tool. */
+export interface LiveFileChange {
+  filePath: string;
+  changeType: 'CREATED' | 'MODIFIED' | 'DELETED';
+  linesAdded: number;
+  linesRemoved: number;
+  agentRole: string;
+  /** Client-side epoch ms when this event was received. */
+  timestamp: number;
+}
+
+// ========================
+// Live metrics state
+// ========================
+
+/** A snapshot of metrics for a single agent at a point in time. */
+export interface LiveMetricsSnapshot {
+  agentRole: string;
+  inputTokens: number;
+  outputTokens: number;
+  llmLatencyMs: number;
+  iterationCount: number;
+  /** Client-side epoch ms when this snapshot was received. */
+  timestamp: number;
+}
+
+// ========================
 // Live state
 // ========================
 
@@ -192,6 +246,15 @@ export interface LiveState {
    * timeline sections above the active run.
    */
   completedRuns: CompletedRun[];
+  /**
+   * Live conversations keyed by "agentRole:taskDescription".
+   * Built from llm_iteration_started / llm_iteration_completed messages.
+   */
+  conversations: Record<string, LiveConversation>;
+  /** File change events from coding tools. */
+  fileChanges: LiveFileChange[];
+  /** Metrics history snapshots, capped at 1000 entries. */
+  metricsHistory: LiveMetricsSnapshot[];
 }
 
 // ========================
@@ -386,6 +449,73 @@ export interface TokenMessage {
   sentAt: string;
 }
 
+// ========================
+// Conversation streaming messages
+// ========================
+
+/** DTO for a single message in the LLM conversation buffer. */
+export interface MessageDto {
+  role: string;
+  content: string | null;
+  toolCalls: Array<{ name: string; arguments: string }> | null;
+  toolName: string | null;
+}
+
+/** Sent at the start of each ReAct iteration (before LLM call). */
+export interface LlmIterationStartedMessage {
+  type: 'llm_iteration_started';
+  agentRole: string;
+  taskDescription: string;
+  iterationIndex: number;
+  messages: MessageDto[];
+}
+
+/** Sent when the LLM responds in a ReAct iteration. */
+export interface LlmIterationCompletedMessage {
+  type: 'llm_iteration_completed';
+  agentRole: string;
+  taskDescription: string;
+  iterationIndex: number;
+  responseType: 'TOOL_CALLS' | 'FINAL_ANSWER';
+  responseText: string | null;
+  toolRequests: Array<{ name: string; arguments: string }> | null;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}
+
+// ========================
+// File change messages
+// ========================
+
+/** Sent when a coding tool modifies a file. */
+export interface FileChangedMessage {
+  type: 'file_changed';
+  agentRole: string;
+  filePath: string;
+  changeType: 'CREATED' | 'MODIFIED' | 'DELETED';
+  linesAdded: number;
+  linesRemoved: number;
+  timestamp: string;
+}
+
+// ========================
+// Metrics messages
+// ========================
+
+/** Sent with cumulative metrics after each LLM iteration. */
+export interface MetricsSnapshotMessage {
+  type: 'metrics_snapshot';
+  agentRole: string;
+  taskIndex: number;
+  inputTokens: number;
+  outputTokens: number;
+  llmLatencyMs: number;
+  toolExecutionTimeMs: number;
+  iterationCount: number;
+  costEstimate: string | null;
+}
+
 /** All messages the server can send to the client. */
 export type ServerMessage =
   | HelloMessage
@@ -402,7 +532,11 @@ export type ServerMessage =
   | EnsembleCompletedMessage
   | HeartbeatMessage
   | PongMessage
-  | TokenMessage;
+  | TokenMessage
+  | LlmIterationStartedMessage
+  | LlmIterationCompletedMessage
+  | FileChangedMessage
+  | MetricsSnapshotMessage;
 
 // ========================
 // Client -> Server wire messages
