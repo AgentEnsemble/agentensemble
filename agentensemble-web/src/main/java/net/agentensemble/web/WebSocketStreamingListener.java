@@ -157,9 +157,20 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     // LLM iteration lifecycle
     // ========================
 
+    /** Maximum number of messages to include in the wire buffer sent to clients. */
+    private static final int MAX_WIRE_MESSAGES = 20;
+
     @Override
     public void onLlmIterationStarted(LlmIterationStartedEvent event) {
-        List<LlmIterationStartedMessage.MessageDto> messageDtos = event.messages().stream()
+        List<net.agentensemble.trace.CapturedMessage> allMessages = event.messages();
+        int totalCount = allMessages.size();
+
+        // Cap the wire buffer to the last MAX_WIRE_MESSAGES to bound payload size.
+        List<net.agentensemble.trace.CapturedMessage> capped = totalCount > MAX_WIRE_MESSAGES
+                ? allMessages.subList(totalCount - MAX_WIRE_MESSAGES, totalCount)
+                : allMessages;
+
+        List<LlmIterationStartedMessage.MessageDto> messageDtos = capped.stream()
                 .map(m -> new LlmIterationStartedMessage.MessageDto(
                         m.getRole(),
                         m.getContent(),
@@ -173,7 +184,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 .toList();
 
         broadcastEphemeral(new LlmIterationStartedMessage(
-                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos));
+                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos, totalCount));
     }
 
     @Override

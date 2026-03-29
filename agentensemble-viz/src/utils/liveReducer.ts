@@ -371,34 +371,69 @@ function conversationKey(agentRole: string, taskDescription: string): string {
  * Convert wire MessageDto objects to LiveConversationMessage objects.
  * Performs smart deduplication: only returns messages that are new compared
  * to the existing conversation's message count.
+ *
+ * When totalMessageCount is present and existingCount exceeds wireMessages.length,
+ * the server is sending a capped sliding-window buffer. In that case, return null
+ * to signal that the caller should replace (not append) the stored messages.
  */
 function convertMessages(
   wireMessages: LlmIterationStartedMessage['messages'],
   existingCount: number,
-): LiveConversationMessage[] {
+  totalMessageCount: number | undefined,
+): { messages: LiveConversationMessage[]; replace: boolean } {
   const now = Date.now();
-  // The wire messages are the full buffer; skip messages we already have
+
+  // Capped buffer detection: when the server provides totalMessageCount and the
+  // client already has more messages than the wire buffer contains, the server
+  // has evicted older messages. Treat the wire buffer as a sliding window and
+  // replace the stored conversation entirely.
+  if (totalMessageCount !== undefined && existingCount > wireMessages.length) {
+    const replaced = wireMessages.map((m) => ({
+      role: m.role as LiveConversationMessage['role'],
+      content: m.content,
+      toolCalls: m.toolCalls ?? undefined,
+      toolName: m.toolName ?? undefined,
+      timestamp: now,
+    }));
+    return { messages: replaced, replace: true };
+  }
+
+  // Normal path: the wire messages are the full (or growing) buffer; skip
+  // messages we already have and return only new ones for appending.
   const newMessages = wireMessages.slice(existingCount);
-  return newMessages.map((m) => ({
+  const converted = newMessages.map((m) => ({
     role: m.role as LiveConversationMessage['role'],
     content: m.content,
     toolCalls: m.toolCalls ?? undefined,
     toolName: m.toolName ?? undefined,
     timestamp: now,
   }));
+  return { messages: converted, replace: false };
 }
 
 function applyLlmIterationStarted(state: LiveState, msg: LlmIterationStartedMessage): LiveState {
   const key = conversationKey(msg.agentRole, msg.taskDescription);
   const existing = state.conversations[key];
   const existingCount = existing?.messages.length ?? 0;
-  const newMessages = convertMessages(msg.messages, existingCount);
+  const { messages: newMessages, replace } = convertMessages(
+    msg.messages,
+    existingCount,
+    msg.totalMessageCount,
+  );
+
+  let messages: LiveConversationMessage[];
+  if (replace) {
+    // Capped buffer: the server evicted older messages — replace entirely
+    messages = newMessages;
+  } else {
+    messages = existing ? [...existing.messages, ...newMessages] : newMessages;
+  }
 
   const conversation: LiveConversation = {
     agentRole: msg.agentRole,
     taskDescription: msg.taskDescription,
     iterationIndex: msg.iterationIndex,
-    messages: existing ? [...existing.messages, ...newMessages] : newMessages,
+    messages,
     isThinking: true,
   };
 

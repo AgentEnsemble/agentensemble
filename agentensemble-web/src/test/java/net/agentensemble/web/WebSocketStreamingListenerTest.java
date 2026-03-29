@@ -524,6 +524,44 @@ class WebSocketStreamingListenerTest {
     }
 
     @Test
+    void onLlmIterationStarted_includesTotalMessageCount() {
+        CapturedMessage msg1 = CapturedMessage.builder()
+                .role("system")
+                .content("You are helpful")
+                .build();
+        CapturedMessage msg2 =
+                CapturedMessage.builder().role("user").content("Hello").build();
+
+        LlmIterationStartedEvent event = new LlmIterationStartedEvent("Agent", "Task", 0, List.of(msg1, msg2));
+        listener.onLlmIterationStarted(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"totalMessageCount\":2");
+    }
+
+    @Test
+    void onLlmIterationStarted_capsMessagesTo20() {
+        // Build a message list with 25 messages
+        List<CapturedMessage> messages = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            messages.add(
+                    CapturedMessage.builder().role("user").content("msg-" + i).build());
+        }
+
+        LlmIterationStartedEvent event = new LlmIterationStartedEvent("Agent", "Task", 5, messages);
+        listener.onLlmIterationStarted(event);
+
+        String json = session.sentMessages().get(0);
+        // totalMessageCount should be 25 (the full count)
+        assertThat(json).contains("\"totalMessageCount\":25");
+        // Only the last 20 messages should be in the wire payload (msg-5 through msg-24)
+        assertThat(json).doesNotContain("msg-0");
+        assertThat(json).doesNotContain("msg-4");
+        assertThat(json).contains("msg-5");
+        assertThat(json).contains("msg-24");
+    }
+
+    @Test
     void onLlmIterationCompleted_broadcastsLlmIterationCompletedMessage() {
         LlmIterationCompletedEvent.ToolCallRequest toolReq =
                 new LlmIterationCompletedEvent.ToolCallRequest("calculator", "{\"expr\":\"2+2\"}");

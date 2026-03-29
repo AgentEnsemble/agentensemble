@@ -860,7 +860,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -882,7 +882,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -903,7 +903,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -942,7 +942,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -961,7 +961,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -980,7 +980,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -1001,7 +1001,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -1017,15 +1017,15 @@ class WebSocketServerTest {
 
     @Test
     void workspaceFile_tooLarge(@TempDir Path tempDir) throws Exception {
-        // Create a file larger than 100KB
-        byte[] largeContent = new byte[101_000];
+        // Create a file larger than 1MB
+        byte[] largeContent = new byte[1_048_577];
         java.util.Arrays.fill(largeContent, (byte) 'a');
         Files.write(tempDir.resolve("large.txt"), largeContent);
 
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -1044,7 +1044,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -1066,7 +1066,7 @@ class WebSocketServerTest {
         realScheduler = Executors.newSingleThreadScheduledExecutor();
         server = new WebSocketServer(connectionManager, serializer, realScheduler);
         server.setWorkspacePath(tempDir);
-        server.start(0, "0.0.0.0");
+        server.start(0, "localhost");
         int port = server.port();
 
         HttpClient client = HttpClient.newHttpClient();
@@ -1079,5 +1079,47 @@ class WebSocketServerTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains("App.java");
         assertThat(response.body()).contains("Test.java");
+    }
+
+    @Test
+    void workspaceFiles_returns403WhenBoundToNonLocalHost(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("secret.txt"), "sensitive data");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/files"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("Workspace endpoints restricted to localhost");
+    }
+
+    @Test
+    void workspaceFile_returns403WhenBoundToNonLocalHost(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("secret.txt"), "sensitive data");
+
+        realScheduler = Executors.newSingleThreadScheduledExecutor();
+        server = new WebSocketServer(connectionManager, serializer, realScheduler);
+        server.setWorkspacePath(tempDir);
+        server.start(0, "0.0.0.0");
+        int port = server.port();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/workspace/file?path=secret.txt"))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("Workspace endpoints restricted to localhost");
     }
 }

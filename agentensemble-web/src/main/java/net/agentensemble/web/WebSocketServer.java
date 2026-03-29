@@ -206,7 +206,7 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Workspace not configured"));
                     return;
                 }
-                if (isLocalBinding && !isLocalClient(ctx)) {
+                if (!isLocalBinding || !isLocalClient(ctx)) {
                     ctx.status(403);
                     ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
                     return;
@@ -267,7 +267,7 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Workspace not configured"));
                     return;
                 }
-                if (isLocalBinding && !isLocalClient(ctx)) {
+                if (!isLocalBinding || !isLocalClient(ctx)) {
                     ctx.status(403);
                     ctx.json(Map.of("error", "Workspace endpoints restricted to localhost"));
                     return;
@@ -299,11 +299,11 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Not a file"));
                     return;
                 }
-                // Limit to 100KB to prevent serving large binaries
+                // Limit to 1MB to prevent serving large binaries
                 long size = java.nio.file.Files.size(fileReal);
-                if (size > 100_000) {
+                if (size > 1_048_576) {
                     ctx.status(413);
-                    ctx.json(Map.of("error", "File too large (max 100KB)"));
+                    ctx.json(Map.of("error", "File too large (max 1MB)"));
                     return;
                 }
                 try {

@@ -9,7 +9,11 @@ import java.util.List;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record LlmIterationStartedMessage(
-        String agentRole, String taskDescription, int iterationIndex, List<MessageDto> messages)
+        String agentRole,
+        String taskDescription,
+        int iterationIndex,
+        List<MessageDto> messages,
+        Integer totalMessageCount)
         implements ServerMessage {
 
     /** Serializable DTO for a single chat message in the conversation. */

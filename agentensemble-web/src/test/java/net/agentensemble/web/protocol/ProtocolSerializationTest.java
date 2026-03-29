@@ -591,7 +591,7 @@ class ProtocolSerializationTest {
                 new LlmIterationStartedMessage.MessageDto("tool", "search results", null, "web_search");
 
         LlmIterationStartedMessage message =
-                new LlmIterationStartedMessage("Researcher", "Find papers", 0, List.of(msg1, msg2, msg3));
+                new LlmIterationStartedMessage("Researcher", "Find papers", 0, List.of(msg1, msg2, msg3), 3);
         String json = serializer.toJson(message);
 
         assertThat(typeOf(json)).isEqualTo("llm_iteration_started");
@@ -605,6 +605,7 @@ class ProtocolSerializationTest {
         assertThat(rt.taskDescription()).isEqualTo("Find papers");
         assertThat(rt.iterationIndex()).isEqualTo(0);
         assertThat(rt.messages()).hasSize(3);
+        assertThat(rt.totalMessageCount()).isEqualTo(3);
         assertThat(rt.messages().get(0).role()).isEqualTo("system");
         assertThat(rt.messages().get(1).toolCalls()).hasSize(1);
         assertThat(rt.messages().get(1).toolCalls().get(0).name()).isEqualTo("web_search");
@@ -613,7 +614,7 @@ class ProtocolSerializationTest {
 
     @Test
     void llmIterationStartedMessage_emptyMessages_roundTrip() throws Exception {
-        LlmIterationStartedMessage message = new LlmIterationStartedMessage("Agent", "Task", 3, List.of());
+        LlmIterationStartedMessage message = new LlmIterationStartedMessage("Agent", "Task", 3, List.of(), 0);
         String json = serializer.toJson(message);
 
         assertThat(typeOf(json)).isEqualTo("llm_iteration_started");

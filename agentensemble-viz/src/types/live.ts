@@ -468,6 +468,13 @@ export interface LlmIterationStartedMessage {
   taskDescription: string;
   iterationIndex: number;
   messages: MessageDto[];
+  /**
+   * Total number of messages produced so far for this conversation,
+   * including messages that may have been evicted from the capped wire buffer.
+   * Present when the server sends a sliding-window buffer; absent for
+   * backwards compatibility with older servers that send the full history.
+   */
+  totalMessageCount?: number;
 }
 
 /** Sent when the LLM responds in a ReAct iteration. */
