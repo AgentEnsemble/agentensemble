@@ -1,6 +1,7 @@
 package net.agentensemble.web.protocol;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -14,9 +15,10 @@ import java.util.Objects;
  * @param name        unique capability name within the ensemble
  * @param description human-readable description
  * @param type        either {@code "TASK"} or {@code "TOOL"}
+ * @param tags        optional classification tags for discovery filtering
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record SharedCapabilityInfo(String name, String description, String type) {
+public record SharedCapabilityInfo(String name, String description, String type, List<String> tags) {
 
     /**
      * Compact constructor with validation.
@@ -29,5 +31,15 @@ public record SharedCapabilityInfo(String name, String description, String type)
         if (description == null) {
             description = "";
         }
+        if (tags == null) {
+            tags = List.of();
+        }
+    }
+
+    /**
+     * Backward-compatible constructor without tags.
+     */
+    public SharedCapabilityInfo(String name, String description, String type) {
+        this(name, description, type, null);
     }
 }

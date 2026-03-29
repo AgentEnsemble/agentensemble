@@ -52,6 +52,9 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = ToolResponseMessage.class, name = "tool_response"),
     @JsonSubTypes.Type(value = DirectiveAckMessage.class, name = "directive_ack"),
     @JsonSubTypes.Type(value = DirectiveActiveMessage.class, name = "directive_active"),
+    @JsonSubTypes.Type(value = CapabilityResponseMessage.class, name = "capability_response"),
+    @JsonSubTypes.Type(value = CapacityUpdateMessage.class, name = "capacity_update"),
+    @JsonSubTypes.Type(value = ProfileAppliedMessage.class, name = "profile_applied"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -74,4 +77,7 @@ public sealed interface ServerMessage
                 TaskResponseMessage,
                 ToolResponseMessage,
                 DirectiveAckMessage,
-                DirectiveActiveMessage {}
+                DirectiveActiveMessage,
+                CapabilityResponseMessage,
+                CapacityUpdateMessage,
+                ProfileAppliedMessage {}

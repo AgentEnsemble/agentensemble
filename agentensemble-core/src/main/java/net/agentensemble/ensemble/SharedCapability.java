@@ -1,5 +1,6 @@
 package net.agentensemble.ensemble;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -14,17 +15,18 @@ import java.util.Objects;
  * @param name        unique name within the ensemble (never null or blank)
  * @param description human-readable description of the capability
  * @param type        whether this is a TASK or TOOL capability
+ * @param tags        optional classification tags for discovery filtering (never null)
  *
  * @see SharedCapabilityType
  * @see net.agentensemble.Ensemble.EnsembleBuilder#shareTask(String, net.agentensemble.Task)
  * @see net.agentensemble.Ensemble.EnsembleBuilder#shareTool(String, net.agentensemble.tool.AgentTool)
  */
-public record SharedCapability(String name, String description, SharedCapabilityType type) {
+public record SharedCapability(String name, String description, SharedCapabilityType type, List<String> tags) {
 
     /**
      * Compact constructor with validation.
      *
-     * @throws NullPointerException     if any parameter is null
+     * @throws NullPointerException     if name, description, or type is null
      * @throws IllegalArgumentException if name is blank
      */
     public SharedCapability {
@@ -34,5 +36,15 @@ public record SharedCapability(String name, String description, SharedCapability
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
+        if (tags == null) {
+            tags = List.of();
+        }
+    }
+
+    /**
+     * Backward-compatible constructor without tags.
+     */
+    public SharedCapability(String name, String description, SharedCapabilityType type) {
+        this(name, description, type, List.of());
     }
 }
