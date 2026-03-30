@@ -13,6 +13,7 @@ import net.agentensemble.callback.LlmIterationCompletedEvent;
 import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskInputEvent;
 import net.agentensemble.callback.TaskReflectedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
@@ -1077,6 +1078,26 @@ public final class ExecutionContext {
      *
      * @param event the file changed event to fire; must not be null
      */
+    /**
+     * Fire a {@link TaskInputEvent} to all registered listeners.
+     *
+     * <p>Called after task context is assembled but before the first LLM call.
+     * Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireTaskInput(TaskInputEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onTaskInput(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onTaskInput: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
     public void fireFileChanged(FileChangedEvent event) {
         for (EnsembleListener listener : listeners) {
             try {

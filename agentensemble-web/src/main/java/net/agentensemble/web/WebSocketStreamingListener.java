@@ -13,6 +13,7 @@ import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
+import net.agentensemble.callback.TaskInputEvent;
 import net.agentensemble.callback.ToolCallEvent;
 import net.agentensemble.web.protocol.DelegationCompletedMessage;
 import net.agentensemble.web.protocol.DelegationFailedMessage;
@@ -23,6 +24,7 @@ import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.TaskCompletedMessage;
 import net.agentensemble.web.protocol.TaskFailedMessage;
+import net.agentensemble.web.protocol.TaskInputMessage;
 import net.agentensemble.web.protocol.TaskStartedMessage;
 import net.agentensemble.web.protocol.TokenMessage;
 import net.agentensemble.web.protocol.ToolCalledMessage;
@@ -109,6 +111,24 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 event.toolArguments(),
                 event.toolResult(),
                 event.structuredResult()));
+    }
+
+    // ========================
+    // Task input
+    // ========================
+
+    @Override
+    public void onTaskInput(TaskInputEvent event) {
+        broadcast(new TaskInputMessage(
+                event.taskIndex(),
+                event.taskDescription(),
+                event.expectedOutput(),
+                event.agentRole(),
+                event.agentGoal(),
+                event.agentBackground(),
+                event.toolNames(),
+                event.assembledContext(),
+                Instant.now()));
     }
 
     // ========================
