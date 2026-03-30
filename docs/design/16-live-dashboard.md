@@ -859,3 +859,22 @@ Ensemble.builder()
 The `ReviewHandler.web(URI)` factory is retained for backward compatibility but its behavior
 changes: it now constructs a `WebReviewHandler` connected to the given server URI rather than
 throwing. The `WebDashboard` API is the recommended approach.
+
+---
+
+## 13. Extensions: Tool & Agent I/O Observability
+
+The wire protocol and viz live mode defined in this document are extended by
+[Design Doc 27 -- Viz Observability](27-viz-observability.md), which adds:
+
+- **IO-001** ([#285](https://github.com/AgentEnsemble/agentensemble/issues/285)):
+  Enrich `ToolCallEvent` with `taskIndex` and `outcome` so `ToolCalledMessage` carries
+  real values instead of hardcoded defaults
+- **IO-002** ([#286](https://github.com/AgentEnsemble/agentensemble/issues/286)):
+  New `TaskInputEvent` / `task_input` wire message capturing the assembled agent context
+- **IO-003** ([#287](https://github.com/AgentEnsemble/agentensemble/issues/287)):
+  Persist LLM iteration data in `hello` late-join snapshots
+- **IO-004** ([#288](https://github.com/AgentEnsemble/agentensemble/issues/288)):
+  Viz tool call detail panel with formatted I/O
+- **IO-005** ([#289](https://github.com/AgentEnsemble/agentensemble/issues/289)):
+  Viz agent conversation thread view
