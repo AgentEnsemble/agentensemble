@@ -41,7 +41,8 @@ class EnsembleListenerTest {
     @Test
     void defaultOnToolCall_doesNotThrow() {
         EnsembleListener listener = new EnsembleListener() {};
-        listener.onToolCall(new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(200), 0, "SUCCESS"));
+        listener.onToolCall(
+                new ToolCallEvent("search", "{}", "result", null, "Researcher", Duration.ofMillis(200), 0, "SUCCESS"));
     }
 
     // ========================
@@ -105,8 +106,8 @@ class EnsembleListenerTest {
     @Test
     void toolCallEvent_fieldsAccessible() {
         Duration duration = Duration.ofMillis(500);
-        ToolCallEvent event =
-                new ToolCallEvent("web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", duration, 0, "SUCCESS");
+        ToolCallEvent event = new ToolCallEvent(
+                "web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", duration, 0, "SUCCESS");
         assertThat(event.toolName()).isEqualTo("web_search");
         assertThat(event.toolArguments()).isEqualTo("{\"query\":\"AI\"}");
         assertThat(event.toolResult()).isEqualTo("results...");

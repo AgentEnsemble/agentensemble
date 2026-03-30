@@ -211,7 +211,14 @@ class WebSocketStreamingListenerTest {
     @Test
     void onToolCall_broadcastsToolCalledMessage() {
         ToolCallEvent event = new ToolCallEvent(
-                "web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", Duration.ofMillis(820), 1, "SUCCESS");
+                "web_search",
+                "{\"query\":\"AI\"}",
+                "results...",
+                null,
+                "Researcher",
+                Duration.ofMillis(820),
+                1,
+                "SUCCESS");
         listener.onToolCall(event);
 
         assertThat(session.sentMessages()).hasSize(1);
@@ -224,7 +231,8 @@ class WebSocketStreamingListenerTest {
     @Test
     void onToolCall_outcomeIsPopulatedFromEnrichedToolCallEvent() {
         // ToolCallEvent now carries taskIndex and outcome from AgentExecutor.
-        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5), 2, "SUCCESS");
+        ToolCallEvent event =
+                new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5), 2, "SUCCESS");
         listener.onToolCall(event);
 
         String json = session.sentMessages().get(0);

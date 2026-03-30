@@ -42,7 +42,8 @@ class AuditingListenerTest {
 
         l.onTaskStart(new TaskStartEvent("desc", "researcher", 1, 1));
         l.onTaskComplete(new TaskCompleteEvent("desc", "researcher", null, Duration.ofSeconds(1), 1, 1));
-        l.onToolCall(new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
+        l.onToolCall(
+                new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
         l.onDelegationStarted(new DelegationStartedEvent("d1", "manager", "worker", "subtask", 1, null));
         l.onDelegationCompleted(new DelegationCompletedEvent("d1", "manager", "worker", null, Duration.ofSeconds(2)));
         l.onDelegationFailed(
@@ -96,7 +97,8 @@ class AuditingListenerTest {
 
         l.onTaskStart(new TaskStartEvent("desc", "researcher", 1, 1));
         l.onTaskComplete(new TaskCompleteEvent("desc", "researcher", null, Duration.ofSeconds(1), 1, 1));
-        l.onToolCall(new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
+        l.onToolCall(
+                new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
 
         assertThat(sink.records).isEmpty();
     }
@@ -145,7 +147,8 @@ class AuditingListenerTest {
         CapturingSink sink = new CapturingSink();
         AuditingListener l = listener(AuditLevel.STANDARD, sink);
 
-        l.onToolCall(new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
+        l.onToolCall(
+                new ToolCallEvent("search", "{}", "result", null, "researcher", Duration.ofMillis(100), 0, "SUCCESS"));
 
         assertThat(sink.records).isEmpty();
     }
@@ -284,7 +287,8 @@ class AuditingListenerTest {
         CapturingSink sink = new CapturingSink();
         AuditingListener l = listener(AuditLevel.FULL, sink);
 
-        l.onToolCall(new ToolCallEvent("search_tool", "{}", "result", null, "researcher", Duration.ofMillis(42), 0, "SUCCESS"));
+        l.onToolCall(new ToolCallEvent(
+                "search_tool", "{}", "result", null, "researcher", Duration.ofMillis(42), 0, "SUCCESS"));
 
         AuditRecord record = sink.records.get(0);
         assertThat(record.ensembleId()).isEqualTo("test-ensemble");
