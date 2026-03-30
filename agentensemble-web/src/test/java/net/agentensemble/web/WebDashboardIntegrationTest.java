@@ -148,7 +148,7 @@ class WebDashboardIntegrationTest {
         net.agentensemble.callback.EnsembleListener listener = dashboard.streamingListener();
         listener.onTaskStart(new TaskStartEvent("Research AI", "Researcher", 1, 2));
         listener.onToolCall(
-                new ToolCallEvent("web_search", "{}", "results", null, "Researcher", Duration.ofMillis(500)));
+                new ToolCallEvent("web_search", "{}", "results", null, "Researcher", Duration.ofMillis(500), 0, "SUCCESS"));
         listener.onTaskComplete(new TaskCompleteEvent("Research AI", "Researcher", null, Duration.ofSeconds(3), 1, 2));
 
         listener.onTaskStart(new TaskStartEvent("Write report", "Writer", 2, 2));

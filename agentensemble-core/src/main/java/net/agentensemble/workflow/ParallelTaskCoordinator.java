@@ -186,7 +186,8 @@ class ParallelTaskCoordinator {
                 if (task.getHandler() != null) {
                     output = deterministicExecutor.execute(task, contextOutputs, executionContext);
                 } else {
-                    output = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                    output = agentExecutor.execute(
+                            task, contextOutputs, executionContext.withTaskIndex(taskIndex), delegationContext);
                 }
 
                 // === After-execution review gate ===

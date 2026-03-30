@@ -211,7 +211,7 @@ class WebSocketStreamingListenerTest {
     @Test
     void onToolCall_broadcastsToolCalledMessage() {
         ToolCallEvent event = new ToolCallEvent(
-                "web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", Duration.ofMillis(820));
+                "web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", Duration.ofMillis(820), 1, "SUCCESS");
         listener.onToolCall(event);
 
         assertThat(session.sentMessages()).hasSize(1);
@@ -222,14 +222,14 @@ class WebSocketStreamingListenerTest {
     }
 
     @Test
-    void onToolCall_outcomeIsNullBecauseToolCallEventHasNoOutcomeField() {
-        // ToolCallEvent does not carry a success/failure signal, so the protocol message
-        // uses null for outcome to avoid misleading "SUCCESS" when the tool may have failed.
-        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5));
+    void onToolCall_outcomeIsPopulatedFromEnrichedToolCallEvent() {
+        // ToolCallEvent now carries taskIndex and outcome from AgentExecutor.
+        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5), 2, "SUCCESS");
         listener.onToolCall(event);
 
         String json = session.sentMessages().get(0);
-        assertThat(json).contains("\"outcome\":null");
+        assertThat(json).contains("\"outcome\":\"SUCCESS\"");
+        assertThat(json).contains("\"taskIndex\":2");
     }
 
     @Test
@@ -391,7 +391,7 @@ class WebSocketStreamingListenerTest {
         WebSocketStreamingListener faultyListener =
                 new WebSocketStreamingListener(connectionManager, failingSerializer);
 
-        ToolCallEvent event = new ToolCallEvent("calc", "{}", "42", null, "Agent", Duration.ofMillis(5));
+        ToolCallEvent event = new ToolCallEvent("calc", "{}", "42", null, "Agent", Duration.ofMillis(5), 0, "SUCCESS");
         faultyListener.onToolCall(event);
 
         assertThat(session.sentMessages()).isEmpty();

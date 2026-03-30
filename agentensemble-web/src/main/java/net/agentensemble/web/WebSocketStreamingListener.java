@@ -102,10 +102,10 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     public void onToolCall(ToolCallEvent event) {
         broadcast(new ToolCalledMessage(
                 event.agentRole(),
-                0, // taskIndex is not surfaced by ToolCallEvent
+                event.taskIndex(),
                 event.toolName(),
                 event.duration().toMillis(),
-                null, // outcome is not surfaced by ToolCallEvent; null means unknown
+                event.outcome(),
                 event.toolArguments(),
                 event.toolResult(),
                 event.structuredResult()));

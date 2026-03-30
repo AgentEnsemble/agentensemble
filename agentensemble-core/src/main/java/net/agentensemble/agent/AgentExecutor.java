@@ -758,13 +758,16 @@ public class AgentExecutor {
         accumulator.addToolCallToCurrentIteration(traceBuilder.build());
 
         logToolCall(agentRole, toolRequest, toolResultText, toolDuration);
+        String toolOutcome = classifyOutcomeString(toolResult);
         executionContext.fireToolCall(new ToolCallEvent(
                 toolRequest.name(),
                 toolRequest.arguments(),
                 toolResultText,
                 toolResult != null ? toolResult.getStructuredOutput() : null,
                 agentRole,
-                toolDuration));
+                toolDuration,
+                executionContext.currentTaskIndex(),
+                toolOutcome));
 
         ToolExecutionResultMessage resultMsg =
                 new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResultText);
@@ -915,13 +918,16 @@ public class AgentExecutor {
 
                 accumulator.addToolCallToCurrentIteration(traceBuilder.build());
 
+                String parallelOutcome = classifyOutcomeString(te.result());
                 executionContext.fireToolCall(new ToolCallEvent(
                         te.request().name(),
                         te.request().arguments(),
                         toolResultText,
                         te.result() != null ? te.result().getStructuredOutput() : null,
                         agentRole,
-                        te.duration()));
+                        te.duration(),
+                        executionContext.currentTaskIndex(),
+                        parallelOutcome));
                 messages.add(new ToolExecutionResultMessage(
                         te.request().id(), te.request().name(), toolResultText));
             }
@@ -992,6 +998,19 @@ public class AgentExecutor {
             return ToolCallOutcome.ERROR;
         }
         return result.isSuccess() ? ToolCallOutcome.SUCCESS : ToolCallOutcome.FAILURE;
+    }
+
+    /**
+     * Classify the tool execution outcome as a string for {@link ToolCallEvent#outcome()}.
+     *
+     * @param result the tool result; may be null
+     * @return {@link ToolCallEvent#OUTCOME_SUCCESS} or {@link ToolCallEvent#OUTCOME_FAILURE}
+     */
+    private static String classifyOutcomeString(ToolResult result) {
+        if (result == null || !result.isSuccess()) {
+            return ToolCallEvent.OUTCOME_FAILURE;
+        }
+        return ToolCallEvent.OUTCOME_SUCCESS;
     }
 
     private static String toText(ToolResult result) {

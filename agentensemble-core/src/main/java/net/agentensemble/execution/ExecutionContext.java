@@ -91,6 +91,7 @@ public final class ExecutionContext {
     private final ReflectionStore reflectionStore;
     private final ContextFormatter contextFormatter;
     private final DirectiveStore directiveStore;
+    private final int currentTaskIndex;
 
     private ExecutionContext(
             MemoryContext memoryContext,
@@ -107,6 +108,40 @@ public final class ExecutionContext {
             ReflectionStore reflectionStore,
             ContextFormatter contextFormatter,
             DirectiveStore directiveStore) {
+        this(
+                memoryContext,
+                verbose,
+                listeners,
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel,
+                reflectionStore,
+                contextFormatter,
+                directiveStore,
+                0);
+    }
+
+    private ExecutionContext(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore,
+            ContextFormatter contextFormatter,
+            DirectiveStore directiveStore,
+            int currentTaskIndex) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -122,6 +157,7 @@ public final class ExecutionContext {
         this.contextFormatter =
                 contextFormatter != null ? contextFormatter : ContextFormatters.forFormat(ContextFormat.JSON);
         this.directiveStore = directiveStore;
+        this.currentTaskIndex = currentTaskIndex;
     }
 
     // ========================
@@ -732,6 +768,45 @@ public final class ExecutionContext {
      */
     public DirectiveStore directiveStore() {
         return directiveStore;
+    }
+
+    /**
+     * The 1-based index of the task currently being executed, or {@code 0} when unknown.
+     *
+     * <p>Set by workflow executors via {@link #withTaskIndex(int)} before passing the
+     * context to {@link net.agentensemble.agent.AgentExecutor}. Used to populate
+     * {@link ToolCallEvent#taskIndex()} so tool calls can be correlated to tasks.
+     *
+     * @return the current task index (1-based), or 0 when not set
+     */
+    public int currentTaskIndex() {
+        return currentTaskIndex;
+    }
+
+    /**
+     * Return a copy of this context with the given task index. All other fields are
+     * shared with the original (listeners, executor, metrics, etc. are the same objects).
+     *
+     * @param taskIndex the 1-based task index to set
+     * @return a new ExecutionContext with the updated task index
+     */
+    public ExecutionContext withTaskIndex(int taskIndex) {
+        return new ExecutionContext(
+                this.memoryContext,
+                this.verbose,
+                this.listeners,
+                this.toolExecutor,
+                this.toolMetrics,
+                this.costConfiguration,
+                this.captureMode,
+                this.memoryStore,
+                this.reviewHandler,
+                this.reviewPolicy,
+                this.streamingChatModel,
+                this.reflectionStore,
+                this.contextFormatter,
+                this.directiveStore,
+                taskIndex);
     }
 
     // ========================
