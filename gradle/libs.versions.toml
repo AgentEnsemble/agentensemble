@@ -17,7 +17,7 @@ micrometer       = "1.16.4"
 javalin          = "7.1.0"
 jtoon            = "1.0.9"
 lettuce          = "6.5.5.RELEASE"
-kafka              = "3.9.0"
+kafka              = "4.2.0"
 testcontainers     = "1.21.0"
 opentelemetry      = "1.47.0"
 
