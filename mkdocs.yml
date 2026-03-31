@@ -160,3 +160,4 @@ nav:
     - Task Reflection: design/22-task-reflection.md
     - Typed Tool Inputs: design/23-typed-tool-input.md
     - TOON Context Format: design/25-toon-context-format.md
+    - Viz Observability: design/27-viz-observability.md

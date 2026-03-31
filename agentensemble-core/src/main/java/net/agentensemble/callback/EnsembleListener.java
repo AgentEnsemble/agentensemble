@@ -136,6 +136,16 @@ public interface EnsembleListener {
     default void onTaskReflected(TaskReflectedEvent event) {}
 
     /**
+     * Called after task context is assembled but before the first LLM call.
+     *
+     * <p>Captures the full "agent input" -- everything the agent was given to work with
+     * for a task. Useful for viz dashboards that want to display the assembled context.
+     *
+     * @param event the task input event; never null
+     */
+    default void onTaskInput(TaskInputEvent event) {}
+
+    /**
      * Called for each token received during streaming generation of the final agent response.
      *
      * <p>This method is only invoked when a {@code dev.langchain4j.model.chat.StreamingChatModel}

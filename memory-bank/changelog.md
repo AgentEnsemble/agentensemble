@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] - Viz Observability: Tool & Agent I/O Visibility - 2026-03-30
+
+### Added
+- Design doc `docs/design/27-viz-observability.md` -- full specification for surfacing
+  tool and agent inputs/outputs in the live dashboard
+- Section 13 appended to `docs/design/16-live-dashboard.md` referencing the new design doc
+- `mkdocs.yml` nav updated with new design doc entry
+- 5 GitHub issues created for the implementation work:
+  - #285 IO-001: Enrich `ToolCallEvent` with `taskIndex` and `outcome`
+  - #286 IO-002: Add `TaskInputEvent` for first-class agent input capture
+  - #287 IO-003: Persist LLM iteration data in late-join snapshots
+  - #288 IO-004: Viz tool call detail panel with formatted I/O
+  - #289 IO-005: Viz agent conversation thread view
+
+### Analysis Summary
+- Java side already sends `toolArguments`, `toolResult`, `structuredResult` (via
+  `ToolCalledMessage`) and full LLM message buffers (via `LlmIterationStarted/Completed`)
+- Gaps: `ToolCallEvent` missing `taskIndex`/`outcome` (hardcoded in listener); no
+  first-class "agent input" event; LLM iterations ephemeral (lost on late-join)
+- Viz side receives data but lacks UI to inspect it (no tool I/O panel, no conversation view)
+
+---
+
 ## [Unreleased] - feat/toon-context-format (TOON context format) - 2026-03-24
 
 ### Added

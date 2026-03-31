@@ -23,6 +23,7 @@ import net.agentensemble.callback.LlmIterationCompletedEvent;
 import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskInputEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
@@ -211,7 +212,14 @@ class WebSocketStreamingListenerTest {
     @Test
     void onToolCall_broadcastsToolCalledMessage() {
         ToolCallEvent event = new ToolCallEvent(
-                "web_search", "{\"query\":\"AI\"}", "results...", null, "Researcher", Duration.ofMillis(820));
+                "web_search",
+                "{\"query\":\"AI\"}",
+                "results...",
+                null,
+                "Researcher",
+                Duration.ofMillis(820),
+                1,
+                "SUCCESS");
         listener.onToolCall(event);
 
         assertThat(session.sentMessages()).hasSize(1);
@@ -222,14 +230,15 @@ class WebSocketStreamingListenerTest {
     }
 
     @Test
-    void onToolCall_outcomeIsNullBecauseToolCallEventHasNoOutcomeField() {
-        // ToolCallEvent does not carry a success/failure signal, so the protocol message
-        // uses null for outcome to avoid misleading "SUCCESS" when the tool may have failed.
-        ToolCallEvent event = new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5));
+    void onToolCall_outcomeIsPopulatedFromEnrichedToolCallEvent() {
+        // ToolCallEvent now carries taskIndex and outcome from AgentExecutor.
+        ToolCallEvent event =
+                new ToolCallEvent("calculator", "{}", "42", null, "Analyst", Duration.ofMillis(5), 2, "SUCCESS");
         listener.onToolCall(event);
 
         String json = session.sentMessages().get(0);
-        assertThat(json).contains("\"outcome\":null");
+        assertThat(json).contains("\"outcome\":\"SUCCESS\"");
+        assertThat(json).contains("\"taskIndex\":2");
     }
 
     @Test
@@ -391,7 +400,7 @@ class WebSocketStreamingListenerTest {
         WebSocketStreamingListener faultyListener =
                 new WebSocketStreamingListener(connectionManager, failingSerializer);
 
-        ToolCallEvent event = new ToolCallEvent("calc", "{}", "42", null, "Agent", Duration.ofMillis(5));
+        ToolCallEvent event = new ToolCallEvent("calc", "{}", "42", null, "Agent", Duration.ofMillis(5), 0, "SUCCESS");
         faultyListener.onToolCall(event);
 
         assertThat(session.sentMessages()).isEmpty();
@@ -684,6 +693,80 @@ class WebSocketStreamingListenerTest {
         assertThat(session.sentMessages()).hasSize(3);
         assertThat(session.sentMessages()).allMatch(m -> m.contains("\"type\":\"file_changed\""));
     }
+
+    // ========================
+    // Task input events
+    // ========================
+
+    @Test
+    void onTaskInput_broadcastsTaskInputMessage() {
+        TaskInputEvent event = new TaskInputEvent(
+                1, "Research AI", "A summary", "Researcher", "Find papers", "PhD in AI", List.of("web_search"), "ctx");
+        listener.onTaskInput(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"task_input\"");
+        assertThat(json).contains("Researcher");
+        assertThat(json).contains("web_search");
+    }
+
+    @Test
+    void onTaskInput_truncatesLargeAssembledContext() {
+        // Build a string longer than 8000 chars
+        String longContext = "X".repeat(10_000);
+        TaskInputEvent event =
+                new TaskInputEvent(1, "Task", "Output", "Agent", "Goal", "Background", List.of("tool"), longContext);
+        listener.onTaskInput(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"task_input\"");
+        // The truncated field should contain the truncation marker
+        assertThat(json).contains("... [truncated]");
+        // The full 10000-char string should NOT be present
+        assertThat(json).doesNotContain(longContext);
+    }
+
+    @Test
+    void onTaskInput_shortContext_notTruncated() {
+        String shortContext = "Short prompt content";
+        TaskInputEvent event =
+                new TaskInputEvent(1, "Task", "Output", "Agent", "Goal", "Background", List.of("tool"), shortContext);
+        listener.onTaskInput(event);
+
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains(shortContext);
+        assertThat(json).doesNotContain("[truncated]");
+    }
+
+    @Test
+    void onTaskInput_nullContext_handledGracefully() {
+        TaskInputEvent event =
+                new TaskInputEvent(1, "Task", "Output", "Agent", "Goal", "Background", List.of("tool"), null);
+        listener.onTaskInput(event);
+
+        assertThat(session.sentMessages()).hasSize(1);
+        String json = session.sentMessages().get(0);
+        assertThat(json).contains("\"type\":\"task_input\"");
+    }
+
+    @Test
+    void onTaskInput_isPersistedInSnapshot() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+        TaskInputEvent event =
+                new TaskInputEvent(1, "Task", "Output", "Agent", "Goal", "Background", List.of("tool"), "prompt");
+        listener.onTaskInput(event);
+
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("task_input");
+    }
+
+    // ========================
+    // File change events (continued)
+    // ========================
 
     @Test
     void onFileChanged_serializerThrows_doesNotPropagateException() {

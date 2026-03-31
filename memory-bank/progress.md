@@ -278,6 +278,19 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 
 ## What's Left to Build
 
+### Viz Observability -- Tool & Agent I/O Visibility (design complete, 2026-03-30)
+
+Design document: `docs/design/27-viz-observability.md`
+
+**Java-side (IO-001, IO-002, IO-003):**
+- #285 IO-001: Enrich `ToolCallEvent` with `taskIndex` and `outcome`
+- #286 IO-002: New `TaskInputEvent` + `TaskInputMessage` for first-class agent input capture
+- #287 IO-003: Persist LLM iteration data in late-join snapshots (ring buffer + `hello` hydration)
+
+**Viz-side (IO-004, IO-005) -- depend on Java work:**
+- #288 IO-004: Tool call detail panel with formatted I/O (expandable cards, JSON highlighting)
+- #289 IO-005: Agent conversation thread view (ReAct loop rendering, iteration cards)
+
 ### v2.0.0 -- Task-First Architecture (design complete, implementation pending)
 
 The full architecture is documented in `docs/design/15-v2-architecture.md`.

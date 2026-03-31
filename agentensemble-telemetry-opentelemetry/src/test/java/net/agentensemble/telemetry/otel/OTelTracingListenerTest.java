@@ -105,8 +105,8 @@ class OTelTracingListenerTest {
 
     @Test
     void toolCall_createsAndEndsSpanImmediately() {
-        listener.onToolCall(
-                new ToolCallEvent("calculator", "{\"a\":1}", "2", null, "math-agent", Duration.ofMillis(50)));
+        listener.onToolCall(new ToolCallEvent(
+                "calculator", "{\"a\":1}", "2", null, "math-agent", Duration.ofMillis(50), 0, "SUCCESS"));
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
         assertThat(spans).hasSize(1);
@@ -214,7 +214,8 @@ class OTelTracingListenerTest {
     @Test
     void toolAndDelegationSpans_areChildrenOfEnsembleSpan() {
         listener.onEnsembleStarted("ens-child", "SEQUENTIAL", 1);
-        listener.onToolCall(new ToolCallEvent("search", "{}", "found", null, "agent-a", Duration.ofMillis(50)));
+        listener.onToolCall(
+                new ToolCallEvent("search", "{}", "found", null, "agent-a", Duration.ofMillis(50), 0, "SUCCESS"));
         listener.onDelegationStarted(new DelegationStartedEvent("del-c", "agent-a", "agent-b", "Sub-task", 1, null));
         listener.onDelegationCompleted(
                 new DelegationCompletedEvent("del-c", "agent-a", "agent-b", null, Duration.ofMillis(300)));
@@ -260,7 +261,8 @@ class OTelTracingListenerTest {
         // Simulate a full run with ensemble, task, tool, and delegation
         listener.onEnsembleStarted("ens-full", "SEQUENTIAL", 2);
         listener.onTaskStart(new TaskStartEvent("Task 1", "agent-a", 1, 2));
-        listener.onToolCall(new ToolCallEvent("search", "{}", "found", null, "agent-a", Duration.ofMillis(100)));
+        listener.onToolCall(
+                new ToolCallEvent("search", "{}", "found", null, "agent-a", Duration.ofMillis(100), 0, "SUCCESS"));
         listener.onTaskComplete(new TaskCompleteEvent("Task 1", "agent-a", null, Duration.ofMillis(500), 1, 2));
         listener.onDelegationStarted(new DelegationStartedEvent("del-x", "agent-a", "agent-b", "Task 2", 1, null));
         listener.onDelegationCompleted(
