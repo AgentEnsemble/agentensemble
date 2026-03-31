@@ -194,7 +194,7 @@ describe('TimelineView live mode', () => {
     it('renders a tool marker when a tool_called event has been received', () => {
       const task = makeRunningTask(0);
       task.toolCalls = [
-        { toolName: 'web_search', durationMs: 1200, outcome: 'SUCCESS', receivedAt: NOW - 5000 },
+        { toolName: 'web_search', durationMs: 1200, outcome: 'SUCCESS', receivedAt: NOW - 5000, taskIndex: 0, toolArguments: null, toolResult: null, structuredResult: null },
       ];
       const state = makeLiveState({ tasks: [task] });
       mockLiveServer(state);
@@ -208,8 +208,8 @@ describe('TimelineView live mode', () => {
     it('renders multiple tool markers in order', () => {
       const task = makeRunningTask(0);
       task.toolCalls = [
-        { toolName: 'web_search', durationMs: 1200, outcome: 'SUCCESS', receivedAt: NOW - 5000 },
-        { toolName: 'calculator', durationMs: 50, outcome: 'SUCCESS', receivedAt: NOW - 2000 },
+        { toolName: 'web_search', durationMs: 1200, outcome: 'SUCCESS', receivedAt: NOW - 5000, taskIndex: 0, toolArguments: null, toolResult: null, structuredResult: null },
+        { toolName: 'calculator', durationMs: 50, outcome: 'SUCCESS', receivedAt: NOW - 2000, taskIndex: 0, toolArguments: null, toolResult: null, structuredResult: null },
       ];
       const state = makeLiveState({ tasks: [task] });
       mockLiveServer(state);

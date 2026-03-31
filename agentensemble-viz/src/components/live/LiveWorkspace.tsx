@@ -19,7 +19,8 @@ import { Panel, Group, Separator } from 'react-resizable-panels';
 import type { LiveState } from '../../types/live.js';
 import type { LiveView } from './LiveHeader.js';
 import AgentListPanel from './AgentListPanel.js';
-import ConversationPanel from './ConversationPanel.js';
+import AgentConversationPanel from './AgentConversationPanel.js';
+import ToolCallDetailPanel from './ToolCallDetailPanel.js';
 import CodingProgressPanel from './CodingProgressPanel.js';
 import FileExplorer from './FileExplorer.js';
 import MetricsDashboard from './MetricsDashboard.js';
@@ -27,7 +28,7 @@ import TimelineView from '../../pages/TimelineView.js';
 import FlowView from '../../pages/FlowView.js';
 
 /** Tabs available in the bottom panel. */
-export type BottomTab = 'files' | 'coding' | 'metrics';
+export type BottomTab = 'files' | 'coding' | 'metrics' | 'tools';
 
 interface LiveWorkspaceProps {
   liveState: LiveState;
@@ -37,6 +38,23 @@ interface LiveWorkspaceProps {
 export default function LiveWorkspace({ liveState, activeView }: LiveWorkspaceProps) {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>('coding');
+
+  // Collect all tool calls for the Tools tab (from the selected agent or all tasks)
+  const toolCalls = selectedAgent
+    ? liveState.tasks
+        .filter((t) => t.agentRole === selectedAgent)
+        .flatMap((t) => t.toolCalls)
+    : liveState.tasks.flatMap((t) => t.toolCalls);
+
+  // Find the task input for the selected agent (most recent task)
+  const selectedTaskInput = selectedAgent
+    ? (() => {
+        const agentTasks = liveState.tasks.filter((t) => t.agentRole === selectedAgent);
+        if (agentTasks.length === 0) return null;
+        const mostRecent = agentTasks[agentTasks.length - 1];
+        return mostRecent.taskInput ?? null;
+      })()
+    : null;
 
   // Find the most recent conversation for the selected agent (by last message timestamp)
   const selectedConversation = selectedAgent
@@ -119,6 +137,11 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
                   active={bottomTab === 'metrics'}
                   onClick={() => setBottomTab('metrics')}
                 />
+                <BottomTabButton
+                  label="Tools"
+                  active={bottomTab === 'tools'}
+                  onClick={() => setBottomTab('tools')}
+                />
               </div>
 
               {/* Tab content */}
@@ -131,6 +154,9 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
                 )}
                 {bottomTab === 'metrics' && (
                   <MetricsDashboard metricsHistory={liveState.metricsHistory} tasks={liveState.tasks} />
+                )}
+                {bottomTab === 'tools' && (
+                  <ToolCallDetailPanel toolCalls={toolCalls} agentRole={selectedAgent ?? undefined} />
                 )}
               </div>
             </div>
@@ -164,8 +190,9 @@ export default function LiveWorkspace({ liveState, activeView }: LiveWorkspacePr
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
-                <ConversationPanel
+                <AgentConversationPanel
                   conversation={selectedConversation}
+                  taskInput={selectedTaskInput}
                   agentRole={selectedAgent}
                 />
               </div>

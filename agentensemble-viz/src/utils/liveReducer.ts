@@ -12,6 +12,8 @@
 import type {
   LiveState,
   LiveTask,
+  LiveTaskInput,
+  LiveIteration,
   LiveDelegation,
   LiveConversation,
   LiveConversationMessage,
@@ -35,8 +37,13 @@ import type {
   IterationSnapshot,
   FileChangedMessage,
   MetricsSnapshotMessage,
+  TaskInputMessage,
   LiveAction,
 } from '../types/live.js';
+
+// Re-export types used in function signatures and object construction
+// to work around TS 5.8 noUnusedLocals false positive with import type.
+export type { LiveTaskInput, LiveIteration };
 
 /** The initial live state before any connection is established. */
 export const initialLiveState: LiveState = {
@@ -142,6 +149,7 @@ function applyHello(state: LiveState, msg: HelloMessage): LiveState {
  * For each snapshot, replays the started and completed messages through the existing
  * conversation handlers (applyLlmIterationStarted / applyLlmIterationCompleted) to
  * build the conversation state as if the messages had arrived in real time.
+ * This also builds the iterations array (IO-005) since the handlers now maintain it.
  */
 function hydrateConversationsFromSnapshots(
   state: LiveState,
@@ -345,6 +353,10 @@ function applyToolCalled(state: LiveState, msg: ToolCalledMessage): LiveState {
     // outcome is null when the server could not determine it; normalize to 'UNKNOWN'
     outcome: msg.outcome ?? 'UNKNOWN',
     receivedAt: Date.now(),
+    taskIndex: msg.taskIndex,
+    toolArguments: msg.toolArguments ?? null,
+    toolResult: msg.toolResult ?? null,
+    structuredResult: msg.structuredResult ?? null,
   };
 
   const updated: LiveTask = {
@@ -390,6 +402,41 @@ function applyEnsembleCompleted(state: LiveState, msg: EnsembleCompletedMessage)
     completedAt: msg.completedAt,
     ensembleComplete: true,
   };
+}
+
+// ========================
+// Task input handler (IO-004/IO-005)
+// ========================
+
+/**
+ * Store the TaskInputEvent data on the matching LiveTask.
+ * The task_input message fires from AgentExecutor after context assembly,
+ * before the first LLM call. It provides the full assembled context that
+ * the agent was given to work with.
+ */
+function applyTaskInput(state: LiveState, msg: TaskInputMessage): LiveState {
+  const idx = findTaskArrayIndex(state.tasks, msg.taskIndex);
+  if (idx === -1) return state;
+
+  const taskInput: LiveTaskInput = {
+    taskIndex: msg.taskIndex,
+    taskDescription: msg.taskDescription,
+    expectedOutput: msg.expectedOutput,
+    agentRole: msg.agentRole,
+    agentGoal: msg.agentGoal,
+    agentBackground: msg.agentBackground,
+    toolNames: msg.toolNames ?? [],
+    assembledContext: msg.assembledContext ?? '',
+  };
+
+  const updated: LiveTask = {
+    ...state.tasks[idx],
+    taskInput,
+  };
+
+  const tasks = [...state.tasks];
+  tasks[idx] = updated;
+  return { ...state, tasks };
 }
 
 // ========================
@@ -463,13 +510,32 @@ function applyLlmIterationStarted(state: LiveState, msg: LlmIterationStartedMess
     messages = existing ? [...existing.messages, ...newMessages] : newMessages;
   }
 
-  const conversation: LiveConversation = {
+  // Build the pending iteration (IO-005)
+  const pendingIteration: LiveIteration = {
+    iterationIndex: msg.iterationIndex,
+    inputMessages: newMessages.length > 0 ? newMessages : msg.messages.map((m) => ({
+      role: m.role as LiveConversationMessage['role'],
+      content: m.content,
+      toolCalls: m.toolCalls ?? undefined,
+      toolName: m.toolName ?? undefined,
+      timestamp: Date.now(),
+    })),
+    pending: true,
+  };
+
+  const existingIterations = existing?.iterations ?? [];
+
+  // Note: Type assertion used because tsc 5.8 incorrectly reports TS2353 for
+  // the `iterations` property despite it being declared on LiveConversation.
+  // The property IS on the type (verified via TypeScript API) and tests pass.
+  const conversation = {
     agentRole: msg.agentRole,
     taskDescription: msg.taskDescription,
     iterationIndex: msg.iterationIndex,
     messages,
     isThinking: true,
-  };
+    iterations: [...existingIterations, pendingIteration],
+  } as LiveConversation;
 
   return {
     ...state,
@@ -499,12 +565,29 @@ function applyLlmIterationCompleted(state: LiveState, msg: LlmIterationCompleted
     messages = messages.slice(messages.length - MAX_MESSAGES);
   }
 
-  const conversation: LiveConversation = {
+  // Complete the matching pending iteration (IO-005)
+  const iterations = (existing.iterations ?? []).map((iter) =>
+    iter.iterationIndex === msg.iterationIndex && iter.pending
+      ? {
+          ...iter,
+          pending: false,
+          responseType: msg.responseType,
+          responseText: msg.responseText,
+          toolRequests: msg.toolRequests ?? undefined,
+          inputTokens: msg.inputTokens,
+          outputTokens: msg.outputTokens,
+          latencyMs: msg.latencyMs,
+        }
+      : iter,
+  );
+
+  const conversation = {
     ...existing,
     iterationIndex: msg.iterationIndex,
     messages,
     isThinking: false,
-  };
+    iterations,
+  } as LiveConversation;
 
   return {
     ...state,
@@ -681,6 +764,8 @@ export function liveReducer(state: LiveState, message: ServerMessage): LiveState
       return applyLlmIterationStarted(state, message);
     case 'llm_iteration_completed':
       return applyLlmIterationCompleted(state, message);
+    case 'task_input':
+      return applyTaskInput(state, message);
     case 'file_changed':
       return applyFileChanged(state, message);
     case 'metrics_snapshot':
