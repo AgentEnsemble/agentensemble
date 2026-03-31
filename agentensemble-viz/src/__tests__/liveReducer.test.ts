@@ -1100,6 +1100,7 @@ describe('liveReducer', () => {
               { role: 'user', content: 'Research AI trends', timestamp: now - 5000 },
             ],
             isThinking: false,
+            iterations: [],
           },
         },
       };
@@ -1149,6 +1150,7 @@ describe('liveReducer', () => {
             iterationIndex: 2,
             messages: existingMessages,
             isThinking: false,
+            iterations: [],
           },
         },
       };
@@ -1218,6 +1220,7 @@ describe('liveReducer', () => {
             iterationIndex: 0,
             messages: [],
             isThinking: false,
+            iterations: [],
           },
         },
       };
@@ -1286,6 +1289,7 @@ describe('liveReducer', () => {
               { role: 'user', content: 'Research AI trends', timestamp: Date.now() - 4000 },
             ],
             isThinking,
+            iterations: [],
           },
         },
       };
@@ -1944,6 +1948,263 @@ describe('liveReducer', () => {
       expect(next.conversations['Agent2:Task2']).toBeDefined();
       expect(next.conversations['Agent1:Task1'].messages[1].content).toBe('A1');
       expect(next.conversations['Agent2:Task2'].messages[1].content).toBe('A2');
+    });
+  });
+
+  // ========================
+  // tool_called stores I/O fields (IO-004)
+  // ========================
+
+  describe('tool_called stores I/O fields (IO-004)', () => {
+    it('stores toolArguments, toolResult, and structuredResult', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'tool_called',
+        agentRole: 'Agent A',
+        taskIndex: 1,
+        toolName: 'web_search',
+        durationMs: 800,
+        outcome: 'SUCCESS',
+        toolArguments: '{"query":"AI trends"}',
+        toolResult: 'Top 10 AI trends...',
+        structuredResult: { items: ['trend1', 'trend2'] },
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].toolCalls[0].toolArguments).toBe('{"query":"AI trends"}');
+      expect(next.tasks[0].toolCalls[0].toolResult).toBe('Top 10 AI trends...');
+      expect(next.tasks[0].toolCalls[0].structuredResult).toEqual({ items: ['trend1', 'trend2'] });
+      expect(next.tasks[0].toolCalls[0].taskIndex).toBe(1);
+    });
+
+    it('normalizes null I/O fields to null', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'tool_called',
+        agentRole: 'Agent A',
+        taskIndex: 1,
+        toolName: 'calculator',
+        durationMs: 50,
+        outcome: 'SUCCESS',
+        toolArguments: null,
+        toolResult: null,
+        structuredResult: null,
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].toolCalls[0].toolArguments).toBeNull();
+      expect(next.tasks[0].toolCalls[0].toolResult).toBeNull();
+      expect(next.tasks[0].toolCalls[0].structuredResult).toBeNull();
+    });
+  });
+
+  // ========================
+  // task_input (IO-004/IO-005)
+  // ========================
+
+  describe('task_input (IO-004/IO-005)', () => {
+    it('stores TaskInput on the matching task', () => {
+      const state = stateWithTask(1, 'running');
+      const msg: ServerMessage = {
+        type: 'task_input',
+        taskIndex: 1,
+        taskDescription: 'Research AI',
+        expectedOutput: 'A report',
+        agentRole: 'Researcher',
+        agentGoal: 'Find AI trends',
+        agentBackground: 'Senior analyst',
+        toolNames: ['web_search', 'calculator'],
+        assembledContext: 'Prior context: ...',
+      };
+      const next = liveReducer(state, msg);
+      expect(next.tasks[0].taskInput).toBeDefined();
+      expect(next.tasks[0].taskInput!.agentRole).toBe('Researcher');
+      expect(next.tasks[0].taskInput!.agentGoal).toBe('Find AI trends');
+      expect(next.tasks[0].taskInput!.toolNames).toEqual(['web_search', 'calculator']);
+      expect(next.tasks[0].taskInput!.assembledContext).toBe('Prior context: ...');
+    });
+
+    it('returns same state when task not found', () => {
+      const msg: ServerMessage = {
+        type: 'task_input',
+        taskIndex: 99,
+        taskDescription: 'Unknown',
+        expectedOutput: '',
+        agentRole: 'Agent',
+        agentGoal: '',
+        agentBackground: '',
+        toolNames: [],
+        assembledContext: '',
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      expect(next).toBe(BASE_STATE);
+    });
+
+    it('does not mutate the existing task', () => {
+      const state = stateWithTask(1, 'running');
+      const originalTask = state.tasks[0];
+      const msg: ServerMessage = {
+        type: 'task_input',
+        taskIndex: 1,
+        taskDescription: 'Research AI',
+        expectedOutput: '',
+        agentRole: 'Agent',
+        agentGoal: 'Goal',
+        agentBackground: '',
+        toolNames: [],
+        assembledContext: '',
+      };
+      liveReducer(state, msg);
+      expect(originalTask.taskInput).toBeUndefined();
+    });
+  });
+
+  // ========================
+  // iterations tracking (IO-005)
+  // ========================
+
+  describe('iterations tracking (IO-005)', () => {
+    it('llm_iteration_started creates a pending iteration', () => {
+      const msg: ServerMessage = {
+        type: 'llm_iteration_started',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI',
+        iterationIndex: 0,
+        messages: [
+          { role: 'user', content: 'Research AI trends', toolCalls: null, toolName: null },
+        ],
+      };
+      const next = liveReducer(BASE_STATE, msg);
+      const key = 'Researcher:Research AI';
+      expect(next.conversations[key].iterations).toHaveLength(1);
+      expect(next.conversations[key].iterations[0].iterationIndex).toBe(0);
+      expect(next.conversations[key].iterations[0].pending).toBe(true);
+      expect(next.conversations[key].iterations[0].inputMessages).toHaveLength(1);
+    });
+
+    it('llm_iteration_completed marks the iteration as completed with metadata', () => {
+      let state = liveReducer(BASE_STATE, {
+        type: 'llm_iteration_started',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI',
+        iterationIndex: 0,
+        messages: [
+          { role: 'user', content: 'Question', toolCalls: null, toolName: null },
+        ],
+      } as ServerMessage);
+
+      state = liveReducer(state, {
+        type: 'llm_iteration_completed',
+        agentRole: 'Researcher',
+        taskDescription: 'Research AI',
+        iterationIndex: 0,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Here are the trends.',
+        toolRequests: null,
+        inputTokens: 500,
+        outputTokens: 200,
+        latencyMs: 1200,
+      } as ServerMessage);
+
+      const key = 'Researcher:Research AI';
+      expect(state.conversations[key].iterations).toHaveLength(1);
+      expect(state.conversations[key].iterations[0].pending).toBe(false);
+      expect(state.conversations[key].iterations[0].responseType).toBe('FINAL_ANSWER');
+      expect(state.conversations[key].iterations[0].responseText).toBe('Here are the trends.');
+      expect(state.conversations[key].iterations[0].inputTokens).toBe(500);
+      expect(state.conversations[key].iterations[0].outputTokens).toBe(200);
+      expect(state.conversations[key].iterations[0].latencyMs).toBe(1200);
+    });
+
+    it('multiple iterations accumulate in order', () => {
+      let state: LiveState = BASE_STATE;
+      state = liveReducer(state, {
+        type: 'llm_iteration_started',
+        agentRole: 'A',
+        taskDescription: 'T',
+        iterationIndex: 0,
+        messages: [{ role: 'user', content: 'Q1', toolCalls: null, toolName: null }],
+      } as ServerMessage);
+      state = liveReducer(state, {
+        type: 'llm_iteration_completed',
+        agentRole: 'A',
+        taskDescription: 'T',
+        iterationIndex: 0,
+        responseType: 'TOOL_CALLS',
+        responseText: null,
+        toolRequests: [{ name: 'web_search', arguments: '{}' }],
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 600,
+      } as ServerMessage);
+      state = liveReducer(state, {
+        type: 'llm_iteration_started',
+        agentRole: 'A',
+        taskDescription: 'T',
+        iterationIndex: 1,
+        messages: [
+          { role: 'user', content: 'Q1', toolCalls: null, toolName: null },
+          { role: 'assistant', content: null, toolCalls: [{ name: 'web_search', arguments: '{}' }], toolName: null },
+          { role: 'tool', content: 'Results...', toolCalls: null, toolName: 'web_search' },
+        ],
+      } as ServerMessage);
+      state = liveReducer(state, {
+        type: 'llm_iteration_completed',
+        agentRole: 'A',
+        taskDescription: 'T',
+        iterationIndex: 1,
+        responseType: 'FINAL_ANSWER',
+        responseText: 'Done.',
+        toolRequests: null,
+        inputTokens: 200,
+        outputTokens: 100,
+        latencyMs: 800,
+      } as ServerMessage);
+
+      const key = 'A:T';
+      expect(state.conversations[key].iterations).toHaveLength(2);
+      expect(state.conversations[key].iterations[0].iterationIndex).toBe(0);
+      expect(state.conversations[key].iterations[0].responseType).toBe('TOOL_CALLS');
+      expect(state.conversations[key].iterations[1].iterationIndex).toBe(1);
+      expect(state.conversations[key].iterations[1].responseType).toBe('FINAL_ANSWER');
+    });
+
+    it('hello with recentIterations hydrates iterations', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: null,
+        recentIterations: [
+          {
+            started: {
+              type: 'llm_iteration_started',
+              agentRole: 'Agent',
+              taskDescription: 'Task',
+              iterationIndex: 0,
+              messages: [
+                { role: 'user', content: 'Hello', toolCalls: null, toolName: null },
+              ],
+            },
+            completed: {
+              type: 'llm_iteration_completed',
+              agentRole: 'Agent',
+              taskDescription: 'Task',
+              iterationIndex: 0,
+              responseType: 'FINAL_ANSWER',
+              responseText: 'World',
+              toolRequests: null,
+              inputTokens: 100,
+              outputTokens: 50,
+              latencyMs: 500,
+            },
+          },
+        ],
+      };
+      const next = liveReducer(initialLiveState, msg);
+      const key = 'Agent:Task';
+      expect(next.conversations[key].iterations).toHaveLength(1);
+      expect(next.conversations[key].iterations[0].pending).toBe(false);
+      expect(next.conversations[key].iterations[0].responseText).toBe('World');
+      expect(next.conversations[key].iterations[0].inputTokens).toBe(100);
     });
   });
 });

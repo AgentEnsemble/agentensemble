@@ -1,8 +1,8 @@
 # 27 - Viz Observability: Tool & Agent I/O Visibility
 
-**Status:** Partially Implemented (IO-001, IO-002, IO-003 complete)  
+**Status:** Complete (all five issues implemented)  
 **Version:** 1.1.0  
-**Date:** 2026-03-30
+**Date:** 2026-03-31
 
 ## 1. Motivation
 
@@ -197,7 +197,7 @@ Where `IterationSnapshot` pairs a started + completed message for one iteration.
 
 4. The ring buffer is cleared when a new ensemble run starts.
 
-### 3.4 IO-004: Viz Tool Call Detail Panel
+### 3.4 IO-004: Viz Tool Call Detail Panel -- COMPLETE
 
 **Module:** `agentensemble-viz`
 
@@ -212,7 +212,7 @@ Expand tool call entries in the live conversation/timeline view:
 - **Task association:** Group tool calls under their parent task using `taskIndex`
 - **Collapsed state:** Shows tool name, outcome badge, and duration as a compact row
 
-### 3.5 IO-005: Viz Agent Conversation Thread View
+### 3.5 IO-005: Viz Agent Conversation Thread View -- COMPLETE
 
 **Module:** `agentensemble-viz`
 

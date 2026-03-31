@@ -30,6 +30,14 @@ export interface LiveToolCall {
   outcome: string;
   /** Client-side epoch ms when the message was received, used for timeline positioning. */
   receivedAt: number;
+  /** Task index from the server. 1-based when known; 0 when unknown. */
+  taskIndex: number;
+  /** Arguments passed to the tool as a JSON string. Null when unavailable. */
+  toolArguments: string | null;
+  /** Text result returned by the tool. Null when unavailable. */
+  toolResult: string | null;
+  /** Structured output from the tool. Null when not applicable. */
+  structuredResult: unknown | null;
 }
 
 /**
@@ -63,6 +71,27 @@ export interface LiveTask {
    * Cleared to undefined when task_completed arrives (the final output is authoritative).
    */
   streamingOutput?: string[];
+  /**
+   * Task input context captured from the task_input message (IO-002).
+   * Contains the assembled context, agent metadata, and tool names that the agent
+   * was given before its first LLM call. Undefined until the task_input message arrives.
+   */
+  taskInput?: LiveTaskInput;
+}
+
+/**
+ * Task input context captured from the TaskInputEvent (IO-002).
+ * Represents what the agent was given to work with at the start of a task.
+ */
+export interface LiveTaskInput {
+  taskIndex: number;
+  taskDescription: string;
+  expectedOutput: string;
+  agentRole: string;
+  agentGoal: string;
+  agentBackground: string;
+  toolNames: string[];
+  assembledContext: string;
 }
 
 // ========================
@@ -167,6 +196,30 @@ export interface LiveConversationMessage {
   timestamp: number;
 }
 
+/**
+ * A single LLM iteration within a conversation (IO-005).
+ * Groups the input messages sent to the LLM with its response and metadata.
+ */
+export interface LiveIteration {
+  iterationIndex: number;
+  /** Messages sent to the LLM (from LlmIterationStartedMessage). */
+  inputMessages: LiveConversationMessage[];
+  /** Response type: 'FINAL_ANSWER' or 'TOOL_CALLS'. */
+  responseType?: string;
+  /** LLM response text (final answer or intermediate). */
+  responseText?: string | null;
+  /** Tool call requests made by the LLM. */
+  toolRequests?: Array<{ name: string; arguments: string }>;
+  /** Input token count for this iteration. */
+  inputTokens?: number;
+  /** Output token count for this iteration. */
+  outputTokens?: number;
+  /** LLM latency in ms. */
+  latencyMs?: number;
+  /** Whether this iteration is still in progress (started but not completed). */
+  pending: boolean;
+}
+
 /** Live conversation state for a single agent+task execution. */
 export interface LiveConversation {
   agentRole: string;
@@ -175,6 +228,12 @@ export interface LiveConversation {
   messages: LiveConversationMessage[];
   /** True between iteration_started and iteration_completed (agent is "thinking"). */
   isThinking: boolean;
+  /**
+   * Iteration-grouped view of the conversation (IO-005).
+   * Each entry represents one LLM ReAct iteration with its input messages,
+   * response, and metadata. Built alongside the flat messages array.
+   */
+  iterations: LiveIteration[];
 }
 
 // ========================
@@ -544,6 +603,22 @@ export interface MetricsSnapshotMessage {
   costEstimate: string | null;
 }
 
+/**
+ * Sent by the server after context assembly, before the first LLM call (IO-002).
+ * Captures the full assembled input context for the agent.
+ */
+export interface TaskInputMessage {
+  type: 'task_input';
+  taskIndex: number;
+  taskDescription: string;
+  expectedOutput: string;
+  agentRole: string;
+  agentGoal: string;
+  agentBackground: string;
+  toolNames: string[];
+  assembledContext: string;
+}
+
 /** All messages the server can send to the client. */
 export type ServerMessage =
   | HelloMessage
@@ -564,7 +639,8 @@ export type ServerMessage =
   | LlmIterationStartedMessage
   | LlmIterationCompletedMessage
   | FileChangedMessage
-  | MetricsSnapshotMessage;
+  | MetricsSnapshotMessage
+  | TaskInputMessage;
 
 // ========================
 // Client -> Server wire messages
