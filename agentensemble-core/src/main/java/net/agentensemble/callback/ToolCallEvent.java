@@ -38,4 +38,20 @@ public record ToolCallEvent(
 
     /** Outcome value indicating the tool returned an error or threw. */
     public static final String OUTCOME_FAILURE = "FAILURE";
+
+    /**
+     * Backwards-compatible constructor matching the original 6-argument signature.
+     *
+     * <p>Delegates to the canonical constructor with a default {@code taskIndex} of {@code 0}
+     * (meaning "unknown") and a {@code null} {@code outcome}, preserving legacy behavior.
+     */
+    public ToolCallEvent(
+            String toolName,
+            String toolArguments,
+            String toolResult,
+            Object structuredResult,
+            String agentRole,
+            Duration duration) {
+        this(toolName, toolArguments, toolResult, structuredResult, agentRole, duration, 0, null);
+    }
 }

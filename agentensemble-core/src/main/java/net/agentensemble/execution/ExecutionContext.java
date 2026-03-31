@@ -1071,14 +1071,6 @@ public final class ExecutionContext {
     }
 
     /**
-     * Fire a {@link FileChangedEvent} to all registered listeners.
-     *
-     * <p>Called when a coding tool modifies a file in the workspace. Exceptions from
-     * individual listeners are caught and logged.
-     *
-     * @param event the file changed event to fire; must not be null
-     */
-    /**
      * Fire a {@link TaskInputEvent} to all registered listeners.
      *
      * <p>Called after task context is assembled but before the first LLM call.
@@ -1098,6 +1090,14 @@ public final class ExecutionContext {
         }
     }
 
+    /**
+     * Fire a {@link FileChangedEvent} to all registered listeners.
+     *
+     * <p>Called when a coding tool modifies a file in the workspace. Exceptions from
+     * individual listeners are caught and logged.
+     *
+     * @param event the file changed event to fire; must not be null
+     */
     public void fireFileChanged(FileChangedEvent event) {
         for (EnsembleListener listener : listeners) {
             try {

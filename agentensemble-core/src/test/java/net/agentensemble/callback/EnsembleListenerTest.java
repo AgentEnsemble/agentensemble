@@ -116,6 +116,17 @@ class EnsembleListenerTest {
         assertThat(event.duration()).isEqualTo(duration);
     }
 
+    @Test
+    void toolCallEvent_legacySixArgConstructor_defaultsTaskIndexAndOutcome() {
+        Duration duration = Duration.ofMillis(42);
+        ToolCallEvent event = new ToolCallEvent("calc", "{}", "42", null, "Agent", duration);
+        assertThat(event.taskIndex()).isEqualTo(0);
+        assertThat(event.outcome()).isNull();
+        assertThat(event.toolName()).isEqualTo("calc");
+        assertThat(event.agentRole()).isEqualTo("Agent");
+        assertThat(event.duration()).isEqualTo(duration);
+    }
+
     // ========================
     // Overriding individual methods
     // ========================

@@ -229,8 +229,12 @@ public class AgentExecutor {
                 }
             }
 
-            // Fire TaskInputEvent with the assembled agent context
-            List<String> toolNames = agent.getTools().stream()
+            List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext, accumulator);
+
+            // Fire TaskInputEvent with the assembled agent context.
+            // Tool names are derived from effectiveTools (after delegation tool injection)
+            // so the viz displays the actual tools available at runtime.
+            List<String> toolNames = effectiveTools.stream()
                     .map(t -> t instanceof net.agentensemble.tool.AgentTool at
                             ? at.name()
                             : t.getClass().getSimpleName())
@@ -244,8 +248,6 @@ public class AgentExecutor {
                     agent.getBackground(),
                     toolNames,
                     userPrompt));
-
-            List<Object> effectiveTools = buildEffectiveTools(agent, delegationContext, accumulator);
 
             if (log.isInfoEnabled()) {
                 log.info(

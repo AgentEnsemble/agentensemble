@@ -127,7 +127,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 event.agentGoal(),
                 event.agentBackground(),
                 event.toolNames(),
-                event.assembledContext(),
+                truncateContext(event.assembledContext()),
                 Instant.now()));
     }
 
@@ -179,6 +179,14 @@ public final class WebSocketStreamingListener implements EnsembleListener {
 
     /** Maximum number of messages to include in the wire buffer sent to clients. */
     private static final int MAX_WIRE_MESSAGES = 20;
+
+    /**
+     * Maximum character length for the {@code assembledContext} field in
+     * {@link TaskInputMessage}. Prompts longer than this are truncated in the wire
+     * message to bound snapshot memory growth. The full value remains available in
+     * the core {@link TaskInputEvent} callback for listeners that need it.
+     */
+    private static final int MAX_ASSEMBLED_CONTEXT_LENGTH = 8_000;
 
     @Override
     public void onLlmIterationStarted(LlmIterationStartedEvent event) {
@@ -251,6 +259,17 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     // ========================
     // Private helpers
     // ========================
+
+    /**
+     * Truncate a string to {@link #MAX_ASSEMBLED_CONTEXT_LENGTH} characters,
+     * appending an ellipsis suffix when truncation occurs.
+     */
+    private static String truncateContext(String text) {
+        if (text == null || text.length() <= MAX_ASSEMBLED_CONTEXT_LENGTH) {
+            return text;
+        }
+        return text.substring(0, MAX_ASSEMBLED_CONTEXT_LENGTH) + "... [truncated]";
+    }
 
     private void broadcast(Object message) {
         try {
