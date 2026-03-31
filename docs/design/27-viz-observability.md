@@ -1,7 +1,7 @@
 # 27 - Viz Observability: Tool & Agent I/O Visibility
 
-**Status:** Proposed  
-**Version:** 1.0.0  
+**Status:** Partially Implemented (IO-001, IO-002, IO-003 complete)  
+**Version:** 1.1.0  
 **Date:** 2026-03-30
 
 ## 1. Motivation

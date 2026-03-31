@@ -1757,6 +1757,195 @@ describe('liveReducer', () => {
       expect(next.completedRuns[0].delegations[0].delegationId).toBe('del-prior');
     });
   });
+
+  // ========================
+  // hello with recentIterations (IO-003: late-join iteration snapshots)
+  // ========================
+
+  describe('hello with recentIterations', () => {
+    it('hydrates conversations from recentIterations on hello', () => {
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: [
+          {
+            type: 'ensemble_started',
+            ensembleId: 'ens-abc',
+            startedAt: '2026-03-05T14:00:00Z',
+            totalTasks: 1,
+            workflow: 'SEQUENTIAL',
+          },
+          {
+            type: 'task_started',
+            taskIndex: 1,
+            totalTasks: 1,
+            taskDescription: 'Research AI',
+            agentRole: 'Researcher',
+            startedAt: '2026-03-05T14:00:01Z',
+          },
+        ],
+        recentIterations: [
+          {
+            started: {
+              type: 'llm_iteration_started',
+              agentRole: 'Researcher',
+              taskDescription: 'Research AI',
+              iterationIndex: 0,
+              messages: [
+                { role: 'system', content: 'You are a researcher.', toolCalls: null, toolName: null },
+                { role: 'user', content: 'Research AI trends', toolCalls: null, toolName: null },
+              ],
+            },
+            completed: {
+              type: 'llm_iteration_completed',
+              agentRole: 'Researcher',
+              taskDescription: 'Research AI',
+              iterationIndex: 0,
+              responseType: 'FINAL_ANSWER',
+              responseText: 'AI is evolving rapidly.',
+              toolRequests: null,
+              inputTokens: 500,
+              outputTokens: 200,
+              latencyMs: 1500,
+            },
+          },
+        ],
+      };
+
+      const next = liveReducer(initialLiveState, msg);
+      const key = 'Researcher:Research AI';
+      expect(next.conversations[key]).toBeDefined();
+      expect(next.conversations[key].isThinking).toBe(false);
+      // 2 messages from started + 1 assistant from completed = 3
+      expect(next.conversations[key].messages).toHaveLength(3);
+      expect(next.conversations[key].messages[0].role).toBe('system');
+      expect(next.conversations[key].messages[1].role).toBe('user');
+      expect(next.conversations[key].messages[2].role).toBe('assistant');
+      expect(next.conversations[key].messages[2].content).toBe('AI is evolving rapidly.');
+    });
+
+    it('hydrates incomplete iteration (pending, no completed)', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: null,
+        recentIterations: [
+          {
+            started: {
+              type: 'llm_iteration_started',
+              agentRole: 'Agent',
+              taskDescription: 'Task',
+              iterationIndex: 0,
+              messages: [
+                { role: 'user', content: 'Hello', toolCalls: null, toolName: null },
+              ],
+            },
+            completed: null,
+          },
+        ],
+      };
+
+      const next = liveReducer(initialLiveState, msg);
+      const key = 'Agent:Task';
+      expect(next.conversations[key]).toBeDefined();
+      expect(next.conversations[key].isThinking).toBe(true);
+      expect(next.conversations[key].messages).toHaveLength(1);
+      expect(next.conversations[key].messages[0].role).toBe('user');
+    });
+
+    it('handles hello without recentIterations (backward compat)', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: null,
+      };
+
+      const next = liveReducer(initialLiveState, msg);
+      expect(next.conversations).toEqual({});
+    });
+
+    it('handles hello with empty recentIterations array', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: null,
+        recentIterations: [],
+      };
+
+      const next = liveReducer(initialLiveState, msg);
+      expect(next.conversations).toEqual({});
+    });
+
+    it('hydrates multiple tasks from recentIterations', () => {
+      const msg: ServerMessage = {
+        type: 'hello',
+        ensembleId: 'ens-abc',
+        startedAt: '2026-03-05T14:00:00Z',
+        snapshotTrace: null,
+        recentIterations: [
+          {
+            started: {
+              type: 'llm_iteration_started',
+              agentRole: 'Agent1',
+              taskDescription: 'Task1',
+              iterationIndex: 0,
+              messages: [
+                { role: 'user', content: 'Q1', toolCalls: null, toolName: null },
+              ],
+            },
+            completed: {
+              type: 'llm_iteration_completed',
+              agentRole: 'Agent1',
+              taskDescription: 'Task1',
+              iterationIndex: 0,
+              responseType: 'FINAL_ANSWER',
+              responseText: 'A1',
+              toolRequests: null,
+              inputTokens: 100,
+              outputTokens: 50,
+              latencyMs: 500,
+            },
+          },
+          {
+            started: {
+              type: 'llm_iteration_started',
+              agentRole: 'Agent2',
+              taskDescription: 'Task2',
+              iterationIndex: 0,
+              messages: [
+                { role: 'user', content: 'Q2', toolCalls: null, toolName: null },
+              ],
+            },
+            completed: {
+              type: 'llm_iteration_completed',
+              agentRole: 'Agent2',
+              taskDescription: 'Task2',
+              iterationIndex: 0,
+              responseType: 'FINAL_ANSWER',
+              responseText: 'A2',
+              toolRequests: null,
+              inputTokens: 200,
+              outputTokens: 100,
+              latencyMs: 800,
+            },
+          },
+        ],
+      };
+
+      const next = liveReducer(initialLiveState, msg);
+      expect(next.conversations['Agent1:Task1']).toBeDefined();
+      expect(next.conversations['Agent2:Task2']).toBeDefined();
+      expect(next.conversations['Agent1:Task1'].messages[1].content).toBe('A1');
+      expect(next.conversations['Agent2:Task2'].messages[1].content).toBe('A2');
+    });
+  });
 });
 
 // ========================

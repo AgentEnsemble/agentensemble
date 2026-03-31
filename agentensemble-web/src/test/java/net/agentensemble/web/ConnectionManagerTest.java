@@ -10,6 +10,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import net.agentensemble.web.protocol.IterationSnapshot;
+import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
+import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -499,6 +502,130 @@ class ConnectionManagerTest {
         connectionManager.send("session-1", "{\"type\":\"pong\"}");
 
         assertThat(session.sentMessages()).isEmpty();
+    }
+
+    // ========================
+    // Constructor validation (maxSnapshotIterations)
+    // ========================
+
+    @Test
+    void constructor_negativeMaxSnapshotIterations_throwsIae() {
+        assertThatThrownBy(() -> new ConnectionManager(serializer, 10, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxSnapshotIterations must be >= 0");
+    }
+
+    @Test
+    void constructor_zeroMaxSnapshotIterations_isValid() {
+        ConnectionManager cm0 = new ConnectionManager(serializer, 10, 0);
+        assertThat(cm0.getMaxSnapshotIterations()).isEqualTo(0);
+    }
+
+    // ========================
+    // Iteration snapshot ring buffer (IO-003)
+    // ========================
+
+    @Test
+    void recordIterationStartedAndCompleted_createsSnapshot() {
+        String key = "Agent:Task";
+        LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0);
+        LlmIterationCompletedMessage completed =
+                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
+
+        connectionManager.recordIterationStarted(key, started);
+        connectionManager.recordIterationCompleted(key, completed);
+
+        List<IterationSnapshot> snapshots = connectionManager.getRecentIterations();
+        assertThat(snapshots).isNotNull().hasSize(1);
+        assertThat(snapshots.get(0).started()).isEqualTo(started);
+        assertThat(snapshots.get(0).completed()).isEqualTo(completed);
+    }
+
+    @Test
+    void recordIterationCompleted_withoutStarted_isNoOp() {
+        LlmIterationCompletedMessage completed =
+                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
+        connectionManager.recordIterationCompleted("Agent:Task", completed);
+        assertThat(connectionManager.getRecentIterations()).isNull();
+    }
+
+    @Test
+    void ringBuffer_evictsOldestWhenCapExceeded() {
+        ConnectionManager cm2 = new ConnectionManager(serializer, 10, 2);
+        String key = "Agent:Task";
+        for (int i = 0; i < 3; i++) {
+            cm2.recordIterationStarted(key, new LlmIterationStartedMessage("Agent", "Task", i, List.of(), 0));
+            cm2.recordIterationCompleted(
+                    key,
+                    new LlmIterationCompletedMessage("Agent", "Task", i, "FINAL_ANSWER", "r-" + i, null, 100, 50, 200));
+        }
+        List<IterationSnapshot> snapshots = cm2.getRecentIterations();
+        assertThat(snapshots).isNotNull().hasSize(2);
+        assertThat(snapshots.get(0).started().iterationIndex()).isEqualTo(1);
+        assertThat(snapshots.get(1).started().iterationIndex()).isEqualTo(2);
+    }
+
+    @Test
+    void clearIterationSnapshots_removesAllData() {
+        String key = "Agent:Task";
+        connectionManager.recordIterationStarted(key, new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0));
+        connectionManager.recordIterationCompleted(
+                key, new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "r", null, 100, 50, 200));
+        assertThat(connectionManager.getRecentIterations()).isNotNull();
+        connectionManager.clearIterationSnapshots();
+        assertThat(connectionManager.getRecentIterations()).isNull();
+    }
+
+    @Test
+    void getRecentIterations_includesPendingStartWithoutCompleted() {
+        LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0);
+        connectionManager.recordIterationStarted("Agent:Task", started);
+        List<IterationSnapshot> snapshots = connectionManager.getRecentIterations();
+        assertThat(snapshots).isNotNull().hasSize(1);
+        assertThat(snapshots.get(0).started()).isEqualTo(started);
+        assertThat(snapshots.get(0).completed()).isNull();
+    }
+
+    @Test
+    void disabledSnapshots_recordIsNoOp() {
+        ConnectionManager cm0 = new ConnectionManager(serializer, 10, 0);
+        cm0.recordIterationStarted("Agent:Task", new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0));
+        cm0.recordIterationCompleted(
+                "Agent:Task",
+                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "r", null, 100, 50, 200));
+        assertThat(cm0.getRecentIterations()).isNull();
+    }
+
+    @Test
+    void helloMessage_containsRecentIterations() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
+        String key = "Agent:Task";
+        connectionManager.recordIterationStarted(
+                key,
+                new LlmIterationStartedMessage(
+                        "Agent",
+                        "Task",
+                        0,
+                        List.of(new LlmIterationStartedMessage.MessageDto("user", "Hello", null, null)),
+                        1));
+        connectionManager.recordIterationCompleted(
+                key, new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "Hi", null, 100, 50, 200));
+
+        MockWsSession late = new MockWsSession("late");
+        connectionManager.onConnect(late);
+        String helloJson = late.sentMessages().get(0);
+        assertThat(helloJson).contains("recentIterations");
+        assertThat(helloJson).contains("llm_iteration_started");
+        assertThat(helloJson).contains("llm_iteration_completed");
+    }
+
+    @Test
+    void helloMessage_omitsRecentIterations_whenNone() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
+        MockWsSession late = new MockWsSession("late");
+        connectionManager.onConnect(late);
+        String helloJson = late.sentMessages().get(0);
+        assertThat(helloJson).doesNotContain("recentIterations");
     }
 
     // ========================

@@ -32,6 +32,7 @@ import type {
   EnsembleCompletedMessage,
   LlmIterationStartedMessage,
   LlmIterationCompletedMessage,
+  IterationSnapshot,
   FileChangedMessage,
   MetricsSnapshotMessage,
   LiveAction,
@@ -100,6 +101,7 @@ function applyHello(state: LiveState, msg: HelloMessage): LiveState {
   // If a snapshot trace is provided (late-join), replay all past ServerMessages
   // through liveReducer to rebuild state deterministically.
   // The snapshot is a JSON array of all messages broadcast since the run started.
+  let result: LiveState;
   if (Array.isArray(msg.snapshotTrace) && msg.snapshotTrace.length > 0) {
     // Start from a clean live state, preserving connection metadata for this session.
     const snapshotBase: LiveState = {
@@ -110,19 +112,51 @@ function applyHello(state: LiveState, msg: HelloMessage): LiveState {
       startedAt: msg.startedAt,
     };
 
-    return msg.snapshotTrace.reduce<LiveState>((acc, rawMsg) => {
+    result = msg.snapshotTrace.reduce<LiveState>((acc, rawMsg) => {
       // Trust the server to send well-formed messages; cast at the boundary.
       const serverMsg = rawMsg as ServerMessage;
       return liveReducer(acc, serverMsg);
     }, snapshotBase);
+  } else {
+    result = {
+      ...state,
+      connectionStatus: 'connected',
+      ensembleId: msg.ensembleId,
+      startedAt: msg.startedAt,
+    };
   }
 
-  return {
-    ...state,
-    connectionStatus: 'connected',
-    ensembleId: msg.ensembleId,
-    startedAt: msg.startedAt,
-  };
+  // Hydrate conversations from recentIterations (IO-003: late-join iteration snapshots).
+  // Each IterationSnapshot pairs a started message with its completed message.
+  // We replay them through the existing conversation handlers to build conversation state.
+  if (Array.isArray(msg.recentIterations) && msg.recentIterations.length > 0) {
+    result = hydrateConversationsFromSnapshots(result, msg.recentIterations);
+  }
+
+  return result;
+}
+
+/**
+ * Hydrate conversation state from iteration snapshots received in the hello message.
+ *
+ * For each snapshot, replays the started and completed messages through the existing
+ * conversation handlers (applyLlmIterationStarted / applyLlmIterationCompleted) to
+ * build the conversation state as if the messages had arrived in real time.
+ */
+function hydrateConversationsFromSnapshots(
+  state: LiveState,
+  snapshots: IterationSnapshot[],
+): LiveState {
+  let result = state;
+  for (const snapshot of snapshots) {
+    if (snapshot.started) {
+      result = applyLlmIterationStarted(result, snapshot.started);
+    }
+    if (snapshot.completed) {
+      result = applyLlmIterationCompleted(result, snapshot.completed);
+    }
+  }
+  return result;
 }
 
 function applyEnsembleStarted(state: LiveState, msg: EnsembleStartedMessage): LiveState {
