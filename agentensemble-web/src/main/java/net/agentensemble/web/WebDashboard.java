@@ -871,6 +871,7 @@ public final class WebDashboard implements EnsembleDashboard {
          *                              &ge; 0
          * @return this builder
          * @throws IllegalArgumentException when {@code maxSnapshotIterations} is negative
+         *                                  (validated at {@link #build()} time)
          */
         public Builder maxSnapshotIterations(int maxSnapshotIterations) {
             this.maxSnapshotIterations = maxSnapshotIterations;

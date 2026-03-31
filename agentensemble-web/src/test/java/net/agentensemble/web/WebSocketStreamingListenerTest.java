@@ -518,7 +518,7 @@ class WebSocketStreamingListenerTest {
     }
 
     @Test
-    void onLlmIterationStarted_isEphemeral_notInSnapshotTrace() {
+    void onLlmIterationStarted_isEphemeral_notInSnapshotTrace() throws Exception {
         CapturedMessage msg =
                 CapturedMessage.builder().role("user").content("hi").build();
         connectionManager.noteEnsembleStarted("ens-1", Instant.now());
@@ -530,12 +530,14 @@ class WebSocketStreamingListenerTest {
         connectionManager.onConnect(lateSession);
 
         String helloJson = lateSession.sentMessages().get(0);
-        // The snapshotTrace should not contain iteration events (they are ephemeral)
-        if (helloJson.contains("snapshotTrace")) {
-            int snapshotStart = helloJson.indexOf("snapshotTrace");
-            int snapshotEnd = helloJson.indexOf("]", snapshotStart);
-            String snapshotSection = helloJson.substring(snapshotStart, snapshotEnd + 1);
-            assertThat(snapshotSection).doesNotContain("llm_iteration_started");
+        // Parse structurally to avoid brittle string slicing with nested arrays
+        com.fasterxml.jackson.databind.JsonNode helloNode =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(helloJson);
+        com.fasterxml.jackson.databind.JsonNode snapshotTrace = helloNode.get("snapshotTrace");
+        if (snapshotTrace != null && snapshotTrace.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode element : snapshotTrace) {
+                assertThat(element.path("type").asText()).isNotEqualTo("llm_iteration_started");
+            }
         }
     }
 
@@ -645,7 +647,7 @@ class WebSocketStreamingListenerTest {
     }
 
     @Test
-    void onLlmIterationCompleted_isEphemeral_notInSnapshotTrace() {
+    void onLlmIterationCompleted_isEphemeral_notInSnapshotTrace() throws Exception {
         connectionManager.noteEnsembleStarted("ens-1", Instant.now());
         listener.onLlmIterationCompleted(new LlmIterationCompletedEvent(
                 "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100)));
@@ -654,14 +656,16 @@ class WebSocketStreamingListenerTest {
         connectionManager.onConnect(lateSession);
 
         String helloJson = lateSession.sentMessages().get(0);
-        // The snapshotTrace should not contain iteration events (they are ephemeral).
+        // Parse structurally to avoid brittle string slicing with nested arrays.
         // Note: completed without a prior started will not appear in recentIterations either
         // (recordIterationCompleted requires a pending started entry).
-        if (helloJson.contains("snapshotTrace")) {
-            int snapshotStart = helloJson.indexOf("snapshotTrace");
-            int snapshotEnd = helloJson.indexOf("]", snapshotStart);
-            String snapshotSection = helloJson.substring(snapshotStart, snapshotEnd + 1);
-            assertThat(snapshotSection).doesNotContain("llm_iteration_completed");
+        com.fasterxml.jackson.databind.JsonNode helloNode =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(helloJson);
+        com.fasterxml.jackson.databind.JsonNode snapshotTrace = helloNode.get("snapshotTrace");
+        if (snapshotTrace != null && snapshotTrace.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode element : snapshotTrace) {
+                assertThat(element.path("type").asText()).isNotEqualTo("llm_iteration_completed");
+            }
         }
     }
 

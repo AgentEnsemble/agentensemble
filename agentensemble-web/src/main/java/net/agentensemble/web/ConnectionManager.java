@@ -89,9 +89,10 @@ class ConnectionManager {
 
     /**
      * Per-task ring buffer of completed {@link IterationSnapshot} pairs.
-     * Keyed by {@code agentRole + ":" + taskDescription}. Each deque is capped at
+     * Keyed by {@code agentRole + \":\" + taskDescription}. Each deque is capped at
      * {@link #maxSnapshotIterations} entries; when exceeded, the oldest entry is evicted.
-     * Protected by {@code synchronized(iterationSnapshots)} for structural modifications.
+     * Backed by a {@link ConcurrentHashMap}; structural modifications are performed via
+     * concurrent map operations rather than {@code synchronized(iterationSnapshots)}.
      */
     private final ConcurrentHashMap<String, Deque<IterationSnapshot>> iterationSnapshots = new ConcurrentHashMap<>();
 
@@ -355,9 +356,10 @@ class ConnectionManager {
     }
 
     /**
-     * Returns a flattened list of all recent {@link IterationSnapshot}s across all tasks,
-     * ordered by task key. Returns {@code null} when no snapshots have been recorded (to
-     * allow {@code @JsonInclude(NON_NULL)} to omit the field from the hello message).
+     * Returns a flattened list of all recent {@link IterationSnapshot}s across all tasks.
+     * The ordering across different task keys is not guaranteed (ConcurrentHashMap iteration
+     * order). Returns {@code null} when no snapshots have been recorded (to allow
+     * {@code @JsonInclude(NON_NULL)} to omit the field from the hello message).
      *
      * @return the recent iteration snapshots, or {@code null} if empty
      */
@@ -373,9 +375,14 @@ class ConnectionManager {
 
         List<IterationSnapshot> result = new ArrayList<>();
 
-        // Add completed snapshots from all tasks
+        // Add completed snapshots from all tasks.
+        // Use toArray() to avoid the ArrayDeque's fail-fast iterator, which can throw
+        // ConcurrentModificationException if recordIterationCompleted() mutates the deque
+        // concurrently (e.g. during a WebSocket onConnect() hello snapshot build).
         for (Map.Entry<String, Deque<IterationSnapshot>> entry : iterationSnapshots.entrySet()) {
-            result.addAll(entry.getValue());
+            for (Object o : entry.getValue().toArray()) {
+                result.add((IterationSnapshot) o);
+            }
         }
 
         // Add any pending (in-progress) iterations as incomplete snapshots

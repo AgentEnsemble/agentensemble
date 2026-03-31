@@ -494,7 +494,8 @@ export interface LlmIterationStartedMessage {
  */
 export interface IterationSnapshot {
   started: LlmIterationStartedMessage;
-  completed: LlmIterationCompletedMessage | null;
+  /** Null/undefined when the iteration is still in progress (omitted by @JsonInclude(NON_NULL) on the wire). */
+  completed?: LlmIterationCompletedMessage | null;
 }
 
 /** Sent when the LLM responds in a ReAct iteration. */
