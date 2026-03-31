@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.1.0...v3.2.0) (2026-03-31)
+
+
+### Features
+
+* add maxToolOutputLength and toolLogTruncateLength ([#294](https://github.com/AgentEnsemble/agentensemble/issues/294)) ([5b4bfae](https://github.com/AgentEnsemble/agentensemble/commit/5b4bfaefaafd132a0c326a0211b326c75430876e))
+
 ## [3.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.0.0...v3.1.0) (2026-03-31)
 
 
