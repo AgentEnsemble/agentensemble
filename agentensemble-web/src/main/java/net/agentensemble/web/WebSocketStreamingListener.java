@@ -211,8 +211,13 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                         m.getToolName()))
                 .toList();
 
-        broadcastEphemeral(new LlmIterationStartedMessage(
-                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos, totalCount));
+        LlmIterationStartedMessage msg = new LlmIterationStartedMessage(
+                event.agentRole(), event.taskDescription(), event.iterationIndex(), messageDtos, totalCount);
+        broadcastEphemeral(msg);
+
+        // Record in the iteration ring buffer for late-join snapshot hydration.
+        String key = event.agentRole() + ":" + event.taskDescription();
+        connectionManager.recordIterationStarted(key, msg);
     }
 
     @Override
@@ -223,7 +228,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                         .toList()
                 : null;
 
-        broadcastEphemeral(new LlmIterationCompletedMessage(
+        LlmIterationCompletedMessage msg = new LlmIterationCompletedMessage(
                 event.agentRole(),
                 event.taskDescription(),
                 event.iterationIndex(),
@@ -232,7 +237,12 @@ public final class WebSocketStreamingListener implements EnsembleListener {
                 toolDtos,
                 event.inputTokens(),
                 event.outputTokens(),
-                event.latency() != null ? event.latency().toMillis() : 0));
+                event.latency() != null ? event.latency().toMillis() : 0);
+        broadcastEphemeral(msg);
+
+        // Record in the iteration ring buffer for late-join snapshot hydration.
+        String key = event.agentRole() + ":" + event.taskDescription();
+        connectionManager.recordIterationCompleted(key, msg);
     }
 
     // ========================

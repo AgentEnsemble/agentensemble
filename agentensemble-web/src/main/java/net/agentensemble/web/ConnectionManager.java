@@ -2,13 +2,18 @@ package net.agentensemble.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import net.agentensemble.web.protocol.HelloMessage;
+import net.agentensemble.web.protocol.IterationSnapshot;
+import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
+import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +43,9 @@ class ConnectionManager {
     /** Default maximum number of completed runs to retain in the snapshot. */
     static final int DEFAULT_MAX_RETAINED_RUNS = 10;
 
+    /** Default maximum number of LLM iteration snapshots retained per task. */
+    static final int DEFAULT_MAX_SNAPSHOT_ITERATIONS = 5;
+
     private final Map<String, WsSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
     private final MessageSerializer serializer;
@@ -47,6 +55,13 @@ class ConnectionManager {
      * would exceed this cap, the oldest run's messages are evicted.
      */
     private final int maxRetainedRuns;
+
+    /**
+     * Maximum number of LLM iteration snapshots to retain per task in the ring buffer.
+     * When an iteration completes and the buffer for that task exceeds this cap, the oldest
+     * entry is evicted. Configured via {@link WebDashboard.Builder#maxSnapshotIterations(int)}.
+     */
+    private final int maxSnapshotIterations;
 
     /**
      * Per-run snapshot storage. Each inner list holds all messages broadcast during one run.
@@ -64,6 +79,23 @@ class ConnectionManager {
      */
     private volatile List<String> currentRunMessages = null;
 
+    /**
+     * Pending iteration-started messages, keyed by {@code agentRole + ":" + taskDescription}.
+     * When {@link #recordIterationCompleted} is called, the pending entry is removed and
+     * paired with the completed message to form an {@link IterationSnapshot}.
+     */
+    private final ConcurrentHashMap<String, LlmIterationStartedMessage> pendingIterationStarts =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Per-task ring buffer of completed {@link IterationSnapshot} pairs.
+     * Keyed by {@code agentRole + \":\" + taskDescription}. Each deque is capped at
+     * {@link #maxSnapshotIterations} entries; when exceeded, the oldest entry is evicted.
+     * Backed by a {@link ConcurrentHashMap}; structural modifications are performed via
+     * concurrent map operations rather than {@code synchronized(iterationSnapshots)}.
+     */
+    private final ConcurrentHashMap<String, Deque<IterationSnapshot>> iterationSnapshots = new ConcurrentHashMap<>();
+
     /** Ensemble ID from the most recent {@code ensemble_started} message, for hello. */
     private volatile String currentEnsembleId = null;
 
@@ -72,16 +104,18 @@ class ConnectionManager {
 
     /**
      * Create a {@code ConnectionManager} with the default run retention cap of
-     * {@value #DEFAULT_MAX_RETAINED_RUNS}.
+     * {@value #DEFAULT_MAX_RETAINED_RUNS} and iteration snapshot cap of
+     * {@value #DEFAULT_MAX_SNAPSHOT_ITERATIONS}.
      *
      * @param serializer the message serializer; must not be null
      */
     ConnectionManager(MessageSerializer serializer) {
-        this(serializer, DEFAULT_MAX_RETAINED_RUNS);
+        this(serializer, DEFAULT_MAX_RETAINED_RUNS, DEFAULT_MAX_SNAPSHOT_ITERATIONS);
     }
 
     /**
-     * Create a {@code ConnectionManager} with an explicit run retention cap.
+     * Create a {@code ConnectionManager} with an explicit run retention cap and the default
+     * iteration snapshot cap.
      *
      * @param serializer       the message serializer; must not be null
      * @param maxRetainedRuns  maximum number of completed runs to retain in the late-join snapshot;
@@ -90,14 +124,34 @@ class ConnectionManager {
      * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1
      */
     ConnectionManager(MessageSerializer serializer, int maxRetainedRuns) {
+        this(serializer, maxRetainedRuns, DEFAULT_MAX_SNAPSHOT_ITERATIONS);
+    }
+
+    /**
+     * Create a {@code ConnectionManager} with explicit run retention and iteration snapshot caps.
+     *
+     * @param serializer              the message serializer; must not be null
+     * @param maxRetainedRuns         maximum number of completed runs to retain in the late-join
+     *                                snapshot; must be &ge; 1
+     * @param maxSnapshotIterations   maximum number of LLM iteration snapshots to retain per task;
+     *                                must be &ge; 0 (0 disables iteration snapshots)
+     * @throws NullPointerException     when {@code serializer} is null
+     * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1 or
+     *                                  {@code maxSnapshotIterations} is negative
+     */
+    ConnectionManager(MessageSerializer serializer, int maxRetainedRuns, int maxSnapshotIterations) {
         if (serializer == null) {
             throw new NullPointerException("serializer must not be null");
         }
         if (maxRetainedRuns < 1) {
             throw new IllegalArgumentException("maxRetainedRuns must be >= 1; got: " + maxRetainedRuns);
         }
+        if (maxSnapshotIterations < 0) {
+            throw new IllegalArgumentException("maxSnapshotIterations must be >= 0; got: " + maxSnapshotIterations);
+        }
         this.serializer = serializer;
         this.maxRetainedRuns = maxRetainedRuns;
+        this.maxSnapshotIterations = maxSnapshotIterations;
     }
 
     /**
@@ -120,7 +174,8 @@ class ConnectionManager {
         }
 
         JsonNode snapshotNode = buildSnapshotNode();
-        HelloMessage hello = new HelloMessage(currentEnsembleId, ensembleStartedAt, snapshotNode);
+        List<IterationSnapshot> iterations = getRecentIterations();
+        HelloMessage hello = new HelloMessage(currentEnsembleId, ensembleStartedAt, snapshotNode, null, iterations);
         String helloJson = serializer.toJson(hello);
         session.send(helloJson);
     }
@@ -234,6 +289,123 @@ class ConnectionManager {
         // the new current list.
         this.currentRunMessages = newRunList;
     }
+
+    // ========================
+    // Iteration snapshot ring buffer
+    // ========================
+
+    /**
+     * Records an {@link LlmIterationStartedMessage} as a pending iteration for the given
+     * task key. The message is stored until the corresponding
+     * {@link #recordIterationCompleted} call arrives.
+     *
+     * <p>If iteration snapshots are disabled ({@code maxSnapshotIterations == 0}), this
+     * method is a no-op.
+     *
+     * @param key the task key ({@code agentRole + ":" + taskDescription})
+     * @param msg the iteration-started message
+     */
+    void recordIterationStarted(String key, LlmIterationStartedMessage msg) {
+        if (maxSnapshotIterations == 0) {
+            return;
+        }
+        pendingIterationStarts.put(key, msg);
+    }
+
+    /**
+     * Pairs the pending iteration-started message for the given task key with the provided
+     * completed message to form an {@link IterationSnapshot}, then adds it to the per-task
+     * ring buffer. If the buffer exceeds {@link #maxSnapshotIterations}, the oldest entry
+     * is evicted.
+     *
+     * <p>If no pending started message exists for the key (e.g. the listener missed the
+     * start event, or snapshots are disabled), this method is a no-op.
+     *
+     * @param key the task key ({@code agentRole + ":" + taskDescription})
+     * @param msg the iteration-completed message
+     */
+    void recordIterationCompleted(String key, LlmIterationCompletedMessage msg) {
+        if (maxSnapshotIterations == 0) {
+            return;
+        }
+        LlmIterationStartedMessage started = pendingIterationStarts.remove(key);
+        if (started == null) {
+            return;
+        }
+        IterationSnapshot snapshot = new IterationSnapshot(started, msg);
+        iterationSnapshots.compute(key, (k, deque) -> {
+            if (deque == null) {
+                deque = new ArrayDeque<>();
+            }
+            deque.addLast(snapshot);
+            while (deque.size() > maxSnapshotIterations) {
+                deque.removeFirst();
+            }
+            return deque;
+        });
+    }
+
+    /**
+     * Clears all iteration snapshot buffers and pending starts. Called when a new ensemble
+     * run starts so that stale iteration data from a previous run is not included in the
+     * hello message for the new run.
+     */
+    void clearIterationSnapshots() {
+        pendingIterationStarts.clear();
+        iterationSnapshots.clear();
+    }
+
+    /**
+     * Returns a flattened list of all recent {@link IterationSnapshot}s across all tasks.
+     * The ordering across different task keys is not guaranteed (ConcurrentHashMap iteration
+     * order). Returns {@code null} when no snapshots have been recorded (to allow
+     * {@code @JsonInclude(NON_NULL)} to omit the field from the hello message).
+     *
+     * @return the recent iteration snapshots, or {@code null} if empty
+     */
+    List<IterationSnapshot> getRecentIterations() {
+        if (iterationSnapshots.isEmpty()) {
+            // Also check pending starts: if there is a pending start without a completed
+            // message, include it as an incomplete snapshot so the client sees the
+            // "thinking" state.
+            if (pendingIterationStarts.isEmpty()) {
+                return null;
+            }
+        }
+
+        List<IterationSnapshot> result = new ArrayList<>();
+
+        // Add completed snapshots from all tasks.
+        // Use toArray() to avoid the ArrayDeque's fail-fast iterator, which can throw
+        // ConcurrentModificationException if recordIterationCompleted() mutates the deque
+        // concurrently (e.g. during a WebSocket onConnect() hello snapshot build).
+        for (Map.Entry<String, Deque<IterationSnapshot>> entry : iterationSnapshots.entrySet()) {
+            for (Object o : entry.getValue().toArray()) {
+                result.add((IterationSnapshot) o);
+            }
+        }
+
+        // Add any pending (in-progress) iterations as incomplete snapshots
+        for (Map.Entry<String, LlmIterationStartedMessage> entry : pendingIterationStarts.entrySet()) {
+            result.add(new IterationSnapshot(entry.getValue(), null));
+        }
+
+        return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * Returns the configured maximum number of iteration snapshots per task.
+     * Package-private for testing.
+     *
+     * @return the configured cap; always &ge; 0
+     */
+    int getMaxSnapshotIterations() {
+        return maxSnapshotIterations;
+    }
+
+    // ========================
+    // Review coordination
+    // ========================
 
     /**
      * Registers a pending review future that will be resolved when the browser sends a

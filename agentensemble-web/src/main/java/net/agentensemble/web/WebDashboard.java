@@ -127,6 +127,13 @@ public final class WebDashboard implements EnsembleDashboard {
     private final int maxRetainedRuns;
 
     /**
+     * Maximum number of LLM iteration snapshots retained per task in the late-join
+     * snapshot. When an iteration completes and the buffer for that task exceeds this cap,
+     * the oldest entry is evicted. Default is 5. Set to 0 to disable.
+     */
+    private final int maxSnapshotIterations;
+
+    /**
      * Optional workspace root path for file browsing endpoints. Null when not configured.
      */
     private final Path workspacePath;
@@ -172,8 +179,10 @@ public final class WebDashboard implements EnsembleDashboard {
         this.workspacePath = builder.workspacePath;
         this.configuredTraceExporter = traceExportDir != null ? new JsonTraceExporter(traceExportDir) : null;
 
+        this.maxSnapshotIterations = builder.maxSnapshotIterations;
+
         this.serializer = new MessageSerializer();
-        this.connectionManager = new ConnectionManager(serializer, maxRetainedRuns);
+        this.connectionManager = new ConnectionManager(serializer, maxRetainedRuns, maxSnapshotIterations);
         this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "agentensemble-web-heartbeat");
             t.setDaemon(true);
@@ -312,6 +321,7 @@ public final class WebDashboard implements EnsembleDashboard {
     @Override
     public void onEnsembleStarted(String ensembleId, Instant startedAt, int totalTasks, String workflow) {
         connectionManager.noteEnsembleStarted(ensembleId, startedAt);
+        connectionManager.clearIterationSnapshots();
         try {
             EnsembleStartedMessage msg = new EnsembleStartedMessage(ensembleId, startedAt, totalTasks, workflow);
             String json = serializer.toJson(msg);
@@ -442,6 +452,16 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     public int getMaxRetainedRuns() {
         return maxRetainedRuns;
+    }
+
+    /**
+     * Returns the maximum number of LLM iteration snapshots retained per task in the
+     * late-join snapshot.
+     *
+     * @return the configured cap; always &ge; 0 (0 means iteration snapshots are disabled)
+     */
+    public int getMaxSnapshotIterations() {
+        return maxSnapshotIterations;
     }
 
     /**
@@ -724,6 +744,7 @@ public final class WebDashboard implements EnsembleDashboard {
         private OnTimeoutAction onTimeout = OnTimeoutAction.CONTINUE;
         private Path traceExportDir = null;
         private int maxRetainedRuns = 10;
+        private int maxSnapshotIterations = 5;
         private Path workspacePath = null;
 
         private Builder() {}
@@ -837,6 +858,27 @@ public final class WebDashboard implements EnsembleDashboard {
         }
 
         /**
+         * Sets the maximum number of LLM iteration snapshots retained per task in the
+         * late-join snapshot sent to newly connecting browsers.
+         *
+         * <p>When an iteration completes and the per-task buffer exceeds this cap, the
+         * oldest entry is evicted. This provides conversation history for late-joining
+         * clients without unbounded memory growth.
+         *
+         * <p>Default: 5. Set to 0 to disable iteration snapshots entirely.
+         *
+         * @param maxSnapshotIterations the maximum number of iterations per task; must be
+         *                              &ge; 0
+         * @return this builder
+         * @throws IllegalArgumentException when {@code maxSnapshotIterations} is negative
+         *                                  (validated at {@link #build()} time)
+         */
+        public Builder maxSnapshotIterations(int maxSnapshotIterations) {
+            this.maxSnapshotIterations = maxSnapshotIterations;
+            return this;
+        }
+
+        /**
          * Sets the workspace root path for the file browsing API endpoint.
          *
          * <p>When set, the dashboard exposes a {@code GET /api/workspace/files?path=<rel>}
@@ -878,6 +920,11 @@ public final class WebDashboard implements EnsembleDashboard {
             Objects.requireNonNull(onTimeout, "onTimeout must not be null");
             if (maxRetainedRuns < 1) {
                 throw new IllegalArgumentException("maxRetainedRuns must be >= 1; got: " + maxRetainedRuns);
+            }
+            if (maxSnapshotIterations < 0) {
+                throw new IllegalArgumentException(
+                        "maxSnapshotIterations must be >= 0 (0 disables iteration snapshots); got: "
+                                + maxSnapshotIterations);
             }
             return new WebDashboard(this);
         }
