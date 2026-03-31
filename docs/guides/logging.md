@@ -148,7 +148,7 @@ All MDC keys (`ensemble.id`, `task.index`, `agent.role`, `delegation.depth`, `de
 
 ## Tool Output Truncation
 
-By default, tool results are truncated to **200 characters** in log statements to keep log files readable. The full output always passes through to the LLM and is stored in the execution trace.
+By default, tool results are truncated to **200 characters** in log statements to keep log files readable. By default, the full output passes through to the LLM and is stored in the execution trace.
 
 Two independent knobs let you tune this behaviour:
 
@@ -157,11 +157,14 @@ Two independent knobs let you tune this behaviour:
 Controls what appears in INFO/WARN log lines for tool calls:
 
 ```java
-Ensemble.builder()
-    .toolLogTruncateLength(500)   // log first 500 chars (more context in logs)
-    .toolLogTruncateLength(-1)    // log full output (useful when debugging)
-    .toolLogTruncateLength(0)     // suppress output content from logs entirely
-    .build();
+// log first 500 chars (more context in logs)
+Ensemble.builder().toolLogTruncateLength(500).build();
+
+// log full output (useful when debugging)
+Ensemble.builder().toolLogTruncateLength(-1).build();
+
+// suppress output content from logs entirely
+Ensemble.builder().toolLogTruncateLength(0).build();
 ```
 
 ### `maxToolOutputLength` — LLM context window

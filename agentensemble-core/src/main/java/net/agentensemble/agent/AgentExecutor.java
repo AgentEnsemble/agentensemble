@@ -1090,9 +1090,6 @@ public class AgentExecutor {
      * @return the (possibly truncated) text; never {@code null}
      */
     private static String truncateForLlm(String text, int maxLength) {
-        if (text == null) {
-            return "";
-        }
         if (maxLength < 0 || text.length() <= maxLength) {
             return text;
         }
@@ -1125,6 +1122,7 @@ public class AgentExecutor {
 
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";
+        if (maxLength == 0) return "";
         if (maxLength < 0 || text.length() <= maxLength) return text;
         return text.substring(0, maxLength) + "...";
     }

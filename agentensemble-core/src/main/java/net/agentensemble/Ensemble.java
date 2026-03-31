@@ -1071,7 +1071,7 @@ public class Ensemble {
      * <p>Non-null fields in {@code runOptions} override the ensemble-level defaults set on
      * the builder. {@code null} fields inherit the builder defaults.
      *
-     * @param runOptions per-run overrides; must not be null
+     * @param runOptions per-run overrides; {@code null} means no overrides (identical to {@link #run()})
      * @return EnsembleOutput containing all results
      * @throws ValidationException if the ensemble configuration is invalid
      */
@@ -1090,7 +1090,7 @@ public class Ensemble {
      * configured on the builder, and applying per-run option overrides.
      *
      * @param runtimeInputs additional or overriding variable values
-     * @param runOptions    per-run overrides; must not be null
+     * @param runOptions    per-run overrides; {@code null} means no overrides (identical to {@link #run(Map)})
      * @return EnsembleOutput containing all results
      * @throws ValidationException if the ensemble configuration is invalid
      */

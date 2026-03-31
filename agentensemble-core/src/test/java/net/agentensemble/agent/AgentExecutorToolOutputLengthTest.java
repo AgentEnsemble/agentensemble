@@ -58,9 +58,9 @@ class AgentExecutorToolOutputLengthTest {
         return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }
 
-    /** Build an ExecutionContext with the given maxToolOutputLength. STANDARD capture is on so
+    /** Build an ExecutionContext with the given truncation settings. STANDARD capture is on so
      * messages are captured in the trace for verification. */
-    private ExecutionContext contextWith(int maxToolOutputLength) {
+    private ExecutionContext contextWith(int maxToolOutputLength, int toolLogTruncateLength) {
         return ExecutionContext.of(
                 MemoryContext.disabled(),
                 false,
@@ -77,11 +77,15 @@ class AgentExecutorToolOutputLengthTest {
                 null,
                 null,
                 maxToolOutputLength,
-                200);
+                toolLogTruncateLength);
     }
 
     /** Execute a task where the tool returns {@code toolOutput}. */
     private TaskOutput runWithToolOutput(String toolOutput, int maxToolOutputLength) {
+        return runWithToolOutput(toolOutput, maxToolOutputLength, 200);
+    }
+
+    private TaskOutput runWithToolOutput(String toolOutput, int maxToolOutputLength, int toolLogTruncateLength) {
         ChatModel mockLlm = mock(ChatModel.class);
         AgentTool mockTool = mock(AgentTool.class);
         when(mockTool.name()).thenReturn("search");
@@ -99,7 +103,7 @@ class AgentExecutorToolOutputLengthTest {
                 .build();
         var task =
                 Task.builder().description("D").expectedOutput("E").agent(agent).build();
-        return executor.execute(task, List.of(), contextWith(maxToolOutputLength));
+        return executor.execute(task, List.of(), contextWith(maxToolOutputLength, toolLogTruncateLength));
     }
 
     /** Get the captured tool-result message from the second LLM iteration. */
@@ -189,5 +193,26 @@ class AgentExecutorToolOutputLengthTest {
         String llmText = capturedToolResultContent(result);
         assertThat(llmText).contains("[truncated");
         assertThat(llmText).doesNotContain("Non-empty output");
+    }
+
+    // ========================
+    // toolLogTruncateLength branches
+    // ========================
+
+    @Test
+    void toolLogTruncateLength_negative_unlimitedLogging() {
+        // toolLogTruncateLength = -1 hits the maxLength < 0 branch in truncate()
+        // The run must complete successfully regardless of log truncation setting
+        String output = "A".repeat(500);
+        TaskOutput result = runWithToolOutput(output, -1, -1);
+        assertThat(result.getRaw()).isEqualTo("Done.");
+    }
+
+    @Test
+    void toolLogTruncateLength_zero_suppressesLogContent() {
+        // toolLogTruncateLength = 0 hits the new maxLength == 0 branch in truncate()
+        String output = "B".repeat(100);
+        TaskOutput result = runWithToolOutput(output, -1, 0);
+        assertThat(result.getRaw()).isEqualTo("Done.");
     }
 }
