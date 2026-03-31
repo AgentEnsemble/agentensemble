@@ -18,8 +18,8 @@ javalin          = "7.1.0"
 jtoon            = "1.0.9"
 lettuce          = "6.5.5.RELEASE"
 kafka              = "4.2.0"
-testcontainers     = "1.21.0"
-opentelemetry      = "1.47.0"
+testcontainers     = "1.21.4"
+opentelemetry      = "1.60.1"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
