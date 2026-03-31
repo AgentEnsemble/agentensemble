@@ -51,6 +51,7 @@ import net.agentensemble.ensemble.SharedCapabilityType;
 import net.agentensemble.exception.AgentEnsembleException;
 import net.agentensemble.exception.ValidationException;
 import net.agentensemble.execution.ExecutionContext;
+import net.agentensemble.execution.RunOptions;
 import net.agentensemble.format.ContextFormat;
 import net.agentensemble.format.ContextFormatters;
 import net.agentensemble.memory.MemoryContext;
@@ -450,6 +451,35 @@ public class Ensemble {
      * <p>Default: null (no ensemble-level rate limiting).
      */
     private final RateLimit rateLimit;
+
+    /**
+     * Maximum characters of tool output sent to the LLM per tool call.
+     *
+     * <p>{@code -1} (the default) means no truncation — the LLM always sees the full output.
+     * Set a positive value (e.g. {@code 5000}) to cap every tool result before it is added
+     * to the message history. When truncation occurs, a note is appended so the LLM knows
+     * the output was cut.
+     *
+     * <p>Can be overridden per-run via {@link RunOptions#getMaxToolOutputLength()}.
+     *
+     * <p>Default: {@code -1} (unlimited).
+     */
+    @Builder.Default
+    private final int maxToolOutputLength = -1;
+
+    /**
+     * Maximum characters of tool output emitted to log statements.
+     *
+     * <p>{@code -1} means full output is logged; {@code 0} suppresses output content
+     * from logs entirely. This is purely for developer visibility and does not affect what
+     * the LLM sees.
+     *
+     * <p>Can be overridden per-run via {@link RunOptions#getToolLogTruncateLength()}.
+     *
+     * <p>Default: {@code 200} (matches the pre-configurable behaviour).
+     */
+    @Builder.Default
+    private final int toolLogTruncateLength = 200;
 
     /**
      * Reserved for future graceful shutdown behavior.
@@ -1014,7 +1044,7 @@ public class Ensemble {
      * @throws ValidationException if the ensemble configuration is invalid
      */
     public EnsembleOutput run() {
-        return runWithInputs(inputs);
+        return runWithInputs(inputs, maxToolOutputLength, toolLogTruncateLength);
     }
 
     /**
@@ -1028,11 +1058,62 @@ public class Ensemble {
      */
     public EnsembleOutput run(Map<String, String> runtimeInputs) {
         if (runtimeInputs == null || runtimeInputs.isEmpty()) {
-            return runWithInputs(inputs);
+            return runWithInputs(inputs, maxToolOutputLength, toolLogTruncateLength);
         }
         Map<String, String> merged = new LinkedHashMap<>(inputs);
         merged.putAll(runtimeInputs);
-        return runWithInputs(Collections.unmodifiableMap(merged));
+        return runWithInputs(Collections.unmodifiableMap(merged), maxToolOutputLength, toolLogTruncateLength);
+    }
+
+    /**
+     * Execute the ensemble's tasks with per-run option overrides.
+     *
+     * <p>Non-null fields in {@code runOptions} override the ensemble-level defaults set on
+     * the builder. {@code null} fields inherit the builder defaults.
+     *
+     * @param runOptions per-run overrides; must not be null
+     * @return EnsembleOutput containing all results
+     * @throws ValidationException if the ensemble configuration is invalid
+     */
+    public EnsembleOutput run(RunOptions runOptions) {
+        if (runOptions == null) {
+            return run();
+        }
+        return runWithInputs(
+                inputs,
+                resolveRunOption(maxToolOutputLength, runOptions.getMaxToolOutputLength()),
+                resolveRunOption(toolLogTruncateLength, runOptions.getToolLogTruncateLength()));
+    }
+
+    /**
+     * Execute the ensemble's tasks, merging the supplied run-time inputs with any inputs
+     * configured on the builder, and applying per-run option overrides.
+     *
+     * @param runtimeInputs additional or overriding variable values
+     * @param runOptions    per-run overrides; must not be null
+     * @return EnsembleOutput containing all results
+     * @throws ValidationException if the ensemble configuration is invalid
+     */
+    public EnsembleOutput run(Map<String, String> runtimeInputs, RunOptions runOptions) {
+        if (runOptions == null) {
+            return run(runtimeInputs);
+        }
+        Map<String, String> merged;
+        if (runtimeInputs == null || runtimeInputs.isEmpty()) {
+            merged = inputs;
+        } else {
+            Map<String, String> m = new LinkedHashMap<>(inputs);
+            m.putAll(runtimeInputs);
+            merged = Collections.unmodifiableMap(m);
+        }
+        return runWithInputs(
+                merged,
+                resolveRunOption(maxToolOutputLength, runOptions.getMaxToolOutputLength()),
+                resolveRunOption(toolLogTruncateLength, runOptions.getToolLogTruncateLength()));
+    }
+
+    private static int resolveRunOption(int ensembleDefault, Integer runOverride) {
+        return runOverride != null ? runOverride : ensembleDefault;
     }
 
     /**
@@ -1057,7 +1138,8 @@ public class Ensemble {
         return List.copyOf(result);
     }
 
-    private EnsembleOutput runWithInputs(Map<String, String> resolvedInputs) {
+    private EnsembleOutput runWithInputs(
+            Map<String, String> resolvedInputs, int maxToolOutputLength, int toolLogTruncateLength) {
         String ensembleId = UUID.randomUUID().toString();
         MDC.put("ensemble.id", ensembleId);
         Instant runStartedAt = Instant.now();
@@ -1219,7 +1301,9 @@ public class Ensemble {
                     streamingChatLanguageModel,
                     effectiveReflectionStore,
                     contextFormat != null ? ContextFormatters.forFormat(contextFormat) : null,
-                    directiveStore);
+                    directiveStore,
+                    maxToolOutputLength,
+                    toolLogTruncateLength);
 
             if (reviewHandler != null) {
                 log.info("ReviewHandler enabled | Policy: {}", reviewPolicy);

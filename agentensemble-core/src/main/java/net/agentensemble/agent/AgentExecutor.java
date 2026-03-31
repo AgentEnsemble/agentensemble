@@ -98,9 +98,6 @@ public class AgentExecutor {
     /** Number of "stop" messages to send before throwing MaxIterationsExceededException. */
     private static final int MAX_STOP_MESSAGES = 3;
 
-    /** Truncation length for tool input/output in INFO logs. */
-    private static final int LOG_TRUNCATE_LENGTH = 200;
-
     /** Jackson mapper used to parse tool arguments into structured maps at FULL capture. */
     private static final ObjectMapper ARGUMENT_MAPPER = new ObjectMapper();
 
@@ -755,6 +752,7 @@ public class AgentExecutor {
         Instant toolEnd = Instant.now();
         Duration toolDuration = Duration.between(toolStart, toolEnd);
         String toolResultText = toText(toolResult);
+        String llmText = truncateForLlm(toolResultText, executionContext.maxToolOutputLength());
 
         ToolCallTrace.ToolCallTraceBuilder traceBuilder = ToolCallTrace.builder()
                 .toolName(toolRequest.name())
@@ -775,7 +773,7 @@ public class AgentExecutor {
 
         accumulator.addToolCallToCurrentIteration(traceBuilder.build());
 
-        logToolCall(agentRole, toolRequest, toolResultText, toolDuration);
+        logToolCall(agentRole, toolRequest, toolResultText, toolDuration, executionContext.toolLogTruncateLength());
         String toolOutcome = classifyOutcomeString(toolResult);
         executionContext.fireToolCall(new ToolCallEvent(
                 toolRequest.name(),
@@ -788,7 +786,7 @@ public class AgentExecutor {
                 toolOutcome));
 
         ToolExecutionResultMessage resultMsg =
-                new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), toolResultText);
+                new ToolExecutionResultMessage(toolRequest.id(), toolRequest.name(), llmText);
         messages.add(resultMsg);
         return resultMsg;
     }
@@ -915,7 +913,13 @@ public class AgentExecutor {
                 }
             } else {
                 String toolResultText = toText(te.result());
-                logToolCall(agentRole, te.request(), toolResultText, te.duration());
+                String llmText = truncateForLlm(toolResultText, executionContext.maxToolOutputLength());
+                logToolCall(
+                        agentRole,
+                        te.request(),
+                        toolResultText,
+                        te.duration(),
+                        executionContext.toolLogTruncateLength());
 
                 ToolCallTrace.ToolCallTraceBuilder traceBuilder = ToolCallTrace.builder()
                         .toolName(te.request().name())
@@ -947,7 +951,7 @@ public class AgentExecutor {
                         executionContext.currentTaskIndex(),
                         parallelOutcome));
                 messages.add(new ToolExecutionResultMessage(
-                        te.request().id(), te.request().name(), toolResultText));
+                        te.request().id(), te.request().name(), llmText));
             }
         }
 
@@ -1047,15 +1051,19 @@ public class AgentExecutor {
     }
 
     private static void logToolCall(
-            String agentRole, ToolExecutionRequest toolRequest, String toolResultText, Duration toolDuration) {
+            String agentRole,
+            ToolExecutionRequest toolRequest,
+            String toolResultText,
+            Duration toolDuration,
+            int toolLogTruncateLength) {
         if (toolResultText != null && toolResultText.startsWith("Error:")) {
             if (log.isWarnEnabled()) {
                 log.warn(
                         "[{}] Tool error: {}({}) -> {} [{}ms]",
                         agentRole,
                         toolRequest.name(),
-                        truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                        truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                        truncate(toolRequest.arguments(), toolLogTruncateLength),
+                        truncate(toolResultText, toolLogTruncateLength),
                         toolDuration.toMillis());
             }
         } else {
@@ -1064,11 +1072,31 @@ public class AgentExecutor {
                         "[{}] Tool call: {}({}) -> {} [{}ms]",
                         agentRole,
                         toolRequest.name(),
-                        truncate(toolRequest.arguments(), LOG_TRUNCATE_LENGTH),
-                        truncate(toolResultText, LOG_TRUNCATE_LENGTH),
+                        truncate(toolRequest.arguments(), toolLogTruncateLength),
+                        truncate(toolResultText, toolLogTruncateLength),
                         toolDuration.toMillis());
             }
         }
+    }
+
+    /**
+     * Truncate tool output for the LLM message history.
+     *
+     * <p>When {@code maxLength} is negative, the text is returned unchanged.
+     * When truncated, a note with the full length is appended so the LLM knows output was cut.
+     *
+     * @param text      the raw tool result text; may be {@code null}
+     * @param maxLength max characters to keep; {@code -1} means unlimited
+     * @return the (possibly truncated) text; never {@code null}
+     */
+    private static String truncateForLlm(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+        if (maxLength < 0 || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "... [truncated, full length: " + text.length() + " chars]";
     }
 
     /**
@@ -1097,6 +1125,7 @@ public class AgentExecutor {
 
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";
-        return text.length() > maxLength ? text.substring(0, maxLength) + "..." : text;
+        if (maxLength < 0 || text.length() <= maxLength) return text;
+        return text.substring(0, maxLength) + "...";
     }
 }
