@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.0.0...v3.1.0) (2026-03-31)
+
+
+### Features
+
+* Viz observability -- tool & agent I/O visibility (IO-001, IO-002) ([#290](https://github.com/AgentEnsemble/agentensemble/issues/290)) ([b9c782d](https://github.com/AgentEnsemble/agentensemble/commit/b9c782d13ba0658db0421ca5aba40422adfb8dac))
+* **viz:** IO-004 tool call detail panel and IO-005 agent conversation thread view ([#293](https://github.com/AgentEnsemble/agentensemble/issues/293)) ([ca1c7cb](https://github.com/AgentEnsemble/agentensemble/commit/ca1c7cb8cf574e01a1c39c8dff0f78fe16a8dfa7))
+* **web:** persist LLM iteration data in late-join snapshots ([#292](https://github.com/AgentEnsemble/agentensemble/issues/292)) ([775a5fe](https://github.com/AgentEnsemble/agentensemble/commit/775a5fea531871a29bc19c39fdabc6bf7eb04674))
+
 ## [3.0.0](https://github.com/AgentEnsemble/agentensemble/compare/v2.10.0...v3.0.0) (2026-03-29)
 
 
