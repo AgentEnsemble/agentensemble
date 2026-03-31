@@ -282,6 +282,13 @@ export interface HelloMessage {
    * Null if no messages have been broadcast yet (empty snapshot).
    */
   snapshotTrace: unknown[] | null;
+  /**
+   * Recent LLM iteration snapshots for conversation hydration on late-join.
+   * Each snapshot pairs a started message with its corresponding completed message.
+   * Absent/undefined when no iterations have been recorded or the server does not
+   * support this field (backward compatibility).
+   */
+  recentIterations?: IterationSnapshot[];
 }
 
 /** Sent when Ensemble.run() begins. */
@@ -475,6 +482,19 @@ export interface LlmIterationStartedMessage {
    * backwards compatibility with older servers that send the full history.
    */
   totalMessageCount?: number;
+}
+
+/**
+ * Pairs an LlmIterationStartedMessage with its corresponding completed message
+ * for one LLM iteration. Used in the hello message to provide late-joining
+ * clients with conversation history.
+ *
+ * The completed field is null when the iteration is still in progress
+ * (the LLM has been called but has not yet responded).
+ */
+export interface IterationSnapshot {
+  started: LlmIterationStartedMessage;
+  completed: LlmIterationCompletedMessage | null;
 }
 
 /** Sent when the LLM responds in a ReAct iteration. */

@@ -804,4 +804,87 @@ class WebSocketStreamingListenerTest {
                 "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100)));
         assertThat(session.sentMessages()).isEmpty();
     }
+
+    // ========================
+    // Iteration snapshot recording (IO-003)
+    // ========================
+
+    @Test
+    void iterationPair_recordedInSnapshotForLateJoiners() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+
+        CapturedMessage sysMsg = CapturedMessage.builder()
+                .role("system")
+                .content("You are helpful")
+                .build();
+        CapturedMessage userMsg = CapturedMessage.builder()
+                .role("user")
+                .content("Tell me about AI")
+                .build();
+
+        listener.onLlmIterationStarted(
+                new LlmIterationStartedEvent("Researcher", "Find AI papers", 0, List.of(sysMsg, userMsg)));
+        listener.onLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Researcher",
+                "Find AI papers",
+                0,
+                "FINAL_ANSWER",
+                "AI is great",
+                null,
+                500L,
+                200L,
+                Duration.ofMillis(1200)));
+
+        // Late-joining client should see iteration data in hello
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("recentIterations");
+        assertThat(helloJson).contains("llm_iteration_started");
+        assertThat(helloJson).contains("llm_iteration_completed");
+        assertThat(helloJson).contains("AI is great");
+    }
+
+    @Test
+    void pendingIteration_includedInHelloAsIncomplete() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+
+        CapturedMessage msg =
+                CapturedMessage.builder().role("user").content("Hello").build();
+
+        // Only start, no completed yet
+        listener.onLlmIterationStarted(new LlmIterationStartedEvent("Agent", "Task", 0, List.of(msg)));
+
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("recentIterations");
+        assertThat(helloJson).contains("llm_iteration_started");
+        // completed should be null (omitted by NON_NULL)
+        assertThat(helloJson).doesNotContain("llm_iteration_completed");
+    }
+
+    @Test
+    void iterationSnapshots_clearedOnNewEnsembleStart() {
+        connectionManager.noteEnsembleStarted("ens-1", Instant.now());
+
+        CapturedMessage msg =
+                CapturedMessage.builder().role("user").content("Hello").build();
+
+        listener.onLlmIterationStarted(new LlmIterationStartedEvent("Agent", "Task", 0, List.of(msg)));
+        listener.onLlmIterationCompleted(new LlmIterationCompletedEvent(
+                "Agent", "Task", 0, "FINAL_ANSWER", "done", null, 100L, 50L, Duration.ofMillis(100)));
+
+        // Simulate new ensemble start which should clear snapshots
+        connectionManager.noteEnsembleStarted("ens-2", Instant.now());
+        connectionManager.clearIterationSnapshots();
+
+        ConnectionManagerTest.MockWsSession lateSession = new ConnectionManagerTest.MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).doesNotContain("recentIterations");
+    }
 }

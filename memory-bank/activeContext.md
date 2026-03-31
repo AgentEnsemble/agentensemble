@@ -3,8 +3,8 @@
 
 ## Current Work
 
-PR #249 open: `feat/en-001-003-network-foundation`
-Closes #216 (EN-001), #217 (EN-002), #218 (EN-003).
+Branch `feat/io-003-iteration-snapshots` -- Issue #287 (IO-003).
+Persist LLM iteration data in late-join snapshots for conversation replay.
 
 ### What was implemented
 
