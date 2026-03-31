@@ -554,6 +554,134 @@ class ExecutionContextTest {
         ctx.fireFileChanged(new FileChangedEvent("Agent", "file.txt", "CREATED", 1, 0, Instant.now()));
     }
 
+    // ========================
+    // Factory: 16-param of() — null guards and field storage
+    // ========================
+
+    private static ExecutionContext valid16param() {
+        return ExecutionContext.of(
+                MemoryContext.disabled(),
+                false,
+                List.of(),
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                null,
+                net.agentensemble.trace.CaptureMode.OFF,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                -1,
+                200);
+    }
+
+    @Test
+    void of16arg_nullMemoryContext_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        null,
+                        false,
+                        List.of(),
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                        net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                        null,
+                        net.agentensemble.trace.CaptureMode.OFF,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        -1,
+                        200))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("memoryContext");
+    }
+
+    @Test
+    void of16arg_nullListeners_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        MemoryContext.disabled(),
+                        false,
+                        null,
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                        net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                        null,
+                        net.agentensemble.trace.CaptureMode.OFF,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        -1,
+                        200))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("listeners");
+    }
+
+    @Test
+    void of16arg_nullToolExecutor_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        MemoryContext.disabled(),
+                        false,
+                        List.of(),
+                        null,
+                        net.agentensemble.tool.NoOpToolMetrics.INSTANCE,
+                        null,
+                        net.agentensemble.trace.CaptureMode.OFF,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        -1,
+                        200))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolExecutor");
+    }
+
+    @Test
+    void of16arg_nullToolMetrics_throws() {
+        assertThatThrownBy(() -> ExecutionContext.of(
+                        MemoryContext.disabled(),
+                        false,
+                        List.of(),
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(),
+                        null,
+                        null,
+                        net.agentensemble.trace.CaptureMode.OFF,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        -1,
+                        200))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("toolMetrics");
+    }
+
+    @Test
+    void of16arg_storesMaxToolOutputLength() {
+        ExecutionContext ctx = valid16param();
+        assertThat(ctx.maxToolOutputLength()).isEqualTo(-1);
+    }
+
+    @Test
+    void of16arg_storesToolLogTruncateLength() {
+        ExecutionContext ctx = valid16param();
+        assertThat(ctx.toolLogTruncateLength()).isEqualTo(200);
+    }
+
     @Test
     void fireFileChanged_subsequentListenersCalledEvenIfOneThrows() {
         AtomicInteger callCount = new AtomicInteger(0);

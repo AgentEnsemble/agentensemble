@@ -36,6 +36,8 @@ All fields available on `Ensemble.builder()`.
 | `reviewHandler` | `ReviewHandler` | No | `null` | Optional review handler for human-in-the-loop gates (requires `agentensemble-review` on the classpath). When set, the workflow executor fires review gates at configured timing points. Built-in factories: `ReviewHandler.console()`, `ReviewHandler.autoApprove()`, `ReviewHandler.autoApproveWithDelay(Duration)`, `ReviewHandler.web(URI)` (stub). See [Review guide](../guides/review.md). |
 | `reviewPolicy` | `ReviewPolicy` | No | `null` (treated as `NEVER`) | Ensemble-level policy controlling when after-execution review gates fire for tasks without an explicit `.review()` configuration. `NEVER` (default): only tasks with `.review(Review.required())` fire. `AFTER_EVERY_TASK`: all tasks fire; tasks with `.review(Review.skip())` are exempt. `AFTER_LAST_TASK`: only the final task fires. Requires `reviewHandler` to be set. See [Review guide](../guides/review.md). |
 | `contextFormat` | `ContextFormat` | No | `JSON` | Serialization format for structured data in LLM prompts. `JSON` (default) uses standard Jackson serialization. `TOON` uses [TOON format](https://github.com/toon-format/spec) for 30-60% token reduction. Requires `dev.toonformat:jtoon` on classpath when `TOON` is selected. See [TOON Format guide](../guides/toon-format.md). |
+| `maxToolOutputLength` | `int` | No | `-1` (unlimited) | Maximum characters of tool output sent to the LLM per tool call. `-1` means no truncation. When positive, results are truncated before being added to the LLM message history; a note is appended so the model knows output was cut. The full output is always stored in the trace and fired to listeners regardless of this setting. Can be overridden per-run via `RunOptions`. |
+| `toolLogTruncateLength` | `int` | No | `200` | Maximum characters of tool input/output emitted to log statements (INFO/WARN level). `-1` means full output is logged; `0` suppresses output content from logs entirely. Does not affect what the LLM sees. Can be overridden per-run via `RunOptions`. |
 | `drainTimeout` | `Duration` | No | `5 minutes` | Maximum time to wait for in-flight work to complete during graceful shutdown. Only relevant in long-running mode (`start(port)`/`stop()`). See [Long-Running Ensembles guide](../guides/long-running-ensembles.md). |
 | `shareTask(name, task)` | builder method | No | -- | Share a named task with the network. Other ensembles will be able to delegate work to it via the forthcoming network delegation API (EN-004). Names must be unique within the ensemble. See [Long-Running Ensembles guide](../guides/long-running-ensembles.md). |
 | `shareTool(name, tool)` | builder method | No | -- | Share a named tool with the network. Other ensembles' agents will be able to invoke it directly via the forthcoming network tool API (EN-005). Names must be unique within the ensemble. See [Long-Running Ensembles guide](../guides/long-running-ensembles.md). |
@@ -160,6 +162,37 @@ EnsembleOutput output = Ensemble.builder()
     .workflow(Workflow.SEQUENTIAL)
     .build()
     .run();
+```
+
+---
+
+## run() Overloads
+
+| Method | Description |
+|---|---|
+| `run()` | Execute using builder inputs and all builder-level settings. |
+| `run(Map<String,String> inputs)` | Merge run-time template variable values on top of builder inputs. |
+| `run(RunOptions options)` | Apply per-run overrides for `maxToolOutputLength` and `toolLogTruncateLength`. Builder defaults are used for any field left `null` in `RunOptions`. |
+| `run(Map<String,String> inputs, RunOptions options)` | Combine template variable overrides with per-run option overrides. |
+
+`RunOptions` is constructed with `RunOptions.builder()`. Fields not set on the builder remain `null` and inherit the ensemble default.
+
+```java
+// Full LLM output; terse logs
+ensemble.run(RunOptions.builder()
+    .maxToolOutputLength(-1)
+    .toolLogTruncateLength(500)
+    .build());
+
+// Full log output for this debugging run only (LLM limit inherits the ensemble default)
+ensemble.run(RunOptions.builder()
+    .toolLogTruncateLength(-1)
+    .build());
+
+// Combine with template variable overrides
+ensemble.run(Map.of("topic", "AI"), RunOptions.builder()
+    .maxToolOutputLength(5000)
+    .build());
 ```
 
 ---

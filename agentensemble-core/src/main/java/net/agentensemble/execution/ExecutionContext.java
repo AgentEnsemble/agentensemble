@@ -94,6 +94,20 @@ public final class ExecutionContext {
     private final DirectiveStore directiveStore;
     private final int currentTaskIndex;
 
+    /**
+     * Maximum characters of tool output sent to the LLM. {@code -1} means unlimited.
+     *
+     * @see #maxToolOutputLength()
+     */
+    private final int maxToolOutputLength;
+
+    /**
+     * Maximum characters of tool output written to log statements. {@code -1} means unlimited.
+     *
+     * @see #toolLogTruncateLength()
+     */
+    private final int toolLogTruncateLength;
+
     private ExecutionContext(
             MemoryContext memoryContext,
             boolean verbose,
@@ -143,6 +157,44 @@ public final class ExecutionContext {
             ContextFormatter contextFormatter,
             DirectiveStore directiveStore,
             int currentTaskIndex) {
+        this(
+                memoryContext,
+                verbose,
+                listeners,
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel,
+                reflectionStore,
+                contextFormatter,
+                directiveStore,
+                currentTaskIndex,
+                -1,
+                200);
+    }
+
+    private ExecutionContext(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore,
+            ContextFormatter contextFormatter,
+            DirectiveStore directiveStore,
+            int currentTaskIndex,
+            int maxToolOutputLength,
+            int toolLogTruncateLength) {
         this.memoryContext = memoryContext;
         this.verbose = verbose;
         this.listeners = listeners;
@@ -159,6 +211,8 @@ public final class ExecutionContext {
                 contextFormatter != null ? contextFormatter : ContextFormatters.forFormat(ContextFormat.JSON);
         this.directiveStore = directiveStore;
         this.currentTaskIndex = currentTaskIndex;
+        this.maxToolOutputLength = maxToolOutputLength;
+        this.toolLogTruncateLength = toolLogTruncateLength;
     }
 
     // ========================
@@ -501,6 +555,80 @@ public final class ExecutionContext {
     }
 
     /**
+     * Create an ExecutionContext with all fields including directive store and tool output
+     * length controls.
+     *
+     * <p>This is the primary factory used by {@code Ensemble} when
+     * {@link net.agentensemble.execution.RunOptions} overrides are applied.
+     *
+     * @param memoryContext          runtime memory state for this run; must not be null
+     * @param verbose                when true, elevates execution logging to INFO level
+     * @param listeners              event listeners to notify; must not be null
+     * @param toolExecutor           executor for parallel tool calls; must not be null
+     * @param toolMetrics            metrics backend for tool execution; must not be null
+     * @param costConfiguration      optional per-token cost rates; may be {@code null}
+     * @param captureMode            depth of data collection; defaults to {@link CaptureMode#OFF}
+     * @param memoryStore            optional scoped memory store; may be {@code null}
+     * @param reviewHandler          optional review handler; may be {@code null}
+     * @param reviewPolicy           ensemble-level review policy; defaults to {@link ReviewPolicy#NEVER}
+     * @param streamingChatModel     optional streaming model; may be {@code null}
+     * @param reflectionStore        optional reflection store; may be {@code null}
+     * @param contextFormatter       optional context formatter; defaults to JSON when {@code null}
+     * @param directiveStore         optional directive store for human directives; may be {@code null}
+     * @param maxToolOutputLength    max chars of tool output sent to the LLM; {@code -1} = unlimited
+     * @param toolLogTruncateLength  max chars of tool output written to logs; {@code -1} = unlimited
+     * @return a new ExecutionContext
+     */
+    public static ExecutionContext of(
+            MemoryContext memoryContext,
+            boolean verbose,
+            List<EnsembleListener> listeners,
+            Executor toolExecutor,
+            ToolMetrics toolMetrics,
+            CostConfiguration costConfiguration,
+            CaptureMode captureMode,
+            MemoryStore memoryStore,
+            ReviewHandler reviewHandler,
+            ReviewPolicy reviewPolicy,
+            StreamingChatModel streamingChatModel,
+            ReflectionStore reflectionStore,
+            ContextFormatter contextFormatter,
+            DirectiveStore directiveStore,
+            int maxToolOutputLength,
+            int toolLogTruncateLength) {
+        if (memoryContext == null) {
+            throw new IllegalArgumentException("memoryContext must not be null");
+        }
+        if (listeners == null) {
+            throw new IllegalArgumentException("listeners must not be null");
+        }
+        if (toolExecutor == null) {
+            throw new IllegalArgumentException("toolExecutor must not be null");
+        }
+        if (toolMetrics == null) {
+            throw new IllegalArgumentException("toolMetrics must not be null");
+        }
+        return new ExecutionContext(
+                memoryContext,
+                verbose,
+                List.copyOf(listeners),
+                toolExecutor,
+                toolMetrics,
+                costConfiguration,
+                captureMode,
+                memoryStore,
+                reviewHandler,
+                reviewPolicy,
+                streamingChatModel,
+                reflectionStore,
+                contextFormatter,
+                directiveStore,
+                0,
+                maxToolOutputLength,
+                toolLogTruncateLength);
+    }
+
+    /**
      * Create an ExecutionContext with all fields specified, using {@link CaptureMode#OFF}.
      *
      * @param memoryContext     runtime memory state for this run; must not be null
@@ -785,6 +913,28 @@ public final class ExecutionContext {
     }
 
     /**
+     * Maximum characters of tool output sent to the LLM. {@code -1} means unlimited.
+     *
+     * <p>When positive, tool results are truncated to this length before being added to the
+     * LLM message history. The full result is still stored in the trace and fired to listeners.
+     *
+     * @return the limit, or {@code -1} when output is passed through unchanged
+     */
+    public int maxToolOutputLength() {
+        return maxToolOutputLength;
+    }
+
+    /**
+     * Maximum characters of tool output emitted to log statements. {@code -1} means unlimited;
+     * {@code 0} suppresses output content from logs entirely.
+     *
+     * @return the limit, or {@code -1} when log output is not truncated
+     */
+    public int toolLogTruncateLength() {
+        return toolLogTruncateLength;
+    }
+
+    /**
      * Return a copy of this context with the given task index. All other fields are
      * shared with the original (listeners, executor, metrics, etc. are the same objects).
      *
@@ -807,7 +957,9 @@ public final class ExecutionContext {
                 this.reflectionStore,
                 this.contextFormatter,
                 this.directiveStore,
-                taskIndex);
+                taskIndex,
+                this.maxToolOutputLength,
+                this.toolLogTruncateLength);
     }
 
     // ========================
