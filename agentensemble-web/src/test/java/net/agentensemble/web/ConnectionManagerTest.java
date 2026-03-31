@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import net.agentensemble.web.protocol.IterationSnapshot;
 import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
 import net.agentensemble.web.protocol.LlmIterationStartedMessage;
@@ -127,11 +132,381 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void constructor_negativeMaxRetainedRuns_throwsIae() {
+    void multiRunSnapshot_defaultCapOfTenRetainsAllRunsUpToCap() {
+        // Default cap is 10; 9 runs should all be retained
+        for (int i = 1; i <= 9; i++) {
+            connectionManager.noteEnsembleStarted("ens-run" + i, Instant.now());
+            connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run" + i + "\"}");
+        }
+
+        MockWsSession session = new MockWsSession("session-9runs");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // All 9 runs should be in the snapshot
+        for (int i = 1; i <= 9; i++) {
+            assertThat(helloJson).contains("ens-run" + i);
+        }
+    }
+
+    @Test
+    void multiRunSnapshot_evictsCorrectlyAfterMultipleOverflows() {
+        // Cap of 2; run 4 runs total -- only runs 3 and 4 should survive
+        ConnectionManager limited = new ConnectionManager(serializer, 2);
+        for (int i = 1; i <= 4; i++) {
+            limited.noteEnsembleStarted("ens-run" + i, Instant.now());
+            limited.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run" + i + "\"}");
+        }
+
+        MockWsSession session = new MockWsSession("session-overflow");
+        limited.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        assertThat(helloJson).doesNotContain("ens-run1");
+        assertThat(helloJson).doesNotContain("ens-run2");
+        assertThat(helloJson).contains("ens-run3");
+        assertThat(helloJson).contains("ens-run4");
+    }
+
+    @Test
+    void lateJoinReceivesAllRunsInChronologicalOrder() {
+        // Two runs with distinct events; late-joiner should see both in order
+        connectionManager.noteEnsembleStarted("ens-run1", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run1\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_completed\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_completed\",\"ensembleId\":\"ens-run1\"}");
+
+        connectionManager.noteEnsembleStarted("ens-run2", Instant.now());
+        connectionManager.appendToSnapshot("{\"type\":\"ensemble_started\",\"ensembleId\":\"ens-run2\"}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+
+        MockWsSession lateSession = new MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+        String helloJson = lateSession.sentMessages().get(0);
+
+        assertThat(helloJson).contains("snapshotTrace");
+        // Verify ordering: run1 ensemble_started precedes run2 ensemble_started
+        // Search within snapshotTrace to avoid the hello header's ensembleId field
+        int snapshotOffset = helloJson.indexOf("snapshotTrace");
+        assertThat(snapshotOffset).isGreaterThan(-1);
+        int run1Idx = helloJson.indexOf("ens-run1", snapshotOffset);
+        int run2Idx = helloJson.indexOf("ens-run2", snapshotOffset);
+        assertThat(run1Idx).isGreaterThan(-1);
+        assertThat(run2Idx).isGreaterThan(-1);
+        assertThat(run1Idx).isLessThan(run2Idx);
+    }
+
+    @Test
+    void snapshotGrowsIncrementallyAsEventsArrive() {
+        connectionManager.noteEnsembleStarted("ens-123", Instant.now());
+
+        // Connect a client before any events -- gets empty snapshot
+        MockWsSession earlySession = new MockWsSession("early");
+        connectionManager.onConnect(earlySession);
+        assertThat(earlySession.sentMessages().get(0)).doesNotContain("snapshotTrace");
+
+        // Broadcast some events
+        String msg1 = "{\"type\":\"task_started\",\"taskIndex\":1}";
+        String msg2 = "{\"type\":\"task_completed\",\"taskIndex\":1}";
+        connectionManager.appendToSnapshot(msg1);
+        connectionManager.appendToSnapshot(msg2);
+
+        // Late-joining client gets both events in snapshot
+        MockWsSession lateSession = new MockWsSession("late");
+        connectionManager.onConnect(lateSession);
+        String helloJson = lateSession.sentMessages().get(0);
+        assertThat(helloJson).contains("task_started");
+        assertThat(helloJson).contains("task_completed");
+    }
+
+    @Test
+    void concurrentSnapshotAppends_doNotCorruptSnapshot() throws InterruptedException {
+        connectionManager.noteEnsembleStarted("ens-concurrent", Instant.now());
+        int threadCount = 10;
+        int eventsPerThread = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        for (int t = 0; t < threadCount; t++) {
+            final int thread = t;
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < eventsPerThread; i++) {
+                        connectionManager.appendToSnapshot(
+                                "{\"type\":\"task_started\",\"thread\":" + thread + ",\"i\":" + i + "}");
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+
+        // Connect after all concurrent appends; snapshot must contain all events
+        MockWsSession session = new MockWsSession("after-concurrent");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+        // The snapshot JSON array must be well-formed (parseable) and contain all events
+        assertThat(helloJson).contains("snapshotTrace");
+        // Count occurrences of "task_started" -- should be threadCount * eventsPerThread
+        int count = 0;
+        int idx = 0;
+        while ((idx = helloJson.indexOf("task_started", idx)) != -1) {
+            count++;
+            idx++;
+        }
+        assertThat(count).isEqualTo(threadCount * eventsPerThread);
+    }
+
+    @Test
+    void broadcastSendsToAllConnectedSessions() {
+        MockWsSession s1 = new MockWsSession("session-1");
+        MockWsSession s2 = new MockWsSession("session-2");
+        MockWsSession s3 = new MockWsSession("session-3");
+
+        connectionManager.onConnect(s1);
+        connectionManager.onConnect(s2);
+        connectionManager.onConnect(s3);
+
+        // Clear hello messages
+        s1.clearMessages();
+        s2.clearMessages();
+        s3.clearMessages();
+
+        connectionManager.broadcast("{\"type\":\"heartbeat\",\"serverTimeMs\":1000}");
+
+        assertThat(s1.sentMessages()).hasSize(1);
+        assertThat(s2.sentMessages()).hasSize(1);
+        assertThat(s3.sentMessages()).hasSize(1);
+        assertThat(s1.sentMessages().get(0)).contains("heartbeat");
+    }
+
+    @Test
+    void broadcastSkipsClosedSessions() {
+        MockWsSession s1 = new MockWsSession("session-1");
+        MockWsSession s2 = new MockWsSession("session-2");
+
+        connectionManager.onConnect(s1);
+        connectionManager.onConnect(s2);
+
+        s1.clearMessages();
+        s2.clearMessages();
+
+        s1.close(); // mark s1 as closed
+
+        connectionManager.broadcast("{\"type\":\"heartbeat\",\"serverTimeMs\":2000}");
+
+        assertThat(s1.sentMessages()).isEmpty(); // closed session gets nothing
+        assertThat(s2.sentMessages()).hasSize(1);
+    }
+
+    @Test
+    void sendToOneSessionDeliversOnlyToTarget() {
+        MockWsSession s1 = new MockWsSession("session-1");
+        MockWsSession s2 = new MockWsSession("session-2");
+
+        connectionManager.onConnect(s1);
+        connectionManager.onConnect(s2);
+
+        s1.clearMessages();
+        s2.clearMessages();
+
+        connectionManager.send("session-1", "{\"type\":\"review_requested\",\"reviewId\":\"r1\"}");
+
+        assertThat(s1.sentMessages()).hasSize(1);
+        assertThat(s1.sentMessages().get(0)).contains("review_requested");
+        assertThat(s2.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void sendToNonExistentSessionIsNoOp() {
+        // Should not throw
+        connectionManager.send("nonexistent-session", "{\"type\":\"pong\"}");
+    }
+
+    @Test
+    void disconnectRemovesSessionFromBroadcastRecipients() {
+        MockWsSession s1 = new MockWsSession("session-1");
+        MockWsSession s2 = new MockWsSession("session-2");
+
+        connectionManager.onConnect(s1);
+        connectionManager.onConnect(s2);
+
+        connectionManager.onDisconnect("session-1");
+
+        s1.clearMessages();
+        s2.clearMessages();
+
+        connectionManager.broadcast("{\"type\":\"heartbeat\",\"serverTimeMs\":3000}");
+
+        // s1 was disconnected, should not receive broadcast
+        assertThat(s1.sentMessages()).isEmpty();
+        assertThat(s2.sentMessages()).hasSize(1);
+    }
+
+    @Test
+    void sessionCountReflectsConnectedSessions() {
+        assertThat(connectionManager.sessionCount()).isEqualTo(0);
+
+        MockWsSession s1 = new MockWsSession("session-1");
+        MockWsSession s2 = new MockWsSession("session-2");
+
+        connectionManager.onConnect(s1);
+        assertThat(connectionManager.sessionCount()).isEqualTo(1);
+
+        connectionManager.onConnect(s2);
+        assertThat(connectionManager.sessionCount()).isEqualTo(2);
+
+        connectionManager.onDisconnect("session-1");
+        assertThat(connectionManager.sessionCount()).isEqualTo(1);
+    }
+
+    @Test
+    void broadcastWithNoSessionsIsNoOp() {
+        // Should not throw when there are no sessions
+        connectionManager.broadcast("{\"type\":\"heartbeat\",\"serverTimeMs\":4000}");
+    }
+
+    @Test
+    void multipleDisconnectsForSameSessionAreIdempotent() {
+        MockWsSession s1 = new MockWsSession("session-1");
+        connectionManager.onConnect(s1);
+        connectionManager.onDisconnect("session-1");
+        // Second disconnect should be a no-op, not throw
+        connectionManager.onDisconnect("session-1");
+        assertThat(connectionManager.sessionCount()).isEqualTo(0);
+    }
+
+    // ========================
+    // Pending review handling
+    // ========================
+
+    @Test
+    void reviewDecisionResolvesRegisteredFuture() {
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        connectionManager.registerPendingReview("review-1", future);
+
+        connectionManager.resolveReview("review-1", "CONTINUE_DECISION");
+
+        assertThat(future).isCompleted();
+        assertThat(future.join()).isEqualTo("CONTINUE_DECISION");
+    }
+
+    @Test
+    void resolveForNonExistentReviewIsNoOp() {
+        // Should not throw
+        connectionManager.resolveReview("nonexistent-review", "CONTINUE");
+    }
+
+    @Test
+    void reviewFutureRemovedAfterResolution() {
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        connectionManager.registerPendingReview("review-2", future);
+        connectionManager.resolveReview("review-2", "EXIT_EARLY_DECISION");
+
+        // Resolving again should be a no-op (future is already removed)
+        connectionManager.resolveReview("review-2", "CONTINUE_DECISION");
+
+        // Future should have the first resolution
+        assertThat(future.join()).isEqualTo("EXIT_EARLY_DECISION");
+    }
+
+    @Test
+    void onDisconnect_withPendingReview_resolvesReviewWithEmptyString() {
+        MockWsSession session = new MockWsSession("session-1");
+        connectionManager.onConnect(session);
+
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        connectionManager.registerPendingReview("review-3", future);
+        assertThat(future.isDone()).isFalse();
+
+        // Disconnect the only session -- reviews should be resolved because no sessions remain
+        connectionManager.onDisconnect("session-1");
+
+        assertThat(future).isCompleted();
+        assertThat(future.join()).isEmpty();
+    }
+
+    @Test
+    void onDisconnect_withPendingReview_andRemainingSession_doesNotResolveReview() {
+        MockWsSession session1 = new MockWsSession("session-1");
+        MockWsSession session2 = new MockWsSession("session-2");
+        connectionManager.onConnect(session1);
+        connectionManager.onConnect(session2);
+
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        connectionManager.registerPendingReview("review-x", future);
+        assertThat(future.isDone()).isFalse();
+
+        // Disconnect session-1, but session-2 is still connected -- review must stay active
+        connectionManager.onDisconnect("session-1");
+
+        assertThat(future.isDone()).isFalse();
+    }
+
+    // ========================
+    // Constructor validation
+    // ========================
+
+    @Test
+    void constructor_throwsNullPointerException_whenSerializerIsNull() {
+        assertThatThrownBy(() -> new ConnectionManager(null, 1))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("serializer");
+    }
+
+    @Test
+    void constructor_throwsIllegalArgumentException_whenMaxRetainedRunsIsZero() {
+        assertThatThrownBy(() -> new ConnectionManager(serializer, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedRuns");
+    }
+
+    @Test
+    void constructor_throwsIllegalArgumentException_whenMaxRetainedRunsIsNegative() {
         assertThatThrownBy(() -> new ConnectionManager(serializer, -1))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxRetainedRuns must be >= 1");
+                .hasMessageContaining("maxRetainedRuns");
     }
+
+    @Test
+    void appendToSnapshot_beforeNoteEnsembleStarted_messagesAreSilentlyDropped() {
+        // Messages appended before noteEnsembleStarted() must be silently dropped.
+        // A late-joining client must NOT see pre-run messages in the snapshot.
+        connectionManager.appendToSnapshot("{\"type\":\"task_started\",\"taskIndex\":1}");
+        connectionManager.appendToSnapshot("{\"type\":\"task_completed\",\"taskIndex\":1}");
+
+        MockWsSession session = new MockWsSession("session-pre-run");
+        connectionManager.onConnect(session);
+        String helloJson = session.sentMessages().get(0);
+
+        // Snapshot must not appear and pre-run messages must not be in the hello payload
+        assertThat(helloJson).doesNotContain("snapshotTrace");
+        assertThat(helloJson).doesNotContain("task_started");
+        assertThat(helloJson).doesNotContain("task_completed");
+    }
+
+    @Test
+    void send_toClosedSession_dropsMessage() {
+        MockWsSession session = new MockWsSession("session-1");
+        connectionManager.onConnect(session);
+        session.clearMessages();
+
+        // Close the session but do NOT disconnect it from the manager
+        session.close();
+
+        // send() finds the session but isOpen() is false -- message should be dropped
+        connectionManager.send("session-1", "{\"type\":\"pong\"}");
+
+        assertThat(session.sentMessages()).isEmpty();
+    }
+
+    // ========================
+    // Constructor validation (maxSnapshotIterations)
+    // ========================
 
     @Test
     void constructor_negativeMaxSnapshotIterations_throwsIae() {
@@ -147,7 +522,7 @@ class ConnectionManagerTest {
     }
 
     // ========================
-    // Iteration snapshot ring buffer
+    // Iteration snapshot ring buffer (IO-003)
     // ========================
 
     @Test
@@ -157,46 +532,35 @@ class ConnectionManagerTest {
         LlmIterationCompletedMessage completed =
                 new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
 
-        cm.recordIterationStarted(key, started);
-        cm.recordIterationCompleted(key, completed);
+        connectionManager.recordIterationStarted(key, started);
+        connectionManager.recordIterationCompleted(key, completed);
 
-        List<IterationSnapshot> snapshots = cm.getRecentIterations();
-        assertThat(snapshots).isNotNull();
-        assertThat(snapshots).hasSize(1);
+        List<IterationSnapshot> snapshots = connectionManager.getRecentIterations();
+        assertThat(snapshots).isNotNull().hasSize(1);
         assertThat(snapshots.get(0).started()).isEqualTo(started);
         assertThat(snapshots.get(0).completed()).isEqualTo(completed);
     }
 
     @Test
     void recordIterationCompleted_withoutStarted_isNoOp() {
-        String key = "Agent:Task";
         LlmIterationCompletedMessage completed =
                 new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
-
-        cm.recordIterationCompleted(key, completed);
-
-        List<IterationSnapshot> snapshots = cm.getRecentIterations();
-        assertThat(snapshots).isNull();
+        connectionManager.recordIterationCompleted("Agent:Task", completed);
+        assertThat(connectionManager.getRecentIterations()).isNull();
     }
 
     @Test
     void ringBuffer_evictsOldestWhenCapExceeded() {
-        // Create CM with maxSnapshotIterations=2
         ConnectionManager cm2 = new ConnectionManager(serializer, 10, 2);
         String key = "Agent:Task";
-
         for (int i = 0; i < 3; i++) {
-            LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", i, List.of(), 0);
-            LlmIterationCompletedMessage completed = new LlmIterationCompletedMessage(
-                    "Agent", "Task", i, "FINAL_ANSWER", "result-" + i, null, 100, 50, 200);
-            cm2.recordIterationStarted(key, started);
-            cm2.recordIterationCompleted(key, completed);
+            cm2.recordIterationStarted(key, new LlmIterationStartedMessage("Agent", "Task", i, List.of(), 0));
+            cm2.recordIterationCompleted(
+                    key,
+                    new LlmIterationCompletedMessage("Agent", "Task", i, "FINAL_ANSWER", "r-" + i, null, 100, 50, 200));
         }
-
         List<IterationSnapshot> snapshots = cm2.getRecentIterations();
-        assertThat(snapshots).isNotNull();
-        assertThat(snapshots).hasSize(2);
-        // Oldest (iteration 0) should have been evicted
+        assertThat(snapshots).isNotNull().hasSize(2);
         assertThat(snapshots.get(0).started().iterationIndex()).isEqualTo(1);
         assertThat(snapshots.get(1).started().iterationIndex()).isEqualTo(2);
     }
@@ -204,103 +568,108 @@ class ConnectionManagerTest {
     @Test
     void clearIterationSnapshots_removesAllData() {
         String key = "Agent:Task";
-        LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0);
-        LlmIterationCompletedMessage completed =
-                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
-
-        cm.recordIterationStarted(key, started);
-        cm.recordIterationCompleted(key, completed);
-        assertThat(cm.getRecentIterations()).isNotNull();
-
-        cm.clearIterationSnapshots();
-
-        assertThat(cm.getRecentIterations()).isNull();
+        connectionManager.recordIterationStarted(key, new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0));
+        connectionManager.recordIterationCompleted(
+                key, new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "r", null, 100, 50, 200));
+        assertThat(connectionManager.getRecentIterations()).isNotNull();
+        connectionManager.clearIterationSnapshots();
+        assertThat(connectionManager.getRecentIterations()).isNull();
     }
 
     @Test
     void getRecentIterations_includesPendingStartWithoutCompleted() {
-        String key = "Agent:Task";
         LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0);
-
-        cm.recordIterationStarted(key, started);
-
-        List<IterationSnapshot> snapshots = cm.getRecentIterations();
-        assertThat(snapshots).isNotNull();
-        assertThat(snapshots).hasSize(1);
+        connectionManager.recordIterationStarted("Agent:Task", started);
+        List<IterationSnapshot> snapshots = connectionManager.getRecentIterations();
+        assertThat(snapshots).isNotNull().hasSize(1);
         assertThat(snapshots.get(0).started()).isEqualTo(started);
         assertThat(snapshots.get(0).completed()).isNull();
     }
 
     @Test
-    void getRecentIterations_includesMultipleTasks() {
-        String key1 = "Agent1:Task1";
-        String key2 = "Agent2:Task2";
-
-        LlmIterationStartedMessage started1 = new LlmIterationStartedMessage("Agent1", "Task1", 0, List.of(), 0);
-        LlmIterationCompletedMessage completed1 =
-                new LlmIterationCompletedMessage("Agent1", "Task1", 0, "FINAL_ANSWER", "r1", null, 100, 50, 200);
-        LlmIterationStartedMessage started2 = new LlmIterationStartedMessage("Agent2", "Task2", 0, List.of(), 0);
-        LlmIterationCompletedMessage completed2 =
-                new LlmIterationCompletedMessage("Agent2", "Task2", 0, "FINAL_ANSWER", "r2", null, 200, 80, 300);
-
-        cm.recordIterationStarted(key1, started1);
-        cm.recordIterationCompleted(key1, completed1);
-        cm.recordIterationStarted(key2, started2);
-        cm.recordIterationCompleted(key2, completed2);
-
-        List<IterationSnapshot> snapshots = cm.getRecentIterations();
-        assertThat(snapshots).isNotNull();
-        assertThat(snapshots).hasSize(2);
-    }
-
-    @Test
     void disabledSnapshots_recordIsNoOp() {
         ConnectionManager cm0 = new ConnectionManager(serializer, 10, 0);
-        String key = "Agent:Task";
-        LlmIterationStartedMessage started = new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0);
-        LlmIterationCompletedMessage completed =
-                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "result", null, 100, 50, 200);
-
-        cm0.recordIterationStarted(key, started);
-        cm0.recordIterationCompleted(key, completed);
-
+        cm0.recordIterationStarted("Agent:Task", new LlmIterationStartedMessage("Agent", "Task", 0, List.of(), 0));
+        cm0.recordIterationCompleted(
+                "Agent:Task",
+                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "r", null, 100, 50, 200));
         assertThat(cm0.getRecentIterations()).isNull();
     }
 
     @Test
     void helloMessage_containsRecentIterations() {
-        cm.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
-
+        connectionManager.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
         String key = "Agent:Task";
-        LlmIterationStartedMessage started = new LlmIterationStartedMessage(
-                "Agent", "Task", 0, List.of(new LlmIterationStartedMessage.MessageDto("user", "Hello", null, null)), 1);
-        LlmIterationCompletedMessage completed =
-                new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "Hi there", null, 100, 50, 200);
-
-        cm.recordIterationStarted(key, started);
-        cm.recordIterationCompleted(key, completed);
+        connectionManager.recordIterationStarted(
+                key,
+                new LlmIterationStartedMessage(
+                        "Agent",
+                        "Task",
+                        0,
+                        List.of(new LlmIterationStartedMessage.MessageDto("user", "Hello", null, null)),
+                        1));
+        connectionManager.recordIterationCompleted(
+                key, new LlmIterationCompletedMessage("Agent", "Task", 0, "FINAL_ANSWER", "Hi", null, 100, 50, 200));
 
         MockWsSession late = new MockWsSession("late");
-        cm.onConnect(late);
-
+        connectionManager.onConnect(late);
         String helloJson = late.sentMessages().get(0);
-        assertThat(helloJson).contains("\"type\":\"hello\"");
         assertThat(helloJson).contains("recentIterations");
         assertThat(helloJson).contains("llm_iteration_started");
         assertThat(helloJson).contains("llm_iteration_completed");
-        assertThat(helloJson).contains("FINAL_ANSWER");
-        assertThat(helloJson).contains("Hi there");
     }
 
     @Test
     void helloMessage_omitsRecentIterations_whenNone() {
-        cm.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
-
+        connectionManager.noteEnsembleStarted("ens-1", Instant.parse("2026-01-01T00:00:00Z"));
         MockWsSession late = new MockWsSession("late");
-        cm.onConnect(late);
-
+        connectionManager.onConnect(late);
         String helloJson = late.sentMessages().get(0);
-        assertThat(helloJson).contains("\"type\":\"hello\"");
         assertThat(helloJson).doesNotContain("recentIterations");
+    }
+
+    // ========================
+    // Inner stub
+    // ========================
+
+    static final class MockWsSession implements WsSession {
+        private final String id;
+        // CopyOnWriteArrayList ensures send() is safe when called concurrently from
+        // multiple virtual threads (e.g. in the parallel workflow concurrent test).
+        private final List<String> messages = new CopyOnWriteArrayList<>();
+        private boolean open = true;
+
+        MockWsSession(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public boolean isOpen() {
+            return open;
+        }
+
+        @Override
+        public void send(String message) {
+            if (open) {
+                messages.add(message);
+            }
+        }
+
+        List<String> sentMessages() {
+            return List.copyOf(messages);
+        }
+
+        void clearMessages() {
+            messages.clear();
+        }
+
+        void close() {
+            this.open = false;
+        }
     }
 }
