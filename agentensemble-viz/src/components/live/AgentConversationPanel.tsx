@@ -394,7 +394,10 @@ const FlatMessage = memo(function FlatMessage({
 }: {
   message: LiveConversationMessage;
 }) {
-  const [expanded, setExpanded] = useState(message.role !== 'system');
+  const content = message.content ?? '';
+  const isLong = content.length > 200 && message.role === 'system';
+  // System messages: collapsed by default only when long; short system messages always show.
+  const [expanded, setExpanded] = useState(message.role !== 'system' || !isLong);
 
   const roleConfig: Record<string, { bg: string; label: string }> = {
     system: { bg: 'bg-gray-50 dark:bg-gray-800/50', label: 'System' },
@@ -404,8 +407,6 @@ const FlatMessage = memo(function FlatMessage({
   };
 
   const config = roleConfig[message.role] ?? roleConfig.user;
-  const content = message.content ?? '';
-  const isLong = content.length > 200 && message.role === 'system';
 
   return (
     <div className={`rounded px-2 py-1.5 ${config.bg}`}>

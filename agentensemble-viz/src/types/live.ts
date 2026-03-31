@@ -30,7 +30,7 @@ export interface LiveToolCall {
   outcome: string;
   /** Client-side epoch ms when the message was received, used for timeline positioning. */
   receivedAt: number;
-  /** 1-based task index from the server. */
+  /** Task index from the server. 1-based when known; 0 when unknown. */
   taskIndex: number;
   /** Arguments passed to the tool as a JSON string. Null when unavailable. */
   toolArguments: string | null;

@@ -8,7 +8,7 @@
  * Includes "Expand All" / "Collapse All" controls and an empty-state message.
  */
 
-import { useState, useCallback, memo } from 'react';
+import { useState, useCallback, useRef, memo } from 'react';
 import type { LiveToolCall } from '../../types/live.js';
 
 // ========================
@@ -26,6 +26,17 @@ interface ToolCallDetailPanelProps {
 
 export default function ToolCallDetailPanel({ toolCalls, agentRole }: ToolCallDetailPanelProps) {
   const [expandedSet, setExpandedSet] = useState<Set<number>>(new Set());
+
+  // Reset expanded state when the tool calls list changes (new calls arrive,
+  // agent filter changes) to prevent stale index-based state from applying
+  // to the wrong card after index shifts.
+  const toolCallsLengthRef = useRef(toolCalls.length);
+  if (toolCalls.length !== toolCallsLengthRef.current) {
+    toolCallsLengthRef.current = toolCalls.length;
+    if (expandedSet.size > 0) {
+      setExpandedSet(new Set());
+    }
+  }
 
   const toggleCard = useCallback((index: number) => {
     setExpandedSet((prev) => {
@@ -262,10 +273,23 @@ function FormattedSection({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.clipboard ||
+      typeof navigator.clipboard.writeText !== 'function'
+    ) {
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(content)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        // Clipboard write failed (permission denied, non-secure context, etc.)
+      });
   }, [content]);
 
   const formatted = tryFormatJson(content);
