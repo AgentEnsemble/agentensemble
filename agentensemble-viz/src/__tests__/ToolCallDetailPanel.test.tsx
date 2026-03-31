@@ -2,8 +2,8 @@
  * Unit tests for ToolCallDetailPanel (IO-004).
  */
 
-import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ToolCallDetailPanel from '../components/live/ToolCallDetailPanel.js';
 import type { LiveToolCall } from '../types/live.js';
