@@ -143,3 +143,54 @@ implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 ```
 
 All MDC keys (`ensemble.id`, `task.index`, `agent.role`, `delegation.depth`, `delegation.parent`) are automatically included in the JSON output.
+
+---
+
+## Tool Output Truncation
+
+By default, tool results are truncated to **200 characters** in log statements to keep log files readable. By default, the full output passes through to the LLM and is stored in the execution trace.
+
+Two independent knobs let you tune this behaviour:
+
+### `toolLogTruncateLength` — log visibility
+
+Controls what appears in INFO/WARN log lines for tool calls:
+
+```java
+// log first 500 chars (more context in logs)
+Ensemble.builder().toolLogTruncateLength(500).build();
+
+// log full output (useful when debugging)
+Ensemble.builder().toolLogTruncateLength(-1).build();
+
+// suppress output content from logs entirely
+Ensemble.builder().toolLogTruncateLength(0).build();
+```
+
+### `maxToolOutputLength` — LLM context window
+
+Controls how many characters the LLM sees in its message history. Default is `-1` (unlimited). Set a positive value to cap very large tool outputs and save tokens:
+
+```java
+Ensemble.builder()
+    .maxToolOutputLength(5_000)   // all tool results capped at 5 000 chars for the LLM
+    .build();
+```
+
+When truncation occurs, a note (`"... [truncated, full length: N chars]"`) is appended so the model knows the output was cut. The full output is always stored in the trace regardless of this setting.
+
+### Per-run overrides with `RunOptions`
+
+Both settings can be overridden on a single `run()` call without changing the ensemble-level defaults:
+
+```java
+// Full log output for this debugging run only
+ensemble.run(RunOptions.builder()
+    .toolLogTruncateLength(-1)
+    .build());
+
+// Specific run gets a bigger LLM window
+ensemble.run(Map.of("topic", "AI"), RunOptions.builder()
+    .maxToolOutputLength(-1)
+    .build());
+```

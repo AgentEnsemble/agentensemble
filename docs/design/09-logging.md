@@ -166,16 +166,36 @@ ensemble.run():
 
 To keep logs readable, certain values are truncated:
 
-| Context | Max Length | Constant Name |
-|---|---|---|
-| Task description in MDC | 80 chars | `MDC_DESCRIPTION_MAX_LENGTH` |
-| Tool input/output in INFO logs | 200 chars | `LOG_TRUNCATE_LENGTH` |
-| Output preview in verbose logs | 200 chars | `LOG_TRUNCATE_LENGTH` |
-| Template in error messages | 100 chars | `ERROR_TEMPLATE_MAX_LENGTH` |
+| Context | Default | Configurable? | Source |
+|---|---|---|---|
+| Task description in MDC | 80 chars | No | `MDC_DESCRIPTION_MAX_LENGTH` constant |
+| Tool input/output in INFO/WARN logs | 200 chars | **Yes** — `toolLogTruncateLength` | `Ensemble.builder()` / `RunOptions` |
+| Output preview in verbose logs | 200 chars | **Yes** — `toolLogTruncateLength` | `Ensemble.builder()` / `RunOptions` |
+| Template in error messages | 100 chars | No | `ERROR_TEMPLATE_MAX_LENGTH` constant |
 
 Truncation appends `"..."` when text is cut.
 
-Full untruncated values are always available at DEBUG or TRACE level.
+### Tool output truncation
+
+There are two independent truncation knobs for tool output:
+
+- **`toolLogTruncateLength`** — controls what appears in log statements. `-1` means full output; `0` suppresses content entirely. Does not affect what the LLM sees.
+- **`maxToolOutputLength`** — controls what the LLM sees in its message history. `-1` (default) means no truncation. When positive, a `"... [truncated, full length: N chars]"` note is appended so the model knows output was cut. The full result is always stored in the trace and fired to listeners.
+
+Both can be set on `Ensemble.builder()` (applies to every `run()` call) or overridden per-run via `RunOptions`:
+
+```java
+// Full LLM context, terse logs
+Ensemble.builder()
+    .maxToolOutputLength(-1)       // LLM: unlimited (default)
+    .toolLogTruncateLength(500)    // logs: first 500 chars
+    .build();
+
+// Ensemble caps LLM at 2000 chars, but a specific run needs full log output for debugging
+ensemble.run(RunOptions.builder()
+    .toolLogTruncateLength(-1)
+    .build());
+```
 
 ### JsonTraceExporter
 

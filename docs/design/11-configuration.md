@@ -64,7 +64,7 @@ These values are internal framework constants, not configurable by users. They a
 |---|---|---|---|
 | `MAX_STOP_MESSAGES` | `3` | `AgentExecutor` | After 3 "please stop" messages, the agent is considered stuck and `MaxIterationsExceededException` is thrown. |
 | `CONTEXT_LENGTH_WARN_THRESHOLD` | `10000` | `AgentPromptBuilder` | Log a WARN when context from a single task exceeds this character count. |
-| `LOG_TRUNCATE_LENGTH` | `200` | `AgentExecutor` | Tool input/output and output previews are truncated to this length in INFO logs. |
+| `LOG_TRUNCATE_LENGTH` | _removed_ | `AgentExecutor` | Replaced by `toolLogTruncateLength` on `Ensemble.builder()` (default `200`). Now configurable. |
 | `MDC_DESCRIPTION_MAX_LENGTH` | `80` | `SequentialWorkflowExecutor` | Task description is truncated in MDC to keep diagnostic context concise. |
 | `ERROR_TEMPLATE_MAX_LENGTH` | `100` | `TemplateResolver` | Template string is truncated in error messages. |
 | `CHAT_MEMORY_MAX_MESSAGES` | `20` | `AgentExecutor` | Maximum messages retained in the agent's chat memory window during tool-use loops. |
