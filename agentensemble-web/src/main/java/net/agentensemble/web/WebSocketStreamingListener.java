@@ -11,6 +11,7 @@ import net.agentensemble.callback.LlmIterationCompletedEvent;
 import net.agentensemble.callback.LlmIterationStartedEvent;
 import net.agentensemble.callback.TaskCompleteEvent;
 import net.agentensemble.callback.TaskFailedEvent;
+import net.agentensemble.callback.TaskInputEvent;
 import net.agentensemble.callback.TaskStartEvent;
 import net.agentensemble.callback.TokenEvent;
 import net.agentensemble.callback.ToolCallEvent;
@@ -23,6 +24,7 @@ import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.TaskCompletedMessage;
 import net.agentensemble.web.protocol.TaskFailedMessage;
+import net.agentensemble.web.protocol.TaskInputMessage;
 import net.agentensemble.web.protocol.TaskStartedMessage;
 import net.agentensemble.web.protocol.TokenMessage;
 import net.agentensemble.web.protocol.ToolCalledMessage;
@@ -102,13 +104,31 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     public void onToolCall(ToolCallEvent event) {
         broadcast(new ToolCalledMessage(
                 event.agentRole(),
-                0, // taskIndex is not surfaced by ToolCallEvent
+                event.taskIndex(),
                 event.toolName(),
                 event.duration().toMillis(),
-                null, // outcome is not surfaced by ToolCallEvent; null means unknown
+                event.outcome(),
                 event.toolArguments(),
                 event.toolResult(),
                 event.structuredResult()));
+    }
+
+    // ========================
+    // Task input
+    // ========================
+
+    @Override
+    public void onTaskInput(TaskInputEvent event) {
+        broadcast(new TaskInputMessage(
+                event.taskIndex(),
+                event.taskDescription(),
+                event.expectedOutput(),
+                event.agentRole(),
+                event.agentGoal(),
+                event.agentBackground(),
+                event.toolNames(),
+                truncateContext(event.assembledContext()),
+                Instant.now()));
     }
 
     // ========================
@@ -159,6 +179,14 @@ public final class WebSocketStreamingListener implements EnsembleListener {
 
     /** Maximum number of messages to include in the wire buffer sent to clients. */
     private static final int MAX_WIRE_MESSAGES = 20;
+
+    /**
+     * Maximum character length for the {@code assembledContext} field in
+     * {@link TaskInputMessage}. Prompts longer than this are truncated in the wire
+     * message to bound snapshot memory growth. The full value remains available in
+     * the core {@link TaskInputEvent} callback for listeners that need it.
+     */
+    private static final int MAX_ASSEMBLED_CONTEXT_LENGTH = 8_000;
 
     @Override
     public void onLlmIterationStarted(LlmIterationStartedEvent event) {
@@ -231,6 +259,17 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     // ========================
     // Private helpers
     // ========================
+
+    /**
+     * Truncate a string to {@link #MAX_ASSEMBLED_CONTEXT_LENGTH} characters,
+     * appending an ellipsis suffix when truncation occurs.
+     */
+    private static String truncateContext(String text) {
+        if (text == null || text.length() <= MAX_ASSEMBLED_CONTEXT_LENGTH) {
+            return text;
+        }
+        return text.substring(0, MAX_ASSEMBLED_CONTEXT_LENGTH) + "... [truncated]";
+    }
 
     private void broadcast(Object message) {
         try {

@@ -214,7 +214,8 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
                 if (task.getHandler() != null) {
                     taskOutput = deterministicExecutor.execute(task, contextOutputs, executionContext);
                 } else {
-                    taskOutput = agentExecutor.execute(task, contextOutputs, executionContext, delegationContext);
+                    taskOutput = agentExecutor.execute(
+                            task, contextOutputs, executionContext.withTaskIndex(taskIndex), delegationContext);
                 }
 
                 // === After-execution review gate ===
