@@ -16,10 +16,10 @@ errorprone-core  = "2.48.0"
 micrometer       = "1.16.4"
 javalin          = "7.1.0"
 jtoon            = "1.0.9"
-lettuce          = "7.5.0.RELEASE"
+lettuce          = "7.5.1.RELEASE"
 kafka              = "4.2.0"
-testcontainers     = "1.21.0"
-opentelemetry      = "1.47.0"
+testcontainers     = "1.21.4"
+opentelemetry      = "1.60.1"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
