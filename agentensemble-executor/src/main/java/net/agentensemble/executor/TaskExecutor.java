@@ -159,11 +159,12 @@ public class TaskExecutor {
     }
 
     private Task buildTask(TaskRequest request, ChatModel model) {
-        var taskBuilder = Task.builder().description(request.getDescription());
+        // When expectedOutput is null fall back to Task.DEFAULT_EXPECTED_OUTPUT so that
+        // TaskRequest.of(String description) (single-arg factory) is always executable.
+        String expectedOutput =
+                request.getExpectedOutput() != null ? request.getExpectedOutput() : Task.DEFAULT_EXPECTED_OUTPUT;
 
-        if (request.getExpectedOutput() != null) {
-            taskBuilder.expectedOutput(request.getExpectedOutput());
-        }
+        var taskBuilder = Task.builder().description(request.getDescription()).expectedOutput(expectedOutput);
 
         if (request.getAgent() != null) {
             taskBuilder.agent(buildAgent(request.getAgent(), model));

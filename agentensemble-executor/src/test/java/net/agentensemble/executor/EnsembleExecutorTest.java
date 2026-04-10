@@ -117,6 +117,23 @@ class EnsembleExecutorTest {
     }
 
     // ========================
+    // execute() -- null expectedOutput default (Copilot fix)
+    // ========================
+
+    @Test
+    void execute_singleArgFactory_nullExpectedOutput_usesDefaultAndSucceeds() {
+        // TaskRequest.of(String) leaves expectedOutput null. EnsembleExecutor substitutes
+        // Task.DEFAULT_EXPECTED_OUTPUT so the task is always executable.
+        var executor = new EnsembleExecutor(SimpleModelProvider.of(mockModelWithResponse("Result.")));
+
+        var result = executor.execute(EnsembleRequest.builder()
+                .task(TaskRequest.of("Research something"))
+                .build());
+
+        assertThat(result.isComplete()).isTrue();
+    }
+
+    // ========================
     // execute() -- multiple tasks (sequential)
     // ========================
 
@@ -165,12 +182,11 @@ class EnsembleExecutorTest {
         var result = executor.execute(request);
 
         assertThat(result.taskOutputs()).hasSize(2);
-        // All outputs come from the same mock model in this test.
         assertThat(result.taskOutputs()).allSatisfy(output -> assertThat(output).isEqualTo("Task output."));
     }
 
     // ========================
-    // execute() -- global inputs
+    // execute() -- template pre-resolution (Copilot fix)
     // ========================
 
     @Test
@@ -185,6 +201,84 @@ class EnsembleExecutorTest {
         var result = executor.execute(request);
 
         assertThat(result.isComplete()).isTrue();
+    }
+
+    @Test
+    void execute_perTaskInputsAreIsolatedAndDoNotLeakToOtherTasks() {
+        // Task 1 sets "research" in its context. Task 2 has no context -- {research} in
+        // task 2's description should NOT be substituted by task 1's value. Without the
+        // per-task pre-resolution fix, the global input map would carry task 1's context
+        // into task 2's template resolution.
+        var model = mockModelWithResponse("Task output.");
+        var executor = new EnsembleExecutor(SimpleModelProvider.of(model));
+
+        // Both tasks must run without throwing (pre-resolved descriptions are valid even
+        // when they contain unresolved {research} -- core Task.builder does not validate
+        // placeholder resolution, only that description is non-blank).
+        var result = executor.execute(EnsembleRequest.builder()
+                .task(TaskRequest.builder()
+                        .description("Research AI")
+                        .expectedOutput("Summary")
+                        .context(Map.of("research", "AI grows 40% YoY."))
+                        .build())
+                .task(TaskRequest.builder()
+                        .description("Write about AI")
+                        .expectedOutput("Article")
+                        // No context -- {research} is not substituted for task 2
+                        .build())
+                .build());
+
+        assertThat(result.isComplete()).isTrue();
+        assertThat(result.taskOutputs()).hasSize(2);
+    }
+
+    @Test
+    void execute_perTaskInputsTakePrecedenceOverGlobalInputs() {
+        // Task 1 uses a per-task input that overrides the global "topic".
+        var executor = new EnsembleExecutor(SimpleModelProvider.of(mockModelWithResponse("Done.")));
+
+        // Both tasks define their own "topic" -- this should not throw even though the
+        // global input and per-task input share a key.
+        var result = executor.execute(EnsembleRequest.builder()
+                .task(TaskRequest.builder()
+                        .description("Research {topic}")
+                        .expectedOutput("Summary about {topic}")
+                        .inputs(Map.of("topic", "Quantum Computing")) // overrides global
+                        .build())
+                .task(TaskRequest.of("Research {topic}", "Summary")) // uses global
+                .inputs(Map.of("topic", "Artificial Intelligence")) // global
+                .build());
+
+        assertThat(result.isComplete()).isTrue();
+        assertThat(result.taskOutputs()).hasSize(2);
+    }
+
+    // ========================
+    // EnsembleExecutor.resolveTemplate() (unit tests for the package-visible helper)
+    // ========================
+
+    @Test
+    void resolveTemplate_substitutesPlaceholders() {
+        var vars = Map.of("topic", "AI", "author", "Alice");
+
+        assertThat(EnsembleExecutor.resolveTemplate("Research {topic} by {author}", vars))
+                .isEqualTo("Research AI by Alice");
+    }
+
+    @Test
+    void resolveTemplate_nullTemplate_returnsNull() {
+        assertThat(EnsembleExecutor.resolveTemplate(null, Map.of("key", "val"))).isNull();
+    }
+
+    @Test
+    void resolveTemplate_emptyVars_returnsTemplateUnchanged() {
+        assertThat(EnsembleExecutor.resolveTemplate("Hello {name}", Map.of())).isEqualTo("Hello {name}");
+    }
+
+    @Test
+    void resolveTemplate_unknownPlaceholder_leftUnchanged() {
+        assertThat(EnsembleExecutor.resolveTemplate("Hello {unknown}", Map.of("topic", "AI")))
+                .isEqualTo("Hello {unknown}");
     }
 
     // ========================

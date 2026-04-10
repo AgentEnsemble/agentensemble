@@ -18,9 +18,16 @@ import lombok.Value;
  * enum values: {@code "SEQUENTIAL"}, {@code "PARALLEL"}, or {@code "HIERARCHICAL"}.
  * When null, AgentEnsemble infers the workflow from task context dependencies.
  *
- * <p>Cross-task context within an ensemble run is handled internally by AgentEnsemble.
- * The per-task {@code TaskRequest.getContext()} entries are injected as additional template
- * variable inputs for that specific task.
+ * <p>Template variables in each task's {@code description} and {@code expectedOutput} are
+ * resolved per task by {@link EnsembleExecutor} before the tasks are submitted to the
+ * ensemble. Resolution precedence (lowest to highest):
+ * <ol>
+ *   <li>{@code getInputs()} -- global inputs applied to every task</li>
+ *   <li>{@code TaskRequest.getContext()} -- per-task upstream outputs</li>
+ *   <li>{@code TaskRequest.getInputs()} -- per-task explicit overrides</li>
+ * </ol>
+ * <p>Because resolution happens per task, per-task context and inputs are isolated -- a
+ * variable set on one task does not appear in another task's resolved text.
  *
  * <h2>Example</h2>
  * <pre>
@@ -50,7 +57,7 @@ public class EnsembleRequest {
 
     /**
      * Global template variable values applied to all tasks in the ensemble.
-     * Per-task {@link TaskRequest#getInputs()} entries take precedence when keys collide.
+     * Per-task {@code TaskRequest.getInputs()} entries take precedence when keys collide.
      */
     Map<String, String> inputs;
 

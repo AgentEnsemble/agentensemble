@@ -113,14 +113,27 @@ class TaskExecutorTest {
     }
 
     // ========================
+    // execute() -- null expectedOutput default (Copilot fix)
+    // ========================
+
+    @Test
+    void execute_singleArgFactory_nullExpectedOutput_usesDefaultAndSucceeds() {
+        // TaskRequest.of(String) leaves expectedOutput null. The executor substitutes
+        // Task.DEFAULT_EXPECTED_OUTPUT so the task is always executable.
+        var executor = new TaskExecutor(SimpleModelProvider.of(mockModelWithResponse("Result.")));
+
+        var result = executor.execute(TaskRequest.of("Research something"));
+
+        assertThat(result.output()).isEqualTo("Result.");
+        assertThat(result.isComplete()).isTrue();
+    }
+
+    // ========================
     // execute() -- context and inputs
     // ========================
 
     @Test
     void execute_withContextAndInputs_runsSuccessfully() {
-        // Context entries from upstream tasks and explicit inputs are both injected as
-        // template variables. This test verifies the ensemble runs without error and
-        // produces the mocked output.
         var executor = new TaskExecutor(SimpleModelProvider.of(mockModelWithResponse("Article complete.")));
 
         var request = TaskRequest.builder()
@@ -175,7 +188,6 @@ class TaskExecutorTest {
 
     @Test
     void execute_withNullConsumer_runsWithoutHeartbeating() {
-        // Passing null consumer is explicitly supported and disables heartbeating.
         var executor = new TaskExecutor(SimpleModelProvider.of(mockModelWithResponse("No heartbeats.")));
 
         var result = executor.execute(
@@ -184,7 +196,7 @@ class TaskExecutorTest {
                         .expectedOutput("A research result")
                         .agent(AgentSpec.of("Researcher", "Research"))
                         .build(),
-                null); // no heartbeating
+                null);
 
         assertThat(result.isComplete()).isTrue();
     }

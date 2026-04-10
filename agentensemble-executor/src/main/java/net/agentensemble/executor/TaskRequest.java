@@ -84,6 +84,11 @@ public class TaskRequest {
     /**
      * Convenience factory: creates a minimal request with only a description.
      *
+     * <p>When {@code expectedOutput} is null, both {@link TaskExecutor} and
+     * {@link EnsembleExecutor} substitute {@code Task.DEFAULT_EXPECTED_OUTPUT}
+     * ({@value net.agentensemble.Task#DEFAULT_EXPECTED_OUTPUT}) when building the
+     * underlying core task, so this factory always produces an executable request.
+     *
      * @param description the task description
      * @return a request with no agent spec, context, inputs, or model override
      */

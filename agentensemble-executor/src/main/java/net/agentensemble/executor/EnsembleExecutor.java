@@ -2,7 +2,9 @@ package net.agentensemble.executor;
 
 import dev.langchain4j.model.chat.ChatModel;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import net.agentensemble.Agent;
@@ -20,6 +22,19 @@ import net.agentensemble.workflow.Workflow;
  * (sequential, parallel, or hierarchical) to handle a complete pipeline within a single
  * external-workflow activity. For finer-grained control -- where each AgentEnsemble task maps
  * to a separate Temporal activity -- use {@link TaskExecutor} instead.
+ *
+ * <h2>Template variable resolution</h2>
+ *
+ * <p>Each task's {@code description} and {@code expectedOutput} are pre-resolved before the task
+ * is submitted to the ensemble. The resolution order for a given task is:
+ * <ol>
+ *   <li>Global inputs from {@code EnsembleRequest.getInputs()} (lowest precedence)</li>
+ *   <li>Per-task context from {@code TaskRequest.getContext()}</li>
+ *   <li>Per-task inputs from {@code TaskRequest.getInputs()} (highest precedence)</li>
+ * </ol>
+ * <p>Because each task's templates are resolved independently with its own merged map, per-task
+ * context and inputs do not leak across tasks -- a {@code {research}} variable set on task 1
+ * will not appear in task 2's resolved description unless task 2 also declares it.
  *
  * <h2>Usage in a Temporal Activity</h2>
  * <pre>
@@ -123,26 +138,16 @@ public class EnsembleExecutor {
 
         var ensembleBuilder = Ensemble.builder().chatLanguageModel(defaultModel);
 
-        // Apply global inputs first (lowest precedence; per-task inputs applied below).
-        if (request.getInputs() != null) {
-            request.getInputs().forEach(ensembleBuilder::input);
-        }
-
-        // Build each task and accumulate its inputs.
+        // Build each task. Templates are pre-resolved per task using a merged map of:
+        //   global inputs (lowest) < per-task context < per-task inputs (highest).
+        // This prevents per-task inputs from leaking into other tasks via the Ensemble's
+        // single shared input map.
         for (TaskRequest taskRequest : request.getTasks()) {
             ChatModel taskModel =
                     taskRequest.getModelName() != null ? modelProvider.get(taskRequest.getModelName()) : defaultModel;
 
-            ensembleBuilder.task(buildTask(taskRequest, taskModel));
-
-            // Per-task context entries (lower precedence within the task).
-            if (taskRequest.getContext() != null) {
-                taskRequest.getContext().forEach(ensembleBuilder::input);
-            }
-            // Per-task explicit inputs (higher precedence, override context and global inputs).
-            if (taskRequest.getInputs() != null) {
-                taskRequest.getInputs().forEach(ensembleBuilder::input);
-            }
+            Map<String, String> mergedInputs = buildMergedInputs(request.getInputs(), taskRequest);
+            ensembleBuilder.task(buildTask(taskRequest, taskModel, mergedInputs));
         }
 
         // Apply workflow mode when explicitly specified.
@@ -167,12 +172,50 @@ public class EnsembleExecutor {
         return modelName != null ? modelProvider.get(modelName) : modelProvider.getDefault();
     }
 
-    private Task buildTask(TaskRequest request, ChatModel model) {
-        var taskBuilder = Task.builder().description(request.getDescription());
-
-        if (request.getExpectedOutput() != null) {
-            taskBuilder.expectedOutput(request.getExpectedOutput());
+    /**
+     * Builds the per-task merged input map in precedence order:
+     * global inputs (lowest) < per-task context < per-task inputs (highest).
+     */
+    private static Map<String, String> buildMergedInputs(Map<String, String> globalInputs, TaskRequest taskRequest) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        if (globalInputs != null) {
+            merged.putAll(globalInputs);
         }
+        if (taskRequest.getContext() != null) {
+            merged.putAll(taskRequest.getContext());
+        }
+        if (taskRequest.getInputs() != null) {
+            merged.putAll(taskRequest.getInputs());
+        }
+        return Map.copyOf(merged);
+    }
+
+    /**
+     * Resolves {@code {variable}} placeholders in the given template string using the provided
+     * variable map. Returns the template unchanged when it is null or the map is empty.
+     */
+    static String resolveTemplate(String template, Map<String, String> vars) {
+        if (template == null || vars.isEmpty()) {
+            return template;
+        }
+        String result = template;
+        for (Map.Entry<String, String> entry : vars.entrySet()) {
+            result = result.replace("{" + entry.getKey() + "}", entry.getValue());
+        }
+        return result;
+    }
+
+    private Task buildTask(TaskRequest request, ChatModel model, Map<String, String> mergedInputs) {
+        // Pre-resolve templates so per-task variables do not leak into other tasks.
+        String description = resolveTemplate(request.getDescription(), mergedInputs);
+
+        // When expectedOutput is null fall back to Task.DEFAULT_EXPECTED_OUTPUT so that
+        // TaskRequest.of(String description) (single-arg factory) is always executable.
+        String expectedOutput = request.getExpectedOutput() != null
+                ? resolveTemplate(request.getExpectedOutput(), mergedInputs)
+                : Task.DEFAULT_EXPECTED_OUTPUT;
+
+        var taskBuilder = Task.builder().description(description).expectedOutput(expectedOutput);
 
         if (request.getAgent() != null) {
             taskBuilder.agent(buildAgent(request.getAgent(), model));

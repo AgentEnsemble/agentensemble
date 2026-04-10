@@ -88,7 +88,7 @@ class FakeEnsembleExecutorTest {
     }
 
     @Test
-    void builder_lastTaskOutputBecomesFinaOutput() {
+    void builder_lastTaskOutputBecomesFinalOutput() {
         var fake = FakeEnsembleExecutor.builder()
                 .whenDescriptionContains("Step 1", "Step 1 output.")
                 .whenDescriptionContains("Step 2", "Step 2 output.")
