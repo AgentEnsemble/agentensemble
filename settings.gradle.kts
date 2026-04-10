@@ -61,6 +61,9 @@ include("agentensemble-metrics-micrometer")
 // OpenTelemetry integration (optional span creation at framework boundaries)
 include("agentensemble-telemetry-opentelemetry")
 
+// Executor module (orchestrator-agnostic direct invocation -- Temporal, Step Functions, etc.)
+include("agentensemble-executor")
+
 // Developer tooling module (DAG export, trace utilities)
 include("agentensemble-devtools")
 
