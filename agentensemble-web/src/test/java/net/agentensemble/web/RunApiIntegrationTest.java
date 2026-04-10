@@ -51,6 +51,9 @@ class RunApiIntegrationTest {
         when(mockEnsemble.getTasks()).thenReturn(List.of());
         when(mockOutput.getTaskOutputs()).thenReturn(List.of());
         when(mockOutput.getMetrics()).thenReturn(null);
+        // RunManager.executeRun() calls withAdditionalListener to add the CancellationCheckListener;
+        // the mock must return a non-null Ensemble so the run doesn't immediately fail with NPE.
+        when(mockEnsemble.withAdditionalListener(any())).thenReturn(mockEnsemble);
 
         dashboard = WebDashboard.builder()
                 .port(0) // ephemeral

@@ -1,6 +1,7 @@
 package net.agentensemble.web;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -101,7 +102,23 @@ public final class WebReviewHandler implements ReviewHandler {
         String reviewId = UUID.randomUUID().toString();
         CompletableFuture<String> future = new CompletableFuture<>();
 
-        connectionManager.registerPendingReview(reviewId, future);
+        // Build review metadata for REST-based discovery (GET /api/reviews)
+        Duration effectiveTimeout = request.timeout() != null ? request.timeout() : reviewTimeout;
+        Instant createdAt = Instant.now();
+        Instant expiresAt =
+                (effectiveTimeout != null && !effectiveTimeout.isZero()) ? createdAt.plus(effectiveTimeout) : null;
+        ConnectionManager.PendingReviewInfo info = new ConnectionManager.PendingReviewInfo(
+                reviewId,
+                null, // runId unknown at this level; set by RunManager for API runs
+                request.taskDescription(),
+                request.taskOutput() != null ? request.taskOutput() : "",
+                request.timing() != null ? request.timing().name() : "AFTER_EXECUTION",
+                request.prompt(),
+                effectiveTimeout != null ? effectiveTimeout.toMillis() : 0L,
+                createdAt,
+                expiresAt);
+
+        connectionManager.registerPendingReview(reviewId, future, info);
         broadcastReviewRequested(reviewId, request);
 
         if (log.isDebugEnabled()) {
@@ -109,10 +126,8 @@ public final class WebReviewHandler implements ReviewHandler {
         }
 
         try {
-            // Use the request-level timeout if available; fall back to the handler default.
+            // effectiveTimeout is already computed above for the metadata; reuse it here.
             // Duration.ZERO means wait indefinitely (no timeout).
-            Duration effectiveTimeout = request.timeout() != null ? request.timeout() : reviewTimeout;
-
             String rawDecision;
             if (effectiveTimeout.isZero()) {
                 // No timeout -- wait indefinitely for a qualified human to respond

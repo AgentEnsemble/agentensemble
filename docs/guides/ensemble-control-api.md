@@ -454,12 +454,163 @@ immediately responds with a `run_ack` carrying `status: "REJECTED"`.
 
 ---
 
-## Current limitations (Phases 3-5 planned)
+---
 
-- **No run cancellation**: mid-run cancel is planned for Phase 3.
-- **No model switch mid-run**: planned for Phase 3.
-- **No SSE streaming**: event streaming for HTTP clients is planned for Phase 4.
-- **No REST review decisions**: REST-based human review is planned for Phase 5.
+## Phase 3: Run Control (Cancel + Model Switching)
+
+### Cancel a run
+
+Cancel a running or accepted run at the next task boundary (cooperative cancellation).
+The current in-flight task completes normally; cancellation takes effect before the next task.
+
+**REST:**
+```http
+POST /api/runs/{runId}/cancel
+```
+
+Response:
+```json
+{ "runId": "run-abc", "status": "CANCELLING" }
+```
+
+Possible status values: `CANCELLING`, `REJECTED` (already terminal), `NOT_FOUND`.
+
+**WebSocket:**
+```json
+{ "type": "run_control", "runId": "run-abc", "action": "cancel" }
+```
+Response: `run_control_ack` message.
+
+### Switch active model mid-run
+
+Switch the LLM that subsequent tasks will use, without restarting the ensemble.
+Takes effect on the next LLM call; the current in-flight call completes with the previous model.
+
+**REST:**
+```http
+POST /api/runs/{runId}/model
+Content-Type: application/json
+
+{ "model": "haiku" }
+```
+
+Response:
+```json
+{ "runId": "run-abc", "model": "haiku", "status": "APPLIED" }
+```
+
+The `model` field must be a registered alias in the configured `ModelCatalog`.
+
+**WebSocket:**
+```json
+{ "type": "run_control", "runId": "run-abc", "action": "switch_model", "model": "haiku" }
+```
+
+---
+
+## Phase 4: Event Subscription Filtering + SSE
+
+### Subscribe to a filtered event stream (WebSocket)
+
+By default all events are broadcast to all connected sessions. Use `subscribe` to receive
+only the events you care about:
+
+```json
+{ "type": "subscribe", "events": ["task_started", "task_completed", "run_result"] }
+```
+
+Optional run filter (only events from the specified run):
+```json
+{ "type": "subscribe", "events": ["run_result"], "runId": "run-abc" }
+```
+
+Reset to all events:
+```json
+{ "type": "subscribe", "events": ["*"] }
+```
+
+The server responds with a `subscribe_ack` message confirming the effective subscription.
+
+### SSE event stream (REST)
+
+HTTP clients (curl, server-side systems, serverless functions) can receive live events
+without a WebSocket connection:
+
+```http
+GET /api/runs/{runId}/events
+Accept: text/event-stream
+```
+
+Query parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `events`  | Comma-separated event types to filter (`*` for all) |
+| `from`    | 0-based index into stored task outputs for reconnection |
+
+For **completed runs** the stored events are replayed immediately and the connection closes.
+For **in-progress runs** the connection streams live events until the run completes.
+
+---
+
+## Phase 5: REST Review + Context Injection + Tool Invocation
+
+### Submit a review decision via REST
+
+Server-side systems (Slack bots, CI pipelines) can approve or reject review gates
+without a WebSocket connection:
+
+```http
+POST /api/reviews/{reviewId}
+Content-Type: application/json
+
+{ "decision": "CONTINUE" }
+```
+
+Valid decisions: `CONTINUE` (or `APPROVE`), `EDIT`, `EXIT_EARLY`.
+For `EDIT` supply a `revisedOutput` field:
+```json
+{ "decision": "EDIT", "revisedOutput": "Updated output..." }
+```
+
+Discover pending reviews:
+```http
+GET /api/reviews
+GET /api/reviews?runId=run-abc
+```
+
+### Inject context into a running ensemble
+
+Add a directive to an in-progress run's `DirectiveStore`. The directive is picked up on
+the next LLM iteration of any agent in the ensemble.
+
+```http
+POST /api/runs/{runId}/inject
+Content-Type: application/json
+
+{ "content": "Focus on EU AI Act compliance", "target": "researcher" }
+```
+
+### Invoke a tool directly
+
+Execute a registered tool from the `ToolCatalog` without running a full ensemble:
+
+```http
+POST /api/tools/{toolName}/invoke
+Content-Type: application/json
+
+{ "input": "What is 42 * 17?" }
+```
+
+Response:
+```json
+{ "tool": "calculator", "status": "SUCCESS", "output": "714", "durationMs": 2 }
+```
+
+Timeout is 30 seconds. The tool must be registered in the `ToolCatalog` configured on
+the `WebDashboard`.
+
+---
 
 ## See also
 

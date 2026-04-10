@@ -31,6 +31,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *   <li>{@link MetricsSnapshotMessage} -- sent with cumulative agent metrics after each LLM iteration</li>
  *   <li>{@link RunAckMessage} -- acknowledges a submitted API run (ACCEPTED or REJECTED)</li>
  *   <li>{@link RunResultMessage} -- final result of a completed API run, targeted at originator</li>
+ *   <li>{@link RunControlAckMessage} -- acknowledges a cancel or model-switch control message</li>
+ *   <li>{@link SubscribeAckMessage} -- acknowledges an event subscription request</li>
  * </ul>
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.PROPERTY)
@@ -66,6 +68,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = MetricsSnapshotMessage.class, name = "metrics_snapshot"),
     @JsonSubTypes.Type(value = RunAckMessage.class, name = "run_ack"),
     @JsonSubTypes.Type(value = RunResultMessage.class, name = "run_result"),
+    @JsonSubTypes.Type(value = RunControlAckMessage.class, name = "run_control_ack"),
+    @JsonSubTypes.Type(value = SubscribeAckMessage.class, name = "subscribe_ack"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -98,4 +102,6 @@ public sealed interface ServerMessage
                 FileChangedMessage,
                 MetricsSnapshotMessage,
                 RunAckMessage,
-                RunResultMessage {}
+                RunResultMessage,
+                RunControlAckMessage,
+                SubscribeAckMessage {}

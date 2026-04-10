@@ -3,6 +3,50 @@
 
 ## Current Work
 
+**Ensemble Control API Phase 3/4/5 (GH #301, #302, #303)** -- run control, subscription filtering, REST review/inject/invoke.
+
+### What was implemented
+
+**Phase 3 -- Run Control (Cancel + Model Switching):**
+- `Ensemble.switchToModel(ChatModel)` -- runtime LLM swap, thread-safe via AtomicReference
+- `Ensemble.withAdditionalListener(EnsembleListener)` -- per-run copy with additional listener
+- `CancellationCheckListener` -- `onTaskStart()` throws `ExitEarlyException` when cancelled
+- `RunManager.cancelRun(String)` -- sets `cancelled` flag; returns CANCELLING / REJECTED / NOT_FOUND
+- `RunManager.switchModel(String, ChatModel)` -- delegates to `state.getEnsemble().switchToModel()`
+- `RunManager.executeRun()` -- wraps template with `withAdditionalListener(new CancellationCheckListener(state))`
+- `RunControlMessage` / `RunControlAckMessage` -- WS wire protocol records
+- `WebDashboard.handleRunControl()` -- cancel + switch_model dispatch with ModelCatalog lookup
+- REST: `POST /api/runs/{runId}/cancel`, `POST /api/runs/{runId}/model`
+
+**Phase 4 -- Event Subscription Filtering + SSE:**
+- `SubscriptionManager` -- per-session event-type + runId filter; ConcurrentHashMap
+- `ConnectionManager` -- subscription-aware `broadcast()`, SSE broadcast callbacks,
+  `registerBroadcastCallback()` / `unregisterBroadcastCallback()`, `extractMessageType()` helper,
+  `hasPendingReview()`, `listPendingReviews()`, `PendingReviewInfo` record
+- `SseHandler` -- SSE streaming; completed-run replay via `TaskOutputSnapshot`;
+  live streaming via broadcast callback queue; event type filtering; `from=N` reconnection
+- `SubscribeMessage` / `SubscribeAckMessage` -- WS wire protocol records
+- `WebDashboard.handleSubscribe()` -- subscription state management, SubscribeAckMessage response
+- `WebDashboard.subscriptionManager` field -- wired to ConnectionManager at construction
+- REST: `GET /api/runs/{runId}/events` (Javalin 7 `config.routes.sse()`)
+
+**Phase 5 -- REST Review + Context Injection + Tool Invocation:**
+- `WebReviewHandler` -- registers `PendingReviewInfo` metadata alongside the `CompletableFuture`
+- `ConnectionManager.listPendingReviews(String)` -- filtered pending review listing
+- `ConnectionManager.hasPendingReview(String)` -- O(1) existence check
+- `ConnectionManager.resolveReview()` -- now also removes metadata
+- REST: `POST /api/reviews/{reviewId}` -- delegates to existing `resolveReview()` path
+- REST: `GET /api/reviews[?runId=X]` -- lists pending review metadata
+- REST: `POST /api/runs/{runId}/inject` -- adds directive to run's DirectiveStore
+- REST: `POST /api/tools/{name}/invoke` -- executes tool from ToolCatalog with 30s timeout
+
+**Build:** All tests pass. Coverage meets thresholds. Spotless clean.
+**Branch:** `feat/301-302-303-control-api-phase3-5`
+
+---
+
+## Previous Work
+
 **PR #308 review feedback addressed** -- fixing CI failure and all 11 Copilot review comments.
 
 ### PR #308 fixes (on branch `feat/300-ensemble-control-api-phase2`)

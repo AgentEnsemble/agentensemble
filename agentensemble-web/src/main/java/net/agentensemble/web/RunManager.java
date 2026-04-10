@@ -137,6 +137,66 @@ public final class RunManager {
     }
 
     /**
+     * Cooperatively cancels a running or accepted run.
+     *
+     * <p>Sets the cancellation flag on the run's {@link RunState}. The
+     * {@link CancellationCheckListener} installed at the start of each task will detect
+     * this flag on the next task boundary and throw {@link net.agentensemble.exception.ExitEarlyException},
+     * causing the ensemble to exit gracefully with partial output.
+     *
+     * <p>If the run is already in a terminal state (COMPLETED, FAILED, CANCELLED), the
+     * cancellation is rejected.
+     *
+     * @param runId the run to cancel
+     * @return {@code "CANCELLING"} if accepted, {@code "REJECTED"} if already terminal,
+     *         or {@code "NOT_FOUND"} if the runId is unknown
+     */
+    public String cancelRun(String runId) {
+        RunState state = runs.get(runId);
+        if (state == null) {
+            return "NOT_FOUND";
+        }
+        RunState.Status s = state.getStatus();
+        if (s == RunState.Status.COMPLETED || s == RunState.Status.FAILED || s == RunState.Status.CANCELLED) {
+            return "REJECTED";
+        }
+        state.cancel();
+        log.debug("Run {} flagged for cooperative cancellation", runId);
+        return "CANCELLING";
+    }
+
+    /**
+     * Switches the active LLM on a running ensemble to the given model.
+     *
+     * <p>The switch takes effect on the next LLM call; the current in-flight task
+     * completes with the previous model.
+     *
+     * @param runId    the run to update
+     * @param newModel the replacement model; must not be null
+     * @return {@code "APPLIED"} if the switch was applied, {@code "NOT_RUNNING"} if the
+     *         run has no live ensemble reference yet, {@code "REJECTED"} if the run is in
+     *         a terminal state, or {@code "NOT_FOUND"} if the runId is unknown
+     */
+    public String switchModel(String runId, dev.langchain4j.model.chat.ChatModel newModel) {
+        Objects.requireNonNull(newModel, "newModel must not be null");
+        RunState state = runs.get(runId);
+        if (state == null) {
+            return "NOT_FOUND";
+        }
+        RunState.Status s = state.getStatus();
+        if (s == RunState.Status.COMPLETED || s == RunState.Status.FAILED || s == RunState.Status.CANCELLED) {
+            return "REJECTED";
+        }
+        net.agentensemble.Ensemble ensemble = state.getEnsemble();
+        if (ensemble == null) {
+            return "NOT_RUNNING";
+        }
+        ensemble.switchToModel(newModel);
+        log.debug("Run {} switched to new model", runId);
+        return "APPLIED";
+    }
+
+    /**
      * Returns all retained runs matching the given filter criteria, ordered by start time
      * descending (most recent first).
      *
@@ -211,14 +271,19 @@ public final class RunManager {
             RunOptions options,
             Consumer<RunResultMessage> onComplete) {
 
-        state.setEnsemble(template);
+        // Wrap the template with a per-run cancellation check listener so that
+        // cancelRun() takes effect at the next task boundary without mutating the template.
+        Ensemble executionEnsemble = template.withAdditionalListener(new CancellationCheckListener(state));
+
+        // Store the live ensemble reference so cancelRun() / switchModel() can reach it.
+        state.setEnsemble(executionEnsemble);
         state.transitionTo(Status.RUNNING);
         log.debug("Run {} started", state.getRunId());
 
         EnsembleOutput output = null;
         Exception runException = null;
         try {
-            output = template.run(inputs, options);
+            output = executionEnsemble.run(inputs, options);
         } catch (Exception e) {
             runException = e;
             log.warn("Run {} failed with exception: {}", state.getRunId(), e.getMessage(), e);
