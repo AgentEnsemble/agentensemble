@@ -2620,6 +2620,31 @@ Key design decisions:
 
 ## [Unreleased]
 
+### Fixed (PR #308 review feedback)
+- **RunState race condition**: `handleRunRequest` ack was serialized with `state.getStatus()` which
+  could read `RUNNING` if the handler task completed before the ack was sent. Fixed by adding
+  immutable `initialStatus` field and `getInitialStatus()` to `RunState`; ack now uses
+  `state.getInitialStatus().name()` (always `ACCEPTED` or `REJECTED`).
+- **RunRequestParser -- additionalContext ordering**: pre-computed final description (description
+  override + additionalContext) before the switch loop to eliminate Map iteration order dependency.
+- **RunRequestParser -- tool removal by name**: changed `t == resolved` to name-based
+  `AgentTool.name()` equality; also added de-duplication on tool add.
+- **RunRequestParser -- type validation**: added explicit `instanceof String` checks for
+  `expectedOutput`, tool names, and context entries with useful error messages instead of
+  `ClassCastException`.
+- **RunRequestParser -- Locale.ROOT**: all `toLowerCase()` calls in `findTaskIndex` use
+  `Locale.ROOT`.
+- **Ensemble.withTasks()**: added empty list check (`IAE`) and null element check (NPE).
+- **WebDashboard + WebSocketServer**: reject `tasks: []` and `taskOverrides: {}` as malformed
+  (return REJECTED ack / 400 instead of silently falling through to Level 1).
+
+### Tests
+- `WebDashboardRunRequestTest`: replaced `Thread.sleep(200)` with `helloLatch` (waits for
+  first server message); renamed L3 test to `receivesAck`.
+- Added 9 `withTasks()` tests to `EnsembleTest` for coverage.
+- Added 14 new tests to `RunRequestParserTest` covering new validations.
+
+
 ### Added (Issue #179, PR #180)
 - `EnsembleDashboard.traceExporter()` default method in core SPI
 - `WebDashboard.builder().traceExportDir(Path)` -- convenience shortcut; auto-wires `JsonTraceExporter` via `Ensemble.builder().webDashboard()`

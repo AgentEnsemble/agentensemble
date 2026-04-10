@@ -3,6 +3,53 @@
 
 ## Current Work
 
+**PR #308 review feedback addressed** -- fixing CI failure and all 11 Copilot review comments.
+
+### PR #308 fixes (on branch `feat/300-ensemble-control-api-phase2`)
+
+**Failing test fix (RunState race condition):**
+- `WebDashboardRunRequestTest#runRequest_level1_withEnsemble_receivesAcceptedAckAndResult` was
+  failing because handler tasks complete near-instantaneously, causing `state.getStatus()` to
+  return `RUNNING` by the time the run_ack was serialized.
+- Fix: added `private final Status initialStatus` (immutable) to `RunState` + `getInitialStatus()`.
+- `WebDashboard.handleRunRequest()` now uses `state.getInitialStatus().name()` for the ack.
+
+**RunRequestParser fixes (7 Copilot comments):**
+- `additionalContext` ordering: pre-computed description deterministically (description override
+  first, then additionalContext appended) before the switch loop, eliminating Map iteration
+  order dependency.
+- Tool removal by name: changed from reference equality (`t == resolved`) to
+  `t instanceof AgentTool at && at.name().equals(toolName)`. Resolves failures when the task's
+  tool was constructed outside the catalog.
+- Tool add de-duplication: added name-based pre-check before adding to prevent duplicates.
+- `expectedOutput` type validation: explicit `instanceof String` check with clear error message.
+- Tool name type validation: explicit `instanceof String && !isBlank()` check.
+- `context` field validation: validates it's a List before casting; validates each entry is String.
+- `findTaskIndex` Locale: all `toLowerCase()` calls updated to `toLowerCase(Locale.ROOT)`.
+- Added `import java.util.Locale`.
+
+**Ensemble.withTasks() (1 Copilot comment):**
+- Added empty list check (`IAE`) and null element check (per-index NPE) with useful messages.
+- Updated Javadoc `@param`/`@throws` to document new contracts.
+
+**WebDashboard + WebSocketServer (2 Copilot comments):**
+- Both `handleRunRequest` (WS) and `resolveExecutionEnsemble` (REST) now reject requests where
+  `tasks` is present-but-empty or `taskOverrides` is present-but-empty (IAE / REJECTED ack).
+
+**Test improvements (2 Copilot comments):**
+- `WebDashboardRunRequestTest`: replaced all `Thread.sleep(200)` with latch-based `helloLatch`
+  waiting for the first server message (eliminates fixed-time flakiness on CI).
+- Renamed L3 test to `runRequest_level3_withDynamicTasks_receivesAck` (matches actual assertions).
+
+**Coverage (Codecov comment):**
+- Added 9 `withTasks()` tests in `EnsembleTest` covering happy path, preserving settings, and
+  the three new validation error cases.
+- Added 14 new tests in `RunRequestParserTest` covering all the new validations and behavior
+  fixes (expectedOutput type, tool name type, context type, additionalContext ordering, tool
+  removal by name, dedup on add).
+
+---
+
 **Ensemble Control API Phase 2 (GH #300)** -- Level 2/3 parameterization and WebSocket run submission.
 
 ### What was implemented
