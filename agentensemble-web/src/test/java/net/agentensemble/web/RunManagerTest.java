@@ -81,9 +81,15 @@ class RunManagerTest {
 
         RunState state = manager.submitRun(mockEnsemble, Map.of("topic", "AI"), null, null, null, null);
 
-        assertThat(state.getStatus()).isEqualTo(Status.ACCEPTED);
+        // Run ID and task count are assigned deterministically at submission time.
         assertThat(state.getRunId()).startsWith("run-");
         assertThat(state.getTaskCount()).isZero();
+
+        // Wait for the virtual thread to start executing; this confirms that submitRun()
+        // returned before the run completed (non-blocking), and that the state has advanced
+        // to RUNNING (the virtual thread acquired the semaphore and called executeRun).
+        assertThat(startLatch.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(state.getStatus()).isEqualTo(Status.RUNNING);
 
         // Allow run to complete
         doneLatch.countDown();

@@ -418,7 +418,7 @@ class WebSocketServer {
                 ctx.status(202);
                 ctx.json(Map.of(
                         "runId", state.getRunId(),
-                        "status", state.getStatus().name(),
+                        "status", RunState.Status.ACCEPTED.name(),
                         "tasks", state.getTaskCount(),
                         "workflow", state.getWorkflow() != null ? state.getWorkflow() : "SEQUENTIAL"));
             });
