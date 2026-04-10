@@ -29,6 +29,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *   <li>{@link TokenMessage} -- sent for each token during streaming final response generation</li>
  *   <li>{@link FileChangedMessage} -- sent when a coding tool modifies a file</li>
  *   <li>{@link MetricsSnapshotMessage} -- sent with cumulative agent metrics after each LLM iteration</li>
+ *   <li>{@link RunAckMessage} -- acknowledges a submitted API run (ACCEPTED or REJECTED)</li>
+ *   <li>{@link RunResultMessage} -- final result of a completed API run, targeted at originator</li>
  * </ul>
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.PROPERTY)
@@ -62,6 +64,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = LlmIterationCompletedMessage.class, name = "llm_iteration_completed"),
     @JsonSubTypes.Type(value = FileChangedMessage.class, name = "file_changed"),
     @JsonSubTypes.Type(value = MetricsSnapshotMessage.class, name = "metrics_snapshot"),
+    @JsonSubTypes.Type(value = RunAckMessage.class, name = "run_ack"),
+    @JsonSubTypes.Type(value = RunResultMessage.class, name = "run_result"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -92,4 +96,6 @@ public sealed interface ServerMessage
                 LlmIterationStartedMessage,
                 LlmIterationCompletedMessage,
                 FileChangedMessage,
-                MetricsSnapshotMessage {}
+                MetricsSnapshotMessage,
+                RunAckMessage,
+                RunResultMessage {}

@@ -552,4 +552,65 @@ class WebDashboardTest {
         assertThat(helloJson).contains("ensemble_started");
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(5, TimeUnit.SECONDS);
     }
+
+    // ========================
+    // Ensemble Control API builder coverage
+    // ========================
+
+    @Test
+    void maxConcurrentRunsOfZeroThrows() {
+        assertThatThrownBy(() ->
+                        WebDashboard.builder().port(0).maxConcurrentRuns(0).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxConcurrentRuns");
+    }
+
+    @Test
+    void maxConcurrentRunsNegativeThrows() {
+        assertThatThrownBy(() ->
+                        WebDashboard.builder().port(0).maxConcurrentRuns(-1).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxConcurrentRuns");
+    }
+
+    @Test
+    void maxRetainedCompletedRunsOfZeroThrows() {
+        assertThatThrownBy(() -> WebDashboard.builder()
+                        .port(0)
+                        .maxRetainedCompletedRuns(0)
+                        .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxRetainedCompletedRuns");
+    }
+
+    @Test
+    void builderConfiguresToolAndModelCatalogs() {
+        ToolCatalog tc = ToolCatalog.builder().build();
+        ModelCatalog mc = ModelCatalog.builder().build();
+        // These builder calls must not throw and produce a valid dashboard
+        dashboard = WebDashboard.builder()
+                .port(0)
+                .toolCatalog(tc)
+                .modelCatalog(mc)
+                .maxConcurrentRuns(3)
+                .maxRetainedCompletedRuns(50)
+                .build();
+        assertThat(dashboard).isNotNull();
+    }
+
+    @Test
+    void builderConfiguresMaxSnapshotIterationsAndWorkspacePath() {
+        dashboard = WebDashboard.builder()
+                .port(0)
+                .maxSnapshotIterations(10)
+                .workspacePath(null) // null = disabled
+                .build();
+        assertThat(dashboard.getMaxSnapshotIterations()).isEqualTo(10);
+    }
+
+    @Test
+    void getMaxSnapshotIterationsReturnsConfiguredValue() {
+        dashboard = WebDashboard.builder().port(0).maxSnapshotIterations(7).build();
+        assertThat(dashboard.getMaxSnapshotIterations()).isEqualTo(7);
+    }
 }

@@ -75,6 +75,32 @@ class WebSocketServer {
     /** Optional workspace root path for file browsing endpoints. Null if not configured. */
     private volatile java.nio.file.Path workspacePath;
 
+    // ========================
+    // Ensemble Control API fields (Phase 1)
+    // ========================
+
+    /** RunManager for tracking and executing API-submitted runs. */
+    private volatile RunManager runManager;
+
+    /**
+     * Parser configuration retained for Phase 2+ use; request parsing is currently
+     * performed inline in the route handlers.
+     */
+    @SuppressWarnings("unused")
+    private volatile RunRequestParser runRequestParser;
+
+    /** Tool registry for the capabilities endpoint. Null when not configured. */
+    private volatile ToolCatalog toolCatalog;
+
+    /** Model registry for the capabilities endpoint. Null when not configured. */
+    private volatile ModelCatalog modelCatalog;
+
+    /**
+     * Supplier for the template ensemble (set via WebDashboard.setEnsemble()).
+     * Used by POST /api/runs to obtain the ensemble to run.
+     */
+    private volatile java.util.function.Supplier<net.agentensemble.Ensemble> ensembleSupplier;
+
     WebSocketServer(
             ConnectionManager connectionManager,
             MessageSerializer serializer,
@@ -314,6 +340,261 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "Failed to read file"));
                 }
             });
+
+            // ========================
+            // Ensemble Control API endpoints (Phase 1)
+            // ========================
+
+            // POST /api/runs -- submit a Level 1 run (template + variable inputs)
+            config.routes.post("/api/runs", ctx -> {
+                // RunManager is always created by WebDashboard; use it directly.
+                RunManager rm = runManager;
+
+                java.util.function.Supplier<net.agentensemble.Ensemble> supplier = ensembleSupplier;
+                net.agentensemble.Ensemble template = supplier != null ? supplier.get() : null;
+                if (template == null) {
+                    ctx.status(503);
+                    ctx.json(
+                            Map.of(
+                                    "error",
+                                    "NOT_CONFIGURED",
+                                    "message",
+                                    "No template ensemble configured. Wire an Ensemble via Ensemble.builder().webDashboard(dashboard)."));
+                    return;
+                }
+
+                com.fasterxml.jackson.databind.JsonNode body;
+                try {
+                    String bodyStr = ctx.body();
+                    if (bodyStr == null || bodyStr.isBlank()) {
+                        body = serializer.toJsonNode("{}");
+                    } else {
+                        body = serializer.toJsonNode(bodyStr);
+                    }
+                } catch (Exception e) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body: " + e.getMessage()));
+                    return;
+                }
+                // toJsonNode returns null for invalid JSON (does not throw)
+                if (body == null) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid or unparseable JSON body"));
+                    return;
+                }
+
+                Map<String, String> inputs = new java.util.LinkedHashMap<>();
+                com.fasterxml.jackson.databind.JsonNode inputsNode = body.get("inputs");
+                if (inputsNode != null && inputsNode.isObject()) {
+                    inputsNode.fields().forEachRemaining(entry -> {
+                        if (entry.getValue().isTextual()) {
+                            inputs.put(entry.getKey(), entry.getValue().asText());
+                        }
+                    });
+                }
+
+                Map<String, Object> tags = new java.util.LinkedHashMap<>();
+                com.fasterxml.jackson.databind.JsonNode tagsNode = body.get("tags");
+                if (tagsNode != null && tagsNode.isObject()) {
+                    tagsNode.fields()
+                            .forEachRemaining(entry ->
+                                    tags.put(entry.getKey(), entry.getValue().asText()));
+                }
+
+                RunState state = rm.submitRun(template, inputs, tags, null, null, null);
+
+                if (state.getStatus() == RunState.Status.REJECTED) {
+                    ctx.status(429);
+                    ctx.json(Map.of(
+                            "error",
+                            "CONCURRENCY_LIMIT",
+                            "message",
+                            "Maximum concurrent runs (" + rm.getMaxConcurrentRuns() + ") reached. Retry later.",
+                            "retryAfterMs",
+                            5000));
+                    return;
+                }
+
+                ctx.status(202);
+                ctx.json(Map.of(
+                        "runId", state.getRunId(),
+                        "status", RunState.Status.ACCEPTED.name(),
+                        "tasks", state.getTaskCount(),
+                        "workflow", state.getWorkflow() != null ? state.getWorkflow() : "SEQUENTIAL"));
+            });
+
+            // GET /api/runs -- list retained runs with optional status/tag filtering
+            config.routes.get("/api/runs", ctx -> {
+                RunManager rm = runManager;
+                if (rm == null) {
+                    ctx.status(503);
+                    ctx.json(Map.of("error", "NOT_CONFIGURED", "message", "Ensemble Control API not configured."));
+                    return;
+                }
+
+                String statusParam = ctx.queryParam("status");
+                RunState.Status statusFilter = null;
+                if (statusParam != null && !statusParam.isBlank()) {
+                    try {
+                        statusFilter = RunState.Status.valueOf(statusParam.toUpperCase(java.util.Locale.ROOT));
+                    } catch (IllegalArgumentException e) {
+                        ctx.status(400);
+                        ctx.json(Map.of("error", "BAD_REQUEST", "message", "Unknown status: " + statusParam));
+                        return;
+                    }
+                }
+
+                String tagParam = ctx.queryParam("tag");
+                String tagKey = null;
+                String tagValue = null;
+                if (tagParam != null && !tagParam.isBlank()) {
+                    int colonIdx = tagParam.indexOf(':');
+                    if (colonIdx > 0) {
+                        tagKey = tagParam.substring(0, colonIdx);
+                        tagValue = tagParam.substring(colonIdx + 1);
+                    } else {
+                        tagKey = tagParam;
+                    }
+                }
+
+                java.util.List<RunState> runs = rm.listRuns(statusFilter, tagKey, tagValue);
+                java.util.List<Map<String, Object>> runList = new java.util.ArrayList<>();
+                for (RunState rs : runs) {
+                    Map<String, Object> summary = new java.util.LinkedHashMap<>();
+                    summary.put("runId", rs.getRunId());
+                    summary.put("status", rs.getStatus().name());
+                    summary.put("startedAt", rs.getStartedAt().toString());
+                    if (rs.getCompletedAt() != null) {
+                        summary.put(
+                                "durationMs",
+                                rs.getCompletedAt().toEpochMilli()
+                                        - rs.getStartedAt().toEpochMilli());
+                    } else {
+                        summary.put("durationMs", null);
+                    }
+                    summary.put("taskCount", rs.getTaskCount());
+                    summary.put("completedTasks", rs.getCompletedTasks());
+                    if (rs.getWorkflow() != null) {
+                        summary.put("workflow", rs.getWorkflow());
+                    }
+                    summary.put("tags", rs.getTags());
+                    runList.add(summary);
+                }
+
+                Map<String, Object> response = new java.util.LinkedHashMap<>();
+                response.put("runs", runList);
+                response.put("total", runList.size());
+                ctx.json(response);
+            });
+
+            // GET /api/runs/{runId} -- get full detail for a specific run
+            config.routes.get("/api/runs/{runId}", ctx -> {
+                RunManager rm = runManager;
+                if (rm == null) {
+                    ctx.status(503);
+                    ctx.json(Map.of("error", "NOT_CONFIGURED", "message", "Ensemble Control API not configured."));
+                    return;
+                }
+
+                String runId = ctx.pathParam("runId");
+                java.util.Optional<RunState> found = rm.getRun(runId);
+                if (found.isEmpty()) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "RUN_NOT_FOUND", "message", "No run with ID " + runId));
+                    return;
+                }
+
+                RunState rs = found.get();
+                Map<String, Object> detail = new java.util.LinkedHashMap<>();
+                detail.put("runId", rs.getRunId());
+                detail.put("status", rs.getStatus().name());
+                detail.put("startedAt", rs.getStartedAt().toString());
+                if (rs.getCompletedAt() != null) {
+                    detail.put("completedAt", rs.getCompletedAt().toString());
+                    detail.put(
+                            "durationMs",
+                            rs.getCompletedAt().toEpochMilli()
+                                    - rs.getStartedAt().toEpochMilli());
+                }
+                if (rs.getWorkflow() != null) {
+                    detail.put("workflow", rs.getWorkflow());
+                }
+                detail.put("inputs", rs.getInputs());
+                detail.put("tags", rs.getTags());
+
+                // Task output snapshots
+                java.util.List<Map<String, Object>> tasksList = new java.util.ArrayList<>();
+                for (RunState.TaskOutputSnapshot snap : rs.getTaskOutputs()) {
+                    Map<String, Object> taskDetail = new java.util.LinkedHashMap<>();
+                    taskDetail.put("taskDescription", snap.taskDescription());
+                    taskDetail.put("output", snap.output());
+                    if (snap.durationMs() != null) taskDetail.put("durationMs", snap.durationMs());
+                    if (snap.tokenCount() != null && snap.tokenCount() != -1L)
+                        taskDetail.put("tokenCount", snap.tokenCount());
+                    taskDetail.put("toolCallCount", snap.toolCallCount());
+                    tasksList.add(taskDetail);
+                }
+                detail.put("tasks", tasksList);
+
+                if (rs.getMetrics() != null) {
+                    Map<String, Object> metricsMap = new java.util.LinkedHashMap<>();
+                    metricsMap.put("totalTokens", rs.getMetrics().getTotalTokens());
+                    metricsMap.put("totalToolCalls", rs.getMetrics().getTotalToolCalls());
+                    detail.put("metrics", metricsMap);
+                }
+
+                if (rs.getError() != null) {
+                    detail.put("error", rs.getError());
+                }
+
+                ctx.json(detail);
+            });
+
+            // GET /api/capabilities -- list registered tools, models, and preconfigured tasks
+            config.routes.get("/api/capabilities", ctx -> {
+                Map<String, Object> capabilities = new java.util.LinkedHashMap<>();
+
+                // Tools
+                ToolCatalog tc = toolCatalog;
+                if (tc != null) {
+                    java.util.List<Map<String, String>> toolsList = new java.util.ArrayList<>();
+                    for (ToolCatalog.ToolInfo info : tc.list()) {
+                        toolsList.add(Map.of("name", info.name(), "description", info.description()));
+                    }
+                    capabilities.put("tools", toolsList);
+                } else {
+                    capabilities.put("tools", java.util.List.of());
+                }
+
+                // Models
+                ModelCatalog mc = modelCatalog;
+                if (mc != null) {
+                    java.util.List<Map<String, String>> modelsList = new java.util.ArrayList<>();
+                    for (ModelCatalog.ModelInfo info : mc.list()) {
+                        modelsList.add(Map.of("alias", info.alias(), "provider", info.provider()));
+                    }
+                    capabilities.put("models", modelsList);
+                } else {
+                    capabilities.put("models", java.util.List.of());
+                }
+
+                // Preconfigured tasks from the template ensemble
+                java.util.function.Supplier<net.agentensemble.Ensemble> supplier = ensembleSupplier;
+                net.agentensemble.Ensemble template = supplier != null ? supplier.get() : null;
+                if (template != null && template.getTasks() != null) {
+                    java.util.List<Map<String, Object>> tasksList = new java.util.ArrayList<>();
+                    for (net.agentensemble.Task t : template.getTasks()) {
+                        Map<String, Object> taskInfo = new java.util.LinkedHashMap<>();
+                        taskInfo.put("description", t.getDescription());
+                        tasksList.add(taskInfo);
+                    }
+                    capabilities.put("preconfiguredTasks", tasksList);
+                } else {
+                    capabilities.put("preconfiguredTasks", java.util.List.of());
+                }
+
+                ctx.json(capabilities);
+            });
         });
 
         app.start(host, port);
@@ -423,6 +704,56 @@ class WebSocketServer {
      */
     void setWorkspacePath(java.nio.file.Path path) {
         this.workspacePath = path;
+    }
+
+    // ========================
+    // Ensemble Control API setters (Phase 1)
+    // ========================
+
+    /**
+     * Sets the {@link RunManager} for the {@code POST /api/runs} and {@code GET /api/runs}
+     * endpoints.
+     *
+     * @param runManager the run manager; may be null to disable the Control API endpoints
+     */
+    void setRunManager(RunManager runManager) {
+        this.runManager = runManager;
+    }
+
+    /**
+     * Sets the {@link RunRequestParser} for parsing API run request bodies.
+     *
+     * @param runRequestParser the parser; may be null
+     */
+    void setRunRequestParser(RunRequestParser runRequestParser) {
+        this.runRequestParser = runRequestParser;
+    }
+
+    /**
+     * Sets the {@link ToolCatalog} for the {@code GET /api/capabilities} endpoint.
+     *
+     * @param toolCatalog the catalog; may be null
+     */
+    void setToolCatalog(ToolCatalog toolCatalog) {
+        this.toolCatalog = toolCatalog;
+    }
+
+    /**
+     * Sets the {@link ModelCatalog} for the {@code GET /api/capabilities} endpoint.
+     *
+     * @param modelCatalog the catalog; may be null
+     */
+    void setModelCatalog(ModelCatalog modelCatalog) {
+        this.modelCatalog = modelCatalog;
+    }
+
+    /**
+     * Sets the supplier that provides the template ensemble for API-submitted runs.
+     *
+     * @param supplier a supplier returning the current template ensemble; may be null
+     */
+    void setEnsembleSupplier(java.util.function.Supplier<net.agentensemble.Ensemble> supplier) {
+        this.ensembleSupplier = supplier;
     }
 
     // ========================

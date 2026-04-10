@@ -328,3 +328,77 @@ Standardized response envelope mirroring `WorkRequest`.
 | `result` | `String` | No | Output on success |
 | `error` | `String` | No | Error message on failure/rejection |
 | `durationMs` | `Long` | No | Execution duration in milliseconds |
+
+
+---
+
+## Ensemble Control API (Phase 1)
+
+New `WebDashboard.Builder` fields for the HTTP-based Control API.
+
+### ToolCatalog
+
+Immutable registry mapping tool names to `AgentTool` instances.
+
+```java
+ToolCatalog catalog = ToolCatalog.builder()
+    .tool("web_search", webSearchTool)
+    .tool("calculator", calculatorTool)
+    .build();
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `resolve(name)` | `AgentTool` | Returns the tool; throws `NoSuchElementException` if not found |
+| `find(name)` | `Optional<AgentTool>` | Returns empty Optional if not found |
+| `list()` | `List<ToolInfo>` | All registered tools in insertion order |
+| `contains(name)` | `boolean` | Whether the name is registered |
+| `size()` | `int` | Number of registered tools |
+
+### ModelCatalog
+
+Immutable registry mapping model aliases to `ChatModel` instances.
+
+```java
+ModelCatalog catalog = ModelCatalog.builder()
+    .model("sonnet", sonnetModel)
+    .model("haiku", haikuModel, haikuStreamingModel)
+    .build();
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `resolve(alias)` | `ChatModel` | Returns the model; throws `NoSuchElementException` if not found |
+| `find(alias)` | `Optional<ChatModel>` | Returns empty Optional if not found |
+| `resolveStreaming(alias)` | `StreamingChatModel` | Returns the streaming variant; null if not registered |
+| `list()` | `List<ModelInfo>` | All registered models in insertion order |
+| `size()` | `int` | Number of registered models |
+
+### WebDashboard.Builder -- Control API fields
+
+| Builder method | Type | Default | Description |
+|----------------|------|---------|-------------|
+| `toolCatalog(ToolCatalog)` | `ToolCatalog` | `null` | Registered tool allowlist for API requests |
+| `modelCatalog(ModelCatalog)` | `ModelCatalog` | `null` | Registered model allowlist for API requests |
+| `maxConcurrentRuns(int)` | `int` | `5` | Maximum runs executing simultaneously; must be >= 1 |
+| `maxRetainedCompletedRuns(int)` | `int` | `100` | Completed runs kept in memory for state queries; must be >= 1 |
+
+### REST endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/runs` | Submit a run (Level 1: template + inputs) |
+| `GET` | `/api/runs` | List retained runs; filter with `?status=` and `?tag=key:value` |
+| `GET` | `/api/runs/{runId}` | Get full run detail |
+| `GET` | `/api/capabilities` | List registered tools, models, and preconfigured tasks |
+
+### RunState.Status enum
+
+| Value | Description |
+|-------|-------------|
+| `ACCEPTED` | Run queued; concurrency permit acquired |
+| `RUNNING` | Run executing on a virtual thread |
+| `COMPLETED` | All tasks finished without error |
+| `FAILED` | Run terminated with an unhandled exception |
+| `CANCELLED` | Run cancelled cooperatively (Phase 3) |
+| `REJECTED` | Concurrency limit reached; run never executed |
