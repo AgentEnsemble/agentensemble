@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.2.0...v3.3.0) (2026-04-10)
+
+
+### Features
+
+* **#299:** Ensemble Control API Phase 1 -- catalogs, RunManager, REST endpoints ([#305](https://github.com/AgentEnsemble/agentensemble/issues/305)) ([60941c2](https://github.com/AgentEnsemble/agentensemble/commit/60941c2f777c26d6b7d2f1160e0ad93f58f7b63f))
+* agentensemble-executor -- direct in-process invocation from Temporal and other workflow engines ([#307](https://github.com/AgentEnsemble/agentensemble/issues/307)) ([4d633c1](https://github.com/AgentEnsemble/agentensemble/commit/4d633c153cebc2679e7e869de5b3ff745b76e03b))
+
 ## [3.2.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.1.0...v3.2.0) (2026-03-31)
 
 
