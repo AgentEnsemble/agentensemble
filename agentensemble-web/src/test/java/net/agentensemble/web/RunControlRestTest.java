@@ -311,4 +311,57 @@ class RunControlRestTest {
         JsonNode body = objectMapper.readTree(resp.body());
         assertThat(body.get("error").asText()).isEqualTo("NOT_CONFIGURED");
     }
+
+    // ========================
+    // Null body checks (toJsonNode returns null for invalid JSON)
+    // ========================
+
+    @Test
+    void injectDirective_invalidJsonBody_returns400WithInvalidJsonBodyMessage() throws Exception {
+        // toJsonNode() returns null (not throw) for non-JSON bodies; the handler must
+        // detect this and return "Invalid JSON body" rather than "Missing 'content' field".
+        when(mockEnsemble.getDirectiveStore()).thenReturn(new net.agentensemble.directive.DirectiveStore());
+        String runId = submitRun();
+
+        HttpResponse<String> resp = post("/api/runs/" + runId + "/inject", "not valid json");
+        assertThat(resp.statusCode()).isEqualTo(400);
+        JsonNode body = objectMapper.readTree(resp.body());
+        assertThat(body.get("error").asText()).isEqualTo("BAD_REQUEST");
+        assertThat(body.get("message").asText()).isEqualTo("Invalid JSON body");
+    }
+
+    @Test
+    void resolveReview_invalidJsonBody_returns400WithInvalidJsonBodyMessage() throws Exception {
+        // Open a pending review so we get past the hasPendingReview() guard
+        java.util.concurrent.CountDownLatch reviewOpenedLatch = new java.util.concurrent.CountDownLatch(1);
+        net.agentensemble.review.ReviewRequest request = net.agentensemble.review.ReviewRequest.of(
+                "Research task",
+                "Output text",
+                net.agentensemble.review.ReviewTiming.AFTER_EXECUTION,
+                java.time.Duration.ofSeconds(10));
+
+        Thread.startVirtualThread(() -> {
+            reviewOpenedLatch.countDown();
+            try {
+                dashboard.reviewHandler().review(request);
+            } catch (Exception ignored) {
+                // Review might be cancelled when dashboard stops
+            }
+        });
+
+        assertThat(reviewOpenedLatch.await(3, TimeUnit.SECONDS)).isTrue();
+        Thread.sleep(100); // let review register
+
+        // Get the reviewId from the pending list
+        HttpResponse<String> listResp = get("/api/reviews");
+        JsonNode reviews = objectMapper.readTree(listResp.body()).get("reviews");
+        String reviewId = reviews.get(0).get("reviewId").asText();
+
+        // Now send invalid JSON -- toJsonNode returns null, should get "Invalid JSON body"
+        HttpResponse<String> resp = post("/api/reviews/" + reviewId, "not valid json");
+        assertThat(resp.statusCode()).isEqualTo(400);
+        JsonNode body = objectMapper.readTree(resp.body());
+        assertThat(body.get("error").asText()).isEqualTo("BAD_REQUEST");
+        assertThat(body.get("message").asText()).isEqualTo("Invalid JSON body");
+    }
 }

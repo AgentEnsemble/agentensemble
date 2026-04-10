@@ -231,6 +231,41 @@ class RunControlProtocolTest {
     }
 
     @Test
+    void invokeTool_toolReturnsFailureResult_returns500WithFailedStatus() throws Exception {
+        // Tool returns ToolResult.failure (isSuccess() == false), not an exception.
+        // The endpoint must detect this and return 500 with status FAILED, not SUCCESS.
+        AgentTool mockTool = mock(AgentTool.class);
+        when(mockTool.name()).thenReturn("failing-tool");
+        when(mockTool.description()).thenReturn("A tool that reports failure");
+        when(mockTool.execute(any())).thenReturn(ToolResult.failure("Resource not found"));
+
+        dashboard = WebDashboard.builder()
+                .port(0)
+                .host("0.0.0.0")
+                .toolCatalog(
+                        ToolCatalog.builder().tool("failing-tool", mockTool).build())
+                .build();
+        dashboard.start();
+        port = dashboard.actualPort();
+        httpClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/tools/failing-tool/invoke"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"input\":\"test\"}"))
+                .timeout(Duration.ofSeconds(10))
+                .build();
+        HttpResponse<String> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(resp.statusCode()).isEqualTo(500);
+        JsonNode body = objectMapper.readTree(resp.body());
+        assertThat(body.get("status").asText()).isEqualTo("FAILED");
+        assertThat(body.get("errorMessage").asText()).isEqualTo("Resource not found");
+        assertThat(body.has("output")).isFalse();
+    }
+
+    @Test
     void invokeTool_toolThrows_returns500() throws Exception {
         AgentTool mockTool = mock(AgentTool.class);
         when(mockTool.name()).thenReturn("buggy");

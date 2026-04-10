@@ -60,6 +60,9 @@ final class SseHandler {
     void handle(SseClient client, String runId) {
         Optional<RunState> found = runManager.getRun(runId);
         if (found.isEmpty()) {
+            // Javalin writes the HTTP 200 status header before the SSE consumer lambda
+            // is entered, so status changes here have no effect. The error is communicated
+            // via the SSE event payload instead.
             client.sendEvent("error", "{\"error\":\"RUN_NOT_FOUND\",\"message\":\"No run with ID " + runId + "\"}");
             client.close();
             return;
@@ -141,6 +144,11 @@ final class SseHandler {
         // Register a broadcast callback so we receive all events
         connectionManager.registerBroadcastCallback(callbackId, json -> {
             if (done.isDone()) return;
+            // Filter by run ID: only deliver events belonging to the requested run.
+            // Events without a "runId" field are system-level messages (heartbeat, hello)
+            // and are always delivered regardless of the run ID filter.
+            String msgRunId = extractRunId(json);
+            if (msgRunId != null && !state.getRunId().equals(msgRunId)) return;
             // Apply event type filter
             if (!eventFilter.isEmpty()) {
                 String type = extractMessageType(json);
@@ -159,9 +167,15 @@ final class SseHandler {
         client.onClose(() -> done.complete(null));
 
         try {
-            // Poll run status while waiting for completion
+            // Poll run status while waiting for completion; each loop iteration blocks at most
+            // 500 ms before re-checking the run status so the stream stays open until the run
+            // is terminal or the client disconnects.
             while (!done.isDone() && !isTerminal(state.getStatus())) {
-                done.get(500, TimeUnit.MILLISECONDS);
+                try {
+                    done.get(500, TimeUnit.MILLISECONDS);
+                } catch (java.util.concurrent.TimeoutException ignored) {
+                    // Normal: just woke up to check run status; continue polling
+                }
             }
             // Run completed: send final event
             if (isTerminal(state.getStatus()) && !done.isDone()) {
@@ -174,8 +188,9 @@ final class SseHandler {
                     // Client may have disconnected
                 }
             }
-        } catch (java.util.concurrent.TimeoutException ignored) {
-            // Normal: just woke up to check run status
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("SSE stream interrupted for run {}", state.getRunId());
         } catch (Exception e) {
             log.debug("SSE stream ended for run {}: {}", state.getRunId(), e.getMessage());
         } finally {
@@ -215,6 +230,21 @@ final class SseHandler {
                         .replace("\r", "\\r")
                         .replace("\t", "\\t")
                 + "\"";
+    }
+
+    /**
+     * Extracts the {@code "runId"} field value from a JSON string without full parsing.
+     * Returns {@code null} if the field is absent.
+     *
+     * <p>Uses the same simple string-search approach as {@link #extractMessageType(String)}.
+     */
+    private static String extractRunId(String json) {
+        if (json == null) return null;
+        int idx = json.indexOf("\"runId\":\"");
+        if (idx < 0) return null;
+        int start = idx + 9;
+        int end = json.indexOf('"', start);
+        return end > start ? json.substring(start, end) : null;
     }
 
     /**

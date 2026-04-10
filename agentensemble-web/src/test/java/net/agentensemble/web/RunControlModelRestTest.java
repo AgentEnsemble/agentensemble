@@ -182,5 +182,19 @@ class RunControlModelRestTest {
         assertThat(resp.statusCode()).isEqualTo(400);
         JsonNode body = objectMapper.readTree(resp.body());
         assertThat(body.get("error").asText()).isEqualTo("BAD_REQUEST");
+        assertThat(body.get("message").asText()).isEqualTo("Missing 'model' field");
+    }
+
+    @Test
+    void switchModel_invalidJsonBody_returns400WithInvalidJsonBodyMessage() throws Exception {
+        // MessageSerializer.toJsonNode() returns null for non-JSON input (doesn't throw).
+        // The handler must distinguish null-from-invalid-json from missing-field
+        // and return "Invalid JSON body" rather than "Missing 'model' field".
+        String runId = submitBlockingRun();
+        HttpResponse<String> resp = post("/api/runs/" + runId + "/model", "not valid json");
+        assertThat(resp.statusCode()).isEqualTo(400);
+        JsonNode body = objectMapper.readTree(resp.body());
+        assertThat(body.get("error").asText()).isEqualTo("BAD_REQUEST");
+        assertThat(body.get("message").asText()).isEqualTo("Invalid JSON body");
     }
 }

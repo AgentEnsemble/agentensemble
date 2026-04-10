@@ -660,7 +660,12 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
                     return;
                 }
-                if (body == null || !body.has("model")) {
+                if (body == null) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (!body.has("model")) {
                     ctx.status(400);
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'model' field"));
                     return;
@@ -728,7 +733,12 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
                     return;
                 }
-                if (body == null || !body.has("decision")) {
+                if (body == null) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (!body.has("decision")) {
                     ctx.status(400);
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'decision' field"));
                     return;
@@ -799,13 +809,20 @@ class WebSocketServer {
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
                     return;
                 }
-                if (body == null || !body.has("content")) {
+                if (body == null) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (!body.has("content")) {
                     ctx.status(400);
                     ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'content' field"));
                     return;
                 }
                 String content = body.get("content").asText();
-                // target is stored in the directive's 'from' field for future routing; unused locally
+                // The optional 'target' field is accepted for forward-compatibility but is currently
+                // ignored; the directive's 'from' field is always set to "api" to indicate the REST
+                // API origin.
                 @SuppressWarnings("unused")
                 String target = body.has("target") ? body.get("target").asText() : null;
                 String directiveId = java.util.UUID.randomUUID().toString();
@@ -855,17 +872,26 @@ class WebSocketServer {
 
                 long startMs = System.currentTimeMillis();
                 final String toolInput = input;
+                java.util.concurrent.ExecutorService singleUseExecutor =
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
                 try {
                     net.agentensemble.tool.ToolResult result = java.util.concurrent.CompletableFuture.supplyAsync(
-                                    () -> tool.execute(toolInput),
-                                    java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor())
+                                    () -> tool.execute(toolInput), singleUseExecutor)
                             .get(30, java.util.concurrent.TimeUnit.SECONDS);
                     long durationMs = System.currentTimeMillis() - startMs;
                     Map<String, Object> response = new java.util.LinkedHashMap<>();
                     response.put("tool", toolName);
-                    response.put("status", "SUCCESS");
-                    response.put("output", result.getOutput());
                     response.put("durationMs", durationMs);
+                    if (result.isSuccess()) {
+                        response.put("status", "SUCCESS");
+                        response.put("output", result.getOutput());
+                    } else {
+                        ctx.status(500);
+                        response.put("status", "FAILED");
+                        String errMsg =
+                                result.getErrorMessage() != null ? result.getErrorMessage() : result.getOutput();
+                        response.put("errorMessage", errMsg);
+                    }
                     ctx.json(response);
                 } catch (java.util.concurrent.TimeoutException e) {
                     ctx.status(500);
@@ -881,6 +907,8 @@ class WebSocketServer {
                             cause.getMessage() != null
                                     ? cause.getMessage()
                                     : cause.getClass().getSimpleName()));
+                } finally {
+                    singleUseExecutor.shutdownNow();
                 }
             });
         });

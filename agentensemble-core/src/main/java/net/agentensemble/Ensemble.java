@@ -1237,9 +1237,10 @@ public class Ensemble {
      * Returns a copy of this ensemble with an additional listener appended to the existing
      * listener list.
      *
-     * <p>All other settings (tasks, model, workflow, review handler, etc.) are preserved
-     * unchanged. The dashboard lifecycle is not inherited: {@code ownsDashboardLifecycle}
-     * is set to {@code false} on the returned ensemble.
+     * <p>All other settings (tasks or phases, model, workflow, review handler, etc.) are
+     * preserved unchanged. For phase-based ensembles the full phase list is copied; for
+     * flat-task ensembles the task list is copied. The dashboard lifecycle is not inherited:
+     * {@code ownsDashboardLifecycle} is set to {@code false} on the returned ensemble.
      *
      * <p>Used by the Ensemble Control API (Phase 3) to attach a per-run
      * cancellation-check listener without mutating the template ensemble.
@@ -1252,9 +1253,18 @@ public class Ensemble {
         Objects.requireNonNull(additional, "additional listener must not be null");
         List<EnsembleListener> combined = new ArrayList<>(listeners != null ? listeners : List.of());
         combined.add(additional);
-        return Ensemble.builder()
-                .tasks(tasks)
-                .chatLanguageModel(chatLanguageModel)
+        EnsembleBuilder b = Ensemble.builder();
+        // Preserve the task representation: phase-based ensembles use phases; flat-task ensembles
+        // use the tasks list. Using phases here is important so that adding a listener to a
+        // phase-based ensemble does not produce an invalid ensemble with an empty task list.
+        if (phases != null && !phases.isEmpty()) {
+            for (Phase p : phases) {
+                b.phase(p);
+            }
+        } else {
+            b.tasks(tasks);
+        }
+        return b.chatLanguageModel(chatLanguageModel)
                 .streamingChatLanguageModel(streamingChatLanguageModel)
                 .agentSynthesizer(agentSynthesizer)
                 .workflow(workflow)

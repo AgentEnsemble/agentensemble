@@ -95,14 +95,14 @@ class SseHandlerIntegrationTest {
     // ========================
 
     @Test
-    void sseEvents_unknownRunId_returns200WithErrorContent() throws Exception {
+    void sseEvents_unknownRunId_returns200WithErrorEventBody() throws Exception {
         HttpResponse<String> resp = getSse("/api/runs/run-unknown/events");
-        // SSE responses always return 200; the error is in the event body
+        // Javalin writes the HTTP 200 status header before the SSE consumer lambda runs,
+        // so the HTTP status is always 200 for SSE responses. The error is signaled via
+        // the SSE event payload (an "error" event containing RUN_NOT_FOUND).
         assertThat(resp.statusCode()).isEqualTo(200);
-        // The response body should contain our error event data
         String body = resp.body();
         assertThat(body).isNotBlank();
-        // Should contain RUN_NOT_FOUND in the SSE data
         assertThat(body).contains("RUN_NOT_FOUND");
     }
 

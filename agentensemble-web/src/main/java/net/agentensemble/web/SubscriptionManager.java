@@ -35,11 +35,10 @@ final class SubscriptionManager {
     /**
      * Per-session subscription record.
      *
-     * @param eventTypes the set of allowed event type names; empty means all (wildcard registered)
+     * @param eventTypes the set of allowed event type names; non-empty subset of event type strings
      * @param runId      optional run ID filter; null means no run-level filter
-     * @param wildcard   true when event types includes "*" (all events)
      */
-    record Subscription(Set<String> eventTypes, String runId, boolean wildcard) {}
+    record Subscription(Set<String> eventTypes, String runId) {}
 
     private final ConcurrentHashMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
 
@@ -60,7 +59,7 @@ final class SubscriptionManager {
         }
         Set<String> typeSet = ConcurrentHashMap.newKeySet();
         typeSet.addAll(eventTypes);
-        subscriptions.put(sessionId, new Subscription(typeSet, runId, false));
+        subscriptions.put(sessionId, new Subscription(typeSet, runId));
     }
 
     /**

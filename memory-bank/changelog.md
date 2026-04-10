@@ -10,7 +10,8 @@
   pending review listing (`GET /api/reviews`), runtime context injection
   (`POST /api/runs/{runId}/inject`), direct tool invocation (`POST /api/tools/{name}/invoke`)
 - `Ensemble.switchToModel(ChatModel)` -- thread-safe runtime LLM swap
-- `Ensemble.withAdditionalListener(EnsembleListener)` -- per-run copy with extra listener (used by RunManager)
+- `Ensemble.withAdditionalListener(EnsembleListener)` -- per-run copy with extra listener; now
+  correctly preserves phase-based ensembles (phases are copied, not only flat task list)
 - `CancellationCheckListener` -- `EnsembleListener` that throws `ExitEarlyException` at task boundaries
 - `SubscriptionManager` -- per-session event-type + runId filtering backed by ConcurrentHashMap
 - `SseHandler` -- SSE streaming for completed-run replay and live in-progress event delivery
@@ -20,19 +21,6 @@
 - `RunControlMessage` / `RunControlAckMessage` / `SubscribeMessage` / `SubscribeAckMessage`
   -- four new wire protocol records
 - `WebDashboard.handleRunControl()` / `handleSubscribe()` -- new WS message handlers
-- 75+ new tests across 8 new test classes; all pass; JaCoCo LINE >= 0.90, BRANCH >= 0.75
-### Changed
-- `ToolCatalog.find()` and `ModelCatalog.find()` now used in REST handlers (returns `Optional`,
-  does not throw for unknown keys; use `find()` instead of `resolve()` which throws)
-- `ConnectionManager.broadcast()` now subscription-aware when `SubscriptionManager` is set;
-  also notifies registered SSE broadcast callbacks
-- `RunManager.executeRun()` wraps template with `withAdditionalListener()` to install per-run
-  cancellation check; `state.getEnsemble()` now always returns the execution ensemble
-- `build.gradle.kts` (`agentensemble-web`): `SseHandler.class` excluded from JaCoCo verification
-
-
-## [Unreleased] -- 2026-04-10
-### Added
 - **Ensemble Control API Phase 2 (GH #300)**
   - `Task.name` -- optional logical name field on `Task` for API task matching and context references
   - `RunRequestParser.buildFromTemplateWithOverrides()` -- Level 2 per-task overrides at runtime
