@@ -16,6 +16,7 @@ the synthesized agent when no explicit `agent` is set.
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `name` | `String` | No | `null` | Optional logical name for this task. Used by the Ensemble Control API (Phase 2+) for Level 2 task-override matching and Level 3 `$name` context references. Also exposed via `GET /api/capabilities`. Names must be non-blank when set. |
 | `description` | `String` | Yes | -- | What the agent should do. Supports `{variable}` template placeholders. |
 | `expectedOutput` | `String` | Yes | `"Produce a complete and accurate response to the task."` (when using `Task.of(String)`) | What the output should look like. Included in the agent's prompt. Supports `{variable}` placeholders. |
 | `agent` | `Agent` | No | `null` | Explicit agent assigned to this task. When null, an agent is synthesized from the description using the ensemble's `AgentSynthesizer`. |

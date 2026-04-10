@@ -3,6 +3,102 @@
 
 ## Current Work
 
+**PR #308 review feedback addressed** -- fixing CI failure and all 11 Copilot review comments.
+
+### PR #308 fixes (on branch `feat/300-ensemble-control-api-phase2`)
+
+**Failing test fix (RunState race condition):**
+- `WebDashboardRunRequestTest#runRequest_level1_withEnsemble_receivesAcceptedAckAndResult` was
+  failing because handler tasks complete near-instantaneously, causing `state.getStatus()` to
+  return `RUNNING` by the time the run_ack was serialized.
+- Fix: added `private final Status initialStatus` (immutable) to `RunState` + `getInitialStatus()`.
+- `WebDashboard.handleRunRequest()` now uses `state.getInitialStatus().name()` for the ack.
+
+**RunRequestParser fixes (7 Copilot comments):**
+- `additionalContext` ordering: pre-computed description deterministically (description override
+  first, then additionalContext appended) before the switch loop, eliminating Map iteration
+  order dependency.
+- Tool removal by name: changed from reference equality (`t == resolved`) to
+  `t instanceof AgentTool at && at.name().equals(toolName)`. Resolves failures when the task's
+  tool was constructed outside the catalog.
+- Tool add de-duplication: added name-based pre-check before adding to prevent duplicates.
+- `expectedOutput` type validation: explicit `instanceof String` check with clear error message.
+- Tool name type validation: explicit `instanceof String && !isBlank()` check.
+- `context` field validation: validates it's a List before casting; validates each entry is String.
+- `findTaskIndex` Locale: all `toLowerCase()` calls updated to `toLowerCase(Locale.ROOT)`.
+- Added `import java.util.Locale`.
+
+**Ensemble.withTasks() (1 Copilot comment):**
+- Added empty list check (`IAE`) and null element check (per-index NPE) with useful messages.
+- Updated Javadoc `@param`/`@throws` to document new contracts.
+
+**WebDashboard + WebSocketServer (2 Copilot comments):**
+- Both `handleRunRequest` (WS) and `resolveExecutionEnsemble` (REST) now reject requests where
+  `tasks` is present-but-empty or `taskOverrides` is present-but-empty (IAE / REJECTED ack).
+
+**Test improvements (2 Copilot comments):**
+- `WebDashboardRunRequestTest`: replaced all `Thread.sleep(200)` with latch-based `helloLatch`
+  waiting for the first server message (eliminates fixed-time flakiness on CI).
+- Renamed L3 test to `runRequest_level3_withDynamicTasks_receivesAck` (matches actual assertions).
+
+**Coverage (Codecov comment):**
+- Added 9 `withTasks()` tests in `EnsembleTest` covering happy path, preserving settings, and
+  the three new validation error cases.
+- Added 14 new tests in `RunRequestParserTest` covering all the new validations and behavior
+  fixes (expectedOutput type, tool name type, context type, additionalContext ordering, tool
+  removal by name, dedup on add).
+
+---
+
+**Ensemble Control API Phase 2 (GH #300)** -- Level 2/3 parameterization and WebSocket run submission.
+
+### What was implemented
+
+Four areas of new functionality across `agentensemble-core` and `agentensemble-web`:
+
+**Task naming (`agentensemble-core`):**
+- Added optional `String name` field to `Task` (first field in declaration, before `description`).
+- Non-blank validation when set; null default preserves all existing code paths.
+- `toBuilder()` correctly carries `name` through.
+
+**Level 2: Per-task overrides (`agentensemble-web`):**
+- `RunRequestParser.buildFromTemplateWithOverrides()` applies runtime overrides to the template
+  ensemble's task list using `Task.toBuilder()`. Original tasks are never mutated.
+- Override key matching: exact `Task.name` first (case-insensitive), then description prefix
+  (first 50 chars, case-insensitive).
+- Override fields: `description`, `expectedOutput`, `model` (ModelCatalog), `maxIterations`,
+  `additionalContext` (appended to description), `tools.add`/`tools.remove` (ToolCatalog).
+- `RunConfiguration` record gained `List<Task> overrideTasks` (null for Level 1).
+
+**Level 3: Dynamic task creation (`agentensemble-web`):**
+- `RunRequestParser.buildFromDynamicTasks()` builds a full task list from JSON definitions.
+- Context DAG resolution: `$name` and `$N` (0-based index) references.
+- Circular dependency detection using Kahn's topological sort algorithm.
+- `outputSchema` (JSON Schema) injected as structured output instructions into `expectedOutput`.
+
+**WebSocket run submission (`agentensemble-web`):**
+- New `RunRequestMessage` protocol record (Level 1/2/3 in one message).
+- `ClientMessage` sealed interface updated (added `RunRequestMessage`).
+- `WebDashboard.handleRunRequest()` dispatches to Level 1/2/3 parser, calls
+  `RunManager.submitRun()`, sends `run_ack` immediately, sends `run_result` on completion
+  targeted to originating session only.
+- `Ensemble.withTasks(List<Task>)` -- new method that copies the template ensemble's key execution
+  settings but replaces the task list. Used by `handleRunRequest` for Level 2/3 runs.
+- `WebDashboard.parseRunOptions()` -- converts raw options map to `RunOptions`.
+
+**Tests added:**
+- `TaskTest` -- 8 new tests for `Task.name` field
+- `RunRequestParserTest` -- 58 tests total (Level 1/2/3, all override fields, DAG, error cases)
+- `RunRequestMessageTest` -- 10 serialization/deserialization tests
+- `WebDashboardRunRequestTest` -- 4 WS integration tests (no-ensemble REJECTED, Level 1 ACCEPTED,
+  Level 3 dispatch, server stability)
+
+**Build:** All tests pass. Coverage meets thresholds. Spotless formatting clean.
+
+---
+
+## Previous Work
+
 **`agentensemble-executor` module** -- direct in-process invocation from external workflow engines.
 
 ### What was implemented

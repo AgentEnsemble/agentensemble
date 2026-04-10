@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.ratelimit.RateLimit;
@@ -218,5 +220,118 @@ class EnsembleTest {
                 .build();
         assertThat(ensemble.getChatLanguageModel()).isSameAs(model);
         assertThat(ensemble.getRateLimit()).isEqualTo(RateLimit.perMinute(60));
+    }
+
+    // ========================
+    // withTasks()
+    // ========================
+
+    @Test
+    void withTasks_returnsNewEnsembleWithReplacedTasks() {
+        Task original = Task.of("Original task");
+        Task replacement = Task.of("Replacement task");
+        Ensemble ensemble = Ensemble.builder().task(original).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(replacement));
+
+        assertThat(copy.getTasks()).containsExactly(replacement);
+        // original ensemble's task list must be unchanged (immutability)
+        assertThat(ensemble.getTasks()).containsExactly(original);
+    }
+
+    @Test
+    void withTasks_preservesListeners() {
+        EnsembleListener listener = new EnsembleListener() {};
+        Task task = Task.of("Task");
+        Ensemble ensemble = Ensemble.builder().task(task).listener(listener).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(Task.of("New task")));
+
+        assertThat(copy.getListeners()).containsExactly(listener);
+    }
+
+    @Test
+    void withTasks_preservesChatLanguageModel() {
+        ChatModel model = mock(ChatModel.class);
+        Task task = Task.of("Task");
+        Ensemble ensemble =
+                Ensemble.builder().chatLanguageModel(model).task(task).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(Task.of("New task")));
+
+        assertThat(copy.getChatLanguageModel()).isSameAs(model);
+    }
+
+    @Test
+    void withTasks_preservesWorkflow() {
+        Task task = Task.of("Task");
+        Ensemble ensemble =
+                Ensemble.builder().task(task).workflow(Workflow.SEQUENTIAL).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(Task.of("New task")));
+
+        assertThat(copy.getWorkflow()).isEqualTo(Workflow.SEQUENTIAL);
+    }
+
+    @Test
+    void withTasks_ownsDashboardLifecycleFalse() {
+        Task task = Task.of("Task");
+        Ensemble ensemble = Ensemble.builder().task(task).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(Task.of("New task")));
+
+        // Copies must never own the dashboard lifecycle -- the original (or caller) owns it
+        assertThat(copy.isOwnsDashboardLifecycle()).isFalse();
+    }
+
+    @Test
+    void withTasks_preservesInputs() {
+        Task task = Task.of("Task");
+        Ensemble ensemble = Ensemble.builder().task(task).input("topic", "AI").build();
+
+        Ensemble copy = ensemble.withTasks(List.of(Task.of("New task")));
+
+        assertThat(copy.getInputs()).containsEntry("topic", "AI");
+    }
+
+    @Test
+    void withTasks_multipleTasks_allPresent() {
+        Task t1 = Task.of("Task one");
+        Task t2 = Task.of("Task two");
+        Task t3 = Task.of("Task three");
+        Ensemble ensemble = Ensemble.builder().task(Task.of("Original")).build();
+
+        Ensemble copy = ensemble.withTasks(List.of(t1, t2, t3));
+
+        assertThat(copy.getTasks()).containsExactly(t1, t2, t3);
+    }
+
+    @Test
+    void withTasks_nullList_throwsNullPointerException() {
+        Ensemble ensemble = Ensemble.builder().task(Task.of("Task")).build();
+
+        assertThatThrownBy(() -> ensemble.withTasks(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("newTasks must not be null");
+    }
+
+    @Test
+    void withTasks_emptyList_throwsIllegalArgumentException() {
+        Ensemble ensemble = Ensemble.builder().task(Task.of("Task")).build();
+
+        assertThatThrownBy(() -> ensemble.withTasks(List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("newTasks must not be empty");
+    }
+
+    @Test
+    void withTasks_listWithNullElement_throwsNullPointerException() {
+        Ensemble ensemble = Ensemble.builder().task(Task.of("Task")).build();
+        List<Task> tasksWithNull = new ArrayList<>();
+        tasksWithNull.add(null);
+
+        assertThatThrownBy(() -> ensemble.withTasks(tasksWithNull))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("null elements");
     }
 }

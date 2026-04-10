@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  * <ul>
  *   <li>{@link ReviewDecisionMessage} -- browser's response to a {@link ReviewRequestedMessage}</li>
  *   <li>{@link PingMessage} -- keepalive; server responds with {@link PongMessage}</li>
+ *   <li>{@link RunRequestMessage} -- submit an ensemble run (Level 1/2/3 parameterization)</li>
  * </ul>
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.PROPERTY)
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = ToolRequestMessage.class, name = "tool_request"),
     @JsonSubTypes.Type(value = DirectiveMessage.class, name = "directive"),
     @JsonSubTypes.Type(value = CapabilityQueryMessage.class, name = "capability_query"),
+    @JsonSubTypes.Type(value = RunRequestMessage.class, name = "run_request"),
 })
 public sealed interface ClientMessage
         permits ReviewDecisionMessage,
@@ -27,4 +29,5 @@ public sealed interface ClientMessage
                 TaskRequestMessage,
                 ToolRequestMessage,
                 DirectiveMessage,
-                CapabilityQueryMessage {}
+                CapabilityQueryMessage,
+                RunRequestMessage {}

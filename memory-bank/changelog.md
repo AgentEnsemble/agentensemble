@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] -- 2026-04-10
+### Added
+- **Ensemble Control API Phase 2 (GH #300)**
+  - `Task.name` -- optional logical name field on `Task` for API task matching and context references
+  - `RunRequestParser.buildFromTemplateWithOverrides()` -- Level 2 per-task overrides at runtime
+    (description, expectedOutput, model, maxIterations, additionalContext, tools add/remove)
+  - `RunRequestParser.buildFromDynamicTasks()` -- Level 3 fully dynamic task list from JSON;
+    context DAG via `$name`/`$N` references; circular dependency detection (Kahn's algorithm)
+  - `RunRequestMessage` -- new `ClientMessage` for WebSocket run submission (Level 1/2/3)
+  - `WebDashboard.handleRunRequest()` -- WS handler dispatches Level 1/2/3; sends `run_ack`
+    immediately and `run_result` on completion to originating session only
+  - `Ensemble.withTasks(List<Task>)` -- copies template ensemble settings with a new task list
+  - `RunConfiguration.overrideTasks` -- new field (null for Level 1, non-null for Level 2/3)
+  - Tests: `TaskTest` (8 name field tests), `RunRequestParserTest` (58 tests covering all
+    override fields, DAG resolution, error cases), `RunRequestMessageTest` (10 serde tests),
+    `WebDashboardRunRequestTest` (4 WS integration tests)
+  - Docs: updated `docs/design/28-ensemble-control-api.md` (Phase 2 Implemented status),
+    `docs/guides/ensemble-control-api.md` (Phase 2 sections), `docs/reference/task-configuration.md`
+    (`name` field entry)
+
 ## [Unreleased] -- 2026-04-09
 ### Added
 - **`agentensemble-executor` module**: Orchestrator-agnostic direct in-process invocation
@@ -2599,6 +2619,31 @@ Key design decisions:
 - `docs/reference/ensemble-configuration.md`: adaptive fields, updated methods table
 
 ## [Unreleased]
+
+### Fixed (PR #308 review feedback)
+- **RunState race condition**: `handleRunRequest` ack was serialized with `state.getStatus()` which
+  could read `RUNNING` if the handler task completed before the ack was sent. Fixed by adding
+  immutable `initialStatus` field and `getInitialStatus()` to `RunState`; ack now uses
+  `state.getInitialStatus().name()` (always `ACCEPTED` or `REJECTED`).
+- **RunRequestParser -- additionalContext ordering**: pre-computed final description (description
+  override + additionalContext) before the switch loop to eliminate Map iteration order dependency.
+- **RunRequestParser -- tool removal by name**: changed `t == resolved` to name-based
+  `AgentTool.name()` equality; also added de-duplication on tool add.
+- **RunRequestParser -- type validation**: added explicit `instanceof String` checks for
+  `expectedOutput`, tool names, and context entries with useful error messages instead of
+  `ClassCastException`.
+- **RunRequestParser -- Locale.ROOT**: all `toLowerCase()` calls in `findTaskIndex` use
+  `Locale.ROOT`.
+- **Ensemble.withTasks()**: added empty list check (`IAE`) and null element check (NPE).
+- **WebDashboard + WebSocketServer**: reject `tasks: []` and `taskOverrides: {}` as malformed
+  (return REJECTED ack / 400 instead of silently falling through to Level 1).
+
+### Tests
+- `WebDashboardRunRequestTest`: replaced `Thread.sleep(200)` with `helloLatch` (waits for
+  first server message); renamed L3 test to `receivesAck`.
+- Added 9 `withTasks()` tests to `EnsembleTest` for coverage.
+- Added 14 new tests to `RunRequestParserTest` covering new validations.
+
 
 ### Added (Issue #179, PR #180)
 - `EnsembleDashboard.traceExporter()` default method in core SPI

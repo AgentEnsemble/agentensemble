@@ -75,6 +75,13 @@ public final class RunState {
     // Mutable fields (thread-safe)
     // ========================
 
+    /**
+     * Immutable snapshot of the status set at construction time (ACCEPTED or REJECTED).
+     * Unlike {@link #getStatus()}, this value never changes, even after the run transitions
+     * to RUNNING, COMPLETED, or FAILED.
+     */
+    private final Status initialStatus;
+
     private final AtomicReference<Status> status;
     private final AtomicInteger completedTasks = new AtomicInteger(0);
     private final List<TaskOutputSnapshot> taskOutputs;
@@ -96,6 +103,7 @@ public final class RunState {
             String workflow,
             String originSessionId) {
         this.runId = runId;
+        this.initialStatus = initialStatus;
         this.status = new AtomicReference<>(initialStatus);
         this.startedAt = startedAt;
         this.inputs = inputs != null ? Map.copyOf(inputs) : Map.of();
@@ -122,6 +130,18 @@ public final class RunState {
      */
     public Status getStatus() {
         return status.get();
+    }
+
+    /**
+     * Returns the status recorded at the moment this {@link RunState} was constructed
+     * ({@link Status#ACCEPTED} or {@link Status#REJECTED}).
+     *
+     * <p>Unlike {@link #getStatus()}, this value is immutable and safe to read at any time
+     * without a race with the execution thread that transitions the state to RUNNING or
+     * COMPLETED.
+     */
+    public Status getInitialStatus() {
+        return initialStatus;
     }
 
     /**

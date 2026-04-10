@@ -1,9 +1,19 @@
 # Design Doc: Ensemble Control API
 
-**Status:** Draft
+**Status:** Phase 2 Implemented
 **Author:** Claude / Matt
 **Module:** `agentensemble-web`
 **Related:** v3 Network features (NetworkTask, NetworkTool, federation)
+
+**Implementation status:**
+
+| Phase | Scope | Status |
+|---|---|---|
+| Phase 1 | ToolCatalog, ModelCatalog, RunManager, Level 1 REST (`POST /api/runs`) | Implemented |
+| Phase 2 | Task naming (`Task.name`), Level 2 overrides, Level 3 dynamic tasks, WS `run_request` | Implemented |
+| Phase 3 | Run control endpoints (`DELETE /api/runs/{id}`, `POST /api/runs/{id}/cancel`) | Planned |
+| Phase 4 | SSE streaming alternative | Planned |
+| Phase 5 | REST review decisions | Planned |
 
 ---
 

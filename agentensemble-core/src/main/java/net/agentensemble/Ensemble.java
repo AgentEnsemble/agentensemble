@@ -1138,6 +1138,81 @@ public class Ensemble {
         return List.copyOf(result);
     }
 
+    /**
+     * Returns a copy of this ensemble with the given task list replacing the original.
+     *
+     * <p>All core execution settings are preserved: model, agent synthesizer, workflow,
+     * listeners, review handler, memory store, rate limits, output settings, etc.
+     *
+     * <p>The dashboard lifecycle is not inherited: {@code ownsDashboardLifecycle} is set to
+     * {@code false} on the returned ensemble, since the dashboard is already running and
+     * should not be stopped when the returned ensemble's run completes.
+     *
+     * <p>This method is used by the Ensemble Control API (Phase 2+) to execute Level 2
+     * (per-task overrides) and Level 3 (dynamic tasks) runs against a configured template.
+     *
+     * @param newTasks the replacement task list; must not be null, empty, or contain null elements
+     * @return a new Ensemble with {@code newTasks} and all other settings from this instance
+     * @throws NullPointerException     if {@code newTasks} is null or contains a null element
+     * @throws IllegalArgumentException if {@code newTasks} is empty
+     */
+    public Ensemble withTasks(List<Task> newTasks) {
+        Objects.requireNonNull(newTasks, "newTasks must not be null");
+        if (newTasks.isEmpty()) {
+            throw new IllegalArgumentException("newTasks must not be empty");
+        }
+        for (int i = 0; i < newTasks.size(); i++) {
+            if (newTasks.get(i) == null) {
+                throw new NullPointerException("newTasks must not contain null elements (at index " + i + ")");
+            }
+        }
+        return Ensemble.builder()
+                // Replace the task list; phases are intentionally not copied
+                // (API-submitted runs always use the flat task list)
+                .tasks(newTasks)
+                // Core LLM settings
+                .chatLanguageModel(chatLanguageModel)
+                .streamingChatLanguageModel(streamingChatLanguageModel)
+                .agentSynthesizer(agentSynthesizer)
+                // Workflow and manager
+                .workflow(workflow)
+                .managerLlm(managerLlm)
+                .managerMaxIterations(managerMaxIterations)
+                .managerPromptStrategy(managerPromptStrategy)
+                // Execution settings
+                .verbose(verbose)
+                .toolExecutor(toolExecutor)
+                .toolMetrics(toolMetrics)
+                .maxDelegationDepth(maxDelegationDepth)
+                .parallelErrorStrategy(parallelErrorStrategy)
+                .hierarchicalConstraints(hierarchicalConstraints)
+                .delegationPolicies(delegationPolicies)
+                // Memory and context
+                .memoryStore(memoryStore)
+                .contextFormat(contextFormat)
+                .reflectionStore(reflectionStore)
+                // Review integration
+                .reviewHandler(reviewHandler)
+                .reviewPolicy(reviewPolicy)
+                // Event streaming (critical: carries dashboard listener)
+                .listeners(listeners)
+                // Observability
+                .captureMode(captureMode)
+                .traceExporter(traceExporter)
+                .costConfiguration(costConfiguration)
+                // Dashboard -- not owned; it is already running
+                .dashboard(dashboard)
+                .ownsDashboardLifecycle(false)
+                // Rate limiting and output settings
+                .rateLimit(rateLimit)
+                .maxToolOutputLength(maxToolOutputLength)
+                .toolLogTruncateLength(toolLogTruncateLength)
+                .drainTimeout(drainTimeout)
+                // Default inputs from the template (merged with API inputs at run time)
+                .inputs(inputs)
+                .build();
+    }
+
     private EnsembleOutput runWithInputs(
             Map<String, String> resolvedInputs, int maxToolOutputLength, int toolLogTruncateLength) {
         String ensembleId = UUID.randomUUID().toString();

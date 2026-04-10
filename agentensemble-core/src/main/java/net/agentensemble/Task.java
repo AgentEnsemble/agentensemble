@@ -83,6 +83,21 @@ public class Task {
     public static final String DEFAULT_EXPECTED_OUTPUT = "Produce a complete and accurate response to the task.";
 
     /**
+     * Optional logical name for this task.
+     *
+     * <p>Used by the Ensemble Control API (Phase 2+) for task matching in Level 2 overrides
+     * and as a reference target in Level 3 dynamic task context resolution ({@code $name}
+     * syntax). Also exposed via {@code GET /api/capabilities} so callers can discover
+     * available task names.
+     *
+     * <p>Names must be non-blank when set. They do not need to be unique across an
+     * ensemble, but unique names make override matching unambiguous.
+     *
+     * <p>Default: {@code null} (unnamed task; matched by description prefix in Level 2).
+     */
+    String name;
+
+    /**
      * What the agent should do. Supports {variable} template placeholders
      * resolved at ensemble.run(inputs) time. Required.
      */
@@ -451,6 +466,7 @@ public class Task {
     public static class TaskBuilder {
 
         // Default values
+        private String name = null;
         private Agent agent = null;
         private ChatModel chatLanguageModel = null;
         private StreamingChatModel streamingChatLanguageModel = null;
@@ -660,6 +676,7 @@ public class Task {
         }
 
         public Task build() {
+            validateName();
             validateDescription();
             validateExpectedOutput();
             List<Object> effectiveTools = tools != null ? tools : List.of();
@@ -679,6 +696,7 @@ public class Task {
             inputGuardrails = List.copyOf(effectiveInputGuardrails);
             outputGuardrails = List.copyOf(effectiveOutputGuardrails);
             return new Task(
+                    name,
                     description,
                     expectedOutput,
                     agent,
@@ -712,6 +730,12 @@ public class Task {
                 chatLanguageModel = RateLimitedChatModel.of(chatLanguageModel, rateLimit);
                 // Rate limit consumed at build time; not stored on the Task.
                 rateLimit = null;
+            }
+        }
+
+        private void validateName() {
+            if (name != null && name.isBlank()) {
+                throw new ValidationException("Task name must not be blank when set");
             }
         }
 
