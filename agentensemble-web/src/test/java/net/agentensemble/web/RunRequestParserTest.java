@@ -933,4 +933,187 @@ class RunRequestParserTest {
 
         assertThat(config.options()).isSameAs(net.agentensemble.execution.RunOptions.DEFAULT);
     }
+
+    // ========================
+    // Level 3: type validation for expectedOutput field
+    // ========================
+
+    @Test
+    void buildFromDynamicTasks_invalidExpectedOutputType_throwsIllegalArgumentException() {
+        // expectedOutput must be a String; passing an integer should throw with a useful message
+        java.util.Map<String, Object> def = new java.util.LinkedHashMap<>();
+        def.put("description", "Some task");
+        def.put("expectedOutput", 42); // integer, not a string
+
+        assertThatThrownBy(() -> parserWithCatalogs.buildFromDynamicTasks(template, List.of(def), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("expectedOutput")
+                .hasMessageContaining("non-null string");
+    }
+
+    @Test
+    void buildFromDynamicTasks_nullExpectedOutputValue_throwsIllegalArgumentException() {
+        java.util.Map<String, Object> def = new java.util.LinkedHashMap<>();
+        def.put("description", "Some task");
+        def.put("expectedOutput", null);
+
+        assertThatThrownBy(() -> parserWithCatalogs.buildFromDynamicTasks(template, List.of(def), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("expectedOutput");
+    }
+
+    // ========================
+    // Level 3: type validation for tool names
+    // ========================
+
+    @Test
+    void buildFromDynamicTasks_invalidToolNameType_throwsIllegalArgumentException() {
+        // Tool names must be non-blank strings; passing an integer should throw
+        java.util.Map<String, Object> def = new java.util.LinkedHashMap<>();
+        def.put("description", "Some task");
+        def.put("tools", java.util.List.of(123)); // integer, not a string
+
+        assertThatThrownBy(() -> parserWithCatalogs.buildFromDynamicTasks(template, List.of(def), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Tool names must be non-blank strings");
+    }
+
+    // ========================
+    // Level 3: type validation for context field
+    // ========================
+
+    @Test
+    void buildFromDynamicTasks_invalidContextType_throwsIllegalArgumentException() {
+        // 'context' must be an array; passing a string should throw
+        java.util.Map<String, Object> def = new java.util.LinkedHashMap<>();
+        def.put("description", "Some task");
+        def.put("context", "not-an-array");
+
+        assertThatThrownBy(() -> parserWithCatalogs.buildFromDynamicTasks(template, List.of(def), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("context")
+                .hasMessageContaining("array");
+    }
+
+    @Test
+    void buildFromDynamicTasks_contextWithNonStringEntry_throwsIllegalArgumentException() {
+        // Context entries must be strings ($name or $N); passing an integer should throw
+        java.util.Map<String, Object> def = new java.util.LinkedHashMap<>();
+        def.put("description", "Some task");
+        def.put("context", java.util.List.of(42)); // integer, not a string
+
+        assertThatThrownBy(() -> parserWithCatalogs.buildFromDynamicTasks(template, List.of(def), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("context")
+                .hasMessageContaining("strings");
+    }
+
+    // ========================
+    // Level 2: additionalContext + description deterministic ordering
+    // ========================
+
+    @Test
+    void buildFromTemplateWithOverrides_descriptionAndAdditionalContext_descriptionFirst() {
+        // When both 'description' and 'additionalContext' are provided, the result must be:
+        // [overridden description] + newline + [additionalContext]
+        // This must hold regardless of Map iteration order.
+        when(template.getTasks()).thenReturn(List.of(namedTask));
+
+        java.util.Map<String, Object> fields = new java.util.LinkedHashMap<>();
+        fields.put("description", "New description");
+        fields.put("additionalContext", "Extra context");
+
+        RunRequestParser.RunConfiguration config = parserWithCatalogs.buildFromTemplateWithOverrides(
+                template, Map.of(), null, Map.of("researcher", fields));
+
+        String desc = config.overrideTasks().get(0).getDescription();
+        assertThat(desc).startsWith("New description");
+        assertThat(desc).endsWith("Extra context");
+        assertThat(desc).contains("\n\n");
+    }
+
+    @Test
+    void buildFromTemplateWithOverrides_additionalContextOnly_appendsToOriginal() {
+        // When only 'additionalContext' is provided (no 'description' override), the result
+        // must be [original description] + newline + [additionalContext].
+        when(template.getTasks()).thenReturn(List.of(namedTask));
+
+        RunRequestParser.RunConfiguration config = parserWithCatalogs.buildFromTemplateWithOverrides(
+                template, Map.of(), null, Map.of("researcher", Map.of("additionalContext", "Appended context")));
+
+        String desc = config.overrideTasks().get(0).getDescription();
+        assertThat(desc).startsWith(namedTask.getDescription());
+        assertThat(desc).endsWith("Appended context");
+    }
+
+    // ========================
+    // Level 2: tool removal by name (not reference equality)
+    // ========================
+
+    @Test
+    void buildFromTemplateWithOverrides_removeToolByName_removesFromTaskToolList() {
+        // The tool on the task and the catalog tool share the same name but are different
+        // instances. Name-based removal must succeed.
+        net.agentensemble.tool.AgentTool catalogTool =
+                toolCatalog.find("calculator").orElseThrow();
+        // Build a task whose tools list contains a DIFFERENT instance with the same name,
+        // simulating a tool that was constructed outside the catalog.
+        net.agentensemble.tool.AgentTool externalInstance = new net.agentensemble.tool.AgentTool() {
+            @Override
+            public String name() {
+                return "calculator";
+            }
+
+            @Override
+            public String description() {
+                return "A calculator (external)";
+            }
+
+            @Override
+            public net.agentensemble.tool.ToolResult execute(String input) {
+                return net.agentensemble.tool.ToolResult.success("0");
+            }
+        };
+
+        net.agentensemble.Task taskWithTool = net.agentensemble.Task.builder()
+                .name("researcher")
+                .description("Research task")
+                .expectedOutput("Output")
+                .tools(java.util.List.of(externalInstance))
+                .build();
+        when(template.getTasks()).thenReturn(java.util.List.of(taskWithTool));
+
+        java.util.Map<String, Object> toolsOverride = new java.util.LinkedHashMap<>();
+        toolsOverride.put("remove", java.util.List.of("calculator"));
+
+        RunRequestParser.RunConfiguration config = parserWithCatalogs.buildFromTemplateWithOverrides(
+                template, Map.of(), null, Map.of("researcher", Map.of("tools", toolsOverride)));
+
+        // Tool was removed even though the instance was different from the catalog instance
+        assertThat(config.overrideTasks().get(0).getTools()).isEmpty();
+    }
+
+    @Test
+    void buildFromTemplateWithOverrides_addToolDeduplicated_doesNotAddDuplicate() {
+        // Adding a tool that is already present (by name) must not result in duplicates.
+        net.agentensemble.tool.AgentTool calcTool =
+                toolCatalog.find("calculator").orElseThrow();
+
+        net.agentensemble.Task taskWithTool = net.agentensemble.Task.builder()
+                .name("researcher")
+                .description("Research task")
+                .expectedOutput("Output")
+                .tools(java.util.List.of(calcTool))
+                .build();
+        when(template.getTasks()).thenReturn(java.util.List.of(taskWithTool));
+
+        java.util.Map<String, Object> toolsOverride = new java.util.LinkedHashMap<>();
+        toolsOverride.put("add", java.util.List.of("calculator"));
+
+        RunRequestParser.RunConfiguration config = parserWithCatalogs.buildFromTemplateWithOverrides(
+                template, Map.of(), null, Map.of("researcher", Map.of("tools", toolsOverride)));
+
+        // Should still have exactly one tool (no duplicate added)
+        assertThat(config.overrideTasks().get(0).getTools()).hasSize(1);
+    }
 }

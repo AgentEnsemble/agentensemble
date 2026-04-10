@@ -895,6 +895,17 @@ class WebSocketServer {
         com.fasterxml.jackson.databind.JsonNode tasksNode = body.get("tasks");
         com.fasterxml.jackson.databind.JsonNode overridesNode = body.get("taskOverrides");
 
+        // Reject requests where a level indicator is present but empty -- they would
+        // silently fall through to Level 1 and run the template unexpectedly.
+        if (tasksNode != null && tasksNode.isArray() && tasksNode.isEmpty()) {
+            throw new IllegalArgumentException("The 'tasks' field is present but empty; "
+                    + "provide a non-empty task list for Level 3, or omit the field.");
+        }
+        if (overridesNode != null && overridesNode.isObject() && overridesNode.isEmpty()) {
+            throw new IllegalArgumentException("The 'taskOverrides' field is present but empty; "
+                    + "provide at least one override for Level 2, or omit the field.");
+        }
+
         RunRequestParser.RunConfiguration config;
 
         if (tasksNode != null && tasksNode.isArray() && !tasksNode.isEmpty()) {

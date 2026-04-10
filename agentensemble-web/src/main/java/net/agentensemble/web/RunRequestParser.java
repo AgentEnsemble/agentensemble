@@ -6,6 +6,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
@@ -218,7 +219,20 @@ public final class RunRequestParser {
         List<List<Integer>> deps = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             Map<String, Object> def = taskDefs.get(i);
-            List<String> contextRefs = (List<String>) def.getOrDefault("context", List.of());
+            Object contextObj = def.getOrDefault("context", List.of());
+            if (!(contextObj instanceof List<?> rawContextList)) {
+                throw new IllegalArgumentException(
+                        "Dynamic task field 'context' must be an array of task name or index references "
+                                + "($name or $N); got non-array value.");
+            }
+            List<String> contextRefs = new ArrayList<>();
+            for (Object ref : rawContextList) {
+                if (!(ref instanceof String refStr)) {
+                    throw new IllegalArgumentException(
+                            "Dynamic task 'context' entries must be strings ($name or $N); got: " + ref);
+                }
+                contextRefs.add(refStr);
+            }
             List<Integer> taskDeps = new ArrayList<>();
             for (String ref : contextRefs) {
                 taskDeps.add(resolveContextRef(ref, nameToIndex, n));
@@ -363,8 +377,19 @@ public final class RunRequestParser {
         }
 
         // expectedOutput with optional outputSchema injection
-        String expectedOutput =
-                def.containsKey("expectedOutput") ? (String) def.get("expectedOutput") : Task.DEFAULT_EXPECTED_OUTPUT;
+        // Validate type explicitly to produce a useful error rather than ClassCastException
+        String expectedOutput = Task.DEFAULT_EXPECTED_OUTPUT;
+        if (def.containsKey("expectedOutput")) {
+            Object expectedOutputObj = def.get("expectedOutput");
+            if (!(expectedOutputObj instanceof String expectedOutputValue)) {
+                throw new IllegalArgumentException(
+                        "Dynamic task field 'expectedOutput' must be a non-null string when provided; " + "got: "
+                                + (expectedOutputObj == null
+                                        ? "null"
+                                        : expectedOutputObj.getClass().getSimpleName()));
+            }
+            expectedOutput = expectedOutputValue;
+        }
 
         Object schemaObj = def.get("outputSchema");
         if (schemaObj instanceof Map<?, ?> schemaMap) {
@@ -390,7 +415,13 @@ public final class RunRequestParser {
         if (toolsObj instanceof List<?> toolNames) {
             List<Object> resolvedTools = new ArrayList<>();
             for (Object t : toolNames) {
-                resolvedTools.add(resolveTool((String) t));
+                // Validate each element is a non-blank String to produce a useful error
+                // rather than ClassCastException
+                if (!(t instanceof String toolName) || toolName.isBlank()) {
+                    throw new IllegalArgumentException("Invalid tool name in dynamic task definition: " + t
+                            + ". Tool names must be non-blank strings.");
+                }
+                resolvedTools.add(resolveTool(toolName));
             }
             builder.tools(resolvedTools);
         }
@@ -450,12 +481,14 @@ public final class RunRequestParser {
      * @return the index of the matching task, or {@code -1} if not found
      */
     private static int findTaskIndex(List<Task> tasks, String key) {
-        String lowerKey = key.toLowerCase();
+        // Use Locale.ROOT for all case-insensitive comparisons to avoid locale-dependent
+        // behavior (e.g. Turkish locale where toLowerCase("I") != "i").
+        String lowerKey = key.toLowerCase(Locale.ROOT);
 
         // Pass 1: exact name match (case-insensitive)
         for (int i = 0; i < tasks.size(); i++) {
             String name = tasks.get(i).getName();
-            if (name != null && name.toLowerCase().equals(lowerKey)) {
+            if (name != null && name.toLowerCase(Locale.ROOT).equals(lowerKey)) {
                 return i;
             }
         }
@@ -465,7 +498,7 @@ public final class RunRequestParser {
             String desc = tasks.get(i).getDescription();
             if (desc != null) {
                 String prefix = desc.substring(0, Math.min(DESCRIPTION_PREFIX_LENGTH, desc.length()))
-                        .toLowerCase();
+                        .toLowerCase(Locale.ROOT);
                 if (prefix.equals(lowerKey)) {
                     return i;
                 }
@@ -478,25 +511,44 @@ public final class RunRequestParser {
     /**
      * Applies the given override fields to {@code task} and returns a new modified copy.
      * The original task is never mutated.
+     *
+     * <p>Description is computed deterministically before the switch loop: a {@code description}
+     * override replaces the original, then {@code additionalContext} is always appended at the
+     * end. This prevents map iteration order from determining which value wins when both keys
+     * appear in the same override map.
      */
     @SuppressWarnings("unchecked")
     private Task applyOverrides(Task task, Map<String, Object> fields) {
         Task.TaskBuilder builder = task.toBuilder();
+
+        // Compute the effective description with deterministic precedence:
+        //   1. 'description' override replaces the original (if present)
+        //   2. 'additionalContext' is always appended at the end (if present)
+        // This two-step pre-computation avoids any ordering dependency on Map iteration.
+        boolean hasDescOverride = fields.containsKey("description");
+        boolean hasAddCtx = fields.containsKey("additionalContext");
+        if (hasDescOverride || hasAddCtx) {
+            String base = hasDescOverride ? (String) fields.get("description") : task.getDescription();
+            if (hasAddCtx) {
+                Object ctxObj = fields.get("additionalContext");
+                if (ctxObj instanceof String ctx && !ctx.isBlank()) {
+                    base = base + "\n\n" + ctx;
+                }
+            }
+            builder.description(base);
+        }
 
         for (Map.Entry<String, Object> entry : fields.entrySet()) {
             String field = entry.getKey();
             Object value = entry.getValue();
 
             switch (field) {
-                case "description" -> builder.description((String) value);
+                case "description", "additionalContext" -> {
+                    // Already handled above in the deterministic pre-computation block
+                }
                 case "expectedOutput" -> builder.expectedOutput((String) value);
                 case "maxIterations" -> builder.maxIterations(toInt(value, "maxIterations"));
                 case "model" -> builder.chatLanguageModel(resolveModel((String) value));
-                case "additionalContext" -> {
-                    String ctx = (String) value;
-                    String newDesc = task.getDescription() + "\n\n" + ctx;
-                    builder.description(newDesc);
-                }
                 case "tools" -> {
                     Map<String, Object> toolsMap = (Map<String, Object>) value;
                     List<Object> currentTools = new ArrayList<>(task.getTools());
@@ -504,15 +556,24 @@ public final class RunRequestParser {
                     if (toolsMap.containsKey("add")) {
                         List<String> toAdd = (List<String>) toolsMap.get("add");
                         for (String toolName : toAdd) {
-                            currentTools.add(resolveTool(toolName));
+                            AgentTool resolved = resolveTool(toolName);
+                            // De-duplicate by name to avoid adding the same tool twice
+                            boolean alreadyPresent = currentTools.stream()
+                                    .anyMatch(t -> t instanceof AgentTool at
+                                            && at.name().equals(resolved.name()));
+                            if (!alreadyPresent) {
+                                currentTools.add(resolved);
+                            }
                         }
                     }
 
                     if (toolsMap.containsKey("remove")) {
                         List<String> toRemove = (List<String>) toolsMap.get("remove");
                         for (String toolName : toRemove) {
-                            AgentTool resolved = resolveTool(toolName);
-                            currentTools.removeIf(t -> t == resolved);
+                            // Remove by name for reliability; reference equality (==) is fragile
+                            // when template tasks were constructed outside the catalog.
+                            currentTools.removeIf(
+                                    t -> t instanceof AgentTool at && at.name().equals(toolName));
                         }
                     }
 

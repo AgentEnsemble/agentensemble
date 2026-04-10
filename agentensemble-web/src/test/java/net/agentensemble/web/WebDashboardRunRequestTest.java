@@ -55,6 +55,7 @@ class WebDashboardRunRequestTest {
     @Test
     void runRequest_noEnsembleConfigured_receivesRejectedAck() throws Exception {
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch ackLatch = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();
@@ -69,6 +70,8 @@ class WebDashboardRunRequestTest {
                     @Override
                     public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
                         if (last) {
+                            // First message from server signals ready (hello/connected)
+                            helloLatch.countDown();
                             String msg = data.toString();
                             received.add(msg);
                             if (msg.contains("\"type\":\"run_ack\"")) {
@@ -81,8 +84,8 @@ class WebDashboardRunRequestTest {
                 })
                 .get(5, TimeUnit.SECONDS);
 
-        // Wait for the hello message before sending the run_request
-        Thread.sleep(200);
+        // Wait for the server to send its first message (hello) before sending the run_request
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Send a run_request; no ensemble is configured so it should be REJECTED
         String runRequest =
@@ -125,6 +128,7 @@ class WebDashboardRunRequestTest {
         dashboard.setEnsemble(templateEnsemble);
 
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch ackLatch = new CountDownLatch(1);
         CountDownLatch resultLatch = new CountDownLatch(1);
 
@@ -140,6 +144,8 @@ class WebDashboardRunRequestTest {
                     @Override
                     public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
                         if (last) {
+                            // First message from server signals ready (hello/connected)
+                            helloLatch.countDown();
                             String msg = data.toString();
                             received.add(msg);
                             if (msg.contains("\"type\":\"run_ack\"")) {
@@ -155,7 +161,8 @@ class WebDashboardRunRequestTest {
                 })
                 .get(5, TimeUnit.SECONDS);
 
-        Thread.sleep(200);
+        // Wait for the server hello before sending the run_request
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Send a Level 1 run_request (inputs only, no tasks or overrides)
         ws.sendText("{\"type\":\"run_request\",\"requestId\":\"l1-req\",\"inputs\":{\"name\":\"World\"}}", true)
@@ -169,7 +176,9 @@ class WebDashboardRunRequestTest {
                 .findFirst()
                 .orElse("");
         assertThat(ackMsg).contains("\"requestId\":\"l1-req\"");
-        // Status should be ACCEPTED (not REJECTED); concurrency limit not reached
+        // Status should be ACCEPTED (not REJECTED); concurrency limit not reached.
+        // getInitialStatus() is used to avoid a race where the run transitions to RUNNING
+        // before the ack message is serialized.
         assertThat(ackMsg).contains("\"status\":\"ACCEPTED\"");
 
         // Wait for the run_result
@@ -187,7 +196,7 @@ class WebDashboardRunRequestTest {
      * list. Covers the Level 3 dispatch branch of {@code handleRunRequest}.
      */
     @Test
-    void runRequest_level3_withDynamicTasks_receivesAcceptedAck() throws Exception {
+    void runRequest_level3_withDynamicTasks_receivesAck() throws Exception {
         Task baseTask = Task.builder()
                 .name("base")
                 .description("Base task")
@@ -198,6 +207,7 @@ class WebDashboardRunRequestTest {
         dashboard.setEnsemble(templateEnsemble);
 
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch ackLatch = new CountDownLatch(1);
 
         HttpClient client = HttpClient.newHttpClient();
@@ -212,6 +222,7 @@ class WebDashboardRunRequestTest {
                     @Override
                     public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
                         if (last) {
+                            helloLatch.countDown();
                             String msg = data.toString();
                             received.add(msg);
                             if (msg.contains("\"type\":\"run_ack\"")) {
@@ -224,7 +235,7 @@ class WebDashboardRunRequestTest {
                 })
                 .get(5, TimeUnit.SECONDS);
 
-        Thread.sleep(200);
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Level 3: provide a dynamic task list
         String runRequest =
@@ -262,6 +273,7 @@ class WebDashboardRunRequestTest {
      */
     @Test
     void runRequest_serverRemainsStableAfterError() throws Exception {
+        CountDownLatch helloLatch = new CountDownLatch(1);
         CountDownLatch ackLatch = new CountDownLatch(1);
         CopyOnWriteArrayList<String> received = new CopyOnWriteArrayList<>();
 
@@ -277,6 +289,7 @@ class WebDashboardRunRequestTest {
                     @Override
                     public CompletableFuture<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
                         if (last) {
+                            helloLatch.countDown();
                             String msg = data.toString();
                             received.add(msg);
                             if (msg.contains("\"type\":\"run_ack\"")) {
@@ -289,7 +302,7 @@ class WebDashboardRunRequestTest {
                 })
                 .get(5, TimeUnit.SECONDS);
 
-        Thread.sleep(200);
+        assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Send a run_request with empty tasks list (will fail validation in parser)
         // No ensemble is configured, so the no-ensemble path fires first

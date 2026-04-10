@@ -738,6 +738,18 @@ public final class WebDashboard implements EnsembleDashboard {
                 // Parse options from the raw options map
                 RunOptions options = parseRunOptions(msg.options());
 
+                // Reject requests where the level indicator is present but empty --
+                // they would otherwise silently fall through to Level 1 and run the
+                // template unexpectedly, masking client-side mistakes.
+                if (msg.tasks() != null && msg.tasks().isEmpty()) {
+                    throw new IllegalArgumentException("The 'tasks' field is present but empty; "
+                            + "provide a non-empty task list for Level 3, or omit the field.");
+                }
+                if (msg.taskOverrides() != null && msg.taskOverrides().isEmpty()) {
+                    throw new IllegalArgumentException("The 'taskOverrides' field is present but empty; "
+                            + "provide at least one override for Level 2, or omit the field.");
+                }
+
                 // Build RunConfiguration based on what was provided (Level 1/2/3)
                 RunRequestParser.RunConfiguration config;
                 if (msg.tasks() != null && !msg.tasks().isEmpty()) {
@@ -776,11 +788,15 @@ public final class WebDashboard implements EnsembleDashboard {
                             }
                         });
 
-                // Send run_ack immediately to the originating session
+                // Send run_ack immediately to the originating session.
+                // getInitialStatus() is used rather than getStatus() because the run may have
+                // already transitioned to RUNNING or COMPLETED by the time we reach this line
+                // (handler tasks complete synchronously and near-instantly). The ack must
+                // reflect the SUBMISSION status (ACCEPTED or REJECTED), not the live status.
                 RunAckMessage ack = new RunAckMessage(
                         msg.requestId(),
                         state.getRunId(),
-                        state.getStatus().name(),
+                        state.getInitialStatus().name(),
                         state.getTaskCount(),
                         state.getWorkflow());
                 connectionManager.send(sessionId, serializer.toJson(ack));
