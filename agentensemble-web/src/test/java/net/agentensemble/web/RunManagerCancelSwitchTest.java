@@ -143,15 +143,30 @@ class RunManagerCancelSwitchTest {
 
     @Test
     void cancellationFlag_setBeforeExecution_runCompletesAsCancelled() throws Exception {
+        // Use latches to guarantee cancelRun() executes while the run is in RUNNING state,
+        // not after it has already completed (which would cause cancelRun() to return REJECTED
+        // and isCancelled() to remain false -- a race that fails on slow CI runners).
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch waitLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(1);
-        when(mockEnsemble.run(any(Map.class), any())).thenReturn(mockOutput);
+
+        when(mockEnsemble.run(any(Map.class), any())).thenAnswer(inv -> {
+            startLatch.countDown(); // signal: run is now executing
+            waitLatch.await(10, TimeUnit.SECONDS); // hold until cancel is issued
+            return mockOutput;
+        });
 
         RunState state = manager.submitRun(mockEnsemble, null, null, null, null, resultMsg -> doneLatch.countDown());
-        // Pre-cancel (before run starts): flag is set, run still executes but status becomes CANCELLED
-        manager.cancelRun(state.getRunId());
 
-        assertThat(doneLatch.await(5, TimeUnit.SECONDS)).isTrue();
-        // Run is COMPLETED or CANCELLED depending on timing; cancelled flag is set
+        // Wait for the run to actually start before cancelling
+        assertThat(startLatch.await(3, TimeUnit.SECONDS)).isTrue();
+
+        // Cancel while the run is blocked -- guaranteed to reach RUNNING state
+        manager.cancelRun(state.getRunId());
         assertThat(state.isCancelled()).isTrue();
+
+        // Release the run and wait for completion
+        waitLatch.countDown();
+        assertThat(doneLatch.await(5, TimeUnit.SECONDS)).isTrue();
     }
 }
