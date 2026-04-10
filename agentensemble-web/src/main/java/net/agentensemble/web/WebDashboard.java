@@ -18,6 +18,7 @@ import net.agentensemble.dashboard.RequestHandler;
 import net.agentensemble.directive.Directive;
 import net.agentensemble.directive.DirectiveStore;
 import net.agentensemble.ensemble.EnsembleLifecycleState;
+import net.agentensemble.execution.RunOptions;
 import net.agentensemble.review.OnTimeoutAction;
 import net.agentensemble.review.ReviewHandler;
 import net.agentensemble.trace.export.ExecutionTraceExporter;
@@ -29,6 +30,8 @@ import net.agentensemble.web.protocol.EnsembleCompletedMessage;
 import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ReviewDecisionMessage;
+import net.agentensemble.web.protocol.RunAckMessage;
+import net.agentensemble.web.protocol.RunRequestMessage;
 import net.agentensemble.web.protocol.TaskAcceptedMessage;
 import net.agentensemble.web.protocol.TaskRequestMessage;
 import net.agentensemble.web.protocol.TaskResponseMessage;
@@ -289,6 +292,8 @@ public final class WebDashboard implements EnsembleDashboard {
                 handleToolRequest(sessionId, trm);
             } else if (msg instanceof DirectiveMessage dm) {
                 handleDirective(sessionId, dm);
+            } else if (msg instanceof RunRequestMessage rrm) {
+                handleRunRequest(sessionId, rrm);
             }
         });
 
@@ -704,6 +709,140 @@ public final class WebDashboard implements EnsembleDashboard {
         } catch (Exception e) {
             log.warn("Failed to handle directive from '{}': {}", dm.from(), e.getMessage(), e);
         }
+    }
+
+    // ========================
+    // WebSocket run submission (Phase 2: Level 1/2/3)
+    // ========================
+
+    /**
+     * Handles an incoming {@link RunRequestMessage} from a WebSocket client.
+     *
+     * <p>Parses the request to determine the run level (Level 1/2/3), builds the
+     * appropriate {@link RunRequestParser.RunConfiguration}, submits the run to
+     * {@link RunManager}, and sends a {@link RunAckMessage} immediately to the originating
+     * session. On run completion, sends a {@link net.agentensemble.web.protocol.RunResultMessage}
+     * targeted to the same originating session only.
+     */
+    private void handleRunRequest(String sessionId, RunRequestMessage msg) {
+        Ensemble templateEnsemble = this.ensemble;
+        if (templateEnsemble == null) {
+            log.warn("Received run_request from session {} but no template ensemble is configured", sessionId);
+            sendRejectedAck(sessionId, msg.requestId());
+            return;
+        }
+
+        // Execute asynchronously so the WS handler thread is not blocked during parsing
+        requestExecutor.submit(() -> {
+            try {
+                // Parse options from the raw options map
+                RunOptions options = parseRunOptions(msg.options());
+
+                // Reject requests where the level indicator is present but empty --
+                // they would otherwise silently fall through to Level 1 and run the
+                // template unexpectedly, masking client-side mistakes.
+                if (msg.tasks() != null && msg.tasks().isEmpty()) {
+                    throw new IllegalArgumentException("The 'tasks' field is present but empty; "
+                            + "provide a non-empty task list for Level 3, or omit the field.");
+                }
+                if (msg.taskOverrides() != null && msg.taskOverrides().isEmpty()) {
+                    throw new IllegalArgumentException("The 'taskOverrides' field is present but empty; "
+                            + "provide at least one override for Level 2, or omit the field.");
+                }
+
+                // Build RunConfiguration based on what was provided (Level 1/2/3)
+                RunRequestParser.RunConfiguration config;
+                if (msg.tasks() != null && !msg.tasks().isEmpty()) {
+                    // Level 3: fully dynamic task list
+                    config = runRequestParser.buildFromDynamicTasks(
+                            templateEnsemble, msg.tasks(), msg.inputs(), options);
+                } else if (msg.taskOverrides() != null && !msg.taskOverrides().isEmpty()) {
+                    // Level 2: per-task overrides applied to the template
+                    config = runRequestParser.buildFromTemplateWithOverrides(
+                            templateEnsemble, msg.inputs(), options, msg.taskOverrides());
+                } else {
+                    // Level 1: template as-is with input substitution
+                    config = runRequestParser.buildFromTemplate(templateEnsemble, msg.inputs(), options);
+                }
+
+                // For Level 2/3, build a modified ensemble via withTasks(); Level 1 uses the
+                // template as-is so that all its settings (including the dashboard listener)
+                // are already in place.
+                Ensemble executionEnsemble = config.overrideTasks() != null
+                        ? templateEnsemble.withTasks(config.overrideTasks())
+                        : config.template();
+
+                // Convert String tags to Object tags (RunManager uses Map<String, Object>)
+                java.util.Map<String, Object> tags = null;
+                if (msg.tags() != null && !msg.tags().isEmpty()) {
+                    tags = new java.util.HashMap<>(msg.tags());
+                }
+
+                // Submit run; on completion send run_result targeted to originating session only
+                RunState state = runManager.submitRun(
+                        executionEnsemble, config.inputs(), tags, config.options(), sessionId, resultMsg -> {
+                            try {
+                                connectionManager.send(sessionId, serializer.toJson(resultMsg));
+                            } catch (Exception e) {
+                                log.warn("Failed to send run_result to session {}: {}", sessionId, e.getMessage());
+                            }
+                        });
+
+                // Send run_ack immediately to the originating session.
+                // getInitialStatus() is used rather than getStatus() because the run may have
+                // already transitioned to RUNNING or COMPLETED by the time we reach this line
+                // (handler tasks complete synchronously and near-instantly). The ack must
+                // reflect the SUBMISSION status (ACCEPTED or REJECTED), not the live status.
+                RunAckMessage ack = new RunAckMessage(
+                        msg.requestId(),
+                        state.getRunId(),
+                        state.getInitialStatus().name(),
+                        state.getTaskCount(),
+                        state.getWorkflow());
+                connectionManager.send(sessionId, serializer.toJson(ack));
+
+            } catch (Exception e) {
+                log.warn("Failed to handle run_request from session {}: {}", sessionId, e.getMessage(), e);
+                sendRejectedAck(sessionId, msg.requestId());
+            }
+        });
+    }
+
+    /**
+     * Sends a REJECTED {@link RunAckMessage} to the given session, used when a
+     * {@code run_request} cannot be processed.
+     */
+    private void sendRejectedAck(String sessionId, String requestId) {
+        try {
+            RunAckMessage ack = new RunAckMessage(requestId, null, "REJECTED", 0, null);
+            connectionManager.send(sessionId, serializer.toJson(ack));
+        } catch (Exception ex) {
+            log.warn("Failed to send REJECTED run_ack to session {}: {}", sessionId, ex.getMessage());
+        }
+    }
+
+    /**
+     * Converts the raw options map from a {@link RunRequestMessage} to a {@link RunOptions}
+     * instance. Recognises {@code maxToolOutputLength} and {@code toolLogTruncateLength}.
+     *
+     * @param optionsMap the options map from the message; may be null
+     * @return effective {@link RunOptions}; falls back to {@link RunOptions#DEFAULT} when
+     *         the map is null, empty, or contains no recognised keys
+     */
+    private static RunOptions parseRunOptions(java.util.Map<String, Object> optionsMap) {
+        if (optionsMap == null || optionsMap.isEmpty()) {
+            return RunOptions.DEFAULT;
+        }
+        var builder = RunOptions.builder();
+        Object maxLen = optionsMap.get("maxToolOutputLength");
+        if (maxLen instanceof Number n) {
+            builder.maxToolOutputLength(n.intValue());
+        }
+        Object logLen = optionsMap.get("toolLogTruncateLength");
+        if (logLen instanceof Number n) {
+            builder.toolLogTruncateLength(n.intValue());
+        }
+        return builder.build();
     }
 
     // ========================

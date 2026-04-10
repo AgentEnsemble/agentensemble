@@ -1,5 +1,29 @@
 # Progress
 
+## What Works (as of 2026-04-10 -- Ensemble Control API Phase 2, GH #300)
+
+**Ensemble Control API Phase 2:**
+- `Task.name` -- optional logical name; non-blank validation; preserved by `toBuilder()`
+- `RunRequestParser.buildFromTemplateWithOverrides()` -- Level 2 per-task runtime overrides:
+  description, expectedOutput, model (ModelCatalog), maxIterations, additionalContext (appended),
+  tools.add / tools.remove (ToolCatalog); task matching by exact name then description prefix
+- `RunRequestParser.buildFromDynamicTasks()` -- Level 3 dynamic task list from JSON; `$name`
+  and `$N` context references; Kahn's topological sort for circular dependency detection;
+  outputSchema injected into expectedOutput
+- `RunConfiguration.overrideTasks` -- null for Level 1, non-null List for Level 2/3
+- `RunRequestMessage` -- new `ClientMessage` for WebSocket run submission (all three levels)
+- `ClientMessage` sealed interface updated to include `RunRequestMessage`
+- `WebDashboard.handleRunRequest()` -- WS handler; Level 1/2/3 dispatch; `run_ack` sent
+  immediately; `run_result` targeted to originating session on completion
+- `Ensemble.withTasks(List<Task>)` -- copy of template ensemble with replacement task list;
+  used by WS handler for Level 2/3 execution
+- `WebDashboard.parseRunOptions()` -- converts raw options map to `RunOptions`
+- Tests: 80+ new tests across `TaskTest`, `RunRequestParserTest`, `RunRequestMessageTest`,
+  `WebDashboardRunRequestTest`
+- Build: all modules pass, coverage meets thresholds, Spotless clean
+- Docs: design doc updated, guide extended with Phase 2 sections, task-configuration reference
+  updated with `name` field
+
 ## What Works (as of 2026-03-09 -- "Why AgentEnsemble?" comparison content)
 
 **Landing page, README, and docs comparison section:**
