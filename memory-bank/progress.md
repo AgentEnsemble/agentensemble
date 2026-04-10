@@ -276,6 +276,22 @@ All tools extend `AbstractAgentTool` with automatic metrics, logging, exception 
 - `MapReduceKitchenExample.java` with structured output
 - Full documentation: guide, example walkthrough, reference, README
 
+## What Works (as of Issue #299 -- Ensemble Control API Phase 1)
+
+**Ensemble Control API Phase 1 (agentensemble-web):**
+- `ToolCatalog` -- name-keyed `AgentTool` registry; allowlist for API requests; resolve/find/list/contains; immutable with builder
+- `ModelCatalog` -- alias-keyed `ChatModel` registry; streaming variant support; provider detection; immutable with builder
+- `RunState` -- mutable per-run lifecycle tracker with `Status` enum (ACCEPTED/RUNNING/COMPLETED/FAILED/CANCELLED/REJECTED)
+- `RunManager` -- fair `Semaphore`-based concurrency limiting; virtual-thread executor; eviction of oldest completed runs
+- `RunRequestParser` -- Level 1 template+inputs configuration builder; stateless, thread-safe
+- `RunAckMessage` / `RunResultMessage` -- new `ServerMessage` sealed interface permits; run_ack, run_result wire types
+- `WebDashboard.Builder` extended with `toolCatalog()`, `modelCatalog()`, `maxConcurrentRuns()`, `maxRetainedCompletedRuns()`
+- REST endpoints: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{runId}`, `GET /api/capabilities`
+- `WebDashboard.stop()` shuts down `RunManager` executor
+- `ensembleSupplier` pattern threads the template ensemble to route handlers
+- 81 new tests (475 total); JaCoCo LINE >= 90% and BRANCH >= 75% both pass
+- Guide: `docs/guides/ensemble-control-api.md`
+
 ## What's Left to Build
 
 ### Viz Observability -- Tool & Agent I/O Visibility (design complete, 2026-03-30)

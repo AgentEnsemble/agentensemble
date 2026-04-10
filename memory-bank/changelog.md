@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] -- 2026-04-09
+### Added
+- **Ensemble Control API Phase 1 (#299)**: HTTP-based run management for external systems
+  - `ToolCatalog` -- name-keyed `AgentTool` registry (allowlist for API requests)
+  - `ModelCatalog` -- alias-keyed `ChatModel` registry with streaming support and provider detection
+  - `RunState` -- thread-safe per-run lifecycle tracker with `Status` enum
+  - `RunManager` -- concurrency-limited async run executor (Semaphore + virtual threads + eviction)
+  - `RunRequestParser` -- Level 1 template + input variable configuration builder
+  - `RunAckMessage` / `RunResultMessage` -- new wire protocol messages (`run_ack`, `run_result`)
+  - `WebDashboard.Builder` gains `toolCatalog()`, `modelCatalog()`, `maxConcurrentRuns()`, `maxRetainedCompletedRuns()`
+  - REST endpoints: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{runId}`, `GET /api/capabilities`
+  - Guide: `docs/guides/ensemble-control-api.md`
+  - Reference updated: `docs/reference/ensemble-configuration.md`
+
+
 ## [Unreleased] - Viz Observability: Tool & Agent I/O Visibility - 2026-03-30
 
 ### Added

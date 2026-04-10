@@ -169,6 +169,32 @@ public final class WebDashboard implements EnsembleDashboard {
     /** Virtual-thread executor for processing incoming work requests asynchronously. */
     private final ExecutorService requestExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
+    // ========================
+    // Ensemble Control API fields (Phase 1)
+    // ========================
+
+    /**
+     * Optional tool registry for API-submitted runs. Null when the Control API is not
+     * configured; REST endpoints return 503 in that case.
+     */
+    private final ToolCatalog toolCatalog;
+
+    /**
+     * Optional model registry for API-submitted runs. Null when the Control API is not
+     * configured.
+     */
+    private final ModelCatalog modelCatalog;
+
+    /** Parses API run requests into executable ensemble configurations. */
+    private final RunRequestParser runRequestParser;
+
+    /**
+     * Manages async run lifecycle: concurrency limiting, state tracking, eviction.
+     * Always created (never null); the Control API endpoints use it regardless of whether
+     * optional catalogs (toolCatalog/modelCatalog) are configured.
+     */
+    private final RunManager runManager;
+
     private WebDashboard(Builder builder) {
         this.port = builder.port;
         this.host = builder.host;
@@ -180,6 +206,10 @@ public final class WebDashboard implements EnsembleDashboard {
         this.configuredTraceExporter = traceExportDir != null ? new JsonTraceExporter(traceExportDir) : null;
 
         this.maxSnapshotIterations = builder.maxSnapshotIterations;
+        this.toolCatalog = builder.toolCatalog;
+        this.modelCatalog = builder.modelCatalog;
+        this.runRequestParser = new RunRequestParser(toolCatalog, modelCatalog);
+        this.runManager = new RunManager(builder.maxConcurrentRuns, builder.maxRetainedCompletedRuns);
 
         this.serializer = new MessageSerializer();
         this.connectionManager = new ConnectionManager(serializer, maxRetainedRuns, maxSnapshotIterations);
@@ -192,6 +222,12 @@ public final class WebDashboard implements EnsembleDashboard {
         if (workspacePath != null) {
             this.server.setWorkspacePath(workspacePath);
         }
+        this.server.setRunManager(runManager);
+        this.server.setRunRequestParser(runRequestParser);
+        this.server.setToolCatalog(toolCatalog);
+        this.server.setModelCatalog(modelCatalog);
+        // Provide a supplier so routes can access the template ensemble set via setEnsemble()
+        this.server.setEnsembleSupplier(() -> this.ensemble);
         this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
         this.reviewHandler = new WebReviewHandler(connectionManager, serializer, reviewTimeout, onTimeout);
     }
@@ -285,6 +321,7 @@ public final class WebDashboard implements EnsembleDashboard {
         if (wasRunning) {
             heartbeatScheduler.shutdownNow();
             requestExecutor.shutdownNow();
+            runManager.shutdown();
             try {
                 if (!heartbeatScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
                     log.warn("Heartbeat scheduler did not terminate within 2 seconds");
@@ -747,6 +784,12 @@ public final class WebDashboard implements EnsembleDashboard {
         private int maxSnapshotIterations = 5;
         private Path workspacePath = null;
 
+        // Ensemble Control API (Phase 1)
+        private ToolCatalog toolCatalog = null;
+        private ModelCatalog modelCatalog = null;
+        private int maxConcurrentRuns = 5;
+        private int maxRetainedCompletedRuns = 100;
+
         private Builder() {}
 
         /**
@@ -895,6 +938,72 @@ public final class WebDashboard implements EnsembleDashboard {
         }
 
         /**
+         * Sets the tool registry for the Ensemble Control API.
+         *
+         * <p>When set, external callers can reference tools by name in {@code POST /api/runs}
+         * requests (Level 2+ parameterization). In Phase 1 (Level 1), the catalog is used
+         * for capability discovery via {@code GET /api/capabilities}.
+         *
+         * @param toolCatalog the tool registry; may be {@code null} to disable tool catalog
+         *                    (Level 2+ tool references will fail with 503)
+         * @return this builder
+         */
+        public Builder toolCatalog(ToolCatalog toolCatalog) {
+            this.toolCatalog = toolCatalog;
+            return this;
+        }
+
+        /**
+         * Sets the model registry for the Ensemble Control API.
+         *
+         * <p>When set, external callers can reference models by alias in {@code POST /api/runs}
+         * requests (Level 2+ parameterization). In Phase 1 (Level 1), the catalog is used
+         * for capability discovery via {@code GET /api/capabilities}.
+         *
+         * @param modelCatalog the model registry; may be {@code null} to disable model catalog
+         * @return this builder
+         */
+        public Builder modelCatalog(ModelCatalog modelCatalog) {
+            this.modelCatalog = modelCatalog;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of ensemble runs that may execute concurrently via the
+         * {@code POST /api/runs} endpoint.
+         *
+         * <p>When this limit is reached, new run submissions are rejected with HTTP 429.
+         * Default: {@code 5}.
+         *
+         * @param maxConcurrentRuns the concurrency cap; must be &ge; 1
+         * @return this builder
+         * @throws IllegalArgumentException when {@code maxConcurrentRuns} is less than 1
+         *                                  (validated at {@link #build()} time)
+         */
+        public Builder maxConcurrentRuns(int maxConcurrentRuns) {
+            this.maxConcurrentRuns = maxConcurrentRuns;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of completed (and failed/cancelled) runs retained in
+         * memory for state queries via {@code GET /api/runs}.
+         *
+         * <p>When a run completes and the total number of terminal runs exceeds this cap,
+         * the oldest completed run is evicted. Active runs (ACCEPTED/RUNNING) are never
+         * evicted. Default: {@code 100}.
+         *
+         * @param maxRetainedCompletedRuns the retention cap for completed runs; must be &ge; 1
+         * @return this builder
+         * @throws IllegalArgumentException when {@code maxRetainedCompletedRuns} is less
+         *                                  than 1 (validated at {@link #build()} time)
+         */
+        public Builder maxRetainedCompletedRuns(int maxRetainedCompletedRuns) {
+            this.maxRetainedCompletedRuns = maxRetainedCompletedRuns;
+            return this;
+        }
+
+        /**
          * Validates configuration and constructs the {@link WebDashboard}.
          *
          * <p>The returned dashboard is not yet started; call {@link WebDashboard#start()}
@@ -925,6 +1034,13 @@ public final class WebDashboard implements EnsembleDashboard {
                 throw new IllegalArgumentException(
                         "maxSnapshotIterations must be >= 0 (0 disables iteration snapshots); got: "
                                 + maxSnapshotIterations);
+            }
+            if (maxConcurrentRuns < 1) {
+                throw new IllegalArgumentException("maxConcurrentRuns must be >= 1; got: " + maxConcurrentRuns);
+            }
+            if (maxRetainedCompletedRuns < 1) {
+                throw new IllegalArgumentException(
+                        "maxRetainedCompletedRuns must be >= 1; got: " + maxRetainedCompletedRuns);
             }
             return new WebDashboard(this);
         }
