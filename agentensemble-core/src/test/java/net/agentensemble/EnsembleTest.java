@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import net.agentensemble.callback.EnsembleListener;
 import net.agentensemble.ratelimit.RateLimit;
+import net.agentensemble.tool.ToolResult;
+import net.agentensemble.workflow.Phase;
 import net.agentensemble.workflow.Workflow;
 import org.junit.jupiter.api.Test;
 
@@ -333,5 +335,45 @@ class EnsembleTest {
         assertThatThrownBy(() -> ensemble.withTasks(tasksWithNull))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("null elements");
+    }
+
+    // ========================
+    // withAdditionalListener -- phase preservation
+    // ========================
+
+    @Test
+    void withAdditionalListener_phaseBasedEnsemble_preservesPhasesAndAppendListener() {
+        // Arrange: build a phase-based ensemble using a handler task (no LLM needed)
+        Task handlerTask = Task.builder()
+                .description("Compute result")
+                .expectedOutput("Result")
+                .handler(ctx -> ToolResult.success("done"))
+                .build();
+        Phase phase = Phase.of("phase-one", handlerTask);
+        EnsembleListener listener = new EnsembleListener() {};
+        Ensemble phasedEnsemble = Ensemble.builder().phase(phase).build();
+
+        // Act
+        Ensemble copy = phasedEnsemble.withAdditionalListener(listener);
+
+        // Assert: phases are preserved and not substituted with an empty tasks list
+        assertThat(copy.getPhases()).hasSize(1);
+        assertThat(copy.getPhases().get(0).getName()).isEqualTo("phase-one");
+        assertThat(copy.getTasks()).isEmpty();
+        assertThat(copy.getListeners()).contains(listener);
+    }
+
+    @Test
+    void withAdditionalListener_flatTaskEnsemble_preservesTasksAndAppendListener() {
+        // Flat-task ensemble: withAdditionalListener must still copy the tasks list
+        EnsembleListener listener = new EnsembleListener() {};
+        Ensemble flatEnsemble = Ensemble.builder().task(Task.of("task-one")).build();
+
+        Ensemble copy = flatEnsemble.withAdditionalListener(listener);
+
+        assertThat(copy.getTasks()).hasSize(1);
+        assertThat(copy.getTasks().get(0).getDescription()).isEqualTo("task-one");
+        assertThat(copy.getPhases()).isEmpty();
+        assertThat(copy.getListeners()).contains(listener);
     }
 }

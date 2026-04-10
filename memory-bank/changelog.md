@@ -1,7 +1,26 @@
 # Changelog
 
-## [Unreleased] -- 2026-04-10
+## [Unreleased] - 2026-04-10
 ### Added
+- Ensemble Control API Phase 3: cooperative run cancellation (`cancelRun()`) and runtime model
+  switching (`switchToModel()` / `switchModel()`) via REST and WebSocket
+- Ensemble Control API Phase 4: per-session event subscription filtering (`SubscriptionManager`,
+  `SubscribeMessage`/`SubscribeAckMessage`) and SSE event stream endpoint (`GET /api/runs/{runId}/events`)
+- Ensemble Control API Phase 5: REST review decisions (`POST /api/reviews/{reviewId}`),
+  pending review listing (`GET /api/reviews`), runtime context injection
+  (`POST /api/runs/{runId}/inject`), direct tool invocation (`POST /api/tools/{name}/invoke`)
+- `Ensemble.switchToModel(ChatModel)` -- thread-safe runtime LLM swap
+- `Ensemble.withAdditionalListener(EnsembleListener)` -- per-run copy with extra listener; now
+  correctly preserves phase-based ensembles (phases are copied, not only flat task list)
+- `CancellationCheckListener` -- `EnsembleListener` that throws `ExitEarlyException` at task boundaries
+- `SubscriptionManager` -- per-session event-type + runId filtering backed by ConcurrentHashMap
+- `SseHandler` -- SSE streaming for completed-run replay and live in-progress event delivery
+- `ConnectionManager.PendingReviewInfo` record -- metadata for REST-accessible review listing
+- `ConnectionManager.hasPendingReview()` / `listPendingReviews()` -- review discovery API
+- `WebReviewHandler` now registers `PendingReviewInfo` alongside the blocking future
+- `RunControlMessage` / `RunControlAckMessage` / `SubscribeMessage` / `SubscribeAckMessage`
+  -- four new wire protocol records
+- `WebDashboard.handleRunControl()` / `handleSubscribe()` -- new WS message handlers
 - **Ensemble Control API Phase 2 (GH #300)**
   - `Task.name` -- optional logical name field on `Task` for API task matching and context references
   - `RunRequestParser.buildFromTemplateWithOverrides()` -- Level 2 per-task overrides at runtime

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import net.agentensemble.web.protocol.HelloMessage;
 import net.agentensemble.web.protocol.IterationSnapshot;
 import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
@@ -48,7 +49,27 @@ class ConnectionManager {
 
     private final Map<String, WsSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<String>> pendingReviews = new ConcurrentHashMap<>();
+
+    /**
+     * Metadata for pending reviews, keyed by reviewId.
+     * Used by {@link #listPendingReviews(String)} to return review details to REST callers.
+     */
+    private final ConcurrentHashMap<String, PendingReviewInfo> pendingReviewMetadata = new ConcurrentHashMap<>();
+
     private final MessageSerializer serializer;
+
+    /**
+     * Optional subscription manager for per-session event filtering.
+     * When null, all events are delivered to all sessions (default / backwards-compatible behaviour).
+     */
+    private volatile SubscriptionManager subscriptionManager;
+
+    /**
+     * Callbacks registered by SSE clients. Each callback receives a copy of every JSON string
+     * broadcast to WebSocket sessions, allowing SSE handlers to stream live events.
+     * Keyed by an opaque callback ID assigned at registration time.
+     */
+    private final ConcurrentHashMap<String, Consumer<String>> broadcastCallbacks = new ConcurrentHashMap<>();
 
     /**
      * Maximum number of runs to retain in the snapshot. When a new run starts and the total
@@ -192,6 +213,11 @@ class ConnectionManager {
      */
     void onDisconnect(String sessionId) {
         sessions.remove(sessionId);
+        // Clean up any subscription registered for this session
+        SubscriptionManager sm = subscriptionManager;
+        if (sm != null) {
+            sm.unsubscribe(sessionId);
+        }
         log.debug("WebSocket client disconnected: {}", sessionId);
 
         // Only cancel pending reviews when the last browser disconnects.
@@ -206,19 +232,82 @@ class ConnectionManager {
     }
 
     /**
-     * Broadcasts a JSON message to all currently connected sessions. Closed sessions are skipped
-     * and logged at DEBUG level.
+     * Broadcasts a JSON message to all currently connected sessions, applying per-session
+     * subscription filtering when a {@link SubscriptionManager} is configured.
+     *
+     * <p>System messages (heartbeat, hello) and sessions without a subscription receive all
+     * events (backwards compatible). Closed sessions are skipped.
+     *
+     * <p>Also notifies any registered SSE broadcast callbacks so that live SSE streams
+     * receive the same events as WebSocket sessions.
      *
      * @param json the JSON text to broadcast; must not be null
      */
     void broadcast(String json) {
-        sessions.forEach((id, session) -> {
-            if (session.isOpen()) {
-                session.send(json);
-            } else {
-                log.debug("Skipping closed session {} during broadcast", id);
-            }
-        });
+        SubscriptionManager sm = subscriptionManager;
+        if (sm == null) {
+            // No subscription filtering: deliver to all open sessions (legacy behaviour)
+            sessions.forEach((id, session) -> {
+                if (session.isOpen()) {
+                    session.send(json);
+                } else {
+                    log.debug("Skipping closed session {} during broadcast", id);
+                }
+            });
+        } else {
+            // Subscription-aware delivery
+            String messageType = extractMessageType(json);
+            sessions.forEach((id, session) -> {
+                if (!session.isOpen()) {
+                    log.debug("Skipping closed session {} during broadcast", id);
+                    return;
+                }
+                if (sm.shouldDeliver(id, messageType, json)) {
+                    session.send(json);
+                }
+            });
+        }
+
+        // Notify SSE callbacks (not subscription-filtered -- SSE clients filter themselves)
+        if (!broadcastCallbacks.isEmpty()) {
+            broadcastCallbacks.forEach((id, callback) -> {
+                try {
+                    callback.accept(json);
+                } catch (Exception e) {
+                    log.debug("SSE broadcast callback {} threw; it may have disconnected: {}", id, e.getMessage());
+                }
+            });
+        }
+    }
+
+    /**
+     * Sets the subscription manager used to filter per-session event delivery.
+     * When {@code null}, all events are delivered to all sessions (default).
+     *
+     * @param manager the subscription manager; may be null to disable filtering
+     */
+    void setSubscriptionManager(SubscriptionManager manager) {
+        this.subscriptionManager = manager;
+    }
+
+    /**
+     * Registers a callback that receives a copy of every JSON string broadcast to WebSocket
+     * sessions. Used by {@link SseHandler} to stream live events to SSE clients.
+     *
+     * @param callbackId a unique identifier for this callback (used to unregister it)
+     * @param callback   the callback; must not be null
+     */
+    void registerBroadcastCallback(String callbackId, Consumer<String> callback) {
+        broadcastCallbacks.put(callbackId, callback);
+    }
+
+    /**
+     * Removes a previously registered broadcast callback.
+     *
+     * @param callbackId the identifier used when the callback was registered
+     */
+    void unregisterBroadcastCallback(String callbackId) {
+        broadcastCallbacks.remove(callbackId);
     }
 
     /**
@@ -419,14 +508,36 @@ class ConnectionManager {
     }
 
     /**
-     * Resolves a pending review by completing its future with the given value. The future is
-     * removed from the registry to prevent double-resolution.
+     * Registers a pending review future along with its metadata for REST-based review discovery.
+     *
+     * <p>Delegates to {@link #registerPendingReview(String, CompletableFuture)} so that
+     * subclasses overriding the 2-argument form (e.g. test doubles that auto-resolve futures)
+     * continue to work correctly. The metadata is stored separately for the review listing
+     * endpoint.
+     *
+     * @param reviewId the review correlation ID
+     * @param future   the future to complete when a decision arrives or a session disconnects
+     * @param info     metadata about the review gate; may be null to omit from listing
+     */
+    void registerPendingReview(String reviewId, CompletableFuture<String> future, PendingReviewInfo info) {
+        // Delegate to the 2-arg overload so subclasses that override it (e.g. test helpers)
+        // still receive the registration and can auto-resolve the future.
+        registerPendingReview(reviewId, future);
+        if (info != null) {
+            pendingReviewMetadata.put(reviewId, info);
+        }
+    }
+
+    /**
+     * Resolves a pending review by completing its future with the given value. The future and
+     * its metadata are removed from the registries to prevent double-resolution.
      *
      * @param reviewId the review correlation ID
      * @param value    the value to complete the future with
      */
     void resolveReview(String reviewId, String value) {
         CompletableFuture<String> future = pendingReviews.remove(reviewId);
+        pendingReviewMetadata.remove(reviewId);
         if (future != null) {
             future.complete(value);
         } else {
@@ -437,6 +548,41 @@ class ConnectionManager {
     }
 
     /**
+     * Returns true if the given reviewId has a pending (unresolved) review future.
+     *
+     * @param reviewId the review correlation ID
+     * @return true if the review is still pending
+     */
+    boolean hasPendingReview(String reviewId) {
+        return pendingReviews.containsKey(reviewId);
+    }
+
+    /**
+     * Returns a snapshot of pending review metadata, optionally filtered by run ID.
+     *
+     * <p>Used by the {@code GET /api/reviews} REST endpoint to allow REST-only clients
+     * to discover pending review gates without a WebSocket connection.
+     *
+     * @param runIdFilter if non-null, only reviews matching this run ID are returned;
+     *                    null returns all pending reviews
+     * @return an immutable list of pending review info records
+     */
+    List<PendingReviewInfo> listPendingReviews(String runIdFilter) {
+        List<PendingReviewInfo> result = new ArrayList<>();
+        pendingReviewMetadata.forEach((reviewId, info) -> {
+            // Only include reviews that still have an active future (not yet resolved)
+            if (!pendingReviews.containsKey(reviewId)) {
+                return;
+            }
+            if (runIdFilter != null && !runIdFilter.equals(info.runId())) {
+                return;
+            }
+            result.add(info);
+        });
+        return List.copyOf(result);
+    }
+
+    /**
      * Returns the number of currently registered sessions (including sessions that may have
      * closed since their last keepalive).
      */
@@ -444,9 +590,49 @@ class ConnectionManager {
         return sessions.size();
     }
 
+    /**
+     * Immutable metadata record for a pending review gate.
+     *
+     * @param reviewId        the review correlation ID
+     * @param runId           the API run ID that owns this review, or null for non-API runs
+     * @param taskDescription the description of the task under review
+     * @param taskOutput      the task's output to be reviewed
+     * @param timing          when the gate fires (e.g. {@code "AFTER_EXECUTION"})
+     * @param prompt          optional human-readable review prompt
+     * @param timeoutMs       how long (ms) to wait for a decision; 0 means indefinite
+     * @param createdAt       when the review was opened
+     * @param expiresAt       when the review will time out, or null if no timeout
+     */
+    record PendingReviewInfo(
+            String reviewId,
+            String runId,
+            String taskDescription,
+            String taskOutput,
+            String timing,
+            String prompt,
+            long timeoutMs,
+            Instant createdAt,
+            Instant expiresAt) {}
+
     // ========================
     // Private helpers
     // ========================
+
+    /**
+     * Extracts the {@code "type"} field value from a JSON string without full parsing.
+     * Returns an empty string if the field is absent. Used in the subscription-aware
+     * {@link #broadcast(String)} to look up the message type efficiently.
+     *
+     * <p>Only extracts the first occurrence of {@code "type":"..."}.
+     */
+    private static String extractMessageType(String json) {
+        if (json == null) return "";
+        int idx = json.indexOf("\"type\":\"");
+        if (idx < 0) return "";
+        int start = idx + 8;
+        int end = json.indexOf('"', start);
+        return end > start ? json.substring(start, end) : "";
+    }
 
     /**
      * Builds a {@link JsonNode} JSON array from all retained run snapshots, flattened in

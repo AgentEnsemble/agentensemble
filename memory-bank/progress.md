@@ -1,5 +1,43 @@
 # Progress
 
+## What Works (as of 2026-04-10 -- Ensemble Control API Phases 3/4/5, GH #301/302/303)
+
+**Ensemble Control API Phase 3 -- Run Control:**
+- `Ensemble.switchToModel(ChatModel)` -- runtime LLM swap, thread-safe
+- `Ensemble.withAdditionalListener(EnsembleListener)` -- per-run copy with extra listener
+- `CancellationCheckListener` -- cooperative task-boundary cancellation
+- `RunManager.cancelRun(String)` -- CANCELLING / REJECTED / NOT_FOUND
+- `RunManager.switchModel(String, ChatModel)` -- APPLIED / REJECTED / NOT_RUNNING / NOT_FOUND
+- `RunManager.executeRun()` -- CancellationCheckListener installed per-run
+- `RunControlMessage` / `RunControlAckMessage` -- WS protocol records
+- `WebDashboard.handleRunControl()` -- dispatch to cancel and switch_model
+- REST: `POST /api/runs/{runId}/cancel`, `POST /api/runs/{runId}/model`
+
+**Ensemble Control API Phase 4 -- Event Subscription Filtering + SSE:**
+- `SubscriptionManager` -- per-session event-type and runId filtering
+- `ConnectionManager` -- subscription-aware broadcast, broadcast callbacks for SSE,
+  `extractMessageType()` helper, `hasPendingReview()`, `listPendingReviews()`,
+  `PendingReviewInfo` record, `setSubscriptionManager()` / `registerBroadcastCallback()`
+- `SseHandler` -- completed-run replay, live-streaming via broadcast callbacks,
+  event type filter, `from=N` reconnection
+- `SubscribeMessage` / `SubscribeAckMessage` -- WS protocol records
+- `WebDashboard.handleSubscribe()` -- subscription state management
+- REST: `GET /api/runs/{runId}/events` (Javalin 7 SSE endpoint)
+
+**Ensemble Control API Phase 5 -- REST Review + Inject + Tool Invoke:**
+- `WebReviewHandler` -- registers `PendingReviewInfo` metadata with every pending review
+- REST: `POST /api/reviews/{reviewId}` -- REST-based review decision submission
+- REST: `GET /api/reviews[?runId=X]` -- pending review discovery
+- REST: `POST /api/runs/{runId}/inject` -- runtime directive injection
+- REST: `POST /api/tools/{name}/invoke` -- direct tool execution from ToolCatalog
+
+**Tests:** 75+ new tests across 8 new test classes; all pass; JaCoCo LINE >= 0.90,
+BRANCH >= 0.75. SseHandler excluded from JaCoCo verification (complex async class).
+
+**Docs:** `docs/guides/ensemble-control-api.md` extended with Phase 3/4/5 sections.
+
+---
+
 ## What Works (as of 2026-04-10 -- Ensemble Control API Phase 2, GH #300)
 
 **Ensemble Control API Phase 2:**
