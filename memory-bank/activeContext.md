@@ -3,6 +3,44 @@
 
 ## Current Work
 
+**`agentensemble-executor` module** -- direct in-process invocation from external workflow engines.
+
+### What was implemented
+
+New standalone module `agentensemble-executor` (package `net.agentensemble.executor`) with no
+Temporal SDK dependency. Enables calling AgentEnsemble directly from any external workflow
+orchestrator (Temporal, AWS Step Functions, Kafka Streams, etc.) with task-level or
+ensemble-level granularity.
+
+**DTOs (request/result, Lombok @Value @Builder):**
+- `AgentSpec` -- agent role, goal, background, tool names, max iterations
+- `TaskRequest` -- description, expectedOutput, agent, context, inputs, modelName
+- `TaskResult` -- output, durationMs, toolCallCount, exitReason
+- `EnsembleRequest` -- list of TaskRequests (@Singular), workflow mode, inputs, modelName
+- `EnsembleResult` -- finalOutput, taskOutputs, totalDurationMs, totalToolCalls, exitReason
+- `HeartbeatDetail` -- serializable heartbeat payload (eventType, description, taskIndex, iteration)
+
+**Core executors:**
+- `TaskExecutor` -- executes a single TaskRequest in-process; heartbeat via `Consumer<Object>`
+- `EnsembleExecutor` -- executes a full EnsembleRequest in-process; same heartbeat API
+
+**Heartbeat integration:**
+- `HeartbeatEnsembleListener` -- EnsembleListener that forwards 6 event types to a Consumer
+
+**Configuration (worker-side, never serialized):**
+- `ModelProvider` / `ToolProvider` -- interfaces for model and tool resolution by name
+- `SimpleModelProvider` / `SimpleToolProvider` -- map-backed implementations with builders
+
+**Test doubles (in main jar, usable in users' test code):**
+- `FakeTaskExecutor` -- extends `TaskExecutor`; rule-based `whenDescriptionContains()`, `whenAgentRole()`, `alwaysReturns()` factories; no LLM, no network
+- `FakeEnsembleExecutor` -- same pattern, each task matched independently; last task output = `finalOutput()`
+
+**Tests:** 98 tests passing (66 core + 18 `FakeTaskExecutorTest` + 14 `FakeEnsembleExecutorTest`; 0.85 line / 0.70 branch coverage)
+**Documentation:** `docs/guides/executor-integration.md` (full Temporal integration + testing guide), `mkdocs.yml` nav
+**Example:** `ExecutorExample.java` + `runExecutor` Gradle task
+
+## Previous Context
+
 Branch `feat/299-ensemble-control-api-phase1` -- Issue #299.
 Ensemble Control API Phase 1: catalogs, RunManager, REST endpoints for external run submission.
 

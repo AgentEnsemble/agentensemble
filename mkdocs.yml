@@ -96,6 +96,7 @@ nav:
     - Logging: guides/logging.md
     - Template Variables: guides/template-variables.md
     - Framework Integration: guides/framework-integration.md
+    - External Workflow Integration: guides/executor-integration.md
     - Testing: guides/testing.md
     - Deterministic Orchestration: guides/deterministic-orchestration.md
     - Task Reflection: guides/task-reflection.md

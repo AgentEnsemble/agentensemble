@@ -2,6 +2,20 @@
 
 ## [Unreleased] -- 2026-04-09
 ### Added
+- **`agentensemble-executor` module**: Orchestrator-agnostic direct in-process invocation
+  - `TaskExecutor` -- single-task execution with `Consumer<Object>` heartbeat callback
+  - `EnsembleExecutor` -- full-ensemble execution with the same heartbeat API
+  - `HeartbeatEnsembleListener` -- bridges `EnsembleListener` events to the heartbeat consumer
+  - `HeartbeatDetail` -- serializable heartbeat payload (Jackson-compatible, Temporal-ready)
+  - `AgentSpec`, `TaskRequest`, `TaskResult`, `EnsembleRequest`, `EnsembleResult` -- DTOs
+  - `ModelProvider` / `ToolProvider` interfaces + `Simple*` map-backed implementations
+  - `FakeTaskExecutor` -- test double extending `TaskExecutor`; rule-based responses, no LLM
+  - `FakeEnsembleExecutor` -- test double extending `EnsembleExecutor`; same API
+  - No Temporal SDK dependency -- `Consumer<Object>` heartbeat works with any orchestrator
+  - 98 unit + integration tests (66 core + 18 `FakeTaskExecutorTest` + 14 `FakeEnsembleExecutorTest`)
+  - Guide: `docs/guides/executor-integration.md` (full Temporal integration + testing patterns)
+  - Example: `ExecutorExample.java`; added to BOM, `settings.gradle.kts`, `agentensemble-examples`
+
 - **Ensemble Control API Phase 1 (#299)**: HTTP-based run management for external systems
   - `ToolCatalog` -- name-keyed `AgentTool` registry (allowlist for API requests)
   - `ModelCatalog` -- alias-keyed `ChatModel` registry with streaming support and provider detection

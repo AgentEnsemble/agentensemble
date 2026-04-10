@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":agentensemble-core"))
+    implementation(project(":agentensemble-executor"))
     implementation(project(":agentensemble-memory"))
     implementation(project(":agentensemble-review"))
 
@@ -69,6 +70,7 @@ application {
 //   ./gradlew :agentensemble-examples:runCodingAgent --args="/path/to/project"
 //   ./gradlew :agentensemble-examples:runIsolatedCoding --args="/path/to/git/repo"
 //   ./gradlew :agentensemble-examples:runMcpCoding --args="/path/to/git/project"
+//   ./gradlew :agentensemble-examples:runExecutor --args="quantum computing"
 
 mapOf(
     "runResearchWriter"  to "net.agentensemble.examples.ResearchWriterExample",
@@ -97,6 +99,7 @@ mapOf(
     "runCodingAgent" to "net.agentensemble.examples.CodingAgentExample",
     "runIsolatedCoding" to "net.agentensemble.examples.IsolatedCodingExample",
     "runMcpCoding" to "net.agentensemble.examples.McpCodingExample",
+    "runExecutor" to "net.agentensemble.examples.ExecutorExample",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"
