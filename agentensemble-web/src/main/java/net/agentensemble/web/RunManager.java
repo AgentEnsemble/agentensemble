@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -101,6 +102,8 @@ public final class RunManager {
             RunOptions options,
             String originSessionId,
             Consumer<RunResultMessage> onComplete) {
+
+        Objects.requireNonNull(template, "template must not be null");
 
         String runId = generateRunId();
 
@@ -303,13 +306,17 @@ public final class RunManager {
         }
     }
 
-    private void evictCompletedRunsIfNeeded() {
+    private synchronized void evictCompletedRunsIfNeeded() {
+        // Synchronized to prevent concurrent completions from computing stale snapshots
+        // and collectively evicting more runs than intended.
+        // Secondary sort by runId provides a deterministic tie-breaker when timestamps match.
         List<RunState> terminal = runs.values().stream()
                 .filter(s -> {
                     Status st = s.getStatus();
                     return st == Status.COMPLETED || st == Status.FAILED || st == Status.CANCELLED;
                 })
-                .sorted(Comparator.comparing(RunState::getCompletedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(RunState::getCompletedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(RunState::getRunId))
                 .toList();
 
         int excess = terminal.size() - maxRetainedRuns;

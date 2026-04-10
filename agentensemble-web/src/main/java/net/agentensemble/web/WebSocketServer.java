@@ -82,7 +82,11 @@ class WebSocketServer {
     /** RunManager for tracking and executing API-submitted runs. */
     private volatile RunManager runManager;
 
-    /** Parser for converting API request bodies into run configurations. */
+    /**
+     * Parser configuration retained for Phase 2+ use; request parsing is currently
+     * performed inline in the route handlers.
+     */
+    @SuppressWarnings("unused")
     private volatile RunRequestParser runRequestParser;
 
     /** Tool registry for the capabilities endpoint. Null when not configured. */
@@ -343,17 +347,8 @@ class WebSocketServer {
 
             // POST /api/runs -- submit a Level 1 run (template + variable inputs)
             config.routes.post("/api/runs", ctx -> {
+                // RunManager is always created by WebDashboard; use it directly.
                 RunManager rm = runManager;
-                if (rm == null) {
-                    ctx.status(503);
-                    ctx.json(
-                            Map.of(
-                                    "error",
-                                    "NOT_CONFIGURED",
-                                    "message",
-                                    "Ensemble Control API not configured. Set toolCatalog/modelCatalog on WebDashboard.builder()."));
-                    return;
-                }
 
                 java.util.function.Supplier<net.agentensemble.Ensemble> supplier = ensembleSupplier;
                 net.agentensemble.Ensemble template = supplier != null ? supplier.get() : null;

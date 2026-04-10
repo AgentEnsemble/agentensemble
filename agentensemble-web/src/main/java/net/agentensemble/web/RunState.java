@@ -185,10 +185,12 @@ public final class RunState {
     }
 
     /**
-     * Returns a snapshot list of task outputs accumulated so far, in execution order.
+     * Returns an immutable snapshot of task outputs accumulated so far, in execution order.
+     *
+     * <p>Returns a copy so callers can iterate safely without holding the list's intrinsic lock.
      */
     public List<TaskOutputSnapshot> getTaskOutputs() {
-        return Collections.unmodifiableList(taskOutputs);
+        return List.copyOf(taskOutputs);
     }
 
     /**

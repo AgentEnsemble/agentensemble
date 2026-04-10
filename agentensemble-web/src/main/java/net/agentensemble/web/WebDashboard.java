@@ -190,7 +190,8 @@ public final class WebDashboard implements EnsembleDashboard {
 
     /**
      * Manages async run lifecycle: concurrency limiting, state tracking, eviction.
-     * Null when the Control API is not configured (no toolCatalog or modelCatalog set).
+     * Always created (never null); the Control API endpoints use it regardless of whether
+     * optional catalogs (toolCatalog/modelCatalog) are configured.
      */
     private final RunManager runManager;
 

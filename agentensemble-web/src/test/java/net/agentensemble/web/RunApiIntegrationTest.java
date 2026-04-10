@@ -201,7 +201,6 @@ class RunApiIntegrationTest {
 
     @Test
     void getRuns_afterSubmission_returnsRun() throws Exception {
-        CountDownLatch doneLatch = new CountDownLatch(1);
         when(mockEnsemble.run(any(Map.class), any())).thenReturn(mockOutput);
 
         post("/api/runs", "{}");
