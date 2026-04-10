@@ -3,6 +3,55 @@
 
 ## Current Work
 
+**Ensemble Control API Phase 2 (GH #300)** -- Level 2/3 parameterization and WebSocket run submission.
+
+### What was implemented
+
+Four areas of new functionality across `agentensemble-core` and `agentensemble-web`:
+
+**Task naming (`agentensemble-core`):**
+- Added optional `String name` field to `Task` (first field in declaration, before `description`).
+- Non-blank validation when set; null default preserves all existing code paths.
+- `toBuilder()` correctly carries `name` through.
+
+**Level 2: Per-task overrides (`agentensemble-web`):**
+- `RunRequestParser.buildFromTemplateWithOverrides()` applies runtime overrides to the template
+  ensemble's task list using `Task.toBuilder()`. Original tasks are never mutated.
+- Override key matching: exact `Task.name` first (case-insensitive), then description prefix
+  (first 50 chars, case-insensitive).
+- Override fields: `description`, `expectedOutput`, `model` (ModelCatalog), `maxIterations`,
+  `additionalContext` (appended to description), `tools.add`/`tools.remove` (ToolCatalog).
+- `RunConfiguration` record gained `List<Task> overrideTasks` (null for Level 1).
+
+**Level 3: Dynamic task creation (`agentensemble-web`):**
+- `RunRequestParser.buildFromDynamicTasks()` builds a full task list from JSON definitions.
+- Context DAG resolution: `$name` and `$N` (0-based index) references.
+- Circular dependency detection using Kahn's topological sort algorithm.
+- `outputSchema` (JSON Schema) injected as structured output instructions into `expectedOutput`.
+
+**WebSocket run submission (`agentensemble-web`):**
+- New `RunRequestMessage` protocol record (Level 1/2/3 in one message).
+- `ClientMessage` sealed interface updated (added `RunRequestMessage`).
+- `WebDashboard.handleRunRequest()` dispatches to Level 1/2/3 parser, calls
+  `RunManager.submitRun()`, sends `run_ack` immediately, sends `run_result` on completion
+  targeted to originating session only.
+- `Ensemble.withTasks(List<Task>)` -- new method that copies the template ensemble's key execution
+  settings but replaces the task list. Used by `handleRunRequest` for Level 2/3 runs.
+- `WebDashboard.parseRunOptions()` -- converts raw options map to `RunOptions`.
+
+**Tests added:**
+- `TaskTest` -- 8 new tests for `Task.name` field
+- `RunRequestParserTest` -- 58 tests total (Level 1/2/3, all override fields, DAG, error cases)
+- `RunRequestMessageTest` -- 10 serialization/deserialization tests
+- `WebDashboardRunRequestTest` -- 4 WS integration tests (no-ensemble REJECTED, Level 1 ACCEPTED,
+  Level 3 dispatch, server stability)
+
+**Build:** All tests pass. Coverage meets thresholds. Spotless formatting clean.
+
+---
+
+## Previous Work
+
 **`agentensemble-executor` module** -- direct in-process invocation from external workflow engines.
 
 ### What was implemented

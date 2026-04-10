@@ -83,10 +83,9 @@ class WebSocketServer {
     private volatile RunManager runManager;
 
     /**
-     * Parser configuration retained for Phase 2+ use; request parsing is currently
-     * performed inline in the route handlers.
+     * Parser for Level 2/3 run request bodies. Used by {@code POST /api/runs} to
+     * resolve execution ensembles with task overrides or dynamic task definitions.
      */
-    @SuppressWarnings("unused")
     private volatile RunRequestParser runRequestParser;
 
     /** Tool registry for the capabilities endpoint. Null when not configured. */
@@ -345,7 +344,7 @@ class WebSocketServer {
             // Ensemble Control API endpoints (Phase 1)
             // ========================
 
-            // POST /api/runs -- submit a Level 1 run (template + variable inputs)
+            // POST /api/runs -- submit a run (Level 1/2/3 parameterization)
             config.routes.post("/api/runs", ctx -> {
                 // RunManager is always created by WebDashboard; use it directly.
                 RunManager rm = runManager;
@@ -401,7 +400,21 @@ class WebSocketServer {
                                     tags.put(entry.getKey(), entry.getValue().asText()));
                 }
 
-                RunState state = rm.submitRun(template, inputs, tags, null, null, null);
+                // Determine execution ensemble (Level 1/2/3)
+                net.agentensemble.Ensemble executionEnsemble;
+                try {
+                    executionEnsemble = resolveExecutionEnsemble(template, body, runRequestParser);
+                } catch (IllegalArgumentException e) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", e.getMessage()));
+                    return;
+                } catch (IllegalStateException e) {
+                    ctx.status(503);
+                    ctx.json(Map.of("error", "NOT_CONFIGURED", "message", e.getMessage()));
+                    return;
+                }
+
+                RunState state = rm.submitRun(executionEnsemble, inputs, tags, null, null, null);
 
                 if (state.getStatus() == RunState.Status.REJECTED) {
                     ctx.status(429);
@@ -585,6 +598,9 @@ class WebSocketServer {
                     java.util.List<Map<String, Object>> tasksList = new java.util.ArrayList<>();
                     for (net.agentensemble.Task t : template.getTasks()) {
                         Map<String, Object> taskInfo = new java.util.LinkedHashMap<>();
+                        if (t.getName() != null) {
+                            taskInfo.put("name", t.getName());
+                        }
                         taskInfo.put("description", t.getDescription());
                         tasksList.add(taskInfo);
                     }
@@ -853,6 +869,54 @@ class WebSocketServer {
             log.warn("Received review_decision but no client message handler is registered. "
                     + "Register WebDashboard via Ensemble.builder().webDashboard(dashboard).");
         }
+    }
+
+    /**
+     * Resolves the execution ensemble from the request body, applying Level 1/2/3 parsing.
+     *
+     * <p>Level detection (first match wins):
+     * <ol>
+     *   <li>If {@code tasks} array is present and non-empty: Level 3 (dynamic tasks).</li>
+     *   <li>If {@code taskOverrides} object is present and non-empty: Level 2 (per-task overrides).</li>
+     *   <li>Otherwise: Level 1 (template as-is).</li>
+     * </ol>
+     *
+     * @throws IllegalArgumentException if task/tool/model references are invalid
+     * @throws IllegalStateException    if a catalog is required but not configured
+     */
+    @SuppressWarnings("unchecked")
+    private static net.agentensemble.Ensemble resolveExecutionEnsemble(
+            net.agentensemble.Ensemble template,
+            com.fasterxml.jackson.databind.JsonNode body,
+            RunRequestParser parser) {
+        // Shared ObjectMapper for converting JsonNode to typed collections
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        com.fasterxml.jackson.databind.JsonNode tasksNode = body.get("tasks");
+        com.fasterxml.jackson.databind.JsonNode overridesNode = body.get("taskOverrides");
+
+        RunRequestParser.RunConfiguration config;
+
+        if (tasksNode != null && tasksNode.isArray() && !tasksNode.isEmpty()) {
+            // Level 3: dynamic task list
+            java.util.List<java.util.Map<String, Object>> taskDefs = mapper.convertValue(
+                    tasksNode,
+                    new com.fasterxml.jackson.core.type.TypeReference<
+                            java.util.List<java.util.Map<String, Object>>>() {});
+            config = parser.buildFromDynamicTasks(template, taskDefs, null, null);
+        } else if (overridesNode != null && overridesNode.isObject() && !overridesNode.isEmpty()) {
+            // Level 2: per-task overrides
+            java.util.Map<String, java.util.Map<String, Object>> taskOverrides = mapper.convertValue(
+                    overridesNode,
+                    new com.fasterxml.jackson.core.type.TypeReference<
+                            java.util.Map<String, java.util.Map<String, Object>>>() {});
+            config = parser.buildFromTemplateWithOverrides(template, null, null, taskOverrides);
+        } else {
+            // Level 1: template as-is
+            config = parser.buildFromTemplate(template, null, null);
+        }
+
+        return config.overrideTasks() != null ? template.withTasks(config.overrideTasks()) : config.template();
     }
 
     // ========================

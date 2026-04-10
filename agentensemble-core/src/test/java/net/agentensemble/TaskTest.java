@@ -1,6 +1,7 @@
 package net.agentensemble;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.model.chat.ChatModel;
@@ -816,5 +817,93 @@ class TaskTest {
         assertThat(task.getHandler()).isNotNull();
         assertThat(task.getInputGuardrails()).hasSize(1);
         assertThat(task.getOutputGuardrails()).hasSize(1);
+    }
+
+    // ========================
+    // Task.name field (Phase 2 -- Ensemble Control API)
+    // ========================
+
+    @Test
+    void name_isNullByDefault() {
+        var task = Task.builder()
+                .description("Research AI trends")
+                .expectedOutput("A detailed report")
+                .build();
+
+        assertThat(task.getName()).isNull();
+    }
+
+    @Test
+    void name_whenSetViaBuilder_isReturned() {
+        var task = Task.builder()
+                .name("researcher")
+                .description("Research AI trends")
+                .expectedOutput("A detailed report")
+                .build();
+
+        assertThat(task.getName()).isEqualTo("researcher");
+    }
+
+    @Test
+    void name_blank_throwsValidationException() {
+        assertThatThrownBy(() -> Task.builder()
+                        .name("  ")
+                        .description("Research AI trends")
+                        .expectedOutput("A detailed report")
+                        .build())
+                .isInstanceOf(net.agentensemble.exception.ValidationException.class)
+                .hasMessageContaining("name");
+    }
+
+    @Test
+    void name_empty_throwsValidationException() {
+        assertThatThrownBy(() -> Task.builder()
+                        .name("")
+                        .description("Research AI trends")
+                        .expectedOutput("A detailed report")
+                        .build())
+                .isInstanceOf(net.agentensemble.exception.ValidationException.class)
+                .hasMessageContaining("name");
+    }
+
+    @Test
+    void toBuilder_preservesName() {
+        var original = Task.builder()
+                .name("researcher")
+                .description("Research AI trends")
+                .expectedOutput("A detailed report")
+                .build();
+
+        var copy = original.toBuilder().build();
+
+        assertThat(copy.getName()).isEqualTo("researcher");
+    }
+
+    @Test
+    void toBuilder_allowsNameChange() {
+        var original = Task.builder()
+                .name("researcher")
+                .description("Research AI trends")
+                .expectedOutput("A detailed report")
+                .build();
+
+        var copy = original.toBuilder().name("senior-researcher").build();
+
+        assertThat(copy.getName()).isEqualTo("senior-researcher");
+        assertThat(original.getName()).isEqualTo("researcher");
+    }
+
+    @Test
+    void taskOf_descriptionOnly_hasNullName() {
+        var task = Task.of("Research AI trends");
+
+        assertThat(task.getName()).isNull();
+    }
+
+    @Test
+    void taskOf_descriptionAndExpectedOutput_hasNullName() {
+        var task = Task.of("Research AI trends", "A detailed report");
+
+        assertThat(task.getName()).isNull();
     }
 }

@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] -- 2026-04-10
+### Added
+- **Ensemble Control API Phase 2 (GH #300)**
+  - `Task.name` -- optional logical name field on `Task` for API task matching and context references
+  - `RunRequestParser.buildFromTemplateWithOverrides()` -- Level 2 per-task overrides at runtime
+    (description, expectedOutput, model, maxIterations, additionalContext, tools add/remove)
+  - `RunRequestParser.buildFromDynamicTasks()` -- Level 3 fully dynamic task list from JSON;
+    context DAG via `$name`/`$N` references; circular dependency detection (Kahn's algorithm)
+  - `RunRequestMessage` -- new `ClientMessage` for WebSocket run submission (Level 1/2/3)
+  - `WebDashboard.handleRunRequest()` -- WS handler dispatches Level 1/2/3; sends `run_ack`
+    immediately and `run_result` on completion to originating session only
+  - `Ensemble.withTasks(List<Task>)` -- copies template ensemble settings with a new task list
+  - `RunConfiguration.overrideTasks` -- new field (null for Level 1, non-null for Level 2/3)
+  - Tests: `TaskTest` (8 name field tests), `RunRequestParserTest` (58 tests covering all
+    override fields, DAG resolution, error cases), `RunRequestMessageTest` (10 serde tests),
+    `WebDashboardRunRequestTest` (4 WS integration tests)
+  - Docs: updated `docs/design/28-ensemble-control-api.md` (Phase 2 Implemented status),
+    `docs/guides/ensemble-control-api.md` (Phase 2 sections), `docs/reference/task-configuration.md`
+    (`name` field entry)
+
 ## [Unreleased] -- 2026-04-09
 ### Added
 - **`agentensemble-executor` module**: Orchestrator-agnostic direct in-process invocation
