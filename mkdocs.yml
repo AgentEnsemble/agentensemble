@@ -101,6 +101,7 @@ nav:
     - Task Reflection: guides/task-reflection.md
     - TOON Context Format: guides/toon-format.md
     - Long-Running Ensembles: guides/long-running-ensembles.md
+    - Ensemble Control API: guides/ensemble-control-api.md
     - Cross-Ensemble Delegation: guides/cross-ensemble-delegation.md
     - Network Testing: guides/network-testing.md
   - Reference:

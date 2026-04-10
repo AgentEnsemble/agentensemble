@@ -3,6 +3,28 @@
 
 ## Current Work
 
+Branch `feat/299-ensemble-control-api-phase1` -- Issue #299.
+Ensemble Control API Phase 1: catalogs, RunManager, REST endpoints for external run submission.
+
+### What was implemented
+
+**#299 -- Ensemble Control API Phase 1:**
+- `ToolCatalog` -- name-keyed `AgentTool` registry with builder and resolve/find/list/contains
+- `ModelCatalog` -- alias-keyed `ChatModel` registry with streaming support and provider detection
+- `RunState` -- mutable per-run lifecycle tracker with `Status` enum (ACCEPTED/RUNNING/COMPLETED/FAILED/CANCELLED/REJECTED)
+- `RunManager` -- concurrency-limited async run executor using `Semaphore` + virtual threads + eviction
+- `RunRequestParser` -- Level 1 template+inputs configuration builder
+- `RunAckMessage` / `RunResultMessage` -- new `ServerMessage` sealed interface permits (run_ack, run_result)
+- `WebDashboard.Builder` extended with `toolCatalog()`, `modelCatalog()`, `maxConcurrentRuns()`, `maxRetainedCompletedRuns()`
+- REST endpoints added to `WebSocketServer`: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{runId}`, `GET /api/capabilities`
+- `WebDashboard.stop()` shuts down `RunManager` executor
+- `ensembleSupplier` pattern provides the template ensemble to route handlers
+- Guide: `docs/guides/ensemble-control-api.md`
+- Reference updated: `docs/reference/ensemble-configuration.md`
+- Navigation updated: `mkdocs.yml`
+
+## Previous Context (IO-003)
+
 Branch `feat/io-003-iteration-snapshots` -- Issue #287 (IO-003).
 Persist LLM iteration data in late-join snapshots for conversation replay.
 
