@@ -31,7 +31,11 @@ import net.agentensemble.web.protocol.EnsembleStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ReviewDecisionMessage;
 import net.agentensemble.web.protocol.RunAckMessage;
+import net.agentensemble.web.protocol.RunControlAckMessage;
+import net.agentensemble.web.protocol.RunControlMessage;
 import net.agentensemble.web.protocol.RunRequestMessage;
+import net.agentensemble.web.protocol.SubscribeAckMessage;
+import net.agentensemble.web.protocol.SubscribeMessage;
 import net.agentensemble.web.protocol.TaskAcceptedMessage;
 import net.agentensemble.web.protocol.TaskRequestMessage;
 import net.agentensemble.web.protocol.TaskResponseMessage;
@@ -198,6 +202,17 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     private final RunManager runManager;
 
+    /**
+     * Per-session WebSocket event subscription manager (Phase 4).
+     * Allows clients to subscribe to a filtered subset of event types.
+     */
+    private final SubscriptionManager subscriptionManager;
+
+    /**
+     * Handles GET /api/runs/{runId}/events SSE streams (Phase 4).
+     */
+    private final SseHandler sseHandler;
+
     private WebDashboard(Builder builder) {
         this.port = builder.port;
         this.host = builder.host;
@@ -216,11 +231,17 @@ public final class WebDashboard implements EnsembleDashboard {
 
         this.serializer = new MessageSerializer();
         this.connectionManager = new ConnectionManager(serializer, maxRetainedRuns, maxSnapshotIterations);
+
+        // Wire subscription manager so broadcast() applies per-session event filters
+        this.subscriptionManager = new SubscriptionManager();
+        this.connectionManager.setSubscriptionManager(subscriptionManager);
+
         this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "agentensemble-web-heartbeat");
             t.setDaemon(true);
             return t;
         });
+        this.sseHandler = new SseHandler(runManager, connectionManager);
         this.server = new WebSocketServer(connectionManager, serializer, heartbeatScheduler);
         if (workspacePath != null) {
             this.server.setWorkspacePath(workspacePath);
@@ -229,6 +250,7 @@ public final class WebDashboard implements EnsembleDashboard {
         this.server.setRunRequestParser(runRequestParser);
         this.server.setToolCatalog(toolCatalog);
         this.server.setModelCatalog(modelCatalog);
+        this.server.setSseHandler(sseHandler);
         // Provide a supplier so routes can access the template ensemble set via setEnsemble()
         this.server.setEnsembleSupplier(() -> this.ensemble);
         this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
@@ -294,6 +316,10 @@ public final class WebDashboard implements EnsembleDashboard {
                 handleDirective(sessionId, dm);
             } else if (msg instanceof RunRequestMessage rrm) {
                 handleRunRequest(sessionId, rrm);
+            } else if (msg instanceof RunControlMessage rcm) {
+                handleRunControl(sessionId, rcm);
+            } else if (msg instanceof SubscribeMessage sm) {
+                handleSubscribe(sessionId, sm);
             }
         });
 
@@ -806,6 +832,89 @@ public final class WebDashboard implements EnsembleDashboard {
                 sendRejectedAck(sessionId, msg.requestId());
             }
         });
+    }
+
+    // ========================
+    // Run control handling (Phase 3: Cancel + Model Switching)
+    // ========================
+
+    /**
+     * Handles an incoming {@link RunControlMessage} from a WebSocket client.
+     *
+     * <p>Dispatches based on {@code action}:
+     * <ul>
+     *   <li>{@code "cancel"} -- cooperatively cancels the run at the next task boundary</li>
+     *   <li>{@code "switch_model"} -- switches the active LLM to the requested catalog alias</li>
+     * </ul>
+     * Sends a {@link RunControlAckMessage} back to the originating session.
+     */
+    private void handleRunControl(String sessionId, RunControlMessage msg) {
+        String runId = msg.runId();
+        String action = msg.action();
+        if (runId == null || action == null) {
+            log.warn("Received run_control from session {} with missing runId or action", sessionId);
+            return;
+        }
+        try {
+            RunControlAckMessage ack;
+            if ("cancel".equalsIgnoreCase(action)) {
+                String status = runManager.cancelRun(runId);
+                ack = new RunControlAckMessage(runId, "cancel", status, null, null);
+            } else if ("switch_model".equalsIgnoreCase(action)) {
+                String modelAlias = msg.model();
+                if (modelAlias == null || modelAlias.isBlank()) {
+                    ack = new RunControlAckMessage(runId, "switch_model", "INVALID_MODEL", null, null);
+                } else {
+                    ModelCatalog mc = modelCatalog;
+                    if (mc == null) {
+                        ack = new RunControlAckMessage(runId, "switch_model", "NOT_CONFIGURED", null, null);
+                    } else {
+                        java.util.Optional<dev.langchain4j.model.chat.ChatModel> modelOpt = mc.find(modelAlias);
+                        if (modelOpt.isEmpty()) {
+                            ack = new RunControlAckMessage(runId, "switch_model", "INVALID_MODEL", modelAlias, null);
+                        } else {
+                            String status = runManager.switchModel(runId, modelOpt.get());
+                            ack = new RunControlAckMessage(
+                                    runId, "switch_model", status, "APPLIED".equals(status) ? modelAlias : null, null);
+                        }
+                    } // closes mc != null else
+                } // closes modelAlias != null else
+            } else {
+                ack = new RunControlAckMessage(runId, action, "INVALID_ACTION", null, null);
+            }
+            connectionManager.send(sessionId, serializer.toJson(ack));
+        } catch (Exception e) {
+            log.warn("Failed to handle run_control for runId={}: {}", runId, e.getMessage(), e);
+        }
+    }
+
+    // ========================
+    // Subscription handling (Phase 4: Event filtering)
+    // ========================
+
+    /**
+     * Handles an incoming {@link SubscribeMessage} from a WebSocket client.
+     *
+     * <p>Updates the per-session subscription state and sends a
+     * {@link SubscribeAckMessage} confirming the effective subscription.
+     */
+    private void handleSubscribe(String sessionId, SubscribeMessage msg) {
+        try {
+            java.util.List<String> events = msg.events();
+            String runId = msg.runId();
+            subscriptionManager.subscribe(sessionId, events, runId);
+
+            // Determine effective events for the ack
+            java.util.List<String> effectiveEvents =
+                    (events == null || events.isEmpty() || events.contains(SubscriptionManager.WILDCARD))
+                            ? java.util.List.of(SubscriptionManager.WILDCARD)
+                            : java.util.List.copyOf(events);
+
+            SubscribeAckMessage ack = new SubscribeAckMessage(effectiveEvents, runId);
+            connectionManager.send(sessionId, serializer.toJson(ack));
+        } catch (Exception e) {
+            log.warn("Failed to handle subscribe from session {}: {}", sessionId, e.getMessage(), e);
+        }
     }
 
     /**

@@ -880,6 +880,26 @@ public class Ensemble {
     }
 
     /**
+     * Switch the active chat model to an arbitrary model provided at runtime.
+     *
+     * <p>Unlike {@link #switchToFallbackModel()} (which requires the fallback to be
+     * pre-configured at build time), this method accepts any {@link ChatModel} instance
+     * and takes effect immediately on the next LLM call. In-flight tasks continue with
+     * their current model.
+     *
+     * <p>Used by the Ensemble Control API Phase 3 ({@code switch_model} action) to apply
+     * a catalog-resolved model to a running ensemble without restarting it.
+     *
+     * @param model the model to switch to; must not be null
+     * @throws NullPointerException if {@code model} is null
+     */
+    public void switchToModel(ChatModel model) {
+        Objects.requireNonNull(model, "model must not be null");
+        activeModel.set(model);
+        log.info("Switched to custom model");
+    }
+
+    /**
      * Returns the currently active chat model, respecting any runtime model switches.
      *
      * @return the active chat model (primary or fallback)
@@ -1209,6 +1229,60 @@ public class Ensemble {
                 .toolLogTruncateLength(toolLogTruncateLength)
                 .drainTimeout(drainTimeout)
                 // Default inputs from the template (merged with API inputs at run time)
+                .inputs(inputs)
+                .build();
+    }
+
+    /**
+     * Returns a copy of this ensemble with an additional listener appended to the existing
+     * listener list.
+     *
+     * <p>All other settings (tasks, model, workflow, review handler, etc.) are preserved
+     * unchanged. The dashboard lifecycle is not inherited: {@code ownsDashboardLifecycle}
+     * is set to {@code false} on the returned ensemble.
+     *
+     * <p>Used by the Ensemble Control API (Phase 3) to attach a per-run
+     * cancellation-check listener without mutating the template ensemble.
+     *
+     * @param additional the listener to append; must not be null
+     * @return a new Ensemble with the combined listener list and all other settings from this instance
+     * @throws NullPointerException if {@code additional} is null
+     */
+    public Ensemble withAdditionalListener(EnsembleListener additional) {
+        Objects.requireNonNull(additional, "additional listener must not be null");
+        List<EnsembleListener> combined = new ArrayList<>(listeners != null ? listeners : List.of());
+        combined.add(additional);
+        return Ensemble.builder()
+                .tasks(tasks)
+                .chatLanguageModel(chatLanguageModel)
+                .streamingChatLanguageModel(streamingChatLanguageModel)
+                .agentSynthesizer(agentSynthesizer)
+                .workflow(workflow)
+                .managerLlm(managerLlm)
+                .managerMaxIterations(managerMaxIterations)
+                .managerPromptStrategy(managerPromptStrategy)
+                .verbose(verbose)
+                .toolExecutor(toolExecutor)
+                .toolMetrics(toolMetrics)
+                .maxDelegationDepth(maxDelegationDepth)
+                .parallelErrorStrategy(parallelErrorStrategy)
+                .hierarchicalConstraints(hierarchicalConstraints)
+                .delegationPolicies(delegationPolicies)
+                .memoryStore(memoryStore)
+                .contextFormat(contextFormat)
+                .reflectionStore(reflectionStore)
+                .reviewHandler(reviewHandler)
+                .reviewPolicy(reviewPolicy)
+                .listeners(List.copyOf(combined))
+                .captureMode(captureMode)
+                .traceExporter(traceExporter)
+                .costConfiguration(costConfiguration)
+                .dashboard(dashboard)
+                .ownsDashboardLifecycle(false)
+                .rateLimit(rateLimit)
+                .maxToolOutputLength(maxToolOutputLength)
+                .toolLogTruncateLength(toolLogTruncateLength)
+                .drainTimeout(drainTimeout)
                 .inputs(inputs)
                 .build();
     }

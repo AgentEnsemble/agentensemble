@@ -39,6 +39,9 @@ class RunManagerTest {
         when(mockEnsemble.getTasks()).thenReturn(List.of());
         when(mockOutput.getTaskOutputs()).thenReturn(List.of());
         when(mockOutput.getMetrics()).thenReturn(null);
+        // RunManager.executeRun() calls withAdditionalListener to add the CancellationCheckListener.
+        // Without this stub, Mockito returns null which causes a NullPointerException when run() is called.
+        when(mockEnsemble.withAdditionalListener(any())).thenReturn(mockEnsemble);
     }
 
     @AfterEach

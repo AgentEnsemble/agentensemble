@@ -100,6 +100,11 @@ class WebSocketServer {
      */
     private volatile java.util.function.Supplier<net.agentensemble.Ensemble> ensembleSupplier;
 
+    /**
+     * SSE handler for GET /api/runs/{runId}/events (Phase 4).
+     */
+    private volatile SseHandler sseHandler;
+
     WebSocketServer(
             ConnectionManager connectionManager,
             MessageSerializer serializer,
@@ -611,6 +616,273 @@ class WebSocketServer {
 
                 ctx.json(capabilities);
             });
+
+            // ========================
+            // Ensemble Control API endpoints (Phase 3: Run Control)
+            // ========================
+
+            // POST /api/runs/{runId}/cancel -- cooperatively cancel a run
+            config.routes.post("/api/runs/{runId}/cancel", ctx -> {
+                RunManager rm = runManager;
+                String runId = ctx.pathParam("runId");
+                String status = rm.cancelRun(runId);
+                if ("NOT_FOUND".equals(status)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "RUN_NOT_FOUND", "message", "No run with ID " + runId));
+                } else if ("REJECTED".equals(status)) {
+                    ctx.status(409);
+                    ctx.json(Map.of(
+                            "error", "RUN_COMPLETED", "message", "Run " + runId + " is already in a terminal state"));
+                } else {
+                    ctx.status(200);
+                    ctx.json(Map.of("runId", runId, "status", status));
+                }
+            });
+
+            // POST /api/runs/{runId}/model -- switch active model for a running ensemble
+            config.routes.post("/api/runs/{runId}/model", ctx -> {
+                ModelCatalog mc = modelCatalog;
+                if (mc == null) {
+                    ctx.status(503);
+                    ctx.json(Map.of(
+                            "error",
+                            "NOT_CONFIGURED",
+                            "message",
+                            "Model catalog not configured. Add modelCatalog() to WebDashboard.builder()."));
+                    return;
+                }
+                String runId = ctx.pathParam("runId");
+                com.fasterxml.jackson.databind.JsonNode body;
+                try {
+                    body = serializer.toJsonNode(ctx.body());
+                } catch (Exception e) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (body == null || !body.has("model")) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'model' field"));
+                    return;
+                }
+                String modelAlias = body.get("model").asText();
+                java.util.Optional<dev.langchain4j.model.chat.ChatModel> modelOpt = mc.find(modelAlias);
+                if (modelOpt.isEmpty()) {
+                    ctx.status(400);
+                    ctx.json(Map.of(
+                            "error",
+                            "INVALID_MODEL",
+                            "message",
+                            "Unknown model '" + modelAlias + "'. Available: "
+                                    + mc.list().stream()
+                                            .map(info -> info.alias())
+                                            .collect(java.util.stream.Collectors.toList())));
+                    return;
+                }
+                String status = runManager.switchModel(runId, modelOpt.get());
+                if ("NOT_FOUND".equals(status)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "RUN_NOT_FOUND", "message", "No run with ID " + runId));
+                } else if ("REJECTED".equals(status)) {
+                    ctx.status(409);
+                    ctx.json(Map.of(
+                            "error", "RUN_COMPLETED", "message", "Run " + runId + " is already in a terminal state"));
+                } else {
+                    ctx.status(200);
+                    ctx.json(Map.of("runId", runId, "model", modelAlias, "status", status));
+                }
+            });
+
+            // ========================
+            // Ensemble Control API endpoints (Phase 4: SSE Event Stream)
+            // ========================
+
+            // GET /api/runs/{runId}/events -- SSE event stream for a specific run
+            config.routes.sse("/api/runs/{runId}/events", client -> {
+                SseHandler sse = sseHandler;
+                if (sse == null) {
+                    client.sendEvent("error", "{\"error\":\"NOT_CONFIGURED\"}");
+                    client.close();
+                    return;
+                }
+                sse.handle(client, client.ctx().pathParam("runId"));
+            });
+
+            // ========================
+            // Ensemble Control API endpoints (Phase 5: REST Review + Inject + Tool Invoke)
+            // ========================
+
+            // POST /api/reviews/{reviewId} -- submit a review decision via REST
+            config.routes.post("/api/reviews/{reviewId}", ctx -> {
+                String reviewId = ctx.pathParam("reviewId");
+                if (!connectionManager.hasPendingReview(reviewId)) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "REVIEW_NOT_FOUND", "message", "No pending review with ID " + reviewId));
+                    return;
+                }
+                com.fasterxml.jackson.databind.JsonNode body;
+                try {
+                    body = serializer.toJsonNode(ctx.body());
+                } catch (Exception e) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (body == null || !body.has("decision")) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'decision' field"));
+                    return;
+                }
+                // Build a ReviewDecisionMessage JSON and resolve via existing path
+                String decision = body.get("decision").asText();
+                String revisedOutput =
+                        body.has("revisedOutput") ? body.get("revisedOutput").asText() : null;
+                // Construct a ReviewDecisionMessage JSON to reuse the existing resolution path
+                net.agentensemble.web.protocol.ReviewDecisionMessage rdm =
+                        new net.agentensemble.web.protocol.ReviewDecisionMessage(reviewId, decision, revisedOutput);
+                // Check if still pending (avoid race with timeout)
+                if (!connectionManager.hasPendingReview(reviewId)) {
+                    ctx.status(409);
+                    ctx.json(Map.of("error", "REVIEW_RESOLVED", "message", "Review " + reviewId + " already resolved"));
+                    return;
+                }
+                connectionManager.resolveReview(reviewId, serializer.toJson(rdm));
+                ctx.status(200);
+                ctx.json(Map.of("reviewId", reviewId, "decision", decision, "status", "APPLIED"));
+            });
+
+            // GET /api/reviews -- list pending review gates (optionally filtered by runId)
+            config.routes.get("/api/reviews", ctx -> {
+                String runIdFilter = ctx.queryParam("runId");
+                java.util.List<ConnectionManager.PendingReviewInfo> reviews =
+                        connectionManager.listPendingReviews(runIdFilter);
+                java.util.List<Map<String, Object>> reviewList = new java.util.ArrayList<>();
+                for (ConnectionManager.PendingReviewInfo info : reviews) {
+                    Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                    entry.put("reviewId", info.reviewId());
+                    if (info.runId() != null) entry.put("runId", info.runId());
+                    entry.put("taskDescription", info.taskDescription());
+                    entry.put("taskOutput", info.taskOutput());
+                    entry.put("timing", info.timing());
+                    if (info.prompt() != null) entry.put("prompt", info.prompt());
+                    entry.put("timeoutMs", info.timeoutMs());
+                    entry.put("createdAt", info.createdAt().toString());
+                    if (info.expiresAt() != null)
+                        entry.put("expiresAt", info.expiresAt().toString());
+                    reviewList.add(entry);
+                }
+                ctx.json(Map.of("reviews", reviewList, "total", reviewList.size()));
+            });
+
+            // POST /api/runs/{runId}/inject -- inject a context directive into a running ensemble
+            config.routes.post("/api/runs/{runId}/inject", ctx -> {
+                String runId = ctx.pathParam("runId");
+                java.util.Optional<RunState> found = runManager.getRun(runId);
+                if (found.isEmpty()) {
+                    ctx.status(404);
+                    ctx.json(Map.of("error", "RUN_NOT_FOUND", "message", "No run with ID " + runId));
+                    return;
+                }
+                RunState state = found.get();
+                net.agentensemble.Ensemble ens = state.getEnsemble();
+                if (ens == null) {
+                    ctx.status(409);
+                    ctx.json(Map.of(
+                            "error", "RUN_NOT_RUNNING", "message", "Run " + runId + " has not started execution yet"));
+                    return;
+                }
+                com.fasterxml.jackson.databind.JsonNode body;
+                try {
+                    body = serializer.toJsonNode(ctx.body());
+                } catch (Exception e) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Invalid JSON body"));
+                    return;
+                }
+                if (body == null || !body.has("content")) {
+                    ctx.status(400);
+                    ctx.json(Map.of("error", "BAD_REQUEST", "message", "Missing 'content' field"));
+                    return;
+                }
+                String content = body.get("content").asText();
+                // target is stored in the directive's 'from' field for future routing; unused locally
+                @SuppressWarnings("unused")
+                String target = body.has("target") ? body.get("target").asText() : null;
+                String directiveId = java.util.UUID.randomUUID().toString();
+                net.agentensemble.directive.Directive directive = new net.agentensemble.directive.Directive(
+                        directiveId, "api", content, null, null, java.time.Instant.now(), null);
+                ens.getDirectiveStore().add(directive);
+                ctx.status(200);
+                ctx.json(Map.of("directiveId", directiveId, "status", "ACTIVE"));
+            });
+
+            // POST /api/tools/{name}/invoke -- directly invoke a tool from the catalog
+            config.routes.post("/api/tools/{name}/invoke", ctx -> {
+                ToolCatalog tc = toolCatalog;
+                if (tc == null) {
+                    ctx.status(503);
+                    ctx.json(Map.of(
+                            "error",
+                            "NOT_CONFIGURED",
+                            "message",
+                            "Tool catalog not configured. Add toolCatalog() to WebDashboard.builder()."));
+                    return;
+                }
+                String toolName = ctx.pathParam("name");
+                java.util.Optional<net.agentensemble.tool.AgentTool> toolOpt = tc.find(toolName);
+                if (toolOpt.isEmpty()) {
+                    ctx.status(404);
+                    ctx.json(Map.of(
+                            "error",
+                            "TOOL_NOT_FOUND",
+                            "message",
+                            "Unknown tool '" + toolName + "'. Available: "
+                                    + tc.list().stream()
+                                            .map(info -> info.name())
+                                            .collect(java.util.stream.Collectors.toList())));
+                    return;
+                }
+                net.agentensemble.tool.AgentTool tool = toolOpt.get();
+                String input = "";
+                try {
+                    com.fasterxml.jackson.databind.JsonNode body = serializer.toJsonNode(ctx.body());
+                    if (body != null && body.has("input")) {
+                        input = body.get("input").asText();
+                    }
+                } catch (Exception ignored) {
+                    /* use empty input */
+                }
+
+                long startMs = System.currentTimeMillis();
+                final String toolInput = input;
+                try {
+                    net.agentensemble.tool.ToolResult result = java.util.concurrent.CompletableFuture.supplyAsync(
+                                    () -> tool.execute(toolInput),
+                                    java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor())
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    long durationMs = System.currentTimeMillis() - startMs;
+                    Map<String, Object> response = new java.util.LinkedHashMap<>();
+                    response.put("tool", toolName);
+                    response.put("status", "SUCCESS");
+                    response.put("output", result.getOutput());
+                    response.put("durationMs", durationMs);
+                    ctx.json(response);
+                } catch (java.util.concurrent.TimeoutException e) {
+                    ctx.status(500);
+                    ctx.json(Map.of(
+                            "error", "TOOL_EXECUTION_FAILED", "message", "Tool execution timed out after 30 seconds"));
+                } catch (Exception e) {
+                    ctx.status(500);
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    ctx.json(Map.of(
+                            "error",
+                            "TOOL_EXECUTION_FAILED",
+                            "message",
+                            cause.getMessage() != null
+                                    ? cause.getMessage()
+                                    : cause.getClass().getSimpleName()));
+                }
+            });
         });
 
         app.start(host, port);
@@ -770,6 +1042,15 @@ class WebSocketServer {
      */
     void setEnsembleSupplier(java.util.function.Supplier<net.agentensemble.Ensemble> supplier) {
         this.ensembleSupplier = supplier;
+    }
+
+    /**
+     * Sets the {@link SseHandler} for the {@code GET /api/runs/{runId}/events} SSE endpoint.
+     *
+     * @param sseHandler the SSE handler; may be null to disable the SSE endpoint
+     */
+    void setSseHandler(SseHandler sseHandler) {
+        this.sseHandler = sseHandler;
     }
 
     // ========================
