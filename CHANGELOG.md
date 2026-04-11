@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.3.0...v3.4.0) (2026-04-10)
+
+
+### Features
+
+* Ensemble Control API Phase 2 -- Level 2/3 parameterization + WebSocket run submission ([#308](https://github.com/AgentEnsemble/agentensemble/issues/308)) ([56c3cfc](https://github.com/AgentEnsemble/agentensemble/commit/56c3cfc5a65d24665c80b6aa449570da8b2e80a0))
+* Ensemble Control API Phases 3/4/5 — Run Control, Subscription Filtering, SSE, REST Review/Inject/Invoke ([#310](https://github.com/AgentEnsemble/agentensemble/issues/310)) ([5115d9c](https://github.com/AgentEnsemble/agentensemble/commit/5115d9cb05841981f01a1af800698474d595e0be))
+
 ## [3.3.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.2.0...v3.3.0) (2026-04-10)
 
 
