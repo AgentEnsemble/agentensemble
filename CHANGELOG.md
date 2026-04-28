@@ -1,11 +1,10 @@
 # Changelog
 
-## Unreleased — v4.0.0 (Loop & Graph)
+## Unreleased — v3.5.0 (Loop & Graph)
 
-> Major release: two new top-level workflow constructs (`Loop` and `Graph`) plus the
-> shared `WorkflowNode` infrastructure they sit on. No breaking changes; both are
-> additive. See the [v4.0.0 release notes](docs/release-notes/v4.0.0.md) for the full
-> story.
+> Two new top-level workflow constructs (`Loop` and `Graph`) plus the shared
+> `WorkflowNode` infrastructure they sit on. No breaking changes; both are additive.
+> See the [v3.5.0 release notes](docs/release-notes/v3.5.0.md) for the full story.
 
 ### Features
 
