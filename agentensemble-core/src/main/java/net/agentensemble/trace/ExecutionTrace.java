@@ -149,6 +149,22 @@ public class ExecutionTrace {
     List<MapReduceLevelSummary> mapReduceLevels;
 
     /**
+     * Per-loop execution traces, populated when the ensemble contained one or more
+     * {@link net.agentensemble.workflow.loop.Loop} nodes. Each entry summarises a single
+     * loop's execution: how many iterations ran, why it stopped, and the per-iteration
+     * body-task names. Empty when no loops ran.
+     */
+    @Singular
+    List<LoopTrace> loopTraces;
+
+    /**
+     * Trace for a {@link net.agentensemble.workflow.graph.Graph} execution, when the
+     * ensemble used a Graph. Captures path through the state machine: state-by-state
+     * sequence, termination reason, step counts. {@code null} when no Graph ran.
+     */
+    GraphTrace graphTrace;
+
+    /**
      * Optional distributed trace identifier linking this execution to an external
      * distributed trace viewer (e.g., Jaeger, Zipkin). Set when an
      * {@code OTelTracingListener} is registered with the ensemble.

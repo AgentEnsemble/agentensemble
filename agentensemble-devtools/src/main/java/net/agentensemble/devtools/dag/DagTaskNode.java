@@ -65,16 +65,19 @@ public class DagTaskNode {
     boolean onCriticalPath;
 
     /**
-     * Map-reduce node type for visualization.
-     *
-     * <p>Populated only when this task belongs to a
-     * {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG. One of:
+     * Node type discriminator for visualization. One of:
      * <ul>
-     *   <li>{@code "map"} -- a map-phase task</li>
+     *   <li>{@code null} -- a standard task node (default)</li>
+     *   <li>{@code "map"} -- a map-phase task in a {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG</li>
      *   <li>{@code "reduce"} -- an intermediate reduce task</li>
      *   <li>{@code "final-reduce"} -- the terminal reduce task</li>
+     *   <li>{@code "loop"} -- a {@link net.agentensemble.workflow.loop.Loop} super-node;
+     *       additional fields {@link #loopMaxIterations} and {@link #loopBody} are populated</li>
+     *   <li>{@code "graph-state"} -- a state node in a {@link net.agentensemble.workflow.graph.Graph}
+     *       DAG (rendered when the parent {@link DagModel#mode} is {@code "graph"})</li>
+     *   <li>{@code "graph-end"} -- the synthetic terminal end-cap node for a
+     *       {@link net.agentensemble.workflow.graph.Graph} DAG</li>
      * </ul>
-     * {@code null} for standard (non-MapReduce) tasks.
      */
     String nodeType;
 
@@ -86,4 +89,17 @@ public class DagTaskNode {
      * {@link net.agentensemble.mapreduce.MapReduceEnsemble} DAG.
      */
     Integer mapReduceLevel;
+
+    /**
+     * For {@code nodeType == "loop"} nodes: the configured {@code maxIterations} cap.
+     * {@code null} for non-loop nodes.
+     */
+    Integer loopMaxIterations;
+
+    /**
+     * For {@code nodeType == "loop"} nodes: the body tasks rendered as nested DAG nodes.
+     * Visualization tools render loop nodes as a collapsible super-node containing this
+     * sub-DAG. {@code null} for non-loop nodes.
+     */
+    List<DagTaskNode> loopBody;
 }

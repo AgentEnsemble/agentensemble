@@ -401,11 +401,138 @@ class DagExporterTest {
         assertThat(json).contains("\"mapReduceLevel\" : 1");
     }
 
+    // ========================
+    // Loop nodes
+    // ========================
+
     @Test
-    void build_mapReduceEnsemble_schemaVersionIs_1_1() {
+    void build_ensembleWithLoop_emitsLoopSuperNode() {
+        Task setup = task("Setup", "ok", agentA);
+        net.agentensemble.workflow.loop.Loop loop = net.agentensemble.workflow.loop.Loop.builder()
+                .name("reflection")
+                .task(task("Write", "draft", agentB))
+                .task(task("Critique", "verdict", agentC))
+                .maxIterations(5)
+                .build();
+
+        Ensemble ensemble = Ensemble.builder()
+                .workflow(Workflow.SEQUENTIAL)
+                .task(setup)
+                .loop(loop)
+                .build();
+
+        DagModel dag = DagExporter.build(ensemble);
+
+        assertThat(dag.getSchemaVersion()).isEqualTo(DagModel.CURRENT_SCHEMA_VERSION);
+        // Tasks list contains 1 regular task + 1 loop super-node
+        assertThat(dag.getTasks()).hasSize(2);
+        DagTaskNode loopNode = nodeById(dag, "1");
+        assertThat(loopNode.getNodeType()).isEqualTo("loop");
+        assertThat(loopNode.getLoopMaxIterations()).isEqualTo(5);
+        assertThat(loopNode.getLoopBody()).hasSize(2);
+        // Body task IDs are namespaced under the loop
+        assertThat(loopNode.getLoopBody()).extracting(DagTaskNode::getId).containsExactly("1.0", "1.1");
+        // Loop is on the critical path
+        assertThat(dag.getCriticalPath()).contains("1");
+    }
+
+    // ========================
+    // Graph-mode export
+    // ========================
+
+    @Test
+    void build_graphEnsemble_emitsGraphMode_withStateNodesAndEdges() {
+        net.agentensemble.workflow.graph.Graph g = net.agentensemble.workflow.graph.Graph.builder()
+                .name("router")
+                .state("analyze", task("Analyze input", "ok", agentA))
+                .state("toolA", task("Run tool A", "ok", agentB))
+                .start("analyze")
+                .edge("analyze", "toolA", ctx -> ctx.lastOutput().getRaw().contains("USE_A"), "wants A")
+                .edge("analyze", net.agentensemble.workflow.graph.Graph.END)
+                .edge("toolA", "analyze")
+                .build();
+
+        Ensemble ensemble = Ensemble.builder().graph(g).build();
+        DagModel dag = DagExporter.build(ensemble);
+
+        assertThat(dag.getMode()).isEqualTo("graph");
+        assertThat(dag.getSchemaVersion()).isEqualTo(DagModel.CURRENT_SCHEMA_VERSION);
+        // 2 state nodes + 1 implicit END terminal
+        assertThat(dag.getTasks()).hasSize(3);
+        assertThat(dag.getTasks())
+                .extracting(DagTaskNode::getNodeType)
+                .containsExactly("graph-state", "graph-state", "graph-end");
+        assertThat(dag.getGraphStartStateId()).isEqualTo("0");
+        // Edges: 3 declared
+        assertThat(dag.getGraphEdges()).hasSize(3);
+        assertThat(dag.getGraphEdges().get(0).getConditionDescription()).isEqualTo("wants A");
+        assertThat(dag.getGraphEdges().get(0).isUnconditional()).isFalse();
+        assertThat(dag.getGraphEdges().get(1).isUnconditional()).isTrue();
+        // Pre-execution: nothing fired
+        assertThat(dag.getGraphEdges()).allSatisfy(e -> assertThat(e.isFired()).isFalse());
+        assertThat(dag.getGraphTerminationReason()).isNull();
+        assertThat(dag.getGraphStepsRun()).isNull();
+    }
+
+    @Test
+    void build_graphPostExecution_populatesFiredAndTerminationMetadata() {
+        net.agentensemble.workflow.graph.Graph g = net.agentensemble.workflow.graph.Graph.builder()
+                .name("router")
+                .state("a", task("A", "ok", agentA))
+                .state("b", task("B", "ok", agentB))
+                .start("a")
+                .edge("a", "b")
+                .edge("b", net.agentensemble.workflow.graph.Graph.END)
+                .build();
+
+        // Synthesize a trace as if the graph ran a -> b -> END
+        net.agentensemble.trace.GraphTrace trace = net.agentensemble.trace.GraphTrace.builder()
+                .graphName("router")
+                .startState("a")
+                .terminationReason("terminal")
+                .stepsRun(2)
+                .maxSteps(50)
+                .step(new net.agentensemble.trace.GraphTrace.GraphStepTrace("a", 1, "b"))
+                .step(new net.agentensemble.trace.GraphTrace.GraphStepTrace(
+                        "b", 2, net.agentensemble.workflow.graph.Graph.END))
+                .build();
+
+        DagModel dag = DagExporter.build(g, trace);
+
+        assertThat(dag.getMode()).isEqualTo("graph");
+        assertThat(dag.getGraphTerminationReason()).isEqualTo("terminal");
+        assertThat(dag.getGraphStepsRun()).isEqualTo(2);
+        // Both edges were traversed once; both should have fired = true
+        assertThat(dag.getGraphEdges()).extracting(DagGraphEdge::isFired).containsExactly(true, true);
+    }
+
+    @Test
+    void build_loopOnly_ensembleWithoutTopLevelTasks_emitsLoopAtId0() {
+        net.agentensemble.workflow.loop.Loop loop = net.agentensemble.workflow.loop.Loop.builder()
+                .name("solo")
+                .task(task("Body", "ok", agentA))
+                .maxIterations(3)
+                .build();
+
+        Ensemble ensemble = Ensemble.builder().loop(loop).build();
+        DagModel dag = DagExporter.build(ensemble);
+
+        assertThat(dag.getTasks()).hasSize(1);
+        DagTaskNode loopNode = dag.getTasks().get(0);
+        assertThat(loopNode.getId()).isEqualTo("0");
+        assertThat(loopNode.getNodeType()).isEqualTo("loop");
+        assertThat(loopNode.getLoopMaxIterations()).isEqualTo(3);
+        assertThat(loopNode.getLoopBody()).hasSize(1);
+    }
+
+    @Test
+    void build_mapReduceEnsemble_schemaVersionIsCurrent() {
         MapReduceEnsemble<String> mre = buildTestMapReduceEnsemble(List.of("A"), 3);
         DagModel dag = DagExporter.build(mre);
-        assertThat(dag.getSchemaVersion()).isEqualTo("1.1");
+        // Schema version is bumped whenever the DagModel/DagTaskNode shape changes; assert
+        // against the current constant rather than a hard-coded literal so this test does
+        // not need updating on every additive schema change.
+        assertThat(dag.getSchemaVersion()).isEqualTo(DagModel.CURRENT_SCHEMA_VERSION);
     }
 
     // ========================

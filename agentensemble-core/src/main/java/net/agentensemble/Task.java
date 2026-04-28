@@ -17,6 +17,7 @@ import net.agentensemble.reflection.ReflectionConfig;
 import net.agentensemble.review.Review;
 import net.agentensemble.task.TaskHandler;
 import net.agentensemble.tool.AgentTool;
+import net.agentensemble.workflow.WorkflowNode;
 
 /**
  * A unit of work, optionally assigned to an explicit agent.
@@ -77,7 +78,7 @@ import net.agentensemble.tool.AgentTool;
  */
 @Builder(toBuilder = true)
 @Value
-public class Task {
+public class Task implements WorkflowNode {
 
     /** Default expectedOutput used by {@link #of(String)}. */
     public static final String DEFAULT_EXPECTED_OUTPUT = "Produce a complete and accurate response to the task.";
