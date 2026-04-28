@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * <p>State revisits: when {@code injectFeedbackOnRevisit} is true (default) and a state is
  * visited more than once, the state Task is rebuilt via
  * {@link Task#withRevisionFeedback(String, String, int)} on every visit after the first
- * with an auto-feedback message. States listed in {@link Graph#getNoFeedbackStates()}
+ * with an auto-feedback message. States listed in {@link Graph#noFeedbackStates}
  * always see the unmodified Task.
  *
  * <p>Stateless -- a single {@code GraphExecutor} instance can be reused across runs and
@@ -79,7 +79,6 @@ public class GraphExecutor {
 
         String currentState = graph.getStartState();
         int step = 0;
-        TaskOutput priorOutput = null;
         String terminationReason = null;
 
         while (!Graph.END.equals(currentState) && step < graph.getMaxSteps()) {
@@ -96,7 +95,13 @@ public class GraphExecutor {
                     visitNumber);
 
             Task originalTask = graph.getStates().get(currentState);
-            Task taskToRun = maybeInjectFeedback(graph, currentState, originalTask, visitNumber, priorOutput);
+            // Feedback injection uses the prior output of THIS state (not the prior step,
+            // which may have been a different state). For analyze -> tool -> analyze, the
+            // second analyze visit gets the FIRST analyze visit's output as prior, not the
+            // tool's output. State-scoped semantics match what users expect from the
+            // "visit #N" framing in the auto-feedback message.
+            TaskOutput priorVisitOutput = lastOutputForState(stateOutputsByName, currentState);
+            Task taskToRun = maybeInjectFeedback(graph, currentState, originalTask, visitNumber, priorVisitOutput);
 
             // Run the state Task via SequentialWorkflowExecutor for full pipeline support.
             EnsembleOutput stepOutput =
@@ -115,7 +120,6 @@ public class GraphExecutor {
             String nextState = routeNext(graph, currentState, out, step, stateOutputsByName);
 
             history.add(new GraphStep(currentState, step, out, nextState));
-            priorOutput = out;
 
             // Fire GraphStateCompletedEvent so listeners (live dashboard, metrics) can react
             // before the next step begins.
@@ -176,6 +180,27 @@ public class GraphExecutor {
                 List.copyOf(history),
                 Collections.unmodifiableMap(immutableStateOutputs),
                 projected);
+    }
+
+    // ========================
+    // Per-state output lookup
+    // ========================
+
+    /**
+     * Returns the most recent {@link TaskOutput} for the given state, or {@code null} if
+     * the state has not been visited yet. Used by feedback injection so that revisits see
+     * the prior output of the same state (not the prior step, which may have been a
+     * different state in a cyclic graph like {@code analyze -> tool -> analyze}).
+     *
+     * <p>Package-private to allow direct unit testing of the per-state lookup that drives
+     * revisit-feedback correctness.
+     */
+    static TaskOutput lastOutputForState(Map<String, List<TaskOutput>> stateOutputsByName, String stateName) {
+        List<TaskOutput> outputs = stateOutputsByName.get(stateName);
+        if (outputs == null || outputs.isEmpty()) {
+            return null;
+        }
+        return outputs.get(outputs.size() - 1);
     }
 
     // ========================

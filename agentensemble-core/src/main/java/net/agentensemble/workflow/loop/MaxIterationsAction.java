@@ -13,7 +13,8 @@ public enum MaxIterationsAction {
     RETURN_LAST,
 
     /**
-     * Throw a {@link MaxLoopIterationsExceededException}, aborting the ensemble.
+     * Throw a {@link net.agentensemble.exception.MaxLoopIterationsExceededException},
+     * aborting the ensemble.
      * Use when failure to converge is itself an error (e.g. retry-until-valid where
      * never-valid means the upstream pipeline must stop).
      */

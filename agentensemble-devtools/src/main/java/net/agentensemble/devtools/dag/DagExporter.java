@@ -97,34 +97,79 @@ public final class DagExporter {
         // Loops follow tasks in the node list; their IDs are indexed after the last task ID.
         if (hasLoops) {
             int idCounter = taskNodes.size();
-            int loopLevel = parallelGroups.isEmpty() ? 0 : parallelGroups.size();
             List<String> loopGroupIds = new ArrayList<>();
             for (net.agentensemble.workflow.loop.Loop loop : loops) {
                 String loopId = String.valueOf(idCounter++);
                 List<DagTaskNode> bodyNodes = buildLoopBodyNodes(loop, loopId);
+                // Map Loop.context() outer-DAG deps to their task IDs so the rendered DAG
+                // and viz reflect actual scheduling constraints (a loop with a context dep
+                // does not start until its named upstream tasks complete -- this is what
+                // ParallelWorkflowExecutor's shadow-task pattern enforces at run time).
+                List<String> loopDeps = new ArrayList<>();
+                if (loop.getContext() != null) {
+                    for (Task ctx : loop.getContext()) {
+                        String depId = taskIds.get(ctx);
+                        if (depId != null) {
+                            loopDeps.add(depId);
+                        }
+                    }
+                }
+                // Place the loop one level after the deepest of its dependencies. With no
+                // deps, the loop is a root (level 0); with deps, level = max(dep level) + 1.
+                int loopParallelGroup = loopDeps.isEmpty()
+                        ? 0
+                        : loopDeps.stream()
+                                        .mapToInt(id -> taskNodes.stream()
+                                                .filter(n -> id.equals(n.getId()))
+                                                .findFirst()
+                                                .map(DagTaskNode::getParallelGroup)
+                                                .orElse(0))
+                                        .max()
+                                        .orElse(0)
+                                + 1;
                 taskNodes.add(DagTaskNode.builder()
                         .id(loopId)
                         .description("Loop: " + loop.getName())
                         .expectedOutput("(loop body output, projected per " + loop.getOutputMode() + ")")
                         .agentRole("(loop)")
-                        .dependsOn(List.of()) // outer Loop.context() deps -- not yet wired into the DAG graph
-                        .parallelGroup(loopLevel)
-                        .onCriticalPath(true) // loops are sequential after task DAG -> always on critical path
+                        .dependsOn(loopDeps)
+                        .parallelGroup(loopParallelGroup)
+                        // Conservative: loops with no in-graph deps are always on the
+                        // critical path (the loop's wall time is bounded by maxIterations
+                        // and unknown until execution); loops with deps stay on it too
+                        // because the chain through them is the only completion path.
+                        .onCriticalPath(true)
                         .nodeType("loop")
                         .loopMaxIterations(loop.getMaxIterations())
                         .loopBody(bodyNodes)
                         .build());
                 loopGroupIds.add(loopId);
             }
-            // Append the loop-level group to parallelGroups; loops execute sequentially after
-            // the task DAG completes (Phase D-1 model).
+            // Extend parallelGroups so each loop appears in its computed level. Loops with
+            // no deps go into level 0 alongside other roots; loops with deps go into a new
+            // level after their deepest dependency.
+            int maxExistingLevel = parallelGroups.size() - 1;
+            int maxLoopLevel = taskNodes.stream()
+                    .filter(n -> "loop".equals(n.getNodeType()))
+                    .mapToInt(DagTaskNode::getParallelGroup)
+                    .max()
+                    .orElse(0);
             List<List<String>> updatedGroups = new ArrayList<>(parallelGroups);
-            for (String loopId : loopGroupIds) {
-                updatedGroups.add(List.of(loopId));
+            while (updatedGroups.size() <= Math.max(maxExistingLevel, maxLoopLevel)) {
+                updatedGroups.add(new ArrayList<>());
+            }
+            for (DagTaskNode loopNode : taskNodes.stream()
+                    .filter(n -> "loop".equals(n.getNodeType()))
+                    .toList()) {
+                List<String> bucket = new ArrayList<>(updatedGroups.get(loopNode.getParallelGroup()));
+                bucket.add(loopNode.getId());
+                updatedGroups.set(loopNode.getParallelGroup(), bucket);
             }
             parallelGroups = updatedGroups;
 
-            // Loops always lie on the critical path under the v1 sequential-after-tasks model.
+            // Critical path: append loop ids in declaration order. Computing the precise
+            // critical path through loops requires knowing per-iteration wall time, which
+            // is unknown pre-execution; this conservative ordering is still useful for viz.
             List<String> updatedCriticalPath = new ArrayList<>(criticalPath);
             updatedCriticalPath.addAll(loopGroupIds);
             criticalPath = updatedCriticalPath;
@@ -232,8 +277,11 @@ public final class DagExporter {
                     .build());
         }
 
+        // Use SEQUENTIAL for the workflow string -- the existing DagModel/Workflow union
+        // only declares SEQUENTIAL/PARALLEL/HIERARCHICAL. mode = "graph" is the
+        // discriminator that tells viz consumers to render as a state machine.
         DagModel.DagModelBuilder b = DagModel.builder()
-                .workflow("GRAPH")
+                .workflow("SEQUENTIAL")
                 .generatedAt(Instant.now())
                 .mode("graph")
                 .graphStartStateId(stateIds.get(graph.getStartState()))

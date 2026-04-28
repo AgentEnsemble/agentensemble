@@ -11,8 +11,8 @@ import lombok.Value;
  * Per-loop execution trace, captured for every {@link net.agentensemble.workflow.loop.Loop}
  * that ran during an ensemble execution.
  *
- * <p>Recorded as a parallel side channel to {@link ExecutionTrace#getTaskTraces()} so trace
- * consumers that don't care about loops can ignore the new {@link ExecutionTrace#getLoopTraces()}
+ * <p>Recorded as a parallel side channel to {@link ExecutionTrace#taskTraces} so trace
+ * consumers that don't care about loops can ignore the new {@link ExecutionTrace#loopTraces}
  * collection without changes.
  *
  * <p>The schema:
@@ -30,7 +30,7 @@ import lombok.Value;
  * </ul>
  *
  * <p>Per-iteration {@link TaskTrace}s for each body-task execution are NOT duplicated here --
- * they appear in the parent {@link ExecutionTrace#getTaskTraces()} list as one trace per
+ * they appear in the parent {@link ExecutionTrace#taskTraces} list as one trace per
  * (iteration, body task) pair. Use the iteration name list here as a key into the flat
  * task trace list when reconstructing per-iteration views.
  */

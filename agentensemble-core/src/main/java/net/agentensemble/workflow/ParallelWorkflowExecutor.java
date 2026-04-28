@@ -250,32 +250,28 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
 
         // Rebuild taskOutputs in declaration order, dropping shadow entries. Loop body
         // projections are appended at the end (one per loop, in declaration order).
-        java.util.IdentityHashMap<Task, TaskOutput> shadowSet = new java.util.IdentityHashMap<>();
-        for (Task shadow : shadows) {
-            shadowSet.put(shadow, null);
-        }
-        List<TaskOutput> mergedOutputs =
-                new ArrayList<>(parallelOutput.getTaskOutputs().size());
-        for (TaskOutput out : parallelOutput.getTaskOutputs()) {
-            // Shadows have a known synthetic description. We need a more reliable filter.
-            // The shadow itself isn't accessible from TaskOutput, so we filter via the index:
-            // any TaskOutput whose corresponding Task is in shadowSet should be dropped.
-            // Without identity from the output back to the task, we conservatively rebuild
-            // from the index using declaration order of non-shadow tasks below.
-            mergedOutputs.add(out);
-        }
-        // Replace mergedOutputs by walking parallel output but excluding shadows by checking
-        // the original index. The parallelOutput's taskOutputIndex was identity-keyed by the
-        // resolved Task instances; we use that to reverse-look-up by value.
-        // Simpler: just rebuild from mergedIndex, preserving existing parallelOutput order.
-        java.util.LinkedHashSet<TaskOutput> shadowOutputs = new java.util.LinkedHashSet<>();
+        // Build an identity-keyed set of shadow TaskOutput instances to filter out. Using
+        // reference identity (==) rather than equals() is critical: TaskOutput is a Lombok
+        // @Value, so equals() compares all fields and a non-shadow task output with
+        // identical content/timestamps could be removed accidentally (and duplicates would
+        // be over-removed). Identity removal preserves completion order without that hazard.
+        java.util.Set<TaskOutput> shadowOutputs =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (parallelOutput.getTaskOutputIndex() != null) {
             for (Task shadow : shadows) {
                 TaskOutput so = parallelOutput.getTaskOutputIndex().get(shadow);
                 if (so != null) shadowOutputs.add(so);
             }
         }
-        mergedOutputs.removeAll(shadowOutputs);
+        List<TaskOutput> mergedOutputs =
+                new ArrayList<>(parallelOutput.getTaskOutputs().size());
+        for (TaskOutput out : parallelOutput.getTaskOutputs()) {
+            // Identity check via the IdentityHashMap-backed set -- never falls through
+            // to TaskOutput.equals().
+            if (!shadowOutputs.contains(out)) {
+                mergedOutputs.add(out);
+            }
+        }
 
         // Append each loop's projected outputs (LoopOutputMode-driven) keyed by original
         // body Task instances. Maintains declaration order across loops.

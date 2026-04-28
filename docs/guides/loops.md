@@ -28,13 +28,19 @@ Loop reflection = Loop.builder()
 Ensemble.builder()
     .task(researchTask)
     .loop(reflection)
-    .task(publishTask)
     .build()
     .run();
 ```
 
 A `Loop` is a `WorkflowNode` alongside `Task`. The ensemble accepts both via
 `.task(Task)` and `.loop(Loop)`.
+
+> **Ordering caveat.** In `SEQUENTIAL` workflow, all `.task(...)` calls run before
+> all `.loop(...)` calls — declaration position between them is ignored. To put
+> work strictly *after* a loop, place it as the final body task in the loop, or
+> use [Phases](phases.md) (loop in an upstream phase, post-loop work in a
+> downstream phase). `Task.context` cannot reference a `Loop`, so you cannot
+> express "task X depends on loop L" via the dependency graph.
 
 ## Stop conditions
 

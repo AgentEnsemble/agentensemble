@@ -34,7 +34,7 @@ import net.agentensemble.workflow.WorkflowNode;
  * <h2>Routing semantics</h2>
  *
  * <p>After a state's Task runs, the executor walks that state's outgoing edges in
- * declaration order. The first edge whose {@link GraphEdge#getCondition()} predicate
+ * declaration order. The first edge whose {@link GraphEdge#condition} predicate
  * returns {@code true} is taken. An edge with a {@code null} predicate (added via
  * {@link GraphBuilder#edge(String, String)}) is unconditional and always matches.
  * If no edge matches, the executor throws

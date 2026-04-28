@@ -3,10 +3,11 @@
 All fields available on `Task.builder()`. Fields marked "Synthesis" are used to configure
 the synthesized agent when no explicit `agent` is set.
 
-> **`Task` is a `WorkflowNode`.** As of v3.5, `Task` and `Loop` both implement the
-> `WorkflowNode` marker interface. `Ensemble.builder()` accepts both via `.task(Task)`
-> (existing) and `.loop(Loop)` (new). See the [Loops guide](../guides/loops.md) for the
-> bounded-iteration construct that wraps a body of `Task`s.
+> **`Task` is a `WorkflowNode`.** As of the Loop/Graph release, `Task`, `Loop`, and
+> `Graph` all implement the `WorkflowNode` marker interface. `Ensemble.builder()`
+> accepts each via its dedicated method: `.task(Task)` (existing), `.loop(Loop)`, and
+> `.graph(Graph)`. See the [Loops guide](../guides/loops.md) for the bounded-iteration
+> construct and the [Graphs guide](../guides/graphs.md) for the state-machine construct.
 
 ## Convenience Factories
 
