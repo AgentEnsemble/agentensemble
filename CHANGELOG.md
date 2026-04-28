@@ -37,6 +37,14 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.4.0...v3.5.0) (2026-04-28)
+
+
+### Features
+
+* add Loop and Graph workflow constructs ([9a52d6b](https://github.com/AgentEnsemble/agentensemble/commit/9a52d6b17eed4b150f46a5cef9139b1390114ceb))
+* add Loop and Graph workflow constructs ([#324](https://github.com/AgentEnsemble/agentensemble/issues/324)) ([9a52d6b](https://github.com/AgentEnsemble/agentensemble/commit/9a52d6b17eed4b150f46a5cef9139b1390114ceb))
+
 ## [3.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.3.0...v3.4.0) (2026-04-10)
 
 
