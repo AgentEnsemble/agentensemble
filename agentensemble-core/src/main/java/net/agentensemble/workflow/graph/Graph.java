@@ -18,7 +18,7 @@ import net.agentensemble.workflow.WorkflowNode;
  * which iterates a fixed body, a Graph chooses the next state per step from the just-
  * completed state's output.
  *
- * <p>Routes the LangGraph-style state-machine patterns AE couldn't express before:
+ * <p>Expresses state-machine patterns the top-level DAG cannot:
  * <ul>
  *   <li><strong>Tool router</strong> — an {@code analyze} state inspects input and routes
  *       to one of several tool states, each of which loops back to {@code analyze}.</li>

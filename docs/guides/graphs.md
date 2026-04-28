@@ -3,8 +3,7 @@
 A `Graph` is a state-machine workflow: named states (Tasks) connected by directed
 edges with optional conditional predicates. Unlike `Loop` (which iterates a fixed
 body until a predicate fires), a `Graph` chooses the next state per step from the
-just-completed state's output. This is AgentEnsemble's answer to LangGraph's
-state-machine flows.
+just-completed state's output.
 
 Use a `Graph` for patterns Loop and the DAG can't express:
 
@@ -249,4 +248,3 @@ loop (but then you can't access the loop's projected outputs from `publish`).
 - [Loops](loops.md) — bounded iteration of a fixed body.
 - [Phases](phases.md) — coarse-grained workstreams with cross-phase dependencies.
 - [Workflows](workflows.md) — overall workflow strategy.
-- [vs LangGraph](../comparison-langgraph.md) — feature comparison.

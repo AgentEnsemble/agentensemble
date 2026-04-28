@@ -7,10 +7,10 @@ work with AI-backed tasks — replace the handlers with descriptions and provide
 
 ## Tool router with back-edges
 
-The headline LangGraph-on-the-JVM pattern: an `analyze` state inspects input and
-routes to one of two tool states; each tool returns to `analyze`; eventually
-`analyze` terminates. Demonstrates conditional edges, unconditional fallback,
-back-edges, and the per-step `onGraphStateCompleted` callback.
+A tool-routing state machine: an `analyze` state inspects input and routes to
+one of two tool states; each tool returns to `analyze`; eventually `analyze`
+terminates. Demonstrates conditional edges, unconditional fallback, back-edges,
+and the per-step `onGraphStateCompleted` callback.
 
 ```bash
 ./gradlew :agentensemble-examples:runGraphRouter
@@ -33,7 +33,7 @@ Total steps: 7
 Path: [analyze, toolA, analyze, toolB, analyze, toolA, analyze]
 ```
 
-## Selective feedback (the LangGraph killer pattern)
+## Selective feedback
 
 A quality-gated publishing pipeline: `research → write → critique → publish`,
 where `critique` can route back to `write` on `REJECT` without re-running

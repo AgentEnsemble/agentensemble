@@ -5,8 +5,8 @@
 ## Why
 
 AgentEnsemble's workflow model is acyclic: tasks form a DAG via `Task.context()`,
-and execution proceeds along that DAG. The defining capability of LangGraph and
-similar frameworks — **cycles** — was inexpressible at the workflow layer.
+and execution proceeds along that DAG. **Cycles** were inexpressible at the
+workflow layer.
 
 Three patterns repeatedly demanded cycles in real ensembles:
 
@@ -37,9 +37,10 @@ sub-ensemble of tasks, expressible at build time and observable at runtime.
 
 ## Non-goals (deferred)
 
-- **Arbitrary back-edges between tasks.** A LangGraph-style "Task X depends on
-  Task Y, but Y can also loop back to X" is not in v1. The escape hatch is
-  putting the looping pair inside a `Loop`.
+- **Arbitrary back-edges between tasks.** A "Task X depends on Task Y, but Y can
+  also loop back to X" pattern is not expressible at the top-level DAG; the
+  escape hatch is putting the looping pair inside a `Loop`, or using `Graph`
+  for state-machine routing.
 - **Nested loops.** Rejected at build time. The combinatorics of iteration-cap
   multiplication is a footgun, and no v1 use case requires it.
 - ~~**Loops concurrent with the parallel task DAG.**~~ **Implemented.** Loops
@@ -215,10 +216,9 @@ Task.builder()
     .build();
 ```
 
-Maximum flexibility, maximum disruption. Breaks DAG inference, viz, scheduling.
-For 90% of cycle use cases, the bounded-loop construct is sufficient and stays
-within AE's declarative posture. Deferred indefinitely; revisit only if real
-demand surfaces for true LangGraph-style cycles.
+Maximum flexibility, maximum disruption at the top-level DAG. The bounded
+`Loop` construct covers iteration use cases; arbitrary state-machine routing
+ships separately as `Graph` (see [30-graphs.md](30-graphs.md)).
 
 ## Verification
 

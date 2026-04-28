@@ -10,9 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Demonstrates the selective-feedback pattern (the LangGraph killer use case): a quality
- * gate that can route either forward to publish OR back to a specific upstream state to
- * retry, without re-running unrelated upstream work.
+ * Demonstrates the selective-feedback pattern: a quality gate that can route either
+ * forward to publish OR back to a specific upstream state to retry, without re-running
+ * unrelated upstream work.
  *
  * <p>Pipeline:
  * <pre>

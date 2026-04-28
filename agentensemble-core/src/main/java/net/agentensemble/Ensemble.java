@@ -171,9 +171,9 @@ public class Ensemble {
      * nodes.
      *
      * <p>See {@link net.agentensemble.workflow.graph.Graph} for the construct used to
-     * express LangGraph-style state-machine flows: tool routers, selective-feedback edges,
-     * multi-turn negotiation, and other patterns where the next node is decided per step
-     * from the prior output.
+     * express state-machine flows: tool routers, selective-feedback edges, multi-turn
+     * negotiation, and other patterns where the next node is decided per step from the
+     * prior output.
      *
      * <p>Default: {@code null}.
      */

@@ -68,7 +68,7 @@ class EnsembleGraphTest {
     }
 
     // ========================
-    // Selective feedback edge (the LangGraph killer pattern)
+    // Selective feedback edge
     // ========================
 
     @Test

@@ -138,8 +138,6 @@ nav:
     - TOON Format: examples/toon-format.md
     - Long-Running Ensemble: examples/long-running-ensemble.md
     - Cross-Ensemble Delegation: examples/cross-ensemble-delegation.md
-  - Comparison:
-    - vs LangGraph: comparison-langgraph.md
   - Release notes:
     - v4.0.0 (Loop & Graph): release-notes/v4.0.0.md
   - Migration:

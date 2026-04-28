@@ -17,12 +17,11 @@ cases that demanded this:
 - **Multi-turn negotiation** — two agents alternate until they agree.
 
 The shared shape: arbitrary back-edges between named states with conditional
-routing per step. This is exactly what LangGraph's `add_conditional_edges` and
-`add_edge` express, and what AE's DAG-based model could not.
+routing per step. AE's DAG-based model could not express this.
 
 ## Goals
 
-- Match LangGraph's expressivity for bounded state machines.
+- First-class bounded state machines as a workflow primitive.
 - Stay consistent with AE's posture: declarative builder, validated at build
   time, observable through trace and DAG export.
 - Single-threaded state walker: simple, debuggable, matches the state-machine
@@ -31,15 +30,16 @@ routing per step. This is exactly what LangGraph's `add_conditional_edges` and
 
 ## Non-goals
 
-- **Parallel branches inside a graph** (LangGraph `Send`). Real feature, deferred
-  to a follow-up. The single-threaded executor keeps the trace shape clean and
-  avoids reasoning about state mutation across concurrent branches in v1.
+- **Parallel branches inside a graph** (fan-out / `Send`-style). Real feature,
+  deferred to a follow-up. The single-threaded executor keeps the trace shape
+  clean and avoids reasoning about state mutation across concurrent branches
+  in v1.
 - **LLM-router sugar** (`graph.llmRouter(state, llm)`). The pure-predicate API
   expresses LLM routing today by making the routing state a Task whose output
   names the next state and using `ctx -> ctx.lastOutput().getRaw().equals("toolA")`
   predicates. Sugar method can be added later if the pattern repeats.
-- **Cross-run checkpointing** (LangGraph SQLite/Postgres checkpointers). Feeds
-  into the existing memory/durable-transport story; separate PR.
+- **Cross-run checkpointing** of graph state. Feeds into the existing
+  memory/durable-transport story; separate PR.
 - **Nested graphs** (a Graph state whose Task is itself a Graph). v1 says
   state-Task only.
 - **Graph-in-Loop / Loop-in-Graph mixing**. v1 says graph is exclusive at the
@@ -117,8 +117,8 @@ once the LLM-routing pattern's prevalence justifies the API surface.
 ### Single-threaded vs parallel branches (Q3)
 
 **Decision: single-threaded in v1.** State machines are inherently sequential
-(one current state at a time); the per-step model is what matches the LangGraph
-mental model. Parallel branches via `Send`-style fan-out are a follow-up.
+(one current state at a time); the per-step model matches the state-machine
+mental model. Parallel branches via fan-out are a follow-up.
 
 ### State revisits
 

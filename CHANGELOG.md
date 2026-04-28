@@ -22,8 +22,8 @@
   and an expandable `loopBody` sub-DAG. Two runnable examples: `runLoopReflection` and
   `runLoopRetryUntilValid`. See the [Loops guide](docs/guides/loops.md).
 
-* **`Graph` workflow construct (state machines)** -- LangGraph-equivalent state-machine
-  flows for the JVM. Named states (Tasks) connected by directed edges with conditional
+* **`Graph` workflow construct (state machines)** -- declarative state-machine flows.
+  Named states (Tasks) connected by directed edges with conditional
   `GraphPredicate`s and arbitrary back-edges. Tool routers, selective-feedback edges,
   multi-turn negotiation. Adds `Graph`, `GraphExecutor`, `GraphEdge`, `GraphPredicate`,
   `GraphRoutingContext`, `GraphStep`, `GraphExecutionResult`, `MaxStepsAction`,

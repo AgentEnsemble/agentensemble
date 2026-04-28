@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
  * an {@code analyze} state inspects input and routes to one of two tool states; each tool
  * state returns to {@code analyze}; eventually {@code analyze} terminates the graph.
  *
- * <p>This is the canonical LangGraph-on-the-JVM pattern that {@code Workflow.SEQUENTIAL} and
+ * <p>This is the canonical state-machine pattern that {@code Workflow.SEQUENTIAL} and
  * {@code Workflow.PARALLEL} can't express -- the next step is decided per iteration based on
  * the prior output, with arbitrary back-edges.
  *
