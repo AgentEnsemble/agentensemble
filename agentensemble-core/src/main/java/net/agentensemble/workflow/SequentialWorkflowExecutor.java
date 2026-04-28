@@ -36,6 +36,7 @@ import net.agentensemble.review.ReviewRequest;
 import net.agentensemble.review.ReviewTiming;
 import net.agentensemble.task.TaskOutput;
 import net.agentensemble.tool.HumanInputTool;
+// WorkflowNode used in executeNodes(); fully-qualified loop refs avoid a circular sub-package import.
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -107,6 +108,90 @@ public class SequentialWorkflowExecutor implements WorkflowExecutor {
         this.delegationPolicies = delegationPolicies != null ? List.copyOf(delegationPolicies) : List.of();
         this.agentExecutor = new AgentExecutor();
         this.deterministicExecutor = new DeterministicTaskExecutor();
+    }
+
+    @Override
+    public EnsembleOutput executeNodes(List<WorkflowNode> nodes, ExecutionContext executionContext) {
+        // Split nodes into tasks (executed first, in declaration order) and loops (executed
+        // afterwards, in declaration order). v1 ordering rule: SEQUENTIAL workflow runs
+        // tasks then loops. Users needing a task strictly after a loop should use
+        // Workflow.PARALLEL with Loop.context() declaring the loop's outer dependencies.
+        List<Task> tasks = new ArrayList<>();
+        List<net.agentensemble.workflow.loop.Loop> loops = new ArrayList<>();
+        for (WorkflowNode node : nodes) {
+            if (node instanceof Task t) {
+                tasks.add(t);
+            } else if (node instanceof net.agentensemble.workflow.loop.Loop loop) {
+                loops.add(loop);
+            } else {
+                throw new net.agentensemble.exception.ValidationException(
+                        "Unknown WorkflowNode type: " + node.getClass().getName());
+            }
+        }
+
+        // First, run all tasks via the existing sequential pipeline.
+        EnsembleOutput taskOutput = executeSeeded(tasks, executionContext, new LinkedHashMap<>());
+
+        if (loops.isEmpty()) {
+            return taskOutput;
+        }
+
+        // Then, run each loop sequentially. Each loop's projected outputs are appended to
+        // the task list; per-loop history goes into the loopHistory side channel.
+        net.agentensemble.workflow.loop.LoopExecutor loopExecutor =
+                new net.agentensemble.workflow.loop.LoopExecutor(this);
+
+        java.util.LinkedHashMap<Task, TaskOutput> mergedIndex = new java.util.LinkedHashMap<>();
+        // Re-key the existing taskOutputIndex into a LinkedHashMap that preserves order.
+        if (taskOutput.getTaskOutputIndex() != null) {
+            mergedIndex.putAll(taskOutput.getTaskOutputIndex());
+        }
+        List<TaskOutput> mergedOutputs = new ArrayList<>(taskOutput.getTaskOutputs());
+
+        java.util.LinkedHashMap<String, List<java.util.Map<String, TaskOutput>>> loopHistory =
+                new java.util.LinkedHashMap<>();
+        java.util.LinkedHashMap<String, String> loopTermReasons = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashSet<String> loopsHitMaxIters = new java.util.LinkedHashSet<>();
+
+        Instant loopsBatchStart = Instant.now();
+        for (net.agentensemble.workflow.loop.Loop loop : loops) {
+            net.agentensemble.workflow.loop.LoopExecutionResult result = loopExecutor.execute(loop, executionContext);
+            loopHistory.put(loop.getName(), result.getHistory());
+            loopTermReasons.put(loop.getName(), result.getTerminationReason());
+            if (result.stoppedByMaxIterations()
+                    && loop.getOnMaxIterations()
+                            == net.agentensemble.workflow.loop.MaxIterationsAction.RETURN_WITH_FLAG) {
+                loopsHitMaxIters.add(loop.getName());
+            }
+            // Append projected outputs to the flat task output list and identity index, in
+            // body-declaration order. The projected map is keyed by the original body Task
+            // instances (per LoopExecutor contract); iterating the IdentityHashMap directly
+            // does not preserve insertion order, so walk body explicitly.
+            for (Task originalBodyTask : loop.getBody()) {
+                TaskOutput out = result.getProjectedOutputs().get(originalBodyTask);
+                if (out != null) {
+                    mergedOutputs.add(out);
+                    mergedIndex.put(originalBodyTask, out);
+                }
+            }
+        }
+        Duration totalDuration = taskOutput.getTotalDuration().plus(Duration.between(loopsBatchStart, Instant.now()));
+
+        String finalRaw = mergedOutputs.isEmpty() ? "" : mergedOutputs.getLast().getRaw();
+        int totalToolCalls =
+                mergedOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+
+        return EnsembleOutput.builder()
+                .raw(finalRaw)
+                .taskOutputs(mergedOutputs)
+                .totalDuration(totalDuration)
+                .totalToolCalls(totalToolCalls)
+                .taskOutputIndex(mergedIndex)
+                .exitReason(taskOutput.getExitReason())
+                .loopHistory(loopHistory)
+                .loopTerminationReasons(loopTermReasons)
+                .loopsTerminatedByMaxIterations(loopsHitMaxIters)
+                .build();
     }
 
     @Override

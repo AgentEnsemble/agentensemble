@@ -56,9 +56,16 @@ public class DagModel {
      *   <li>1.0 -- initial release</li>
      *   <li>1.1 -- added {@code mapReduceMode} on {@link DagModel} and
      *       {@code nodeType}/{@code mapReduceLevel} on {@link DagTaskNode}</li>
+     *   <li>1.2 -- added {@code "loop"} {@code nodeType} for
+     *       {@link net.agentensemble.workflow.loop.Loop} super-nodes with
+     *       {@code loopMaxIterations} and {@code loopBody} child task list</li>
+     *   <li>1.3 -- added {@code mode = "graph"} for
+     *       {@link net.agentensemble.workflow.graph.Graph} state-machine ensembles, plus
+     *       {@code "graph-state"} {@code nodeType} on {@link DagTaskNode} and a top-level
+     *       {@code graphEdges} list with conditional / fired metadata</li>
      * </ul>
      */
-    public static final String CURRENT_SCHEMA_VERSION = "1.1";
+    public static final String CURRENT_SCHEMA_VERSION = "1.3";
 
     private static final ObjectMapper MAPPER = buildObjectMapper();
 
@@ -130,6 +137,38 @@ public class DagModel {
      * {@code null} for standard (non-MapReduce) ensembles.
      */
     String mapReduceMode;
+
+    /**
+     * Top-level shape discriminator. {@code null} for legacy DAG ensembles (tasks /
+     * loops / phases); {@code "graph"} for {@link net.agentensemble.workflow.graph.Graph}
+     * state-machine ensembles. Schema 1.3+. When set, {@link #graphEdges},
+     * {@link #graphStartStateId}, and friends are populated and the {@code tasks} list
+     * carries state nodes ({@code nodeType = "graph-state"}).
+     */
+    String mode;
+
+    /**
+     * Edge list for graph ensembles. Each entry connects two state nodes (or a state to
+     * the implicit {@code "__END__"} sentinel) with optional conditional metadata.
+     * {@code null} for non-graph ensembles.
+     */
+    List<DagGraphEdge> graphEdges;
+
+    /** Start-state id for graph ensembles. {@code null} for non-graph ensembles. */
+    String graphStartStateId;
+
+    /**
+     * Termination reason for graph ensembles, populated post-execution by
+     * {@code DagExporter.build(graph, graphTrace)}. {@code "terminal"} or {@code "maxSteps"}.
+     * {@code null} pre-execution or for non-graph ensembles.
+     */
+    String graphTerminationReason;
+
+    /**
+     * Number of steps actually run, populated post-execution. {@code null} pre-execution
+     * or for non-graph ensembles.
+     */
+    Integer graphStepsRun;
 
     // ========================
     // JSON export methods

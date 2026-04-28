@@ -163,6 +163,30 @@ class EmbeddingMemoryStore implements MemoryStore {
         log.debug("evict() called on EmbeddingMemoryStore for scope '{}': no-op", scope);
     }
 
+    /**
+     * Per-scope clear is not portably supported by LangChain4j embedding stores.
+     *
+     * <p>Most underlying vector stores (Pinecone, Chroma, Qdrant, Milvus, Weaviate, ...)
+     * support deletion only by ID or full collection drop -- not by metadata filter -- and
+     * the {@code EmbeddingStore} SPI does not expose either operation. As a result, this
+     * implementation throws {@link UnsupportedOperationException} so that callers (notably
+     * {@code Loop} with {@code FRESH_PER_ITERATION}) do not silently accumulate stale state.
+     *
+     * <p>If you need {@code FRESH_PER_ITERATION} memory semantics with a vector backend,
+     * either (a) use {@link MemoryStore#inMemory()} for the loop's scopes, or (b) configure
+     * the loop's scopes to be unique per iteration so prior-iteration entries do not match
+     * subsequent retrieval queries.
+     */
+    @Override
+    public void clear(String scope) {
+        validateScope(scope);
+        throw new UnsupportedOperationException(
+                "EmbeddingMemoryStore does not support per-scope clear -- the LangChain4j "
+                        + "EmbeddingStore SPI does not expose metadata-filtered deletion. "
+                        + "For LoopMemoryMode.FRESH_PER_ITERATION, use MemoryStore.inMemory() for "
+                        + "the affected scopes.");
+    }
+
     private static void validateScope(String scope) {
         if (scope == null || scope.isBlank()) {
             throw new IllegalArgumentException("scope must not be null or blank");

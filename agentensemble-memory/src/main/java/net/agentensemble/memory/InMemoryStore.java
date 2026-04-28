@@ -63,6 +63,12 @@ class InMemoryStore implements MemoryStore {
         });
     }
 
+    @Override
+    public void clear(String scope) {
+        validateScope(scope);
+        scopes.remove(scope);
+    }
+
     private static void validateScope(String scope) {
         if (scope == null || scope.isBlank()) {
             throw new IllegalArgumentException("scope must not be null or blank");

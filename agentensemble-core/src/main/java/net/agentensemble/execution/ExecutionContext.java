@@ -1048,6 +1048,48 @@ public final class ExecutionContext {
     }
 
     /**
+     * Fire a {@link net.agentensemble.callback.LoopIterationCompletedEvent} to all
+     * registered listeners. Called after each {@code Loop} body iteration finishes,
+     * before the predicate is evaluated.
+     *
+     * <p>Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireLoopIterationCompleted(net.agentensemble.callback.LoopIterationCompletedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onLoopIterationCompleted(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onLoopIterationCompleted: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Fire a {@link net.agentensemble.callback.GraphStateCompletedEvent} to all registered
+     * listeners. Called after each {@code Graph} state's Task completes, with the routed-to
+     * next state already determined.
+     *
+     * <p>Exceptions from individual listeners are caught and logged.
+     *
+     * @param event the event to fire; must not be null
+     */
+    public void fireGraphStateCompleted(net.agentensemble.callback.GraphStateCompletedEvent event) {
+        for (EnsembleListener listener : listeners) {
+            try {
+                listener.onGraphStateCompleted(event);
+            } catch (Exception e) {
+                if (log.isWarnEnabled()) {
+                    log.warn("EnsembleListener threw exception in onGraphStateCompleted: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
      * Fire a {@link TaskFailedEvent} to all registered listeners.
      *
      * <p>Exceptions from individual listeners are caught and logged.

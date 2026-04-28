@@ -76,6 +76,8 @@ nav:
     - Workflows: guides/workflows.md
     - Phases: guides/phases.md
     - Phase Review: guides/phase-review.md
+    - Loops: guides/loops.md
+    - Graphs: guides/graphs.md
     - MapReduceEnsemble: guides/map-reduce.md
     - Tools: guides/tools.md
     - Built-in Tools: guides/built-in-tools.md
@@ -127,6 +129,8 @@ nav:
     - Deterministic Tasks: examples/deterministic-tasks.md
     - Phases: examples/phases.md
     - Phase Review: examples/phase-review.md
+    - Loops: examples/loops.md
+    - Graphs: examples/graphs.md
     - Task Reflection: examples/task-reflection.md
     - Human-in-the-Loop: examples/human-in-the-loop.md
     - Live Dashboard: examples/live-dashboard.md
@@ -134,6 +138,8 @@ nav:
     - TOON Format: examples/toon-format.md
     - Long-Running Ensemble: examples/long-running-ensemble.md
     - Cross-Ensemble Delegation: examples/cross-ensemble-delegation.md
+  - Release notes:
+    - v4.0.0 (Loop & Graph): release-notes/v4.0.0.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
     - Typed Tool Inputs: migration/typed-tool-inputs.md
@@ -163,3 +169,5 @@ nav:
     - Typed Tool Inputs: design/23-typed-tool-input.md
     - TOON Context Format: design/25-toon-context-format.md
     - Viz Observability: design/27-viz-observability.md
+    - Loops: design/29-loops.md
+    - Graphs (state machines): design/30-graphs.md

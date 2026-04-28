@@ -76,6 +76,29 @@ public interface MemoryStore {
     void evict(String scope, EvictionPolicy policy);
 
     /**
+     * Remove all entries from the specified scope.
+     *
+     * <p>Used by workflow constructs that need to start fresh between iterations -- notably
+     * {@code LoopMemoryMode.FRESH_PER_ITERATION} on a {@code Loop}, which clears the body's
+     * declared scopes between iterations so prior iterations' outputs don't pollute the
+     * next iteration's prompt.
+     *
+     * <p>Implementors must provide an implementation. {@link InMemoryStore} drops the
+     * named scope. {@link EmbeddingMemoryStore} throws
+     * {@link UnsupportedOperationException} with an actionable message because the
+     * underlying LangChain4j {@code EmbeddingStore} SPI does not expose metadata-filtered
+     * deletion. New backends should either remove the scope's entries (preferred) or
+     * throw {@code UnsupportedOperationException} pointing the caller at an alternative
+     * (such as {@link MemoryStore#inMemory()} for the affected scopes).
+     *
+     * <p>Eviction policies via {@link #evict(String, EvictionPolicy)} are not suitable
+     * for "clear" semantics because the policies always retain at least one entry.
+     *
+     * @param scope the scope name; must not be null or blank
+     */
+    void clear(String scope);
+
+    /**
      * Create a lightweight in-memory store backed by a {@code ConcurrentHashMap}.
      *
      * <p>Entries are accumulated in insertion order per scope. Retrieval returns the most

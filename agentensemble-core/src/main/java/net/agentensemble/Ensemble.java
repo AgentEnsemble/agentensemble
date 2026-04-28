@@ -139,6 +139,47 @@ public class Ensemble {
     private final List<Task> tasks;
 
     /**
+     * Bounded iteration loops over a sub-ensemble of tasks.
+     *
+     * <p>Each {@link net.agentensemble.workflow.loop.Loop} declares a body of tasks that
+     * repeats until either an {@code until} predicate fires or a {@code maxIterations} cap
+     * is hit. Loops are first-class workflow nodes and may carry outer-DAG dependencies via
+     * {@code Loop.builder().context(...)}.
+     *
+     * <p>Ordering rules:
+     * <ul>
+     *   <li>{@code Workflow.SEQUENTIAL} -- declared tasks execute first, then declared loops
+     *       in declaration order. To execute a task strictly after a loop, use
+     *       {@code Workflow.PARALLEL} (with {@code Loop.context} declaring the loop's outer
+     *       dependencies) or place the post-loop work as the final task in the loop body.</li>
+     *   <li>{@code Workflow.PARALLEL} -- loops are nodes in the dependency DAG. Loops with
+     *       no unmet dependencies run alongside other roots; tasks waiting on a loop is not
+     *       supported in v1 since {@code Task.context} accepts only Tasks (track upstream
+     *       dependencies on the Loop instead).</li>
+     *   <li>{@code Workflow.HIERARCHICAL} -- loops are not supported; using both rejects
+     *       at validation time.</li>
+     * </ul>
+     *
+     * <p>Default: empty list.
+     */
+    @Singular
+    private final List<net.agentensemble.workflow.loop.Loop> loops;
+
+    /**
+     * Optional state-machine graph. Mutually exclusive with {@code tasks}, {@code loops},
+     * and {@code phases} — a Graph ensemble has exactly one Graph and no other workflow
+     * nodes.
+     *
+     * <p>See {@link net.agentensemble.workflow.graph.Graph} for the construct used to
+     * express state-machine flows: tool routers, selective-feedback edges, multi-turn
+     * negotiation, and other patterns where the next node is decided per step from the
+     * prior output.
+     *
+     * <p>Default: {@code null}.
+     */
+    private final net.agentensemble.workflow.graph.Graph graph;
+
+    /**
      * Named task-group workstreams with a dependency DAG.
      *
      * <p>Independent phases run in parallel; a phase starts only when all phases declared in
@@ -1491,9 +1532,46 @@ public class Ensemble {
             // Step 7b: Notify EnsembleListeners that the ensemble run is starting.
             executionContext.fireEnsembleStarted(ensembleId, effectiveWorkflow.name(), agentResolvedTasks.size());
 
+            // Step 7c: Resolve loop body tasks (templates + agents) using the same
+            // pipeline as regular tasks. Also remap each loop's outer-DAG context() entries
+            // from the original Task identities to the agent-resolved instances so the
+            // parallel scheduler's identity-based dependency lookups succeed.
+            IdentityHashMap<Task, Task> originalToResolvedTopLevelTask = new IdentityHashMap<>();
+            if (tasks != null) {
+                for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
+                    originalToResolvedTopLevelTask.put(tasks.get(i), agentResolvedTasks.get(i));
+                }
+            }
+            List<net.agentensemble.workflow.loop.Loop> resolvedLoops = resolveLoops(
+                    loops, resolvedInputs, effectiveChatModel, chatLanguageModel, originalToResolvedTopLevelTask);
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Resolved loops | declared: {} | resolved: {}",
+                        loops != null ? loops.size() : 0,
+                        resolvedLoops.size());
+            }
+
+            // Step 7d: Resolve graph state Tasks if a Graph is configured. Same template +
+            // agent resolution pipeline as regular tasks.
+            net.agentensemble.workflow.graph.Graph resolvedGraph = null;
+            if (graph != null) {
+                resolvedGraph = resolveGraph(graph, resolvedInputs, effectiveChatModel, chatLanguageModel);
+            }
+
             // Step 8: Select and execute WorkflowExecutor (flat tasks) or PhaseDagExecutor (phases)
+            //         or GraphExecutor (state-machine graph)
             EnsembleOutput output;
-            if (phases != null && !phases.isEmpty()) {
+            if (resolvedGraph != null) {
+                // Graph ensemble: dispatch to GraphExecutor. Graph is mutually exclusive with
+                // tasks/loops/phases (validated at Ensemble.run() entry).
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "Ensemble run using Graph | states: {} | maxSteps: {}",
+                            resolvedGraph.getStates().size(),
+                            resolvedGraph.getMaxSteps());
+                }
+                output = executeGraph(resolvedGraph, derivedAgents, executionContext);
+            } else if (phases != null && !phases.isEmpty()) {
                 // Phase-based execution: PhaseDagExecutor handles the DAG; each phase
                 // runner resolves template vars and agents independently.
                 if (log.isInfoEnabled()) {
@@ -1502,7 +1580,17 @@ public class Ensemble {
                 output = executePhases(phases, resolvedInputs, buildEffectiveChatModel(), executionContext);
             } else {
                 WorkflowExecutor executor = selectExecutor(effectiveWorkflow, derivedAgents);
-                output = executor.execute(agentResolvedTasks, executionContext);
+                if (resolvedLoops.isEmpty()) {
+                    output = executor.execute(agentResolvedTasks, executionContext);
+                } else {
+                    // Loops integrate via WorkflowNode-aware dispatch. SequentialWorkflowExecutor
+                    // and ParallelWorkflowExecutor support loops; HierarchicalWorkflowExecutor
+                    // rejects them via the default executeNodes() guard.
+                    java.util.List<net.agentensemble.workflow.WorkflowNode> nodes = new ArrayList<>();
+                    nodes.addAll(agentResolvedTasks);
+                    nodes.addAll(resolvedLoops);
+                    output = executor.executeNodes(nodes, executionContext);
+                }
             }
 
             Instant runCompletedAt = Instant.now();
@@ -1563,9 +1651,16 @@ public class Ensemble {
             // Remap the executor's taskOutputIndex (keyed by agent-resolved task instances)
             // back to the original task instances the caller holds, using the positional
             // correspondence: tasks.get(i) -> agentResolvedTasks.get(i).
+            //
+            // For Graph ensembles, executeGraph() has already remapped its index to the
+            // original state-Task instances (graph.getStates() values), so we preserve it
+            // unchanged rather than overwriting with an empty map (since `tasks` is empty
+            // when a graph is configured).
             Map<Task, TaskOutput> executorIndex = output.getTaskOutputIndex();
             Map<Task, TaskOutput> originalIndex = null;
-            if (executorIndex != null) {
+            if (resolvedGraph != null) {
+                originalIndex = executorIndex;
+            } else if (executorIndex != null) {
                 IdentityHashMap<Task, TaskOutput> idx = new IdentityHashMap<>();
                 for (int i = 0; i < tasks.size() && i < agentResolvedTasks.size(); i++) {
                     Task original = tasks.get(i);
@@ -1588,6 +1683,14 @@ public class Ensemble {
                     .exitReason(output.getExitReason())
                     .taskOutputIndex(originalIndex)
                     .phaseOutputs(output.getPhaseOutputs())
+                    // Loop side channels survive the trace re-attachment.
+                    .loopHistory(output.getLoopHistory())
+                    .loopTerminationReasons(output.getLoopTerminationReasons())
+                    .loopsTerminatedByMaxIterations(output.getLoopsTerminatedByMaxIterations())
+                    // Graph side channels survive too.
+                    .graphHistory(output.getGraphHistory())
+                    .graphTerminationReason(output.getGraphTerminationReason().orElse(null))
+                    .graphTerminatedByMaxSteps(output.wasGraphTerminatedByMaxSteps() ? Boolean.TRUE : null)
                     .build();
 
             // Step 12: Export trace
@@ -1861,6 +1964,44 @@ public class Ensemble {
             }
         }
 
+        // Populate graph trace from the EnsembleOutput's graph side channels, if a Graph ran.
+        if (graph != null && !output.getGraphHistory().isEmpty()) {
+            net.agentensemble.trace.GraphTrace.GraphTraceBuilder gtb = net.agentensemble.trace.GraphTrace.builder()
+                    .graphName(graph.getName())
+                    .startState(graph.getStartState())
+                    .terminationReason(output.getGraphTerminationReason().orElse("unknown"))
+                    .stepsRun(output.getGraphHistory().size())
+                    .maxSteps(graph.getMaxSteps());
+            for (net.agentensemble.workflow.graph.GraphStep step : output.getGraphHistory()) {
+                gtb.step(new net.agentensemble.trace.GraphTrace.GraphStepTrace(
+                        step.getStateName(), step.getStepNumber(), step.getNextState()));
+            }
+            builder.graphTrace(gtb.build());
+        }
+
+        // Populate per-loop traces from the EnsembleOutput's loop side channels.
+        Map<String, List<Map<String, net.agentensemble.task.TaskOutput>>> loopHistory = output.getLoopHistory();
+        Map<String, String> loopTermReasons = output.getLoopTerminationReasons();
+        if (loopHistory != null && !loopHistory.isEmpty() && loops != null) {
+            for (net.agentensemble.workflow.loop.Loop loop : loops) {
+                List<Map<String, net.agentensemble.task.TaskOutput>> history = loopHistory.get(loop.getName());
+                if (history == null) continue;
+                String reason = loopTermReasons != null ? loopTermReasons.get(loop.getName()) : "unknown";
+                net.agentensemble.trace.LoopTrace.LoopTraceBuilder ltb = net.agentensemble.trace.LoopTrace.builder()
+                        .loopName(loop.getName())
+                        .iterationsRun(history.size())
+                        .maxIterations(loop.getMaxIterations())
+                        .terminationReason(reason != null ? reason : "unknown")
+                        .onMaxIterations(loop.getOnMaxIterations().name())
+                        .outputMode(loop.getOutputMode().name())
+                        .memoryMode(loop.getMemoryMode().name());
+                for (Map<String, net.agentensemble.task.TaskOutput> iter : history) {
+                    ltb.iteration(List.copyOf(iter.keySet()));
+                }
+                builder.loopTrace(ltb.build());
+            }
+        }
+
         return builder.build();
     }
 
@@ -1897,6 +2038,228 @@ public class Ensemble {
             }
         }
         return result;
+    }
+
+    /**
+     * Resolve template variables and synthesize agents for every {@link net.agentensemble.workflow.loop.Loop}'s
+     * body tasks. Mirrors the {@link #resolveTasks} + {@link #resolveAgents} pipeline applied
+     * to top-level tasks, but operates per-loop on the loop's body.
+     *
+     * <p>Each loop's body tasks have their {@code description} and {@code expectedOutput}
+     * template-substituted and (for AI-backed tasks) an agent is synthesized when none is
+     * explicitly set. The resolved loop is rebuilt via {@link
+     * net.agentensemble.workflow.loop.Loop#toBuilder()} preserving the loop's name,
+     * predicate, and configuration.
+     *
+     * <p>Body-task {@code context()} references within the loop are remapped to the resolved
+     * instances (same identity-rewrite pattern used by {@link #resolveTasks}).
+     */
+    private List<net.agentensemble.workflow.loop.Loop> resolveLoops(
+            List<net.agentensemble.workflow.loop.Loop> loops,
+            Map<String, String> resolvedInputs,
+            ChatModel ensembleLlm,
+            ChatModel rawChatLanguageModel,
+            IdentityHashMap<Task, Task> originalToResolvedTopLevelTask) {
+        if (loops == null || loops.isEmpty()) {
+            return List.of();
+        }
+        List<net.agentensemble.workflow.loop.Loop> result = new ArrayList<>(loops.size());
+        for (net.agentensemble.workflow.loop.Loop loop : loops) {
+            // Pass 1: template-substitute body task description/expectedOutput.
+            IdentityHashMap<Task, Task> originalToTemplate = new IdentityHashMap<>();
+            List<Task> templateBody = new ArrayList<>(loop.getBody().size());
+            for (Task t : loop.getBody()) {
+                Task resolved = t.toBuilder()
+                        .description(TemplateResolver.resolve(t.getDescription(), resolvedInputs))
+                        .expectedOutput(TemplateResolver.resolve(t.getExpectedOutput(), resolvedInputs))
+                        .build();
+                originalToTemplate.put(t, resolved);
+                templateBody.add(resolved);
+            }
+            // Remap intra-body context references to the template-resolved instances.
+            List<Task> rewiredTemplateBody = new ArrayList<>(templateBody.size());
+            IdentityHashMap<Task, Task> templateToRewired = new IdentityHashMap<>();
+            for (int i = 0; i < templateBody.size(); i++) {
+                Task tr = templateBody.get(i);
+                List<Task> ctx = tr.getContext();
+                Task rewired;
+                if (ctx == null || ctx.isEmpty()) {
+                    rewired = tr;
+                } else {
+                    List<Task> newCtx = new ArrayList<>(ctx.size());
+                    for (Task c : ctx) {
+                        Task remapped = originalToTemplate.getOrDefault(c, c);
+                        newCtx.add(templateToRewired.getOrDefault(remapped, remapped));
+                    }
+                    rewired = tr.toBuilder().context(newCtx).build();
+                }
+                templateToRewired.put(tr, rewired);
+                rewiredTemplateBody.add(rewired);
+            }
+
+            // Pass 2: synthesize agents for body tasks that need them.
+            List<Task> agentBody = resolveAgents(rewiredTemplateBody, ensembleLlm, rawChatLanguageModel);
+
+            // Remap the loop's outer-DAG context() entries from the original Task identities
+            // (which are no longer in the parallel executor's task list after agent synthesis)
+            // to the resolved instances. Without this remap the dependency graph treats the
+            // shadow loop task as a root and runs it immediately.
+            List<Task> remappedOuterContext;
+            List<Task> originalOuterContext = loop.getContext();
+            if (originalOuterContext == null || originalOuterContext.isEmpty()) {
+                remappedOuterContext = List.of();
+            } else {
+                remappedOuterContext = new ArrayList<>(originalOuterContext.size());
+                for (Task ctx : originalOuterContext) {
+                    Task resolved = originalToResolvedTopLevelTask.get(ctx);
+                    remappedOuterContext.add(resolved != null ? resolved : ctx);
+                }
+            }
+
+            net.agentensemble.workflow.loop.Loop resolvedLoop = loop.toBuilder()
+                    .clearBody()
+                    .body(agentBody)
+                    .clearContext()
+                    .context(remappedOuterContext)
+                    .build();
+            result.add(resolvedLoop);
+        }
+        return result;
+    }
+
+    /**
+     * Resolve a {@link net.agentensemble.workflow.graph.Graph}'s state Tasks by applying
+     * template substitution and agent synthesis to each state's Task. Mirrors
+     * {@link #resolveLoops} but operates per-state rather than per-body.
+     */
+    private net.agentensemble.workflow.graph.Graph resolveGraph(
+            net.agentensemble.workflow.graph.Graph graph,
+            Map<String, String> resolvedInputs,
+            ChatModel ensembleLlm,
+            ChatModel rawChatLanguageModel) {
+        if (graph == null) {
+            return null;
+        }
+        // Pass 1: template-substitute each state Task's description / expectedOutput.
+        java.util.LinkedHashMap<String, Task> templateStates = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Task> entry : graph.getStates().entrySet()) {
+            Task t = entry.getValue();
+            Task resolved = t.toBuilder()
+                    .description(TemplateResolver.resolve(t.getDescription(), resolvedInputs))
+                    .expectedOutput(TemplateResolver.resolve(t.getExpectedOutput(), resolvedInputs))
+                    .build();
+            templateStates.put(entry.getKey(), resolved);
+        }
+
+        // Pass 2: synthesize agents for state Tasks via resolveAgents. We pass each state's
+        // Task as a singleton list so the existing pipeline applies (rate limits, agent
+        // synthesis, deterministic-task pass-through). State Tasks are independent of each
+        // other -- they have no context() linking, so order doesn't matter for resolution.
+        java.util.LinkedHashMap<String, Task> agentStates = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Task> entry : templateStates.entrySet()) {
+            List<Task> resolved = resolveAgents(List.of(entry.getValue()), ensembleLlm, rawChatLanguageModel);
+            agentStates.put(entry.getKey(), resolved.get(0));
+        }
+
+        // Rebuild the Graph with the resolved state Tasks. Edges, start, maxSteps,
+        // onMaxSteps, noFeedbackStates all carry over unchanged.
+        net.agentensemble.workflow.graph.Graph.GraphBuilder gb = net.agentensemble.workflow.graph.Graph.builder()
+                .name(graph.getName())
+                .start(graph.getStartState())
+                .maxSteps(graph.getMaxSteps())
+                .onMaxSteps(graph.getOnMaxSteps())
+                .injectFeedbackOnRevisit(graph.isInjectFeedbackOnRevisit());
+        for (Map.Entry<String, Task> entry : agentStates.entrySet()) {
+            if (graph.getNoFeedbackStates() != null
+                    && graph.getNoFeedbackStates().contains(entry.getKey())) {
+                gb.stateNoFeedback(entry.getKey(), entry.getValue());
+            } else {
+                gb.state(entry.getKey(), entry.getValue());
+            }
+        }
+        for (net.agentensemble.workflow.graph.GraphEdge edge : graph.getEdges()) {
+            gb.edge(edge.getFrom(), edge.getTo(), edge.getCondition(), edge.getConditionDescription());
+        }
+        return gb.build();
+    }
+
+    /**
+     * Execute a resolved {@link net.agentensemble.workflow.graph.Graph} via
+     * {@link net.agentensemble.workflow.graph.GraphExecutor} and assemble an
+     * {@link EnsembleOutput} that exposes:
+     * <ul>
+     *   <li>{@code taskOutputs} — one entry per step, in execution order;</li>
+     *   <li>{@code taskOutputIndex} — identity-keyed by the original state Task instances,
+     *       holding the LAST output for each state (matches the Loop projection contract);</li>
+     *   <li>{@code graphHistory} — full per-step trace for downstream consumers;</li>
+     *   <li>{@code graphTerminationReason} — {@code "terminal"} or {@code "maxSteps"};</li>
+     *   <li>{@code graphTerminatedByMaxSteps} — true when {@code RETURN_WITH_FLAG} fired.</li>
+     * </ul>
+     */
+    private EnsembleOutput executeGraph(
+            net.agentensemble.workflow.graph.Graph resolvedGraph,
+            List<Agent> derivedAgents,
+            ExecutionContext executionContext) {
+        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
+        SequentialWorkflowExecutor bodyRunner =
+                new SequentialWorkflowExecutor(derivedAgents, Math.max(maxDelegationDepth, 1), policies);
+        net.agentensemble.workflow.graph.GraphExecutor executor =
+                new net.agentensemble.workflow.graph.GraphExecutor(bodyRunner);
+
+        Instant graphStart = Instant.now();
+        net.agentensemble.workflow.graph.GraphExecutionResult result =
+                executor.execute(resolvedGraph, executionContext);
+        Duration totalDuration = Duration.between(graphStart, Instant.now());
+
+        // Flat task outputs in step order
+        List<net.agentensemble.task.TaskOutput> taskOutputs =
+                new ArrayList<>(result.getHistory().size());
+        for (net.agentensemble.workflow.graph.GraphStep step : result.getHistory()) {
+            taskOutputs.add(step.getOutput());
+        }
+
+        // Remap projectedOutputs from resolved-state-Task identities back to the original
+        // state-Task identities that the user holds, so EnsembleOutput.getOutput(originalTask)
+        // works as documented. Walk by state name: graph (original) and resolvedGraph (resolved)
+        // share state names.
+        IdentityHashMap<Task, net.agentensemble.task.TaskOutput> originalKeyedIndex = new IdentityHashMap<>();
+        if (graph != null && graph.getStates() != null) {
+            for (Map.Entry<String, Task> origEntry : graph.getStates().entrySet()) {
+                Task resolvedTask = resolvedGraph.getStates().get(origEntry.getKey());
+                if (resolvedTask != null) {
+                    net.agentensemble.task.TaskOutput out =
+                            result.getProjectedOutputs().get(resolvedTask);
+                    if (out != null) {
+                        originalKeyedIndex.put(origEntry.getValue(), out);
+                    }
+                }
+            }
+        }
+
+        // RETURN_WITH_FLAG semantic: only flag when the configured action AND we hit maxSteps
+        Boolean maxStepsFlag = null;
+        if (result.stoppedByMaxSteps()
+                && resolvedGraph.getOnMaxSteps() == net.agentensemble.workflow.graph.MaxStepsAction.RETURN_WITH_FLAG) {
+            maxStepsFlag = Boolean.TRUE;
+        }
+
+        String finalRaw = taskOutputs.isEmpty()
+                ? ""
+                : taskOutputs.get(taskOutputs.size() - 1).getRaw();
+        int totalToolCalls = taskOutputs.stream()
+                .mapToInt(net.agentensemble.task.TaskOutput::getToolCallCount)
+                .sum();
+
+        return EnsembleOutput.builder()
+                .raw(finalRaw)
+                .taskOutputs(taskOutputs)
+                .totalDuration(totalDuration)
+                .totalToolCalls(totalToolCalls)
+                .taskOutputIndex(originalKeyedIndex)
+                .graphHistory(result.getHistory())
+                .graphTerminationReason(result.getTerminationReason())
+                .graphTerminatedByMaxSteps(maxStepsFlag)
+                .build();
     }
 
     /**
@@ -2416,6 +2779,44 @@ public class Ensemble {
             return listener(new EnsembleListener() {
                 @Override
                 public void onTaskComplete(TaskCompleteEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Register a lambda that is called after each {@link net.agentensemble.workflow.loop.Loop}
+         * iteration completes (before the loop's predicate is evaluated). Useful for live
+         * progress reporting and per-iteration metrics.
+         *
+         * @param handler the lambda to invoke per loop iteration; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder onLoopIterationCompleted(
+                Consumer<net.agentensemble.callback.LoopIterationCompletedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onLoopIterationCompleted(net.agentensemble.callback.LoopIterationCompletedEvent event) {
+                    handler.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Register a lambda that is called after each {@link net.agentensemble.workflow.graph.Graph}
+         * state's Task completes, with the routed-to next state already determined. Useful
+         * for live progress reporting and per-state metrics.
+         *
+         * @param handler the lambda to invoke per graph step; must not be null
+         * @return this builder
+         */
+        public EnsembleBuilder onGraphStateCompleted(
+                Consumer<net.agentensemble.callback.GraphStateCompletedEvent> handler) {
+            Objects.requireNonNull(handler, "handler");
+            return listener(new EnsembleListener() {
+                @Override
+                public void onGraphStateCompleted(net.agentensemble.callback.GraphStateCompletedEvent event) {
                     handler.accept(event);
                 }
             });

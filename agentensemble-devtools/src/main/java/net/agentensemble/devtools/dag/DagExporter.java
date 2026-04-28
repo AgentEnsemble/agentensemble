@@ -58,41 +58,291 @@ public final class DagExporter {
         if (ensemble == null) {
             throw new IllegalArgumentException("ensemble must not be null");
         }
+        // Graph ensembles use a different export shape (mode = "graph"). Detect early.
+        if (ensemble.getGraph() != null) {
+            return buildGraphMode(ensemble.getGraph(), null);
+        }
         List<Task> tasks = ensemble.getTasks();
-        if (tasks == null || tasks.isEmpty()) {
-            throw new IllegalArgumentException("ensemble must have at least one task");
+        List<net.agentensemble.workflow.loop.Loop> loops = ensemble.getLoops();
+        boolean hasTasks = tasks != null && !tasks.isEmpty();
+        boolean hasLoops = loops != null && !loops.isEmpty();
+        if (!hasTasks && !hasLoops) {
+            throw new IllegalArgumentException("ensemble must have at least one task or loop");
         }
 
         // Assign stable, index-based IDs to each task (identity-safe)
-        Map<Task, String> taskIds = buildTaskIds(tasks);
+        Map<Task, String> taskIds = buildTaskIds(tasks != null ? tasks : List.of());
 
         // Build the dependency graph (same algorithm used by the parallel executor)
-        TaskDependencyGraph graph = new TaskDependencyGraph(tasks);
+        TaskDependencyGraph graph = new TaskDependencyGraph(tasks != null ? tasks : List.of());
 
         // Compute topological levels: level 0 = roots, level N = depends on level N-1
-        Map<Task, Integer> levels = computeLevels(tasks, graph);
+        Map<Task, Integer> levels = computeLevels(tasks != null ? tasks : List.of(), graph);
 
         // Build parallel groups list: each index is a level, value is task IDs at that level
-        List<List<String>> parallelGroups = buildParallelGroups(tasks, taskIds, levels);
+        List<List<String>> parallelGroups = buildParallelGroups(tasks != null ? tasks : List.of(), taskIds, levels);
 
         // Compute the critical path (longest chain from any root to any leaf)
-        List<String> criticalPath = computeCriticalPath(tasks, taskIds, levels, graph);
+        List<String> criticalPath = computeCriticalPath(tasks != null ? tasks : List.of(), taskIds, levels, graph);
         Set<String> criticalPathSet = new HashSet<>(criticalPath);
 
         // Build agent summaries
         List<DagAgentNode> agentNodes = buildAgentNodes(ensemble.getAgents());
 
         // Build task nodes
-        List<DagTaskNode> taskNodes = buildTaskNodes(tasks, taskIds, graph, levels, criticalPathSet);
+        List<DagTaskNode> taskNodes =
+                buildTaskNodes(tasks != null ? tasks : List.of(), taskIds, graph, levels, criticalPathSet);
+
+        // Build loop nodes (one super-node per loop, with body rendered as nested task list).
+        // Loops follow tasks in the node list; their IDs are indexed after the last task ID.
+        if (hasLoops) {
+            int idCounter = taskNodes.size();
+            List<String> loopGroupIds = new ArrayList<>();
+            for (net.agentensemble.workflow.loop.Loop loop : loops) {
+                String loopId = String.valueOf(idCounter++);
+                List<DagTaskNode> bodyNodes = buildLoopBodyNodes(loop, loopId);
+                // Map Loop.context() outer-DAG deps to their task IDs so the rendered DAG
+                // and viz reflect actual scheduling constraints (a loop with a context dep
+                // does not start until its named upstream tasks complete -- this is what
+                // ParallelWorkflowExecutor's shadow-task pattern enforces at run time).
+                List<String> loopDeps = new ArrayList<>();
+                if (loop.getContext() != null) {
+                    for (Task ctx : loop.getContext()) {
+                        String depId = taskIds.get(ctx);
+                        if (depId != null) {
+                            loopDeps.add(depId);
+                        }
+                    }
+                }
+                // Place the loop one level after the deepest of its dependencies. With no
+                // deps, the loop is a root (level 0); with deps, level = max(dep level) + 1.
+                int loopParallelGroup = loopDeps.isEmpty()
+                        ? 0
+                        : loopDeps.stream()
+                                        .mapToInt(id -> taskNodes.stream()
+                                                .filter(n -> id.equals(n.getId()))
+                                                .findFirst()
+                                                .map(DagTaskNode::getParallelGroup)
+                                                .orElse(0))
+                                        .max()
+                                        .orElse(0)
+                                + 1;
+                taskNodes.add(DagTaskNode.builder()
+                        .id(loopId)
+                        .description("Loop: " + loop.getName())
+                        .expectedOutput("(loop body output, projected per " + loop.getOutputMode() + ")")
+                        .agentRole("(loop)")
+                        .dependsOn(loopDeps)
+                        .parallelGroup(loopParallelGroup)
+                        // Conservative: loops with no in-graph deps are always on the
+                        // critical path (the loop's wall time is bounded by maxIterations
+                        // and unknown until execution); loops with deps stay on it too
+                        // because the chain through them is the only completion path.
+                        .onCriticalPath(true)
+                        .nodeType("loop")
+                        .loopMaxIterations(loop.getMaxIterations())
+                        .loopBody(bodyNodes)
+                        .build());
+                loopGroupIds.add(loopId);
+            }
+            // Extend parallelGroups so each loop appears in its computed level. Loops with
+            // no deps go into level 0 alongside other roots; loops with deps go into a new
+            // level after their deepest dependency.
+            int maxExistingLevel = parallelGroups.size() - 1;
+            int maxLoopLevel = taskNodes.stream()
+                    .filter(n -> "loop".equals(n.getNodeType()))
+                    .mapToInt(DagTaskNode::getParallelGroup)
+                    .max()
+                    .orElse(0);
+            List<List<String>> updatedGroups = new ArrayList<>(parallelGroups);
+            while (updatedGroups.size() <= Math.max(maxExistingLevel, maxLoopLevel)) {
+                updatedGroups.add(new ArrayList<>());
+            }
+            for (DagTaskNode loopNode : taskNodes.stream()
+                    .filter(n -> "loop".equals(n.getNodeType()))
+                    .toList()) {
+                List<String> bucket = new ArrayList<>(updatedGroups.get(loopNode.getParallelGroup()));
+                bucket.add(loopNode.getId());
+                updatedGroups.set(loopNode.getParallelGroup(), bucket);
+            }
+            parallelGroups = updatedGroups;
+
+            // Critical path: append loop ids in declaration order. Computing the precise
+            // critical path through loops requires knowing per-iteration wall time, which
+            // is unknown pre-execution; this conservative ordering is still useful for viz.
+            List<String> updatedCriticalPath = new ArrayList<>(criticalPath);
+            updatedCriticalPath.addAll(loopGroupIds);
+            criticalPath = updatedCriticalPath;
+        }
 
         return DagModel.builder()
-                .workflow(ensemble.getWorkflow().name())
+                .workflow(
+                        ensemble.getWorkflow() != null ? ensemble.getWorkflow().name() : "SEQUENTIAL")
                 .generatedAt(Instant.now())
                 .agents(agentNodes)
                 .tasks(taskNodes)
                 .parallelGroups(parallelGroups)
                 .criticalPath(criticalPath)
                 .build();
+    }
+
+    /**
+     * Build a graph-mode {@link DagModel} from a {@link net.agentensemble.workflow.graph.Graph}.
+     *
+     * <p>Pre-execution form ({@code graphTrace == null}): all edges have {@code fired=false},
+     * {@code graphTerminationReason} and {@code graphStepsRun} are {@code null}.
+     *
+     * <p>Post-execution form ({@code graphTrace != null}): edges that were traversed at least
+     * once during the run have {@code fired=true}, and the model carries the actual
+     * termination metadata.
+     *
+     * @param graph      the graph to render
+     * @param graphTrace optional trace; when supplied, populates fired/terminated metadata
+     * @return a graph-mode DagModel
+     */
+    public static DagModel build(
+            net.agentensemble.workflow.graph.Graph graph, net.agentensemble.trace.GraphTrace graphTrace) {
+        if (graph == null) {
+            throw new IllegalArgumentException("graph must not be null");
+        }
+        return buildGraphMode(graph, graphTrace);
+    }
+
+    private static DagModel buildGraphMode(
+            net.agentensemble.workflow.graph.Graph graph, net.agentensemble.trace.GraphTrace graphTrace) {
+        // Compute "fired" set if a trace is provided.
+        java.util.Set<String> firedEdgeKeys = new java.util.HashSet<>();
+        if (graphTrace != null) {
+            for (net.agentensemble.trace.GraphTrace.GraphStepTrace step : graphTrace.getSteps()) {
+                if (step.getNextState() != null) {
+                    firedEdgeKeys.add(step.getStateName() + "->" + step.getNextState());
+                }
+            }
+        }
+
+        // State nodes: index by state name -> id ("0", "1", ...) in declaration order.
+        Map<String, String> stateIds = new java.util.LinkedHashMap<>();
+        int idx = 0;
+        for (String stateName : graph.getStates().keySet()) {
+            stateIds.put(stateName, String.valueOf(idx++));
+        }
+        // Synthesize an END node id for visualisation; the rendering layer treats this
+        // specially as a terminal cap rather than a regular state.
+        String endNodeId = String.valueOf(idx);
+
+        List<DagTaskNode> taskNodes = new ArrayList<>(graph.getStates().size() + 1);
+        for (Map.Entry<String, Task> entry : graph.getStates().entrySet()) {
+            String stateName = entry.getKey();
+            Task t = entry.getValue();
+            String agentRole;
+            if (t.getAgent() != null) agentRole = t.getAgent().getRole();
+            else if (t.getHandler() != null) agentRole = "(deterministic)";
+            else agentRole = "(synthesized)";
+            taskNodes.add(DagTaskNode.builder()
+                    .id(stateIds.get(stateName))
+                    .description(stateName + ": " + t.getDescription())
+                    .expectedOutput(t.getExpectedOutput())
+                    .agentRole(agentRole)
+                    .dependsOn(List.of()) // graphs use edges, not context-deps
+                    .parallelGroup(0)
+                    .onCriticalPath(false)
+                    .nodeType("graph-state")
+                    .build());
+        }
+        // END terminal node
+        taskNodes.add(DagTaskNode.builder()
+                .id(endNodeId)
+                .description("END")
+                .expectedOutput("(terminal)")
+                .agentRole("(terminal)")
+                .dependsOn(List.of())
+                .parallelGroup(0)
+                .onCriticalPath(false)
+                .nodeType("graph-end")
+                .build());
+
+        // Edges
+        List<DagGraphEdge> edges = new ArrayList<>(graph.getEdges().size());
+        for (net.agentensemble.workflow.graph.GraphEdge e : graph.getEdges()) {
+            String fromId = stateIds.get(e.getFrom());
+            String toId =
+                    net.agentensemble.workflow.graph.Graph.END.equals(e.getTo()) ? endNodeId : stateIds.get(e.getTo());
+            String key = e.getFrom() + "->" + e.getTo();
+            edges.add(DagGraphEdge.builder()
+                    .fromStateId(fromId)
+                    .toStateId(toId)
+                    .conditionDescription(e.getConditionDescription())
+                    .unconditional(e.getCondition() == null)
+                    .fired(firedEdgeKeys.contains(key))
+                    .build());
+        }
+
+        // Use SEQUENTIAL for the workflow string -- the existing DagModel/Workflow union
+        // only declares SEQUENTIAL/PARALLEL/HIERARCHICAL. mode = "graph" is the
+        // discriminator that tells viz consumers to render as a state machine.
+        DagModel.DagModelBuilder b = DagModel.builder()
+                .workflow("SEQUENTIAL")
+                .generatedAt(Instant.now())
+                .mode("graph")
+                .graphStartStateId(stateIds.get(graph.getStartState()))
+                .parallelGroups(List.of()) // not meaningful for graphs
+                .criticalPath(List.of()); // not meaningful for graphs
+        for (DagTaskNode n : taskNodes) {
+            b.task(n);
+        }
+        b.graphEdges(edges);
+        if (graphTrace != null) {
+            b.graphTerminationReason(graphTrace.getTerminationReason());
+            b.graphStepsRun(graphTrace.getStepsRun());
+        }
+        return b.build();
+    }
+
+    /**
+     * Build the nested body-task nodes for a {@link net.agentensemble.workflow.loop.Loop}.
+     *
+     * <p>Body task IDs are namespaced under the loop's ID using a dot-separated convention
+     * (e.g., {@code "3.0"} = first body task of loop with id 3) so consumers can
+     * unambiguously identify them in logs and traces.
+     */
+    private static List<DagTaskNode> buildLoopBodyNodes(net.agentensemble.workflow.loop.Loop loop, String loopId) {
+        List<Task> body = loop.getBody();
+        // Identity-keyed IDs for intra-body context refs.
+        Map<Task, String> bodyIds = new IdentityHashMap<>();
+        for (int i = 0; i < body.size(); i++) {
+            bodyIds.put(body.get(i), loopId + "." + i);
+        }
+        List<DagTaskNode> result = new ArrayList<>(body.size());
+        for (int i = 0; i < body.size(); i++) {
+            Task t = body.get(i);
+            List<String> deps = new ArrayList<>();
+            if (t.getContext() != null) {
+                for (Task ctxTask : t.getContext()) {
+                    String depId = bodyIds.get(ctxTask);
+                    if (depId != null) {
+                        deps.add(depId);
+                    }
+                }
+            }
+            String agentRole;
+            if (t.getAgent() != null) {
+                agentRole = t.getAgent().getRole();
+            } else if (t.getHandler() != null) {
+                agentRole = "(deterministic)";
+            } else {
+                agentRole = "(synthesized)";
+            }
+            result.add(DagTaskNode.builder()
+                    .id(bodyIds.get(t))
+                    .description(t.getDescription())
+                    .expectedOutput(t.getExpectedOutput())
+                    .agentRole(agentRole)
+                    .dependsOn(deps)
+                    .parallelGroup(i) // body executes sequentially -> each task at its own level inside the loop
+                    .onCriticalPath(true)
+                    .build());
+        }
+        return result;
     }
 
     /**

@@ -114,13 +114,41 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<TaskNodeType>) {
                 DIRECT
               </span>
             )}
+            {task.nodeType === 'loop' && (
+              <span
+                title={
+                  task.loopMaxIterations !== undefined
+                    ? `Loop super-node (up to ${task.loopMaxIterations} iterations)`
+                    : 'Loop super-node'
+                }
+                className="rounded bg-white/30 px-1 text-xs font-semibold text-white"
+              >
+                LOOP{task.loopMaxIterations !== undefined ? ` ≤${task.loopMaxIterations}` : ''}
+              </span>
+            )}
+            {task.nodeType === 'graph-state' && (
+              <span
+                title="Graph state"
+                className="rounded bg-white/30 px-1 text-xs font-semibold text-white"
+              >
+                STATE
+              </span>
+            )}
+            {task.nodeType === 'graph-end' && (
+              <span
+                title="Graph terminal"
+                className="rounded bg-white/30 px-1 text-xs font-semibold text-white"
+              >
+                END
+              </span>
+            )}
             <span className="rounded bg-white/20 px-1 text-xs text-white">
               L{task.parallelGroup}
             </span>
           </div>
         </div>
 
-        {/* Body: task description */}
+        {/* Body: task description, plus a per-body summary line for loop nodes */}
         <div className="px-2.5 py-2">
           <p
             className="line-clamp-2 text-xs text-gray-700 dark:text-gray-300"
@@ -128,6 +156,15 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<TaskNodeType>) {
           >
             {task.description}
           </p>
+          {task.nodeType === 'loop' && task.loopBody && task.loopBody.length > 0 && (
+            <p
+              className="mt-1 text-[10px] text-gray-500 dark:text-gray-400"
+              title={task.loopBody.map(b => b.description).join('  →  ')}
+            >
+              Body: {task.loopBody.length} task{task.loopBody.length === 1 ? '' : 's'}
+              {' '}({task.loopBody.map(b => b.agentRole).join(' → ')})
+            </p>
+          )}
         </div>
 
         {/* Footer: metrics from trace (if available) */}
