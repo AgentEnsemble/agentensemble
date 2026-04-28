@@ -68,7 +68,10 @@ class RunManagerCancelSwitchTest {
         });
 
         RunState state = manager.submitRun(mockEnsemble, null, null, null, null, null);
-        assertThat(state.getStatus()).isEqualTo(Status.ACCEPTED);
+        // Race-tolerant: by the time we read the status, the worker thread may have
+        // already transitioned ACCEPTED -> RUNNING (especially on slow CI runners).
+        // Accept either; the substantive assertions about cancellation come below.
+        assertThat(state.getStatus()).isIn(Status.ACCEPTED, Status.RUNNING);
 
         // Wait until run is executing
         assertThat(startLatch.await(3, TimeUnit.SECONDS)).isTrue();
