@@ -112,15 +112,16 @@ export function layoutDagGraph(
   // grey out edges that did not fire post-execution (when fired metadata is present).
   let edges: Edge[];
   if (isGraphMode && dag.graphEdges) {
+    // Edges with explicit `fired = false` from a post-execution export render greyed.
+    // Pre-execution exports have fired = false everywhere; we treat that as "no styling"
+    // by checking whether ANY edge has fired = true (signal that this is post-exec).
+    // Compute once outside the map to keep edge styling O(E) instead of O(E^2).
+    const anyFired = dag.graphEdges.some((e) => e.fired);
     edges = dag.graphEdges.map((edge) => {
       const edgeId = `${edge.fromStateId}->${edge.toStateId}`;
       const label = edge.unconditional
         ? '' // unconditional edges render bare
         : edge.conditionDescription ?? '(condition)';
-      // Edges with explicit `fired = false` from a post-execution export render greyed.
-      // Pre-execution exports have fired = false everywhere; we treat that as "no styling"
-      // by checking whether ANY edge has fired = true (signal that this is post-exec).
-      const anyFired = dag.graphEdges!.some((e) => e.fired);
       const isFiredOrPreExec = !anyFired || edge.fired;
       return {
         id: edgeId,

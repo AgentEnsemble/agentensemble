@@ -84,7 +84,7 @@ exposed to the rest of the ensemble. The projection is controlled by `outputMode
 | `LoopOutputMode` | Outer-DAG visibility |
 |---|---|
 | `LAST_ITERATION` (default) | One output per body task — the last iteration's value. Matches reflection-loop semantics ("publish the approved draft"). |
-| `FINAL_TASK_ONLY` | Only the last body task's last-iteration output. Useful when downstream cares about the writer's text but not the critic's verdict. |
+| `FINAL_TASK_ONLY` | Only the last body task's last-iteration output — i.e. whichever task is declared last in the body, on the loop's final iteration. Order the body so the task whose output matters is last. (For a `writer → critic` body this exposes the critic's verdict; declare `critic → writer` if downstream wants the writer's text.) |
 | `ALL_ITERATIONS` | Per body task, a synthesized output whose `raw` text is a `--- iteration N ---` separated concatenation of every iteration. |
 
 The full per-iteration history is **always** available via the side channel

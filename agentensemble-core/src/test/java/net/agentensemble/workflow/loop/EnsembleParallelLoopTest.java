@@ -16,9 +16,10 @@ import org.junit.jupiter.api.Test;
 /**
  * End-to-end tests for {@code Workflow.PARALLEL} ensembles that include loops.
  *
- * <p>Phase D-1 ordering: tasks execute in parallel via the existing DAG, then loops execute
- * sequentially after the task DAG completes. A future release may lift this by scheduling
- * loops alongside tasks in the dependency graph.
+ * <p>Loops are first-class nodes in the parallel dependency graph. A loop with no
+ * {@code Loop.context()} runs alongside other root tasks; a loop with declared context
+ * waits until those tasks complete and then executes in its own virtual thread. Multiple
+ * independent loops execute concurrently.
  */
 class EnsembleParallelLoopTest {
 

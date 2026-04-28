@@ -73,6 +73,10 @@ public class DagTaskNode {
      *   <li>{@code "final-reduce"} -- the terminal reduce task</li>
      *   <li>{@code "loop"} -- a {@link net.agentensemble.workflow.loop.Loop} super-node;
      *       additional fields {@link #loopMaxIterations} and {@link #loopBody} are populated</li>
+     *   <li>{@code "graph-state"} -- a state node in a {@link net.agentensemble.workflow.graph.Graph}
+     *       DAG (rendered when the parent {@link DagModel#mode} is {@code "graph"})</li>
+     *   <li>{@code "graph-end"} -- the synthetic terminal end-cap node for a
+     *       {@link net.agentensemble.workflow.graph.Graph} DAG</li>
      * </ul>
      */
     String nodeType;

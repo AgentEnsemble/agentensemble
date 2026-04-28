@@ -1,6 +1,6 @@
 # Loops Design
 
-**Status**: Implemented in v3.5.
+**Status**: Implemented.
 
 ## Why
 
@@ -78,7 +78,10 @@ Ensemble.builder()
 
 - `Workflow.SEQUENTIAL` — declared tasks first (in declaration order), then
   declared loops (in declaration order).
-- `Workflow.PARALLEL` — task DAG runs concurrently, then loops sequentially.
+- `Workflow.PARALLEL` — loops are first-class nodes in the dependency DAG.
+  A loop with no `Loop.context()` runs alongside other root tasks; a loop with
+  `Loop.context(taskA, ...)` waits until those tasks complete and then runs
+  in its own virtual thread. Multiple independent loops run concurrently.
 - `Workflow.HIERARCHICAL` — loops rejected at validation time.
 
 ## Internal design
@@ -99,8 +102,8 @@ logic combines them into a `List<WorkflowNode>` when calling `executeNodes`.
 
 Lombok `@Value @Builder(toBuilder = true)`. `body` is `@Singular("task")` so
 users write `.task(t)` per body task. `context` is `@Singular("context")` for
-outer-DAG dependencies (Phase D-1 limitation: not currently honoured by the
-PARALLEL scheduler).
+outer-DAG dependencies; the PARALLEL scheduler honours these by treating the
+loop as a DAG node that waits for the listed predecessors before running.
 
 Build-time validation:
 
@@ -176,9 +179,9 @@ Three convenience accessors: `getLoopHistory(name)`, `getLoopTerminationReason(n
 - `loopBody` — nested `DagTaskNode` list rendered as a collapsible sub-DAG.
 
 `DagExporter` emits one super-node per loop, ID-namespaced (`"3"`, `"3.0"`,
-`"3.1"`, …) so consumers can unambiguously reference body tasks. The loop
-appears at the next parallel-group level after the task DAG and lies on the
-critical path under the v1 sequential-after-tasks model.
+`"3.1"`, …) so consumers can unambiguously reference body tasks. The loop's
+`dependsOn` list is populated from `Loop.context()` so the parallel coordinator
+schedules it as a regular DAG node.
 
 The viz `TaskNode` component renders `nodeType === "loop"` with a `LOOP ≤N`
 badge in the header and a "Body: N tasks (role → role)" summary line.

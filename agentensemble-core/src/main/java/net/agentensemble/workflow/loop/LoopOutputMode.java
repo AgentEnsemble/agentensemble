@@ -12,9 +12,12 @@ public enum LoopOutputMode {
     LAST_ITERATION,
 
     /**
-     * Expose only the last body task's last-iteration {@code TaskOutput}.
-     * Useful when downstream only cares about the final stage of the loop body
-     * (e.g. writer-then-critic where downstream only wants the writer's text).
+     * Expose only the last body task's last-iteration {@code TaskOutput} -- i.e. the
+     * output of whichever task is declared last in the body, on the loop's final
+     * iteration. Useful when downstream only needs the body's terminal step. Order
+     * the body so the task whose output matters is last (e.g. for a body where the
+     * critic is the last task, this exposes the critic's verdict; if you instead
+     * want the writer's text, place the writer last in the body).
      */
     FINAL_TASK_ONLY,
 

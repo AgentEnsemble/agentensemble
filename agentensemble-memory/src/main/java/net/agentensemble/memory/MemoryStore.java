@@ -78,7 +78,7 @@ public interface MemoryStore {
     /**
      * Remove all entries from the specified scope.
      *
-     * <p>Used by workflow constructs that need to start fresh between phases -- notably
+     * <p>Used by workflow constructs that need to start fresh between iterations -- notably
      * {@code LoopMemoryMode.FRESH_PER_ITERATION} on a {@code Loop}, which clears the body's
      * declared scopes between iterations so prior iterations' outputs don't pollute the
      * next iteration's prompt.
