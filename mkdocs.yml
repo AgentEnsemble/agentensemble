@@ -139,7 +139,7 @@ nav:
     - Long-Running Ensemble: examples/long-running-ensemble.md
     - Cross-Ensemble Delegation: examples/cross-ensemble-delegation.md
   - Release notes:
-    - v4.0.0 (Loop & Graph): release-notes/v4.0.0.md
+    - v3.5.0 (Loop & Graph): release-notes/v3.5.0.md
   - Migration:
     - v1.x to v2.0: migration/v1-to-v2.md
     - Typed Tool Inputs: migration/typed-tool-inputs.md
