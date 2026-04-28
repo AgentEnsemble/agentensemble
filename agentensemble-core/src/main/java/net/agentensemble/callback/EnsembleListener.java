@@ -74,6 +74,31 @@ public interface EnsembleListener {
     default void onTaskComplete(TaskCompleteEvent event) {}
 
     /**
+     * Called after each iteration of a {@link net.agentensemble.workflow.loop.Loop} body
+     * completes, before the loop's predicate is evaluated.
+     *
+     * <p>Useful for live progress reporting (rendering "iteration N of M"), per-iteration
+     * metrics, and dashboard updates. Listeners must not block -- the loop executor
+     * proceeds to predicate evaluation on the same thread immediately after dispatching
+     * this event.
+     *
+     * @param event the loop-iteration completed event
+     */
+    default void onLoopIterationCompleted(LoopIterationCompletedEvent event) {}
+
+    /**
+     * Called after each state of a {@link net.agentensemble.workflow.graph.Graph} completes,
+     * with the routed-to next state already decided. Mirrors {@link #onLoopIterationCompleted}
+     * but for state-machine workflows.
+     *
+     * <p>Live dashboards use this to highlight the current state in real time; metrics
+     * listeners use it for per-state attribution. Listeners must not block.
+     *
+     * @param event the graph-state completed event
+     */
+    default void onGraphStateCompleted(GraphStateCompletedEvent event) {}
+
+    /**
      * Called when an agent fails to complete a task, before the exception propagates.
      *
      * @param event the task failed event

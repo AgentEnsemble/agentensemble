@@ -3,6 +3,11 @@
 All fields available on `Task.builder()`. Fields marked "Synthesis" are used to configure
 the synthesized agent when no explicit `agent` is set.
 
+> **`Task` is a `WorkflowNode`.** As of v3.5, `Task` and `Loop` both implement the
+> `WorkflowNode` marker interface. `Ensemble.builder()` accepts both via `.task(Task)`
+> (existing) and `.loop(Loop)` (new). See the [Loops guide](../guides/loops.md) for the
+> bounded-iteration construct that wraps a body of `Task`s.
+
 ## Convenience Factories
 
 | Method | Description |

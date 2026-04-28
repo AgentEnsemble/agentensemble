@@ -134,6 +134,71 @@ public class EnsembleOutput {
     @ToString.Exclude
     Map<Task, TaskOutput> taskOutputIndex;
 
+    /**
+     * Loop iteration history, keyed by {@code Loop.getName()}. The value is iteration-ordered
+     * (index 0 = iteration 1); each iteration is a map from body-task name to that iteration's
+     * {@link TaskOutput}.
+     *
+     * <p>This is a side channel separate from {@link #taskOutputs} -- the loop's outer-DAG-visible
+     * outputs (per its {@code LoopOutputMode}) are recorded in {@code taskOutputs} like any
+     * other task. The history exists so trace/viz/auditing consumers can see every iteration.
+     *
+     * <p>Empty when no loops ran. Excluded from {@code equals()}, {@code hashCode()}, and
+     * {@code toString()} for the same reasons as {@link #taskOutputIndex}.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    Map<String, List<Map<String, TaskOutput>>> loopHistory;
+
+    /**
+     * Loop termination reasons keyed by {@code Loop.getName()}.
+     *
+     * <p>Values are {@code "predicate"} (the loop's stop predicate fired) or
+     * {@code "maxIterations"} (the loop hit its iteration cap). Empty when no loops ran.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    Map<String, String> loopTerminationReasons;
+
+    /**
+     * Names of loops that hit their {@code maxIterations} cap without the predicate firing,
+     * AND were configured with {@link net.agentensemble.workflow.loop.MaxIterationsAction#RETURN_WITH_FLAG}.
+     * Empty unless that termination action was used.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    java.util.Set<String> loopsTerminatedByMaxIterations;
+
+    /**
+     * Per-step record of a {@link net.agentensemble.workflow.graph.Graph} execution, when
+     * the ensemble used a Graph. Each entry captures the state visited, step number, and
+     * output. Visits to the same state appear as multiple entries.
+     *
+     * <p>Empty list when no Graph ran. Excluded from {@code equals}/{@code hashCode}/{@code toString}
+     * (consistent with {@link #taskOutputIndex} and {@link #loopHistory}).
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    List<net.agentensemble.workflow.graph.GraphStep> graphHistory;
+
+    /**
+     * Termination reason for the Graph execution, if a Graph ran. One of {@code "terminal"}
+     * (reached {@code Graph.END}) or {@code "maxSteps"} (cap hit). {@code null} when no
+     * Graph ran.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    String graphTerminationReason;
+
+    /**
+     * Set when a Graph hit {@code maxSteps} without reaching {@code END} AND was configured
+     * with {@link net.agentensemble.workflow.graph.MaxStepsAction#RETURN_WITH_FLAG}. {@code null}
+     * otherwise.
+     */
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    Boolean graphTerminatedByMaxSteps;
+
     // ========================
     // Convenience methods
     // ========================
@@ -186,6 +251,84 @@ public class EnsembleOutput {
     }
 
     /**
+     * Returns the iteration history for the named loop, or an empty list if the loop did not run.
+     *
+     * <p>The outer list is iteration-ordered (index 0 = iteration 1). Each iteration is a map
+     * from body-task name to that iteration's {@link TaskOutput}.
+     *
+     * @param loopName the loop's name, as set on {@code Loop.builder().name(...)}; must not be null
+     * @return immutable iteration history; empty list if the loop did not run
+     */
+    public List<Map<String, TaskOutput>> getLoopHistory(String loopName) {
+        if (loopName == null || loopHistory == null) {
+            return List.of();
+        }
+        List<Map<String, TaskOutput>> history = loopHistory.get(loopName);
+        return history != null ? history : List.of();
+    }
+
+    /**
+     * Returns the termination reason for the named loop, or empty if the loop did not run.
+     *
+     * <p>Possible values: {@code "predicate"}, {@code "maxIterations"}.
+     *
+     * @param loopName the loop's name; must not be null
+     * @return termination reason, or empty if the loop did not run
+     */
+    public Optional<String> getLoopTerminationReason(String loopName) {
+        if (loopName == null || loopTerminationReasons == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(loopTerminationReasons.get(loopName));
+    }
+
+    /**
+     * Returns true if the named loop hit its {@code maxIterations} cap without the
+     * predicate firing AND was configured with {@code MaxIterationsAction.RETURN_WITH_FLAG}.
+     *
+     * @param loopName the loop's name; must not be null
+     * @return true when the loop terminated by hitting max iterations under RETURN_WITH_FLAG
+     */
+    public boolean wasLoopTerminatedByMaxIterations(String loopName) {
+        return loopName != null
+                && loopsTerminatedByMaxIterations != null
+                && loopsTerminatedByMaxIterations.contains(loopName);
+    }
+
+    /**
+     * Returns the full per-step history of a Graph execution, or an empty list if no Graph
+     * ran. Entries are in execution order; revisits to the same state appear as multiple
+     * entries.
+     *
+     * @return immutable history list; empty if no graph ran
+     */
+    public List<net.agentensemble.workflow.graph.GraphStep> getGraphHistory() {
+        return graphHistory != null ? graphHistory : List.of();
+    }
+
+    /**
+     * Returns the termination reason for the Graph execution, if a Graph ran.
+     *
+     * <p>Possible values: {@code "terminal"} (reached {@code Graph.END}), {@code "maxSteps"}
+     * (cap hit). Empty if no Graph ran.
+     *
+     * @return termination reason; empty if no graph ran
+     */
+    public Optional<String> getGraphTerminationReason() {
+        return Optional.ofNullable(graphTerminationReason);
+    }
+
+    /**
+     * Returns true if the Graph hit its {@code maxSteps} cap without reaching {@code END}
+     * AND was configured with {@code MaxStepsAction.RETURN_WITH_FLAG}.
+     *
+     * @return true when the graph terminated by hitting max steps under RETURN_WITH_FLAG
+     */
+    public boolean wasGraphTerminatedByMaxSteps() {
+        return Boolean.TRUE.equals(graphTerminatedByMaxSteps);
+    }
+
+    /**
      * Returns the {@link TaskOutput} for the given task, using identity-based lookup.
      *
      * <p>The returned value is present only when the task ran and completed before the
@@ -231,7 +374,21 @@ public class EnsembleOutput {
         List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
         ExecutionMetrics metrics = ExecutionMetrics.from(immutable);
         return new EnsembleOutput(
-                raw, immutable, totalDuration, totalToolCalls, metrics, null, ExitReason.COMPLETED, null, null);
+                raw,
+                immutable,
+                totalDuration,
+                totalToolCalls,
+                metrics,
+                null,
+                ExitReason.COMPLETED,
+                null,
+                null,
+                Map.of(),
+                Map.of(),
+                java.util.Set.of(),
+                List.of(),
+                null,
+                null);
     }
 
     /**
@@ -253,6 +410,12 @@ public class EnsembleOutput {
         private ExitReason exitReason;
         private Map<String, List<TaskOutput>> phaseOutputs;
         private Map<Task, TaskOutput> taskOutputIndex;
+        private Map<String, List<Map<String, TaskOutput>>> loopHistory;
+        private Map<String, String> loopTerminationReasons;
+        private java.util.Set<String> loopsTerminatedByMaxIterations;
+        private List<net.agentensemble.workflow.graph.GraphStep> graphHistory;
+        private String graphTerminationReason;
+        private Boolean graphTerminatedByMaxSteps;
 
         public Builder raw(String raw) {
             this.raw = raw;
@@ -315,6 +478,42 @@ public class EnsembleOutput {
             return this;
         }
 
+        /** Set the per-loop iteration history (loop name -> iterations -> task-name -> output). */
+        public Builder loopHistory(Map<String, List<Map<String, TaskOutput>>> loopHistory) {
+            this.loopHistory = loopHistory;
+            return this;
+        }
+
+        /** Set per-loop termination reasons (loop name -> "predicate" | "maxIterations"). */
+        public Builder loopTerminationReasons(Map<String, String> loopTerminationReasons) {
+            this.loopTerminationReasons = loopTerminationReasons;
+            return this;
+        }
+
+        /** Set the names of loops that hit max-iterations under RETURN_WITH_FLAG. */
+        public Builder loopsTerminatedByMaxIterations(java.util.Set<String> loops) {
+            this.loopsTerminatedByMaxIterations = loops;
+            return this;
+        }
+
+        /** Set the per-step graph history (when a Graph ensemble ran). */
+        public Builder graphHistory(List<net.agentensemble.workflow.graph.GraphStep> history) {
+            this.graphHistory = history;
+            return this;
+        }
+
+        /** Set the graph termination reason (when a Graph ensemble ran). */
+        public Builder graphTerminationReason(String reason) {
+            this.graphTerminationReason = reason;
+            return this;
+        }
+
+        /** Set the RETURN_WITH_FLAG flag for graph termination. */
+        public Builder graphTerminatedByMaxSteps(Boolean flag) {
+            this.graphTerminatedByMaxSteps = flag;
+            return this;
+        }
+
         public EnsembleOutput build() {
             List<TaskOutput> immutable = taskOutputs != null ? List.copyOf(taskOutputs) : List.of();
             ExecutionMetrics resolvedMetrics = metrics != null ? metrics : ExecutionMetrics.from(immutable);
@@ -330,6 +529,17 @@ public class EnsembleOutput {
                 resolvedIndex = Collections.unmodifiableMap(copy);
             }
 
+            Map<String, List<Map<String, TaskOutput>>> resolvedLoopHistory =
+                    loopHistory != null ? Map.copyOf(loopHistory) : Map.of();
+            Map<String, String> resolvedLoopTerm =
+                    loopTerminationReasons != null ? Map.copyOf(loopTerminationReasons) : Map.of();
+            java.util.Set<String> resolvedLoopMaxIters = loopsTerminatedByMaxIterations != null
+                    ? java.util.Set.copyOf(loopsTerminatedByMaxIterations)
+                    : java.util.Set.of();
+
+            List<net.agentensemble.workflow.graph.GraphStep> resolvedGraphHistory =
+                    graphHistory != null ? List.copyOf(graphHistory) : List.of();
+
             return new EnsembleOutput(
                     raw,
                     immutable,
@@ -339,7 +549,13 @@ public class EnsembleOutput {
                     trace,
                     resolvedExitReason,
                     phaseOutputs,
-                    resolvedIndex);
+                    resolvedIndex,
+                    resolvedLoopHistory,
+                    resolvedLoopTerm,
+                    resolvedLoopMaxIters,
+                    resolvedGraphHistory,
+                    graphTerminationReason,
+                    graphTerminatedByMaxSteps);
         }
     }
 }

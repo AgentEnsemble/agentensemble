@@ -46,6 +46,8 @@ class EnsembleValidator {
 
     private final List<Task> tasks;
     private final List<Phase> phases;
+    private final List<net.agentensemble.workflow.loop.Loop> loops;
+    private final net.agentensemble.workflow.graph.Graph graph;
     private final ChatModel ensembleLlm;
     private final RateLimit rateLimit;
     private final Workflow workflow;
@@ -58,6 +60,8 @@ class EnsembleValidator {
     EnsembleValidator(Ensemble ensemble) {
         this.tasks = ensemble.getTasks();
         this.phases = ensemble.getPhases();
+        this.loops = ensemble.getLoops();
+        this.graph = ensemble.getGraph();
         this.ensembleLlm = ensemble.getChatLanguageModel();
         this.rateLimit = ensemble.getRateLimit();
         this.workflow = ensemble.getWorkflow();
@@ -78,6 +82,15 @@ class EnsembleValidator {
                     + "Use flat tasks for simple pipelines, or phases for named workstreams with "
                     + "parallel execution -- but not both on the same ensemble.");
         }
+
+        // Loop-specific validations run early: workflow-compatibility (no HIERARCHICAL with
+        // loops) and no-mix-with-phases must fail BEFORE the workflow-specific checks below
+        // (e.g. handler-tasks-not-in-hierarchical) so users see the most actionable error.
+        validateLoops();
+
+        // Graph-specific validations also run early. A Graph ensemble is exclusive: no
+        // tasks, loops, or phases can be combined.
+        validateGraph();
 
         if (usingPhases) {
             // Phase-based validation path
@@ -106,6 +119,52 @@ class EnsembleValidator {
         }
         // Common validations applied to both paths
         validateSharedCapabilities();
+    }
+
+    /**
+     * Loops are first-class workflow nodes. Validate ensemble-level rules:
+     * <ul>
+     *   <li>Loop names must be unique across the ensemble.</li>
+     *   <li>Loops are not supported with {@code Workflow.HIERARCHICAL}.</li>
+     *   <li>Loops cannot be combined with phases (use one orchestration style per ensemble).</li>
+     *   <li>Each body task must have an LLM source (or be deterministic via a handler).</li>
+     * </ul>
+     */
+    private void validateLoops() {
+        if (loops == null || loops.isEmpty()) {
+            return;
+        }
+        // No mixing with phases.
+        if (phases != null && !phases.isEmpty()) {
+            throw new ValidationException("Cannot mix loop() and phase() on the same Ensemble. "
+                    + "Use loops within a flat task list, or compose phases instead.");
+        }
+        // Hierarchical workflow does not support loops in v1.
+        if (workflow == Workflow.HIERARCHICAL) {
+            throw new ValidationException("Workflow.HIERARCHICAL does not support Loop nodes. "
+                    + "Use Workflow.SEQUENTIAL or Workflow.PARALLEL when declaring loops.");
+        }
+        // Unique loop names.
+        Set<String> seenLoopNames = new HashSet<>();
+        for (net.agentensemble.workflow.loop.Loop loop : loops) {
+            if (!seenLoopNames.add(loop.getName())) {
+                throw new ValidationException("Duplicate loop name '" + loop.getName() + "' detected. "
+                        + "Loop names must be unique within an ensemble.");
+            }
+        }
+        // Loop body tasks need an LLM source unless they are deterministic (have a handler).
+        for (net.agentensemble.workflow.loop.Loop loop : loops) {
+            for (Task t : loop.getBody()) {
+                if (t.getHandler() != null) continue; // deterministic, no LLM needed
+                if (t.getAgent() != null && t.getAgent().getLlm() != null) continue;
+                if (t.getChatLanguageModel() != null) continue;
+                if (ensembleLlm != null) continue;
+                throw new ValidationException("Loop '" + loop.getName() + "' body task '"
+                        + (t.getName() != null ? t.getName() : t.getDescription())
+                        + "' has no LLM source. "
+                        + "Set chatLanguageModel on the task, the ensemble, or provide an explicit agent or handler.");
+            }
+        }
     }
 
     // ========================
@@ -183,8 +242,44 @@ class EnsembleValidator {
     // ========================
 
     private void validateTasksNotEmpty() {
-        if (tasks == null || tasks.isEmpty()) {
-            throw new ValidationException("Ensemble must have at least one task (or at least one phase with tasks)");
+        boolean hasTasks = tasks != null && !tasks.isEmpty();
+        boolean hasLoops = loops != null && !loops.isEmpty();
+        boolean hasGraph = graph != null;
+        if (!hasTasks && !hasLoops && !hasGraph) {
+            throw new ValidationException("Ensemble must have at least one task, loop, graph, or phase with tasks");
+        }
+    }
+
+    /**
+     * A Graph ensemble is exclusive: no tasks, loops, or phases can be combined with a
+     * Graph. Hierarchical workflow is also rejected. Each state Task must have an LLM
+     * source or a deterministic handler.
+     */
+    private void validateGraph() {
+        if (graph == null) {
+            return;
+        }
+        boolean hasTasks = tasks != null && !tasks.isEmpty();
+        boolean hasLoops = loops != null && !loops.isEmpty();
+        boolean hasPhases = phases != null && !phases.isEmpty();
+        if (hasTasks || hasLoops || hasPhases) {
+            throw new ValidationException("Cannot mix graph() with task() / loop() / phase() on the same Ensemble. "
+                    + "Graph is an exclusive orchestration style; pick one per ensemble.");
+        }
+        if (workflow == Workflow.HIERARCHICAL) {
+            throw new ValidationException("Workflow.HIERARCHICAL does not support a Graph. "
+                    + "Use the default workflow (no .workflow(...) call) when declaring a graph.");
+        }
+        // Each state Task must have an LLM source unless it's deterministic
+        for (java.util.Map.Entry<String, Task> entry : graph.getStates().entrySet()) {
+            Task t = entry.getValue();
+            if (t.getHandler() != null) continue;
+            if (t.getAgent() != null && t.getAgent().getLlm() != null) continue;
+            if (t.getChatLanguageModel() != null) continue;
+            if (ensembleLlm != null) continue;
+            throw new ValidationException("Graph '" + graph.getName() + "' state '" + entry.getKey()
+                    + "' Task has no LLM source. "
+                    + "Set chatLanguageModel on the task, the ensemble, or provide an explicit agent or handler.");
         }
     }
 

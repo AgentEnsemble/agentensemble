@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — v4.0.0 (Loop & Graph)
+
+> Major release: two new top-level workflow constructs (`Loop` and `Graph`) plus the
+> shared `WorkflowNode` infrastructure they sit on. No breaking changes; both are
+> additive. See the [v4.0.0 release notes](docs/release-notes/v4.0.0.md) for the full
+> story.
+
+### Features
+
+* **`Loop` workflow construct** -- bounded iteration over a sub-ensemble of tasks for
+  reflection, retry-until-valid, and debate patterns. Adds `Loop`, `LoopExecutor`,
+  `LoopPredicate`, `LoopIterationContext`, three enums (`MaxIterationsAction`,
+  `LoopOutputMode`, `LoopMemoryMode` with `WINDOW(n)` mode), the `WorkflowNode` interface
+  implemented by `Task` and `Loop`, and `LoopIterationCompletedEvent` callback.
+  `Ensemble.builder().loop(Loop)` integrates with `SEQUENTIAL` and `PARALLEL` workflows
+  (loops execute as first-class nodes in the parallel DAG via the shadow-task pattern);
+  `HIERARCHICAL` rejects loops at validation. Adds `MemoryStore.clear(scope)` to support
+  `FRESH_PER_ITERATION`. New `LoopTrace` alongside `ExecutionTrace.loopTraces`. DAG
+  schema bumped to 1.2 with `nodeType:"loop"` super-nodes carrying `loopMaxIterations`
+  and an expandable `loopBody` sub-DAG. Two runnable examples: `runLoopReflection` and
+  `runLoopRetryUntilValid`. See the [Loops guide](docs/guides/loops.md).
+
+* **`Graph` workflow construct (state machines)** -- LangGraph-equivalent state-machine
+  flows for the JVM. Named states (Tasks) connected by directed edges with conditional
+  `GraphPredicate`s and arbitrary back-edges. Tool routers, selective-feedback edges,
+  multi-turn negotiation. Adds `Graph`, `GraphExecutor`, `GraphEdge`, `GraphPredicate`,
+  `GraphRoutingContext`, `GraphStep`, `GraphExecutionResult`, `MaxStepsAction`,
+  `MaxGraphStepsExceededException`, `GraphNoEdgeMatchedException`, and
+  `GraphStateCompletedEvent` callback. `Ensemble.builder().graph(Graph)` is mutually
+  exclusive with task / loop / phase. Single-threaded state walker; first-match-wins
+  edge routing; automatic revision-feedback injection on state revisits (per-state
+  suppressible). New `GraphTrace` on `ExecutionTrace.graphTrace`. DAG schema bumped to
+  1.3 with `mode:"graph"` for graph ensembles, `nodeType:"graph-state"` and
+  `"graph-end"` node types, and a top-level `graphEdges` list with conditional /
+  unconditional / fired metadata. Viz renders graphs top-to-bottom with conditional
+  edge labels and post-execution fired/unfired styling. Two runnable examples:
+  `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
+
 ## [3.4.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.3.0...v3.4.0) (2026-04-10)
 
 

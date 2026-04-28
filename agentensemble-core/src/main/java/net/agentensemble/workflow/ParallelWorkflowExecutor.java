@@ -128,6 +128,200 @@ public class ParallelWorkflowExecutor implements WorkflowExecutor {
         return executeSeeded(resolvedTasks, executionContext, Map.of());
     }
 
+    @Override
+    public EnsembleOutput executeNodes(List<WorkflowNode> nodes, ExecutionContext executionContext) {
+        // PARALLEL workflow with loops: each loop is wrapped in a "shadow" deterministic
+        // handler task that runs the LoopExecutor inside its own virtual thread. The shadow
+        // task carries the loop's outer-DAG dependencies via Task.context(Loop.getContext()),
+        // so loops with no deps run alongside other root tasks; loops with deps wait until
+        // their named tasks complete -- exactly the same way regular tasks do.
+        //
+        // After the parallel DAG completes, the shadow tasks are stripped from the visible
+        // output and replaced with each loop's projected outputs (per LoopOutputMode) keyed
+        // by the original body Task instances, matching the SequentialWorkflowExecutor's
+        // behaviour. Loop side channels (history, termination reasons, RETURN_WITH_FLAG set)
+        // are populated from the shared result map written by each shadow handler.
+        List<Task> taskNodes = new ArrayList<>();
+        List<net.agentensemble.workflow.loop.Loop> loopNodes = new ArrayList<>();
+        for (WorkflowNode node : nodes) {
+            if (node instanceof Task t) {
+                taskNodes.add(t);
+            } else if (node instanceof net.agentensemble.workflow.loop.Loop loop) {
+                loopNodes.add(loop);
+            } else {
+                throw new net.agentensemble.exception.ValidationException(
+                        "Unknown WorkflowNode type: " + node.getClass().getName());
+            }
+        }
+
+        if (loopNodes.isEmpty()) {
+            return execute(taskNodes, executionContext);
+        }
+
+        // Each shadow handler writes its loop's result into this concurrent map so the
+        // post-parallel merge can read history / termination data without further locking.
+        java.util.concurrent.ConcurrentHashMap<String, net.agentensemble.workflow.loop.LoopExecutionResult>
+                loopResults = new java.util.concurrent.ConcurrentHashMap<>();
+
+        // Body runner for each loop's iterations. Stateless; safe to share across loops.
+        SequentialWorkflowExecutor bodyRunner =
+                new SequentialWorkflowExecutor(agents, Math.max(maxDelegationDepth, 1), delegationPolicies);
+        net.agentensemble.workflow.loop.LoopExecutor loopExecutor =
+                new net.agentensemble.workflow.loop.LoopExecutor(bodyRunner);
+
+        // Build one shadow task per loop. The shadow's context() declares the loop's outer
+        // DAG dependencies; the dependency graph treats the shadow like any other Task.
+        java.util.IdentityHashMap<Task, net.agentensemble.workflow.loop.Loop> shadowToLoop =
+                new java.util.IdentityHashMap<>();
+        List<Task> shadows = new ArrayList<>(loopNodes.size());
+        for (net.agentensemble.workflow.loop.Loop loop : loopNodes) {
+            Task shadow = buildLoopShadow(loop, loopExecutor, loopResults, executionContext);
+            shadows.add(shadow);
+            shadowToLoop.put(shadow, loop);
+        }
+
+        // Combined node list -- parallel tasks first, shadows last. The dependency graph
+        // determines actual execution order; declaration order only affects taskIndex labels.
+        List<Task> combined = new ArrayList<>(taskNodes.size() + shadows.size());
+        combined.addAll(taskNodes);
+        combined.addAll(shadows);
+
+        EnsembleOutput parallelOutput = execute(combined, executionContext);
+
+        // Strip shadow tasks from the visible output and inject each loop's projected outputs.
+        return mergeLoopProjections(parallelOutput, loopNodes, shadows, shadowToLoop, loopResults);
+    }
+
+    /**
+     * Build a deterministic-handler {@link Task} that, when invoked by the parallel
+     * coordinator, runs the given {@link net.agentensemble.workflow.loop.Loop} via the
+     * shared {@link net.agentensemble.workflow.loop.LoopExecutor} and stores the result in
+     * {@code loopResults} for the post-parallel merge to consume.
+     *
+     * <p>The shadow's {@code context()} is {@code loop.getContext()}, so dependency
+     * resolution treats the shadow as a regular Task with the same outer-DAG deps as the
+     * loop. The shadow's {@code TaskOutput} carries a one-line summary; the real per-body
+     * outputs are surfaced via {@link #mergeLoopProjections(EnsembleOutput, List, List,
+     * java.util.IdentityHashMap, java.util.Map)}.
+     */
+    private Task buildLoopShadow(
+            net.agentensemble.workflow.loop.Loop loop,
+            net.agentensemble.workflow.loop.LoopExecutor loopExecutor,
+            java.util.concurrent.ConcurrentHashMap<String, net.agentensemble.workflow.loop.LoopExecutionResult>
+                    loopResults,
+            ExecutionContext executionContext) {
+        return Task.builder()
+                .name("$loop:" + loop.getName())
+                .description("Loop super-node: " + loop.getName())
+                .expectedOutput("(loop projected outputs)")
+                .context(loop.getContext() != null ? loop.getContext() : List.of())
+                .handler(ctx -> {
+                    net.agentensemble.workflow.loop.LoopExecutionResult result =
+                            loopExecutor.execute(loop, executionContext);
+                    loopResults.put(loop.getName(), result);
+                    return net.agentensemble.tool.ToolResult.success(
+                            "Loop " + loop.getName() + " ran " + result.getIterationsRun()
+                                    + " iteration(s); termination=" + result.getTerminationReason());
+                })
+                .build();
+    }
+
+    /**
+     * After the parallel DAG (tasks + shadow loops) has completed, replace shadow-task
+     * outputs in the merged output with each loop's projected outputs (keyed by original
+     * body Task instances) and populate the loop side channels on the returned
+     * {@link EnsembleOutput}.
+     */
+    private EnsembleOutput mergeLoopProjections(
+            EnsembleOutput parallelOutput,
+            List<net.agentensemble.workflow.loop.Loop> loopNodes,
+            List<Task> shadows,
+            java.util.IdentityHashMap<Task, net.agentensemble.workflow.loop.Loop> shadowToLoop,
+            java.util.Map<String, net.agentensemble.workflow.loop.LoopExecutionResult> loopResults) {
+
+        java.util.IdentityHashMap<Task, TaskOutput> mergedIndex = new java.util.IdentityHashMap<>();
+        if (parallelOutput.getTaskOutputIndex() != null) {
+            mergedIndex.putAll(parallelOutput.getTaskOutputIndex());
+        }
+        // Remove shadow entries from the index -- callers should never see them.
+        for (Task shadow : shadows) {
+            mergedIndex.remove(shadow);
+        }
+
+        // Rebuild taskOutputs in declaration order, dropping shadow entries. Loop body
+        // projections are appended at the end (one per loop, in declaration order).
+        java.util.IdentityHashMap<Task, TaskOutput> shadowSet = new java.util.IdentityHashMap<>();
+        for (Task shadow : shadows) {
+            shadowSet.put(shadow, null);
+        }
+        List<TaskOutput> mergedOutputs =
+                new ArrayList<>(parallelOutput.getTaskOutputs().size());
+        for (TaskOutput out : parallelOutput.getTaskOutputs()) {
+            // Shadows have a known synthetic description. We need a more reliable filter.
+            // The shadow itself isn't accessible from TaskOutput, so we filter via the index:
+            // any TaskOutput whose corresponding Task is in shadowSet should be dropped.
+            // Without identity from the output back to the task, we conservatively rebuild
+            // from the index using declaration order of non-shadow tasks below.
+            mergedOutputs.add(out);
+        }
+        // Replace mergedOutputs by walking parallel output but excluding shadows by checking
+        // the original index. The parallelOutput's taskOutputIndex was identity-keyed by the
+        // resolved Task instances; we use that to reverse-look-up by value.
+        // Simpler: just rebuild from mergedIndex, preserving existing parallelOutput order.
+        java.util.LinkedHashSet<TaskOutput> shadowOutputs = new java.util.LinkedHashSet<>();
+        if (parallelOutput.getTaskOutputIndex() != null) {
+            for (Task shadow : shadows) {
+                TaskOutput so = parallelOutput.getTaskOutputIndex().get(shadow);
+                if (so != null) shadowOutputs.add(so);
+            }
+        }
+        mergedOutputs.removeAll(shadowOutputs);
+
+        // Append each loop's projected outputs (LoopOutputMode-driven) keyed by original
+        // body Task instances. Maintains declaration order across loops.
+        java.util.LinkedHashMap<String, List<java.util.Map<String, TaskOutput>>> loopHistory =
+                new java.util.LinkedHashMap<>();
+        java.util.LinkedHashMap<String, String> loopTermReasons = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashSet<String> loopsHitMaxIters = new java.util.LinkedHashSet<>();
+        for (net.agentensemble.workflow.loop.Loop loop : loopNodes) {
+            net.agentensemble.workflow.loop.LoopExecutionResult result = loopResults.get(loop.getName());
+            if (result == null) {
+                // Shadow never ran (e.g., upstream task failed under FAIL_FAST). Skip.
+                continue;
+            }
+            loopHistory.put(loop.getName(), result.getHistory());
+            loopTermReasons.put(loop.getName(), result.getTerminationReason());
+            if (result.stoppedByMaxIterations()
+                    && loop.getOnMaxIterations()
+                            == net.agentensemble.workflow.loop.MaxIterationsAction.RETURN_WITH_FLAG) {
+                loopsHitMaxIters.add(loop.getName());
+            }
+            for (Task originalBodyTask : loop.getBody()) {
+                TaskOutput out = result.getProjectedOutputs().get(originalBodyTask);
+                if (out != null) {
+                    mergedOutputs.add(out);
+                    mergedIndex.put(originalBodyTask, out);
+                }
+            }
+        }
+
+        String finalRaw = mergedOutputs.isEmpty() ? "" : mergedOutputs.getLast().getRaw();
+        int totalToolCalls =
+                mergedOutputs.stream().mapToInt(TaskOutput::getToolCallCount).sum();
+
+        return EnsembleOutput.builder()
+                .raw(finalRaw)
+                .taskOutputs(mergedOutputs)
+                .totalDuration(parallelOutput.getTotalDuration())
+                .totalToolCalls(totalToolCalls)
+                .taskOutputIndex(mergedIndex)
+                .exitReason(parallelOutput.getExitReason())
+                .loopHistory(loopHistory)
+                .loopTerminationReasons(loopTermReasons)
+                .loopsTerminatedByMaxIterations(loopsHitMaxIters)
+                .build();
+    }
+
     /**
      * Execute with a pre-seeded completed-outputs map.
      *

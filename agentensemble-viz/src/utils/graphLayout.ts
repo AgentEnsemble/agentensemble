@@ -45,10 +45,13 @@ export function layoutDagGraph(
   selectedNodeId: string | null,
   traceByAgentRole?: Map<string, TaskTrace>,
 ): { nodes: TaskFlowNode[]; edges: Edge[] } {
+  const isGraphMode = dag.mode === 'graph';
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({
-    rankdir: 'LR', // Left-to-right layout
+    // Graph state machines look better top-to-bottom; legacy DAGs stay left-to-right
+    rankdir: isGraphMode ? 'TB' : 'LR',
     nodesep: 50,
     ranksep: 80,
     edgesep: 20,
@@ -59,10 +62,17 @@ export function layoutDagGraph(
     g.setNode(task.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   }
 
-  // Add all edges
-  for (const task of dag.tasks) {
-    for (const depId of task.dependsOn) {
-      g.setEdge(depId, task.id);
+  // Add edges. For graph-mode DAGs, edges live on the top-level `graphEdges` field
+  // rather than per-task `dependsOn` lists.
+  if (isGraphMode && dag.graphEdges) {
+    for (const edge of dag.graphEdges) {
+      g.setEdge(edge.fromStateId, edge.toStateId);
+    }
+  } else {
+    for (const task of dag.tasks) {
+      for (const depId of task.dependsOn) {
+        g.setEdge(depId, task.id);
+      }
     }
   }
 
@@ -98,24 +108,57 @@ export function layoutDagGraph(
     criticalEdgeSet.add(`${dag.criticalPath[i]}->${dag.criticalPath[i + 1]}`);
   }
 
-  // Convert to ReactFlow edges
-  const edges: Edge[] = dag.tasks.flatMap((task) =>
-    task.dependsOn.map((depId) => {
-      const edgeId = `${depId}->${task.id}`;
-      const isCritical = criticalEdgeSet.has(edgeId);
+  // Convert to ReactFlow edges. Graph-mode DAGs render conditional edge labels and
+  // grey out edges that did not fire post-execution (when fired metadata is present).
+  let edges: Edge[];
+  if (isGraphMode && dag.graphEdges) {
+    edges = dag.graphEdges.map((edge) => {
+      const edgeId = `${edge.fromStateId}->${edge.toStateId}`;
+      const label = edge.unconditional
+        ? '' // unconditional edges render bare
+        : edge.conditionDescription ?? '(condition)';
+      // Edges with explicit `fired = false` from a post-execution export render greyed.
+      // Pre-execution exports have fired = false everywhere; we treat that as "no styling"
+      // by checking whether ANY edge has fired = true (signal that this is post-exec).
+      const anyFired = dag.graphEdges!.some((e) => e.fired);
+      const isFiredOrPreExec = !anyFired || edge.fired;
       return {
         id: edgeId,
-        source: depId,
-        target: task.id,
+        source: edge.fromStateId,
+        target: edge.toStateId,
         type: 'smoothstep',
+        label,
+        labelBgPadding: [6, 4] as [number, number],
+        labelBgBorderRadius: 4,
+        labelBgStyle: { fill: '#FFFFFF', fillOpacity: 0.85 },
+        labelStyle: { fontSize: 11, fill: '#475569' },
         style: {
-          stroke: isCritical ? '#EF4444' : '#94A3B8',
-          strokeWidth: isCritical ? 2 : 1.5,
+          stroke: isFiredOrPreExec ? '#3B82F6' : '#CBD5E1',
+          strokeWidth: isFiredOrPreExec ? 1.5 : 1,
+          strokeDasharray: edge.unconditional ? '4 4' : undefined,
         },
         animated: false,
       };
-    }),
-  );
+    });
+  } else {
+    edges = dag.tasks.flatMap((task) =>
+      task.dependsOn.map((depId) => {
+        const edgeId = `${depId}->${task.id}`;
+        const isCritical = criticalEdgeSet.has(edgeId);
+        return {
+          id: edgeId,
+          source: depId,
+          target: task.id,
+          type: 'smoothstep',
+          style: {
+            stroke: isCritical ? '#EF4444' : '#94A3B8',
+            strokeWidth: isCritical ? 2 : 1.5,
+          },
+          animated: false,
+        };
+      }),
+    );
+  }
 
   return { nodes, edges };
 }
