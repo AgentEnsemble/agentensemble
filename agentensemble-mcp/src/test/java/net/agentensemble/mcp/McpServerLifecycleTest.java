@@ -71,21 +71,52 @@ class McpServerLifecycleTest {
     }
 
     @Test
-    void start_whenAlreadyStarted_throws() {
+    void start_whenAlreadyStarted_isNoOp() {
+        lifecycle.start();
+        // Second start() must not throw -- callers in long-running loops are expected to
+        // call start() defensively each iteration.
         lifecycle.start();
 
-        assertThatThrownBy(() -> lifecycle.start())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("already started");
+        assertThat(lifecycle.isAlive()).isTrue();
+        // Health check still only runs on the first start, since the second is a no-op.
+        verify(mockClient, times(1)).checkHealth();
     }
 
     @Test
-    void start_whenClosed_throws() {
+    void start_whenClosed_revivesLifecycle() {
+        lifecycle.start();
         lifecycle.close();
 
-        assertThatThrownBy(() -> lifecycle.start())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("closed");
+        // Calling start() after close() must succeed (revive). This is the explicit fix
+        // for the original bug: long-running processes can recover a closed MCP server
+        // instead of being permanently broken.
+        lifecycle.start();
+
+        assertThat(lifecycle.isAlive()).isTrue();
+        // Health check ran twice -- once for the original start, once for the revive.
+        verify(mockClient, times(2)).checkHealth();
+    }
+
+    @Test
+    void start_whenClosed_clearsCachedTools() {
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("tool1")
+                        .description("Tool 1")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        var firstTools = lifecycle.tools();
+        lifecycle.close();
+        lifecycle.start();
+        var secondTools = lifecycle.tools();
+
+        // Cache must be invalidated across restart so tools() re-lists from the new
+        // session. Tool *instances* are still safe to keep around (they look up the
+        // current client via supplier in McpAgentTool).
+        assertThat(secondTools).isNotSameAs(firstTools);
+        verify(mockClient, times(2)).listTools();
     }
 
     @Test
@@ -230,6 +261,24 @@ class McpServerLifecycleTest {
         // close without start should be safe (client is null)
         lc.close();
         assertThat(lc.isAlive()).isFalse();
+    }
+
+    // ========================
+    // ManagedResource contract
+    // ========================
+
+    @Test
+    void implementsManagedResource() {
+        assertThat(lifecycle).isInstanceOf(net.agentensemble.ensemble.ManagedResource.class);
+    }
+
+    @Test
+    void isRunning_aliasesIsAlive() {
+        assertThat(lifecycle.isRunning()).isFalse();
+        lifecycle.start();
+        assertThat(lifecycle.isRunning()).isTrue();
+        lifecycle.close();
+        assertThat(lifecycle.isRunning()).isFalse();
     }
 
     // ========================

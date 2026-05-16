@@ -13,6 +13,7 @@ import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import net.agentensemble.tool.CustomSchemaAgentTool;
 import net.agentensemble.tool.LangChain4jToolAdapter;
 import net.agentensemble.tool.ToolResult;
@@ -67,7 +68,7 @@ class McpAgentToolTest {
 
     @Test
     void constructor_nullClient_throws() {
-        assertThatThrownBy(() -> new McpAgentTool(null, "tool", "desc", schema))
+        assertThatThrownBy(() -> new McpAgentTool((McpClient) null, "tool", "desc", schema))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("client");
     }
@@ -239,6 +240,46 @@ class McpAgentToolTest {
         assertThat(spec.parameters().properties()).containsKey("content");
         assertThat(spec.parameters().properties()).doesNotContainKey("input");
         assertThat(spec.parameters().required()).contains("path");
+    }
+
+    // ========================
+    // Supplier-indirected client (survives lifecycle restart)
+    // ========================
+
+    @Test
+    void execute_resolvesClientFromSupplierEachCall() {
+        // The tool must look up the McpClient via the supplier on every execute(), not
+        // capture it at construction. This is the mechanism that lets a tool instance
+        // survive a McpServerLifecycle close + restart cycle.
+        AtomicReference<McpClient> swappable = new AtomicReference<>(mockClient);
+        McpAgentTool indirectTool = new McpAgentTool(swappable::get, "lookup", "Look up", schema);
+
+        when(mockClient.executeTool(any()))
+                .thenReturn(ToolExecutionResult.builder().resultText("first").build());
+        ToolResult first = indirectTool.execute("{}");
+        assertThat(first.isSuccess()).isTrue();
+        assertThat(first.getOutput()).isEqualTo("first");
+
+        // Swap in a new client (simulating a lifecycle restart producing a fresh McpClient).
+        McpClient secondClient = mock(McpClient.class);
+        when(secondClient.executeTool(any()))
+                .thenReturn(ToolExecutionResult.builder().resultText("second").build());
+        swappable.set(secondClient);
+
+        ToolResult second = indirectTool.execute("{}");
+        assertThat(second.isSuccess()).isTrue();
+        assertThat(second.getOutput()).isEqualTo("second");
+        // Original client must NOT have been called for the second execute.
+        verify(mockClient, org.mockito.Mockito.times(1)).executeTool(any());
+        verify(secondClient, org.mockito.Mockito.times(1)).executeTool(any());
+    }
+
+    @Test
+    void constructor_nullSupplier_throws() {
+        assertThatThrownBy(
+                        () -> new McpAgentTool((java.util.function.Supplier<McpClient>) null, "tool", "desc", schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("client");
     }
 
     @Test
