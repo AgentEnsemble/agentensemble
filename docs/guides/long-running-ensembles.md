@@ -215,8 +215,9 @@ See the [Cross-Ensemble Delegation](cross-ensemble-delegation.md) guide for deta
 
 Long-running ensembles can take ownership of external resources whose lifecycle should
 follow the ensemble. Register a `ManagedResource` (the canonical implementation is
-`McpServerLifecycle`) on the builder and the ensemble will start it when built and
-close it during `stop()`:
+`McpServerLifecycle`) on the builder and the ensemble will start it **immediately on
+registration** -- a synchronous side effect of `.managedResource(fs)`, not deferred to
+`.build()` or `start(int)` -- and close it during `stop()`:
 
 ```java
 McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);

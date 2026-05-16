@@ -213,6 +213,63 @@ class EnsembleManagedResourceTest {
     }
 
     @Test
+    void withTasks_copiesManagedResourcesAsCallerOwned() {
+        // The Ensemble Control API rebuilds the ensemble via withTasks() for every
+        // Level 2/3 run. The copy must see the same managedResources so child runs
+        // can still reach MCP-backed tools, but it must NOT take ownership -- the
+        // template still owns the lifecycle and will close it.
+        TestResource fs = new TestResource(false);
+        Ensemble template = baseBuilder().managedResource(fs).build();
+        assertThat(fs.starts).isEqualTo(1);
+
+        Ensemble child = template.withTasks(java.util.List.of(Task.of("child task")));
+
+        // Child sees the resource list.
+        assertThat(child.getManagedResources()).containsExactly(fs);
+
+        // Child must NOT have started the resource again (it was already running, so
+        // managedResource() correctly classified it as caller-owned for the child).
+        assertThat(fs.starts).isEqualTo(1);
+
+        // Child.stop() must NOT close the template's resource.
+        child.start(7329);
+        child.stop();
+        assertThat(fs.closes).isEqualTo(0);
+        assertThat(fs.running).isTrue();
+
+        // Template still owns the resource and closes it on its own stop.
+        template.start(7329);
+        template.stop();
+        assertThat(fs.closes).isEqualTo(1);
+    }
+
+    @Test
+    void withAdditionalListener_copiesManagedResourcesAsCallerOwned() {
+        TestResource fs = new TestResource(false);
+        Ensemble template = baseBuilder().managedResource(fs).build();
+
+        Ensemble child = template.withAdditionalListener(mock(EnsembleListener.class));
+
+        assertThat(child.getManagedResources()).containsExactly(fs);
+        assertThat(fs.starts).isEqualTo(1);
+
+        child.start(7329);
+        child.stop();
+        assertThat(fs.closes).isEqualTo(0);
+        assertThat(fs.running).isTrue();
+    }
+
+    @Test
+    void getManagedResources_returnsImmutableList() {
+        TestResource fs = new TestResource(false);
+        Ensemble ensemble = baseBuilder().managedResource(fs).build();
+
+        java.util.List<ManagedResource> exposed = ensemble.getManagedResources();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> exposed.add(new TestResource(false)))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
     void mockResource_isStartedAndClosedThroughLifecycle() {
         // Belt-and-braces: also verify with a Mockito mock so we catch any signature drift
         // (e.g. someone adding new methods to ManagedResource without wiring them in).

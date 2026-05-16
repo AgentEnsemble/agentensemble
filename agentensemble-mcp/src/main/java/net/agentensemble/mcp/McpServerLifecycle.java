@@ -108,8 +108,6 @@ public final class McpServerLifecycle implements ManagedResource {
                 client = new DefaultMcpClient.Builder().transport(transport).build();
             }
             client.checkHealth();
-            // Clear any stale cache from a prior session so tools() relists from the new client.
-            cachedTools = null;
             closed = false;
             started = true;
             log.info(reviving ? "MCP server restarted successfully" : "MCP server started successfully");
@@ -141,7 +139,9 @@ public final class McpServerLifecycle implements ManagedResource {
      * After {@code close()}, the lifecycle can be restarted via {@link #start()} -- a fresh
      * subprocess and client will be created, and tool instances returned by {@link #tools()}
      * (or any prior call to it) automatically pick up the new client through the supplier
-     * indirection in {@link McpAgentTool}.
+     * indirection in {@link McpAgentTool}. {@code close()} also drops the internal tools
+     * cache; the captured tool instances stay valid, but the next {@link #tools()} after a
+     * revive will relist against the new session.
      */
     @Override
     public synchronized void close() {
@@ -150,6 +150,10 @@ public final class McpServerLifecycle implements ManagedResource {
         }
         closed = true;
         started = false;
+        // Drop the tools cache so a future start() forces a relist against the new
+        // session. Tool *instances* the caller has already taken from tools() stay
+        // valid -- McpAgentTool resolves the live client through a supplier.
+        cachedTools = null;
         log.info("Closing MCP server lifecycle");
         if (client != null) {
             try {
@@ -180,11 +184,11 @@ public final class McpServerLifecycle implements ManagedResource {
     /**
      * List all tools from the MCP server as {@link AgentTool} instances.
      *
-     * <p>The tool list is cached after the first call; subsequent calls return the same
-     * list without re-querying the server. The cache is cleared on close so that calling
-     * {@link #start()} again followed by {@code tools()} relists against the fresh
-     * connection. Tool instances themselves are stable across restart cycles -- they
-     * resolve the active client through a supplier each time they execute.
+     * <p>The tool list is cached within a session; subsequent calls return the same list
+     * without re-querying the server. The cache is dropped inside {@link #close()} so
+     * that a {@code close()} -> {@code start()} -> {@code tools()} sequence relists from
+     * the fresh connection. Tool instances themselves are stable across restart cycles --
+     * they resolve the active client through a supplier each time they execute.
      *
      * @return an unmodifiable list of AgentTool instances
      * @throws IllegalStateException if not yet started or currently closed

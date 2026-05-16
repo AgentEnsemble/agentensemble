@@ -98,6 +98,30 @@ class McpServerLifecycleTest {
     }
 
     @Test
+    void close_clearsCachedTools() {
+        // Documented contract: close() drops the cache so that the next start() + tools()
+        // re-lists. The cache MUST be dropped in close(), not deferred to the next start(),
+        // so that close-without-restart never holds a stale list referencing a dead client.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("tool1")
+                        .description("Tool 1")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        lifecycle.tools(); // populate cache
+        verify(mockClient, times(1)).listTools();
+        lifecycle.close();
+        lifecycle.start();
+        lifecycle.tools();
+
+        // listTools must have run twice: the second call cannot have served from a cache
+        // surviving the close().
+        verify(mockClient, times(2)).listTools();
+    }
+
+    @Test
     void start_whenClosed_clearsCachedTools() {
         when(mockClient.listTools())
                 .thenReturn(List.of(ToolSpecification.builder()

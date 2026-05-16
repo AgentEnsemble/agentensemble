@@ -605,11 +605,13 @@ public class Ensemble {
      * External resources whose lifecycle is bound to this ensemble.
      *
      * <p>Each entry is a {@link ManagedResource} (typically an MCP server lifecycle) that
-     * the ensemble starts before its first run -- and before transitioning to {@code READY}
-     * in long-running mode -- and closes on {@link #stop()} when the ensemble owns the
-     * resource. Ownership is decided at registration time: a resource that was already
-     * running when {@link EnsembleBuilder#managedResource(ManagedResource)} was called is
-     * treated as caller-owned and is never closed by the ensemble.
+     * was started by {@link EnsembleBuilder#managedResource(ManagedResource)} at
+     * registration time (a synchronous side effect of that builder method, not deferred to
+     * {@code build()}). On every subsequent {@link #run()} and {@link #start(int)} call,
+     * any owned resource that has been closed in the meantime is revived; the ensemble
+     * closes owned resources on {@link #stop()}. Ownership is decided at registration
+     * time: a resource that was already running when registered is treated as
+     * caller-owned and is never started or closed by the ensemble.
      *
      * <p>Resources are NOT closed at the end of one-shot {@link #run()} calls -- they are
      * intended to outlive individual runs so the same MCP subprocess can be reused across
@@ -620,9 +622,15 @@ public class Ensemble {
      * builder method needs to record ownership alongside the resource itself. Managed
      * identically to {@link #scheduledTasks} and {@link #sharedCapabilities}.
      *
+     * <p>{@code @Getter(NONE)}: this is internal lifecycle bookkeeping. Exposing the
+     * raw list via a Lombok getter would let external callers mutate it and change
+     * which resources {@link #stop()} closes. Use the dedicated read-only accessor
+     * {@link #getManagedResources()} below for inspection.
+     *
      * @see ManagedResource
      * @see EnsembleBuilder#managedResource(ManagedResource)
      */
+    @Getter(lombok.AccessLevel.NONE)
     private final List<ManagedResource> managedResources;
 
     /**
@@ -630,8 +638,23 @@ public class Ensemble {
      * therefore must close on {@link #stop()}. Populated in parallel with
      * {@link #managedResources} by the builder. Resources that were already running when
      * registered are absent from this set and survive ensemble shutdown.
+     *
+     * <p>{@code @Getter(NONE)}: ownership is an implementation detail; exposing the
+     * mutable identity-keyed set would let callers silently flip a caller-owned resource
+     * to ensemble-owned (or vice versa), which would cause unintended shutdowns or leaks.
      */
+    @Getter(lombok.AccessLevel.NONE)
     private final java.util.Set<ManagedResource> ownedManagedResources;
+
+    /**
+     * Read-only view of the {@link ManagedResource} instances registered on this ensemble.
+     * Returns an unmodifiable list; the underlying registration order is preserved.
+     *
+     * @return registered managed resources, never null
+     */
+    public List<ManagedResource> getManagedResources() {
+        return managedResources != null ? managedResources : List.of();
+    }
 
     /**
      * Optional audit policy for leveled audit trail with dynamic rules.
@@ -1327,7 +1350,18 @@ public class Ensemble {
                 throw new NullPointerException("newTasks must not contain null elements (at index " + i + ")");
             }
         }
-        return Ensemble.builder()
+        EnsembleBuilder withTasksBuilder = Ensemble.builder();
+        // Re-register every managed resource so child runs can still see the MCP tools'
+        // backing lifecycle. The template owns the lifecycle and the resources are
+        // already running, so managedResource() correctly classifies each as caller-owned
+        // -- the child never starts or closes them, matching the dashboard ownership
+        // pattern (ownsDashboardLifecycle=false) used below.
+        if (managedResources != null) {
+            for (ManagedResource r : managedResources) {
+                withTasksBuilder.managedResource(r);
+            }
+        }
+        return withTasksBuilder
                 // Replace the task list; phases are intentionally not copied
                 // (API-submitted runs always use the flat task list)
                 .tasks(newTasks)
@@ -1404,6 +1438,14 @@ public class Ensemble {
             }
         } else {
             b.tasks(tasks);
+        }
+        // Re-register managed resources so child runs see the same MCP-backing lifecycles
+        // as the template. The resources are already running, so managedResource() classifies
+        // each as caller-owned -- the child never starts or closes them.
+        if (managedResources != null) {
+            for (ManagedResource r : managedResources) {
+                b.managedResource(r);
+            }
         }
         return b.chatLanguageModel(chatLanguageModel)
                 .streamingChatLanguageModel(streamingChatLanguageModel)
@@ -2742,6 +2784,16 @@ public class Ensemble {
         /**
          * Bind an external resource to this ensemble's lifecycle.
          *
+         * <p><strong>Side effect:</strong> this method calls {@link ManagedResource#start()}
+         * synchronously when the resource is not already running. That is intentional --
+         * it lets callers chain {@code .managedResource(fs).agent(... fs.tools() ...)}
+         * in a single builder expression without an explicit {@code fs.start()} -- but it
+         * also means {@code managedResource(...)} can launch a subprocess <em>before</em>
+         * {@code build()} is reached. If the start fails, the exception propagates and no
+         * {@link Ensemble} is constructed. Pre-start the resource yourself if you want
+         * registration to be side-effect-free; the builder will then classify it as
+         * caller-owned.
+         *
          * <p>The canonical use is wiring an MCP server subprocess so it lives across many
          * runs of the same long-running process and is cleaned up when the ensemble stops:
          * <pre>
@@ -2749,7 +2801,7 @@ public class Ensemble {
          * Ensemble kitchen = Ensemble.builder()
          *     .chatLanguageModel(model)
          *     .webDashboard(WebDashboard.onPort(7329))
-         *     .managedResource(fs)
+         *     .managedResource(fs)             // starts fs right here
          *     .scheduledTask(ScheduledTask.builder()
          *         .name("hourly-report")
          *         .task(Task.builder().description("...").tools(fs.tools()).build())
@@ -2757,16 +2809,17 @@ public class Ensemble {
          *         .build())
          *     .build();
          *
-         * kitchen.start(7329);  // ensemble starts fs
+         * kitchen.start(7329);  // fs already running; re-checked + revived if closed
          * // ... fs stays up across every scheduled firing ...
          * kitchen.stop();       // ensemble closes fs (it owns the lifecycle)
          * </pre>
          *
          * <p>Ownership is decided by whether the resource is already running at registration
-         * time. A not-yet-running resource is owned by the ensemble: it is started during
-         * {@link Ensemble#run()} or {@link Ensemble#start(int)} and closed during
+         * time. A not-yet-running resource is owned by the ensemble: it is started
+         * immediately here, revived during {@link Ensemble#run()} or
+         * {@link Ensemble#start(int)} if it has since been closed, and closed during
          * {@link Ensemble#stop()}. A resource that is already running is treated as
-         * caller-owned and is never closed by the ensemble.
+         * caller-owned and is never started or closed by the ensemble.
          *
          * <p>Resources are NOT closed at the end of one-shot {@link Ensemble#run()} calls --
          * they outlive individual runs by design, so the same MCP subprocess can serve
