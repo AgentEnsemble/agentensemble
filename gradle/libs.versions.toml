@@ -1,8 +1,8 @@
 [versions]
 vanniktech-publish = "0.36.0"
-langchain4j      = "1.13.1"
+langchain4j      = "1.14.1"
 lombok           = "1.18.46"
-jackson          = "2.21.2"
+jackson          = "2.21.3"
 jsoup            = "1.22.2"
 slf4j            = "2.0.17"
 junit            = "6.0.3"
@@ -19,13 +19,13 @@ jtoon            = "1.0.9"
 lettuce          = "7.5.1.RELEASE"
 kafka              = "4.2.0"
 testcontainers     = "1.21.4"
-opentelemetry      = "1.61.0"
+opentelemetry      = "1.62.0"
 
 [libraries]
 langchain4j               = { group = "dev.langchain4j", name = "langchain4j",          version.ref = "langchain4j" }
 langchain4j-core          = { group = "dev.langchain4j", name = "langchain4j-core",     version.ref = "langchain4j" }
 langchain4j-open-ai       = { group = "dev.langchain4j", name = "langchain4j-open-ai",  version.ref = "langchain4j" }
-langchain4j-mcp           = { group = "dev.langchain4j", name = "langchain4j-mcp",    version = "1.13.1-beta23" }
+langchain4j-mcp           = { group = "dev.langchain4j", name = "langchain4j-mcp",    version = "1.14.1-beta24" }
 lombok                    = { group = "org.projectlombok",              name = "lombok",                   version.ref = "lombok"   }
 jackson-databind          = { group = "com.fasterxml.jackson.core",     name = "jackson-databind",         version.ref = "jackson"  }
 jackson-datatype-jsr310   = { group = "com.fasterxml.jackson.datatype", name = "jackson-datatype-jsr310",  version.ref = "jackson"  }
