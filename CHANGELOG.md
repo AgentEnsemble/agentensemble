@@ -37,6 +37,13 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.5.1](https://github.com/AgentEnsemble/agentensemble/compare/v3.5.0...v3.5.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* revivable MCP lifecycle + Ensemble.managedResource() binding ([#332](https://github.com/AgentEnsemble/agentensemble/issues/332)) ([8142481](https://github.com/AgentEnsemble/agentensemble/commit/8142481b26a5987ec40103bb1455e417494614f5))
+
 ## [3.5.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.4.0...v3.5.0) (2026-04-28)
 
 
