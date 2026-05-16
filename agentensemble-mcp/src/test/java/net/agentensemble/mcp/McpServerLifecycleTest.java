@@ -264,6 +264,71 @@ class McpServerLifecycleTest {
     }
 
     // ========================
+    // End-to-end: tool obtained before close still works after restart
+    // ========================
+
+    @Test
+    void toolCapturedBeforeRestart_executesAgainstNewClientAfterRestart() {
+        // The whole point of supplier indirection in McpAgentTool: a tool obtained
+        // from lifecycle.tools() before a close()/start() cycle should keep working,
+        // because it resolves the current client through the lifecycle on every call.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("read_file")
+                        .description("Read a file")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+        when(mockClient.executeTool(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(dev.langchain4j.service.tool.ToolExecutionResult.builder()
+                        .resultText("ok")
+                        .build());
+
+        lifecycle.start();
+        var tools = lifecycle.tools();
+        net.agentensemble.tool.AgentTool readFile = tools.get(0);
+
+        // First execution -- baseline.
+        net.agentensemble.tool.ToolResult firstResult = readFile.execute("{\"path\":\"a.txt\"}");
+        assertThat(firstResult.isSuccess()).isTrue();
+        assertThat(firstResult.getOutput()).isEqualTo("ok");
+
+        // Close and restart the lifecycle. Because the test injects a mock client, the
+        // same mock is reused after revive (production code path builds a fresh one).
+        lifecycle.close();
+        lifecycle.start();
+
+        // The captured tool reference must still resolve to a working client via the
+        // supplier indirection -- no rebuild required by the caller.
+        net.agentensemble.tool.ToolResult secondResult = readFile.execute("{\"path\":\"b.txt\"}");
+        assertThat(secondResult.isSuccess()).isTrue();
+        assertThat(secondResult.getOutput()).isEqualTo("ok");
+        verify(mockClient, times(2)).executeTool(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void toolCapturedBeforeClose_failsCleanlyIfUsedWhileClosed() {
+        // Counterpart to the above: if the lifecycle is closed and not yet restarted,
+        // a captured tool must surface a clean failure (ToolResult.failure) rather than
+        // throwing or silently routing to a dead client. This is what protects an Agent
+        // mid-loop from a transiently down MCP server.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("read_file")
+                        .description("Read a file")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        net.agentensemble.tool.AgentTool readFile = lifecycle.tools().get(0);
+        lifecycle.close();
+
+        net.agentensemble.tool.ToolResult result = readFile.execute("{}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("not running");
+    }
+
+    // ========================
     // ManagedResource contract
     // ========================
 

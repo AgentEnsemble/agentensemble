@@ -189,27 +189,21 @@ public final class McpServerLifecycle implements ManagedResource {
      * @return an unmodifiable list of AgentTool instances
      * @throws IllegalStateException if not yet started or currently closed
      */
-    public List<AgentTool> tools() {
-        // Check closed before started so a started-then-closed lifecycle reports the
-        // correct "closed" message (close() also clears the started flag for the
-        // restart path).
+    public synchronized List<AgentTool> tools() {
+        // Synchronized as a whole so the closed/started check is atomic with a
+        // concurrent start()/close() (which also sync on this). Without this, a thread
+        // could read closed=false, then close() races in, then we'd cache tools backed
+        // by a dead client. Cache fill is cheap; this is not a hot path.
         if (closed) {
             throw new IllegalStateException("McpServerLifecycle is closed");
         }
         if (!started) {
             throw new IllegalStateException("McpServerLifecycle has not been started");
         }
-        List<AgentTool> tools = cachedTools;
-        if (tools == null) {
-            synchronized (this) {
-                tools = cachedTools;
-                if (tools == null) {
-                    tools = Collections.unmodifiableList(McpToolFactory.fromClientSupplier(this::currentClient));
-                    cachedTools = tools;
-                }
-            }
+        if (cachedTools == null) {
+            cachedTools = Collections.unmodifiableList(McpToolFactory.fromClientSupplier(this::currentClient));
         }
-        return tools;
+        return cachedTools;
     }
 
     /**

@@ -875,31 +875,37 @@ public class Ensemble {
     }
 
     /**
-     * Start every registered {@link ManagedResource} that is not already running.
+     * Start every owned {@link ManagedResource} that is not already running.
      *
      * <p>Called from both {@link #runWithInputs} (so one-shot runs benefit) and
      * {@link #start(int)} (so long-running mode benefits). Safe to call repeatedly --
      * each resource's own {@link ManagedResource#start()} is required to be idempotent for
      * the running case, and revivable for the closed case.
      *
-     * <p>Failures are logged but do not abort the ensemble: a managed resource startup
-     * failure typically surfaces as a tool execution failure later, which the agent can
-     * report back to the LLM. Aborting the run here would be over-eager because not every
-     * task may actually use the failing resource.
+     * <p>Caller-owned resources (those that were already running at registration time)
+     * are deliberately skipped: ownership is symmetric -- we don't close them on
+     * {@link #stop()}, and we don't restart them here either. If the caller closes such a
+     * resource externally, that's their problem, and downstream tool calls will surface
+     * the failure.
+     *
+     * <p>Failures propagate. A misconfigured managed resource that fails to start is a
+     * loud-fail condition: in long-running mode, {@link #start(int)} catches the exception
+     * and transitions to {@code STOPPED} (consistent with how dashboard failures are
+     * handled); in one-shot mode, the run fails before any task fires. Both modes are
+     * preferable to silently transitioning to {@code READY} with a broken tool backend
+     * that only surfaces hours later when a scheduled task fires.
      */
     private void startManagedResources() {
         if (managedResources == null || managedResources.isEmpty()) {
             return;
         }
         for (ManagedResource resource : managedResources) {
-            try {
-                if (!resource.isRunning()) {
-                    resource.start();
-                }
-            } catch (Exception e) {
-                if (log.isWarnEnabled()) {
-                    log.warn("Failed to start managed resource {}: {}", resource, e.getMessage(), e);
-                }
+            if (ownedManagedResources == null || !ownedManagedResources.contains(resource)) {
+                // Caller-owned -- never touch it, even if it appears stopped.
+                continue;
+            }
+            if (!resource.isRunning()) {
+                resource.start();
             }
         }
     }

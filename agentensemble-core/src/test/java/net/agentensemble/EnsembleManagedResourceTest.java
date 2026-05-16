@@ -158,6 +158,61 @@ class EnsembleManagedResourceTest {
     }
 
     @Test
+    void ensembleWithNoManagedResource_doesNotNpeOnStop() {
+        // The managedResources / ownedManagedResources fields default to non-null empty
+        // collections via the custom builder's shadow-field pattern. This test locks that
+        // in -- if Lombok ever stops honoring the override and the fields go null,
+        // startManagedResources()/closeOwnedManagedResources() would NPE in stop().
+        Ensemble ensemble = baseBuilder().build();
+
+        ensemble.start(7329);
+        ensemble.stop(); // must not throw NPE
+
+        assertThat(ensemble.getLifecycleState()).isNotNull();
+    }
+
+    @Test
+    void start_propagatesResourceFailureAsAgentEnsembleException() {
+        // A managed resource that fails to start during ensemble.start(int) must surface
+        // the failure loudly, not silently transition to READY with a broken tool backend.
+        ManagedResource exploding = mock(ManagedResource.class);
+        when(exploding.isRunning()).thenReturn(false, false); // false at builder time, still false at start(int)
+        org.mockito.Mockito.doNothing() // builder's start() succeeds...
+                .doThrow(new RuntimeException("transport failed")) // ...but start(int)'s revive fails
+                .when(exploding)
+                .start();
+        Ensemble ensemble = baseBuilder().managedResource(exploding).build();
+
+        // Manually flip isRunning back to false to simulate the resource dying between
+        // build() and start(int).
+        when(exploding.isRunning()).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ensemble.start(7329))
+                .isInstanceOf(net.agentensemble.exception.AgentEnsembleException.class)
+                .hasMessageContaining("Failed to start ensemble");
+    }
+
+    @Test
+    void callerOwnedResource_isNotRevivedIfClosedExternally() {
+        // Caller-owned semantics are symmetric: the ensemble doesn't close it on stop(),
+        // and it also doesn't restart it. If the caller closes their own resource between
+        // ensemble.start() and a run, the framework leaves it alone -- that's the
+        // contract.
+        TestResource caller = new TestResource(true);
+        Ensemble ensemble = baseBuilder().managedResource(caller).build();
+
+        // Caller closes their resource externally.
+        caller.close();
+        assertThat(caller.running).isFalse();
+
+        ensemble.start(7329);
+
+        // start() must NOT have revived the caller-owned resource.
+        assertThat(caller.starts).isEqualTo(0);
+        assertThat(caller.running).isFalse();
+    }
+
+    @Test
     void mockResource_isStartedAndClosedThroughLifecycle() {
         // Belt-and-braces: also verify with a Mockito mock so we catch any signature drift
         // (e.g. someone adding new methods to ManagedResource without wiring them in).

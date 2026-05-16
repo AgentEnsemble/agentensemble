@@ -43,7 +43,7 @@ public final class McpAgentTool implements CustomSchemaAgentTool {
     McpAgentTool(
             Supplier<McpClient> clientSupplier, String toolName, String toolDescription, JsonObjectSchema parameters) {
         if (clientSupplier == null) {
-            throw new IllegalArgumentException("client must not be null");
+            throw new IllegalArgumentException("clientSupplier must not be null");
         }
         if (toolName == null || toolName.isBlank()) {
             throw new IllegalArgumentException("toolName must not be null or blank");

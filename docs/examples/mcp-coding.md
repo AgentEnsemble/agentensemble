@@ -79,6 +79,34 @@ The MCP reference servers are installed automatically via `npx --yes` on first r
 - **CodingTask**: The `CodingTask.fix()` convenience method provides a pre-configured
   task description and expected output for bug-fix workflows.
 
+## When NOT to Use This Pattern
+
+The try-with-resources around `Ensemble.run()` shown above is correct for a **one-shot**
+invocation. Do not transplant it into a long-running process that calls `run()` more than
+once -- each iteration would spawn a new `npx` subprocess and pay the cold-start cost.
+
+For loops, request handlers, or long-running ensembles with scheduled tasks, bind the
+lifecycle to the ensemble instead:
+
+```java
+McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+Ensemble ensemble = Ensemble.builder()
+    .chatLanguageModel(model)
+    .managedResource(fs)               // started here; closed by ensemble.stop()
+    .agent(Agent.builder().tools(fs.tools()).build())
+    .task(task)
+    .build();
+
+// One-shot: fs stays up across many run() calls
+for (var input : inputs) ensemble.run(input);
+
+// Or long-running with scheduled tasks: fs is closed on ensemble.stop()
+ensemble.start(7329);
+```
+
+See the [Binding the Lifecycle to an Ensemble](../guides/mcp.md#binding-the-lifecycle-to-an-ensemble)
+section of the MCP guide for the full pattern.
+
 ## MCP Tools Available
 
 The exact tool names are defined by the MCP reference servers. You can discover them

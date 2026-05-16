@@ -20,6 +20,27 @@ import net.agentensemble.mcp.McpToolFactory;
  * into a single agent, and runs a coding task. The MCP servers are managed with
  * try-with-resources so they are automatically shut down when the task completes.
  *
+ * <p><strong>This is a one-shot pattern</strong>: try-with-resources around a single
+ * {@link Ensemble#run()}. If you call {@code run()} more than once -- inside a loop, a
+ * request handler, or a scheduled task in a long-running ensemble -- do NOT wrap the
+ * lifecycle in try-with-resources around each run, because that would close the MCP
+ * subprocess at end of every iteration and pay the {@code npx} cold-start cost on the
+ * next one. For long-running callers, register the lifecycle on the ensemble:
+ * <pre>
+ *   McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+ *   Ensemble ensemble = Ensemble.builder()
+ *       .managedResource(fs)            // started by builder, closed by ensemble.stop()
+ *       .agent(Agent.builder().tools(fs.tools()).build())
+ *       ...
+ *       .build();
+ *
+ *   ensemble.start(7329);               // long-running mode
+ *   // ... many runs / scheduled firings against the same fs ...
+ *   ensemble.stop();                    // fs closed here
+ * </pre>
+ * See the <a href="../../../../../../../docs/guides/mcp.md">MCP guide</a>'s
+ * "Binding the Lifecycle to an Ensemble" section for the full pattern.
+ *
  * <p>Requires Node.js ({@code npx}) to be installed and available on the system PATH.
  *
  * <p>Run with:
