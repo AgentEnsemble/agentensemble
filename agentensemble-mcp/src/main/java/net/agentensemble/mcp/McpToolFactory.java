@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import net.agentensemble.tool.AgentTool;
 
@@ -122,6 +123,20 @@ public final class McpToolFactory {
         List<AgentTool> tools = new ArrayList<>(specs.size());
         for (ToolSpecification spec : specs) {
             tools.add(new McpAgentTool(client, spec.name(), spec.description(), spec.parameters()));
+        }
+        return tools;
+    }
+
+    /**
+     * Convert all tools to AgentTool instances backed by a client supplier. Used by
+     * {@link McpServerLifecycle#tools()} so tool instances follow the lifecycle's current
+     * client across close/restart cycles.
+     */
+    static List<AgentTool> fromClientSupplier(Supplier<McpClient> clientSupplier) {
+        List<ToolSpecification> specs = clientSupplier.get().listTools();
+        List<AgentTool> tools = new ArrayList<>(specs.size());
+        for (ToolSpecification spec : specs) {
+            tools.add(new McpAgentTool(clientSupplier, spec.name(), spec.description(), spec.parameters()));
         }
         return tools;
     }

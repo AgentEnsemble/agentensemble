@@ -211,6 +211,44 @@ try (NetworkClientRegistry registry = new NetworkClientRegistry(config)) {
 
 See the [Cross-Ensemble Delegation](cross-ensemble-delegation.md) guide for details.
 
+## Managed Resources (MCP servers, etc.)
+
+Long-running ensembles can take ownership of external resources whose lifecycle should
+follow the ensemble. Register a `ManagedResource` (the canonical implementation is
+`McpServerLifecycle`) on the builder and the ensemble will start it **immediately on
+registration** -- a synchronous side effect of `.managedResource(fs)`, not deferred to
+`.build()` or `start(int)` -- and close it during `stop()`:
+
+```java
+McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+
+Ensemble kitchen = Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(WebDashboard.onPort(7329))
+    .managedResource(fs)            // started immediately so fs.tools() is callable
+    .scheduledTask(ScheduledTask.builder()
+        .name("hourly-report")
+        .task(Task.builder()
+            .description("Summarize today's filesystem changes")
+            .tools(fs.tools())
+            .build())
+        .schedule(Schedule.every(Duration.ofHours(1)))
+        .build())
+    .build();
+
+kitchen.start(7329);
+// fs is alive across every scheduled firing
+kitchen.stop();                      // fs is closed (ensemble owns the lifecycle)
+```
+
+A resource that is **already running** when registered is treated as caller-owned and
+is **never** closed by the ensemble (same ownership rule as `webDashboard()`). Resources
+are NOT closed at the end of one-shot `run()` calls: the whole point of the binding is
+that one MCP subprocess can serve many runs from the same long-running process.
+
+See the [MCP guide](mcp.md) for the full lifecycle contract, including the revivable
+`start()` semantics that let tool instances survive a close/restart cycle.
+
 ## Related
 
 - [Cross-Ensemble Delegation](cross-ensemble-delegation.md)

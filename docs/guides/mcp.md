@@ -111,15 +111,73 @@ try (McpServerLifecycle server = McpToolFactory.filesystem(projectDir)) {
 **State machine:**
 
 ```
+                    +-- close() ----+
+                    v               |
 CREATED  --start()-->  STARTED  --close()-->  CLOSED
-                                       ^
-CREATED  --close()---->  CLOSED -------+
+   |                        ^                    |
+   |                        +------- start() ----+
+   +-- close() -> CLOSED  (close before start is safe)
 ```
 
-- `start()` spawns the server subprocess and performs a health check
-- `tools()` lists available tools (cached after first call)
-- `close()` shuts down the server; idempotent
-- `isAlive()` returns true when started and not yet closed
+- `start()` spawns the server subprocess and performs a health check; idempotent when
+  already running, and **revivable** -- calling it after `close()` spawns a fresh
+  subprocess and rebuilds the connection.
+- `tools()` lists available tools (cached within a session). The cache is dropped
+  inside `close()`, so a `close()` -> `start()` -> `tools()` sequence relists from the
+  fresh connection.
+- `close()` shuts down the server; idempotent and safe before `start()` (an
+  unstarted-then-closed lifecycle stays in `CLOSED`; calling `start()` afterwards
+  spawns a fresh subprocess).
+- `isAlive()` / `isRunning()` return true when started and not yet closed.
+
+Tool instances returned by `tools()` survive a close/restart cycle: they look up the
+active `McpClient` through a supplier on every call, so an `Agent` built once with
+`fs.tools()` keeps working after `fs.close()` followed by `fs.start()`.
+
+### Long-running processes
+
+For loops and request handlers that build an ensemble per iteration, do **not** wrap the
+inner `run()` in try-with-resources around the lifecycle -- closing per iteration would
+spawn a new `npx` subprocess every time. Instead, keep the lifecycle at the process
+scope, or bind it to the ensemble (next section).
+
+---
+
+## Binding the Lifecycle to an Ensemble
+
+Long-running ensembles can take ownership of an MCP server lifecycle so it is started
+the moment `.managedResource(fs)` runs in the builder (a synchronous side effect of the
+builder method, not deferred to `.build()` or `start(int)`) and closed during
+`Ensemble.stop()`:
+
+```java
+McpServerLifecycle fs = McpToolFactory.filesystem(projectDir);
+
+Ensemble kitchen = Ensemble.builder()
+    .chatLanguageModel(model)
+    .webDashboard(WebDashboard.onPort(7329))
+    .managedResource(fs)            // started immediately; closed on stop()
+    .scheduledTask(ScheduledTask.builder()
+        .name("hourly-report")
+        .task(Task.builder()
+            .description("Summarize today's filesystem changes")
+            .tools(fs.tools())      // tools() works because managedResource() started fs
+            .build())
+        .schedule(Schedule.every(Duration.ofHours(1)))
+        .build())
+    .build();
+
+kitchen.start(7329);                 // fs is already running; scheduled tasks fire against it
+// ... fs stays alive across every scheduled firing ...
+kitchen.stop();                      // fs is closed (ensemble owns the lifecycle)
+```
+
+**Ownership rule** (mirrors `webDashboard()`): a resource that is **already running**
+when registered is treated as caller-owned and is **never** closed by the ensemble. A
+not-yet-running resource is owned by the ensemble and is closed during `stop()`.
+
+`McpServerLifecycle` implements `ManagedResource`; any other `start()`/`close()`-style
+resource can be wired the same way.
 
 ---
 

@@ -71,21 +71,76 @@ class McpServerLifecycleTest {
     }
 
     @Test
-    void start_whenAlreadyStarted_throws() {
+    void start_whenAlreadyStarted_isNoOp() {
+        lifecycle.start();
+        // Second start() must not throw -- callers in long-running loops are expected to
+        // call start() defensively each iteration.
         lifecycle.start();
 
-        assertThatThrownBy(() -> lifecycle.start())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("already started");
+        assertThat(lifecycle.isAlive()).isTrue();
+        // Health check still only runs on the first start, since the second is a no-op.
+        verify(mockClient, times(1)).checkHealth();
     }
 
     @Test
-    void start_whenClosed_throws() {
+    void start_whenClosed_revivesLifecycle() {
+        lifecycle.start();
         lifecycle.close();
 
-        assertThatThrownBy(() -> lifecycle.start())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("closed");
+        // Calling start() after close() must succeed (revive). This is the explicit fix
+        // for the original bug: long-running processes can recover a closed MCP server
+        // instead of being permanently broken.
+        lifecycle.start();
+
+        assertThat(lifecycle.isAlive()).isTrue();
+        // Health check ran twice -- once for the original start, once for the revive.
+        verify(mockClient, times(2)).checkHealth();
+    }
+
+    @Test
+    void close_clearsCachedTools() {
+        // Documented contract: close() drops the cache so that the next start() + tools()
+        // re-lists. The cache MUST be dropped in close(), not deferred to the next start(),
+        // so that close-without-restart never holds a stale list referencing a dead client.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("tool1")
+                        .description("Tool 1")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        lifecycle.tools(); // populate cache
+        verify(mockClient, times(1)).listTools();
+        lifecycle.close();
+        lifecycle.start();
+        lifecycle.tools();
+
+        // listTools must have run twice: the second call cannot have served from a cache
+        // surviving the close().
+        verify(mockClient, times(2)).listTools();
+    }
+
+    @Test
+    void start_whenClosed_clearsCachedTools() {
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("tool1")
+                        .description("Tool 1")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        var firstTools = lifecycle.tools();
+        lifecycle.close();
+        lifecycle.start();
+        var secondTools = lifecycle.tools();
+
+        // Cache must be invalidated across restart so tools() re-lists from the new
+        // session. Tool *instances* are still safe to keep around (they look up the
+        // current client via supplier in McpAgentTool).
+        assertThat(secondTools).isNotSameAs(firstTools);
+        verify(mockClient, times(2)).listTools();
     }
 
     @Test
@@ -230,6 +285,89 @@ class McpServerLifecycleTest {
         // close without start should be safe (client is null)
         lc.close();
         assertThat(lc.isAlive()).isFalse();
+    }
+
+    // ========================
+    // End-to-end: tool obtained before close still works after restart
+    // ========================
+
+    @Test
+    void toolCapturedBeforeRestart_executesAgainstNewClientAfterRestart() {
+        // The whole point of supplier indirection in McpAgentTool: a tool obtained
+        // from lifecycle.tools() before a close()/start() cycle should keep working,
+        // because it resolves the current client through the lifecycle on every call.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("read_file")
+                        .description("Read a file")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+        when(mockClient.executeTool(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(dev.langchain4j.service.tool.ToolExecutionResult.builder()
+                        .resultText("ok")
+                        .build());
+
+        lifecycle.start();
+        var tools = lifecycle.tools();
+        net.agentensemble.tool.AgentTool readFile = tools.get(0);
+
+        // First execution -- baseline.
+        net.agentensemble.tool.ToolResult firstResult = readFile.execute("{\"path\":\"a.txt\"}");
+        assertThat(firstResult.isSuccess()).isTrue();
+        assertThat(firstResult.getOutput()).isEqualTo("ok");
+
+        // Close and restart the lifecycle. Because the test injects a mock client, the
+        // same mock is reused after revive (production code path builds a fresh one).
+        lifecycle.close();
+        lifecycle.start();
+
+        // The captured tool reference must still resolve to a working client via the
+        // supplier indirection -- no rebuild required by the caller.
+        net.agentensemble.tool.ToolResult secondResult = readFile.execute("{\"path\":\"b.txt\"}");
+        assertThat(secondResult.isSuccess()).isTrue();
+        assertThat(secondResult.getOutput()).isEqualTo("ok");
+        verify(mockClient, times(2)).executeTool(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void toolCapturedBeforeClose_failsCleanlyIfUsedWhileClosed() {
+        // Counterpart to the above: if the lifecycle is closed and not yet restarted,
+        // a captured tool must surface a clean failure (ToolResult.failure) rather than
+        // throwing or silently routing to a dead client. This is what protects an Agent
+        // mid-loop from a transiently down MCP server.
+        when(mockClient.listTools())
+                .thenReturn(List.of(ToolSpecification.builder()
+                        .name("read_file")
+                        .description("Read a file")
+                        .parameters(JsonObjectSchema.builder().build())
+                        .build()));
+
+        lifecycle.start();
+        net.agentensemble.tool.AgentTool readFile = lifecycle.tools().get(0);
+        lifecycle.close();
+
+        net.agentensemble.tool.ToolResult result = readFile.execute("{}");
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorMessage()).contains("not running");
+    }
+
+    // ========================
+    // ManagedResource contract
+    // ========================
+
+    @Test
+    void implementsManagedResource() {
+        assertThat(lifecycle).isInstanceOf(net.agentensemble.ensemble.ManagedResource.class);
+    }
+
+    @Test
+    void isRunning_aliasesIsAlive() {
+        assertThat(lifecycle.isRunning()).isFalse();
+        lifecycle.start();
+        assertThat(lifecycle.isRunning()).isTrue();
+        lifecycle.close();
+        assertThat(lifecycle.isRunning()).isFalse();
     }
 
     // ========================
