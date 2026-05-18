@@ -32,14 +32,14 @@
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.2",
-    "react-resizable-panels": "^4.11.0",
-    "react-router-dom": "^7.15.0"
+    "react-resizable-panels": "^4.11.1",
+    "react-router-dom": "^7.15.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.0.0",
-    "@types/node": "^25.6.2",
+    "@types/node": "^25.9.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
@@ -49,7 +49,7 @@
     "tailwindcss": "^4.2.1",
     "typescript": "^5.4.5",
     "vite": "^7.3.1",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.6"
   },
   "peerDependencies": {
     "react": ">=18",
