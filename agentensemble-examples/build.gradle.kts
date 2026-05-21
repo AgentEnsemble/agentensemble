@@ -20,6 +20,10 @@ dependencies {
     implementation(project(":agentensemble-tools:process"))
     implementation(project(":agentensemble-tools:http"))
 
+    // Distributed live observability: hub + publisher used by DistributedDashboard examples.
+    implementation(project(":agentensemble-web"))
+    implementation(project(":agentensemble-web-hub"))
+
     // Coding agent factory and tool modules for coding examples
     implementation(project(":agentensemble-coding"))
     implementation(project(":agentensemble-mcp"))
@@ -104,6 +108,8 @@ mapOf(
     "runIsolatedCoding" to "net.agentensemble.examples.IsolatedCodingExample",
     "runMcpCoding" to "net.agentensemble.examples.McpCodingExample",
     "runExecutor" to "net.agentensemble.examples.ExecutorExample",
+    "runDistributedDashboardHub" to "net.agentensemble.examples.DistributedDashboardHubMain",
+    "runDistributedDashboardPublisher" to "net.agentensemble.examples.DistributedDashboardPublisherMain",
 ).forEach { (taskName, mainClassName) ->
     tasks.register<JavaExec>(taskName) {
         group = "examples"

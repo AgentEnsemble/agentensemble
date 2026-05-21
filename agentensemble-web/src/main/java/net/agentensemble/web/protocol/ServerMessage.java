@@ -70,6 +70,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = RunResultMessage.class, name = "run_result"),
     @JsonSubTypes.Type(value = RunControlAckMessage.class, name = "run_control_ack"),
     @JsonSubTypes.Type(value = SubscribeAckMessage.class, name = "subscribe_ack"),
+    @JsonSubTypes.Type(value = LiveEventEnvelope.class, name = "event"),
+    @JsonSubTypes.Type(value = HubHelloMessage.class, name = "hub_hello"),
+    @JsonSubTypes.Type(value = ProducerJoinedMessage.class, name = "producer_joined"),
+    @JsonSubTypes.Type(value = ProducerLeftMessage.class, name = "producer_left"),
 })
 public sealed interface ServerMessage
         permits HelloMessage,
@@ -104,4 +108,8 @@ public sealed interface ServerMessage
                 RunAckMessage,
                 RunResultMessage,
                 RunControlAckMessage,
-                SubscribeAckMessage {}
+                SubscribeAckMessage,
+                LiveEventEnvelope,
+                HubHelloMessage,
+                ProducerJoinedMessage,
+                ProducerLeftMessage {}

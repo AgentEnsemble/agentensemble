@@ -878,3 +878,13 @@ The wire protocol and viz live mode defined in this document are extended by
   Viz tool call detail panel with formatted I/O
 - **IO-005** ([#289](https://github.com/AgentEnsemble/agentensemble/issues/289)):
   Viz agent conversation thread view
+
+---
+
+## 14. Extension: Distributed Live Event Hub
+
+For multi-process deployments where many AgentEnsemble processes share a single browser
+view, see [Design Doc 29 -- Distributed Live Event Hub](29-live-event-hub.md). The hub
+preserves this document's wire protocol byte-for-byte on the embedded path; the distributed
+shape adds `event` (envelope), `hub_hello`, `producer_joined`, and `producer_left`
+discriminators emitted only by the hub's browser endpoint.

@@ -447,9 +447,17 @@ void dashboardStreamsTaskCompletedEvent() throws Exception {
 
 ---
 
+## Distributed Deployments
+
+The embedded dashboard binds a port per process — fine for a single ensemble. When many AgentEnsemble processes need a coherent merged view in one browser, switch to the distributed model: a central `LiveEventHub` aggregates events from many `LiveEventPublisher`s. See the [Distributed Dashboard guide](distributed-dashboard.md). All embedded behavior documented here is preserved.
+
+The relevant `WebDashboard.builder()` extension is `.publisher(LiveEventPublisher)`. When set, the dashboard no longer binds a port; lifecycle events stream to the configured hub. See the guide for the full setup.
+
 ## Related Documentation
 
 - [Human-in-the-Loop Review Guide](review.md) -- Review timing, policies, and timeout actions
 - [Human-in-the-Loop Example](../examples/human-in-the-loop.md) -- Browser-based approval walkthrough
 - [Live Dashboard Example](../examples/live-dashboard.md) -- Full annotated example
+- [Distributed Dashboard Guide](distributed-dashboard.md) -- Many publishers, one merged browser view
 - [Design: Live Execution Dashboard](../design/16-live-dashboard.md) -- Architecture and protocol specification
+- [Design: Distributed Live Event Hub](../design/29-live-event-hub.md) -- Multi-producer aggregation
