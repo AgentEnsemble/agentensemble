@@ -19,10 +19,12 @@ tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
             fileTree(dir) {
                 exclude(
                     "**/SseHandler.class",
-                    // The publisher package is covered by integration tests living in
-                    // agentensemble-web-hub (which exercises every path through an
-                    // in-memory LiveEventHub plus a real WebSocket smoke harness).
-                    "**/publisher/**",
+                    // The WebSocketLiveEventPublisher reconnect-loop and backoff branches are
+                    // exercised only by long-running smoke harnesses; the deterministic paths
+                    // (lifecycle, encoding, restart) are covered by unit tests. Excluding
+                    // these two classes keeps the per-module threshold realistic; the
+                    // remaining publisher SPI classes are unit-tested.
+                    "**/publisher/WebSocketLiveEventPublisher*.class",
                 )
             }
         })
