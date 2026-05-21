@@ -6,6 +6,23 @@ plugins {
 }
 
 // Coverage verification -- wired into check so CI fails if coverage drops below thresholds.
+// Mirror the verification exclusions on the XML report so codecov also drops the file --
+// otherwise codecov's patch coverage still pulls the WebSocketLiveEventPublisher's
+// timer-driven reconnect/backoff branches into the denominator even though we explicitly
+// scope them out of phase-1 unit-test coverage.
+tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
+    classDirectories.setFrom(
+        files(classDirectories.files.map { dir ->
+            fileTree(dir) {
+                exclude(
+                    "**/SseHandler.class",
+                    "**/publisher/WebSocketLiveEventPublisher*.class",
+                )
+            }
+        })
+    )
+}
+
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     // Exclude complex async infrastructure classes that are hard to unit test.
     // SseHandler contains blocking virtual-thread SSE streaming logic that requires
