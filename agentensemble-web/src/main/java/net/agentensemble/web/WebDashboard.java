@@ -267,7 +267,14 @@ public final class WebDashboard implements EnsembleDashboard {
         if (publisher != null) {
             // Publisher mode: stream events to a remote hub instead of an in-process WS server.
             this.streamingListener = new WebSocketStreamingListener(publisher, serializer);
-            this.reviewHandler = new RemoteReviewHandler(publisher, serializer, reviewTimeout, onTimeout);
+            // Only install a hub-routed RemoteReviewHandler when the transport actually has a
+            // return channel. HTTP publishers report supportsReviewFanIn() == false; we fall
+            // back to a handler that fails fast with a clear message at .review() time so the
+            // builder doesn't blow up at construction for HTTP-only deployments that never
+            // configure review gates.
+            this.reviewHandler = publisher.supportsReviewFanIn()
+                    ? new RemoteReviewHandler(publisher, serializer, reviewTimeout, onTimeout)
+                    : new UnsupportedReviewHandler(publisher.info().producerId());
         } else {
             // Embedded mode: local broadcast via the ConnectionManager (default behavior).
             this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
@@ -380,6 +387,15 @@ public final class WebDashboard implements EnsembleDashboard {
             } catch (RuntimeException e) {
                 log.warn("Publisher stop failed: {}", e.getMessage());
             }
+            // The runManager, requestExecutor, and heartbeatScheduler are constructed
+            // unconditionally for the embedded mode plumbing. In publisher mode they sit
+            // idle, but shutting them down on stop() releases the underlying executor
+            // resources cleanly. All three use daemon threads, so failing to shut them down
+            // would not block JVM exit, but a long-running app that builds many publisher
+            // dashboards would otherwise accumulate idle executors.
+            heartbeatScheduler.shutdownNow();
+            requestExecutor.shutdownNow();
+            runManager.shutdown();
             return;
         }
         boolean wasRunning = server.isRunning();
@@ -444,6 +460,28 @@ public final class WebDashboard implements EnsembleDashboard {
     /** Returns the active sink for lifecycle hooks; the publisher in publisher mode, else the local ConnectionManager. */
     private LiveEventSink activeSink() {
         return publisher != null ? publisher : connectionManager;
+    }
+
+    /**
+     * {@link ReviewHandler} installed when a {@link LiveEventPublisher} is configured but its
+     * transport cannot deliver review decisions back (e.g. {@code HttpLiveEventPublisher}).
+     * Fails fast at {@link #review(net.agentensemble.review.ReviewRequest)} time so HTTP-only
+     * deployments without review gates never trip a runtime error, while deployments that
+     * accidentally pair an HTTP publisher with a review gate get a clear message.
+     */
+    private static final class UnsupportedReviewHandler implements ReviewHandler {
+        private final String producerId;
+
+        UnsupportedReviewHandler(String producerId) {
+            this.producerId = producerId;
+        }
+
+        @Override
+        public net.agentensemble.review.ReviewDecision review(net.agentensemble.review.ReviewRequest request) {
+            throw new IllegalStateException("Review gate fired on producer '" + producerId + "', but the configured "
+                    + "LiveEventPublisher does not support review fan-in (HttpLiveEventPublisher is "
+                    + "one-way). Switch to WebSocketLiveEventPublisher or remove the review gate.");
+        }
     }
 
     /**

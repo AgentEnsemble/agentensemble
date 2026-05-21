@@ -47,12 +47,23 @@ public final class HttpLiveEventPublisher extends AbstractLiveEventPublisher {
 
     @Override
     public void stop() {
-        running.set(false);
+        if (running.compareAndSet(true, false)) {
+            try {
+                httpClient.close();
+            } catch (Exception e) {
+                log.debug("HTTP publisher {} httpClient.close() failed: {}", info().producerId(), e.getMessage());
+            }
+        }
     }
 
     @Override
     public boolean isConnected() {
         return running.get();
+    }
+
+    @Override
+    public boolean supportsReviewFanIn() {
+        return false;
     }
 
     @Override

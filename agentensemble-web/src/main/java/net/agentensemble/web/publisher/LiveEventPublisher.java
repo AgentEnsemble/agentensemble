@@ -67,14 +67,31 @@ public interface LiveEventPublisher extends LiveEventSink, AutoCloseable {
     boolean isConnected();
 
     /**
+     * Reports whether this publisher has a hub-to-publisher return channel suitable for
+     * review-decision fan-in.
+     *
+     * <p>WebSocket and in-memory publishers return {@code true}; the HTTP publisher returns
+     * {@code false}. {@code WebDashboard} consults this before constructing a
+     * {@code RemoteReviewHandler}; when {@code false}, a no-op review handler is installed and
+     * any actual review gate fires a runtime error with a clear message rather than throwing
+     * {@link UnsupportedOperationException} from
+     * {@link #subscribeToReviewDecisions(Consumer)} at dashboard construction time.
+     *
+     * @return true when the transport can deliver review decisions back to the publisher
+     */
+    default boolean supportsReviewFanIn() {
+        return true;
+    }
+
+    /**
      * Registers a callback to receive review decisions forwarded from the hub. Each
      * publisher supports a single subscriber: the producer-side
      * {@code RemoteReviewHandler}. Calling this method a second time replaces the previous
      * subscriber.
      *
      * <p>Implementations without a return channel (e.g. HTTP-only) may throw
-     * {@link UnsupportedOperationException}; the {@code WebDashboard.Builder} rejects pairing
-     * such a publisher with a real review handler.
+     * {@link UnsupportedOperationException}; callers should check
+     * {@link #supportsReviewFanIn()} first.
      *
      * @param subscriber the callback to invoke for each {@link ReviewDecisionForwardMessage};
      *                   {@code null} clears the subscriber

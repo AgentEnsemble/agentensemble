@@ -30,7 +30,7 @@
 **Wire protocol additions (additive, `@JsonInclude(NON_NULL)`):**
 - Browser-bound: `LiveEventEnvelope`, `HubHelloMessage`, `ProducerJoinedMessage`,
   `ProducerLeftMessage` (added to `ServerMessage` sealed `permits` + `@JsonSubTypes`)
-- Hub ↔ publisher internal: `ReviewRequestedForwardMessage`, `ReviewDecisionForwardMessage`
+- Hub → publisher internal: `ReviewDecisionForwardMessage`
 
 **Viz:**
 - New `/hub` route registered in `src/main.tsx`

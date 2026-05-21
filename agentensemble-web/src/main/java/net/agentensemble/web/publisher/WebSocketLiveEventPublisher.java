@@ -100,6 +100,15 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+            // Drop anything still in the outbound queue: it cannot reach the hub now that
+            // the transport is shutting down, and retaining it would pin envelopes in
+            // memory for the lifetime of the JVM.
+            outbound.clear();
+            try {
+                httpClient.close();
+            } catch (Exception e) {
+                log.debug("Publisher {} httpClient.close() failed: {}", info().producerId(), e.getMessage());
+            }
         }
     }
 

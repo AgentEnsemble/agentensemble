@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.agentensemble.web.protocol.HubHelloMessage;
 import net.agentensemble.web.protocol.IterationSnapshot;
 import net.agentensemble.web.protocol.LiveEventEnvelope;
+import net.agentensemble.web.protocol.LlmIterationCompletedMessage;
+import net.agentensemble.web.protocol.LlmIterationStartedMessage;
 import net.agentensemble.web.protocol.MessageSerializer;
 import net.agentensemble.web.protocol.ProducerInfo;
 import net.agentensemble.web.protocol.ProducerJoinedMessage;
@@ -238,7 +240,7 @@ public final class LiveEventHub {
         ProducerInfo info = publisher.info();
         registry.getOrCreate(info);
         channels.put(info.producerId(), new InProcessIngressChannel(publisher));
-        broadcaster.broadcast(serializer.toJson(new ProducerJoinedMessage(info, Instant.now())));
+        broadcaster.broadcastIfNew(info.producerId(), () -> new ProducerJoinedMessage(info, Instant.now()));
     }
 
     /**
@@ -252,7 +254,7 @@ public final class LiveEventHub {
         Objects.requireNonNull(producerId, "producerId must not be null");
         registry.markInactive(producerId);
         channels.remove(producerId);
-        broadcaster.broadcast(serializer.toJson(new ProducerLeftMessage(producerId, Instant.now(), reason)));
+        broadcaster.announceLeft(producerId, () -> new ProducerLeftMessage(producerId, Instant.now(), reason));
     }
 
     // ========================
@@ -268,7 +270,11 @@ public final class LiveEventHub {
         Objects.requireNonNull(envelope, "envelope must not be null");
         ProducerState state = registry.getOrCreate(envelope.producer());
         long previous = state.observeSequence(envelope.sequence());
-        if (previous >= 0 && envelope.sequence() != previous + 1) {
+        // previous < 0 means this is the first envelope from this producer (or after a reset);
+        // skip the gap check in that case. After reconnect the publisher restarts at sequence 1
+        // and we accept the discontinuity silently — the snapshot store retains its history,
+        // not the sequence number.
+        if (previous >= 0 && envelope.sequence() > previous + 1) {
             log.warn(
                     "Producer {} sequence gap: previous={}, incoming={}",
                     envelope.producer().producerId(),
@@ -276,31 +282,78 @@ public final class LiveEventHub {
                     envelope.sequence());
         }
 
-        // Record into the producer's per-run snapshot. Detect ensemble_started and review_requested
-        // by sniffing the inner message's type discriminator.
+        // Record into the producer's per-run snapshot. Sniff the inner message's type
+        // discriminator to drive run-boundary and review-routing side effects, and to feed the
+        // per-producer iteration ring buffer so HubHelloMessage.iterationsByProducer is
+        // populated for late-join conversation hydration.
         String innerJson = envelope.message().toString();
         String innerType = extractType(envelope.message());
-        if ("ensemble_started".equals(innerType)) {
-            JsonNode ensembleId = envelope.message().get("ensembleId");
-            JsonNode startedAt = envelope.message().get("startedAt");
-            if (ensembleId != null && ensembleId.isTextual() && startedAt != null && startedAt.isTextual()) {
-                try {
-                    state.snapshot().noteEnsembleStarted(ensembleId.asText(), Instant.parse(startedAt.asText()));
-                } catch (RuntimeException e) {
-                    log.debug("Failed to parse ensemble_started startedAt: {}", e.getMessage());
-                }
-            }
-        } else if ("review_requested".equals(innerType)) {
-            JsonNode reviewId = envelope.message().get("reviewId");
-            if (reviewId != null && reviewId.isTextual()) {
-                state.recordPendingReview(reviewId.asText());
+        switch (innerType) {
+            case "ensemble_started" -> handleEnsembleStarted(state, envelope.message());
+            case "review_requested" -> handleReviewRequested(state, envelope.message());
+            case "llm_iteration_started" -> handleIterationStarted(state, envelope.message(), innerJson);
+            case "llm_iteration_completed" -> handleIterationCompleted(state, envelope.message(), innerJson);
+            default -> {
+                /* nothing extra to do */
             }
         }
-        // Append inner message to the per-producer snapshot only after a run has started.
+        // Append inner message to the per-producer snapshot. ConnectionManager silently drops
+        // pre-ensemble-started messages, which is the desired behaviour.
         state.snapshot().appendToSnapshot(innerJson);
 
         // Re-broadcast the whole envelope to browsers.
         broadcaster.broadcast(serializer.toJson(envelope));
+    }
+
+    private void handleEnsembleStarted(ProducerState state, JsonNode payload) {
+        JsonNode ensembleId = payload.get("ensembleId");
+        JsonNode startedAt = payload.get("startedAt");
+        if (ensembleId != null && ensembleId.isTextual() && startedAt != null && startedAt.isTextual()) {
+            try {
+                state.snapshot().noteEnsembleStarted(ensembleId.asText(), Instant.parse(startedAt.asText()));
+                state.snapshot().clearIterationSnapshots();
+            } catch (RuntimeException e) {
+                log.debug("Failed to parse ensemble_started startedAt: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void handleReviewRequested(ProducerState state, JsonNode payload) {
+        JsonNode reviewId = payload.get("reviewId");
+        if (reviewId != null && reviewId.isTextual()) {
+            state.recordPendingReview(reviewId.asText());
+        }
+    }
+
+    private void handleIterationStarted(ProducerState state, JsonNode payload, String json) {
+        String key = iterationKey(payload);
+        if (key == null) return;
+        try {
+            LlmIterationStartedMessage msg = serializer.fromJson(json, LlmIterationStartedMessage.class);
+            state.snapshot().recordIterationStarted(key, msg);
+        } catch (IllegalArgumentException e) {
+            log.debug("Skipping unparseable llm_iteration_started for hub iteration buffer: {}", e.getMessage());
+        }
+    }
+
+    private void handleIterationCompleted(ProducerState state, JsonNode payload, String json) {
+        String key = iterationKey(payload);
+        if (key == null) return;
+        try {
+            LlmIterationCompletedMessage msg = serializer.fromJson(json, LlmIterationCompletedMessage.class);
+            state.snapshot().recordIterationCompleted(key, msg);
+        } catch (IllegalArgumentException e) {
+            log.debug("Skipping unparseable llm_iteration_completed for hub iteration buffer: {}", e.getMessage());
+        }
+    }
+
+    private static String iterationKey(JsonNode payload) {
+        JsonNode agentRole = payload.get("agentRole");
+        JsonNode taskDescription = payload.get("taskDescription");
+        if (agentRole == null || !agentRole.isTextual() || taskDescription == null || !taskDescription.isTextual()) {
+            return null;
+        }
+        return agentRole.asText() + ":" + taskDescription.asText();
     }
 
     // ========================
@@ -369,12 +422,16 @@ public final class LiveEventHub {
             // Bind the WS context to this producer on first envelope (or re-bind if the same
             // producer reconnects on a new session).
             String producerId = envelope.producer().producerId();
-            channels.computeIfAbsent(producerId, id -> new WsIngressChannel(ctx, envelope.producer(), serializer));
-            // Refresh the channel's WS reference if the producer is using a new session.
-            IngressChannel existing = channels.get(producerId);
-            if (existing instanceof WsIngressChannel wic && wic.ctx != ctx) {
-                channels.put(producerId, new WsIngressChannel(ctx, envelope.producer(), serializer));
-            }
+            // Bind the WS context to this producer on first envelope, and rebind if a different
+            // session is now publishing for the same producerId (a reconnect). Reference
+            // equality on WsContext is the intended check here -- each WS upgrade allocates a
+            // distinct context object even when the publisher reuses the same producerId.
+            channels.compute(producerId, (id, existing) -> {
+                if (existing instanceof WsIngressChannel wic && Objects.equals(wic.ctx, ctx)) {
+                    return wic;
+                }
+                return new WsIngressChannel(ctx, envelope.producer(), serializer);
+            });
             ingest(envelope);
             broadcaster.broadcastIfNew(producerId, () -> new ProducerJoinedMessage(envelope.producer(), Instant.now()));
         } catch (IllegalArgumentException e) {
@@ -383,16 +440,21 @@ public final class LiveEventHub {
     }
 
     private void handleIngressClose(WsContext ctx) {
-        // Find which producer was bound to this context, if any, and mark inactive.
+        // Identity comparison via Objects.equals: WsContext does not override equals(), so
+        // Objects.equals reduces to identity, which matches the intent (each WS upgrade
+        // allocates a distinct context instance; a reconnect uses a fresh one).
+        String evicted = null;
         for (Map.Entry<String, IngressChannel> e : channels.entrySet()) {
-            if (e.getValue() instanceof WsIngressChannel wic && wic.ctx == ctx) {
-                channels.remove(e.getKey());
-                registry.markInactive(e.getKey());
-                broadcaster.broadcast(
-                        serializer.toJson(new ProducerLeftMessage(e.getKey(), Instant.now(), "disconnected")));
+            if (e.getValue() instanceof WsIngressChannel wic && Objects.equals(wic.ctx, ctx)) {
+                evicted = e.getKey();
                 break;
             }
         }
+        if (evicted == null) return;
+        channels.remove(evicted);
+        registry.markInactive(evicted);
+        final String producerId = evicted;
+        broadcaster.announceLeft(producerId, () -> new ProducerLeftMessage(producerId, Instant.now(), "disconnected"));
     }
 
     // ========================
@@ -452,8 +514,8 @@ public final class LiveEventHub {
         try {
             registry.evictIdle(
                     evictionIdleAfter,
-                    (producerId, reason) -> broadcaster.broadcast(
-                            serializer.toJson(new ProducerLeftMessage(producerId, Instant.now(), reason))));
+                    (producerId, reason) -> broadcaster.announceLeft(
+                            producerId, () -> new ProducerLeftMessage(producerId, Instant.now(), reason)));
         } catch (RuntimeException e) {
             log.warn("Eviction sweep failed: {}", e.getMessage());
         }
@@ -613,11 +675,23 @@ public final class LiveEventHub {
 
         /**
          * Broadcast a {@code producer_joined} message only on first-seen for the given producer.
+         * Pair with {@link #announceLeft(String, java.util.function.Supplier)} so reconnecting
+         * producers are re-announced.
          */
         void broadcastIfNew(String producerId, java.util.function.Supplier<ProducerJoinedMessage> messageSupplier) {
             if (announcedProducers.add(producerId)) {
                 ProducerJoinedMessage msg = messageSupplier.get();
                 broadcast(serializer.toJson(msg));
+            }
+        }
+
+        /**
+         * Broadcast a {@code producer_left} message and forget the producer so a future
+         * re-join triggers a fresh {@code producer_joined}.
+         */
+        void announceLeft(String producerId, java.util.function.Supplier<ProducerLeftMessage> messageSupplier) {
+            if (announcedProducers.remove(producerId)) {
+                broadcast(serializer.toJson(messageSupplier.get()));
             }
         }
     }

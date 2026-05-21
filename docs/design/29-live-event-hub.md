@@ -107,8 +107,9 @@ All under `net.agentensemble.web.protocol`. Every new record is `@JsonInclude(NO
 | `HubHelloMessage` | hub → browser | `hub_hello` |
 | `ProducerJoinedMessage` | hub → browser | `producer_joined` |
 | `ProducerLeftMessage` | hub → browser | `producer_left` |
-| `ReviewRequestedForwardMessage` | publisher ↔ hub | n/a (not in `ServerMessage`) |
 | `ReviewDecisionForwardMessage` | hub → publisher | n/a (not in `ServerMessage`) |
+
+The hub does not need a dedicated publisher → hub forward record for `review_requested`: the publisher emits it as a normal `ReviewRequestedMessage` and the hub broadcasts it wrapped in an envelope like every other event, sniffing the inner `type` discriminator to record the pending `reviewId` for routing the decision back.
 
 ## 7. Refactoring
 

@@ -12,8 +12,7 @@
 - `WebDashboard.Builder.publisher(LiveEventPublisher)` (additive) puts a dashboard in
   publisher mode: no port binding; events stream to a hub
 - Wire-protocol additions: `ProducerInfo`, `LiveEventEnvelope`, `HubHelloMessage`,
-  `ProducerJoinedMessage`, `ProducerLeftMessage`, `ReviewRequestedForwardMessage`,
-  `ReviewDecisionForwardMessage`
+  `ProducerJoinedMessage`, `ProducerLeftMessage`, `ReviewDecisionForwardMessage` (hub→publisher)
 - Hub endpoints: `ws://host:port/ws` (browsers), `ws://host:port/ingress` (publishers),
   `POST /api/hub/ingress` (HTTP publishers), `GET /api/hub/producers`
 - Viz: new `/hub` route + `src/types/hub.ts` + `src/utils/hubReducer.ts` +

@@ -115,12 +115,20 @@ public final class ProducerRegistry {
         Objects.requireNonNull(idleAfter, "idleAfter must not be null");
         Objects.requireNonNull(onEvict, "onEvict must not be null");
         Instant threshold = Instant.now().minus(idleAfter);
+        // Collect victims first, then evict outside the iteration. ConcurrentHashMap iterators
+        // are weakly consistent, but mutating during iteration via removeIf+entrySet still
+        // produces awkward semantics around the compound (isActive + lastSeenAt) check; the
+        // two-pass approach is unambiguous and cheap (rarely fires).
+        List<Map.Entry<String, ProducerState>> victims = new ArrayList<>();
         for (Map.Entry<String, ProducerState> e : byProducer.entrySet()) {
             ProducerState state = e.getValue();
             if (!state.isActive() && state.lastSeenAt().isBefore(threshold)) {
-                if (byProducer.remove(e.getKey(), state)) {
-                    onEvict.accept(e.getKey(), "evicted");
-                }
+                victims.add(e);
+            }
+        }
+        for (Map.Entry<String, ProducerState> e : victims) {
+            if (byProducer.remove(e.getKey(), e.getValue())) {
+                onEvict.accept(e.getKey(), "evicted");
             }
         }
     }
