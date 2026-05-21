@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] - 2026-05-21
+### Added -- Distributed Live Event Hub (agentensemble-web-hub)
+- New module `agentensemble-web-hub`: `LiveEventHub`, `ProducerRegistry`,
+  `InMemoryLiveEventPublisher`, `IngressChannel`
+- Producer SPI in `net.agentensemble.web.publisher`: `LiveEventPublisher`,
+  `AbstractLiveEventPublisher`, `WebSocketLiveEventPublisher`, `HttpLiveEventPublisher`,
+  `RemoteReviewHandler`
+- New `LiveEventSink` interface in `agentensemble-web`; `ConnectionManager implements`
+  it; `WebSocketStreamingListener` takes a sink rather than the manager directly
+- `WebDashboard.Builder.publisher(LiveEventPublisher)` (additive) puts a dashboard in
+  publisher mode: no port binding; events stream to a hub
+- Wire-protocol additions: `ProducerInfo`, `LiveEventEnvelope`, `HubHelloMessage`,
+  `ProducerJoinedMessage`, `ProducerLeftMessage`, `ReviewDecisionForwardMessage` (hub→publisher)
+- Hub endpoints: `ws://host:port/ws` (browsers), `ws://host:port/ingress` (publishers),
+  `POST /api/hub/ingress` (HTTP publishers), `GET /api/hub/producers`
+- Viz: new `/hub` route + `src/types/hub.ts` + `src/utils/hubReducer.ts` +
+  `src/contexts/HubServerContext.tsx` + `src/pages/HubPage.tsx`
+- Examples: `DistributedDashboardHubMain`, `DistributedDashboardPublisherMain`
+- Tests: 4 new hub tests + 1 publisher-mode test + 1 viz reducer test; all existing
+  `agentensemble-web` and viz tests pass unchanged
+- Docs: new `docs/guides/distributed-dashboard.md`, `docs/examples/distributed-dashboard.md`,
+  `docs/design/29-live-event-hub.md`; cross-links into existing live-dashboard,
+  network-dashboard, callbacks, ensemble-control-api, design 16, and design 13
+
+### Changed
+- `ConnectionManager` is now `public`; methods previously package-private (`appendToSnapshot`,
+  `noteEnsembleStarted`, iteration recording, snapshot clearing) widened to `public` to
+  implement `LiveEventSink`. Broadcast/send methods remain package-private — no external
+  surface change for embedded users.
+
 ## [Unreleased] - 2026-04-10
 ### Added
 - Ensemble Control API Phase 3: cooperative run cancellation (`cancelRun()`) and runtime model

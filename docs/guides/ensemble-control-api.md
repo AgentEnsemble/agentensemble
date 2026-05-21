@@ -24,6 +24,13 @@ GET  /api/capabilities  List registered tools, models, preconfigured tasks
 All endpoints are on the same Javalin server as the WebSocket dashboard -- no new port or process
 required.
 
+> **Note:** the Ensemble Control API endpoints live on the *embedded* `WebDashboard`. In
+> publisher mode (`WebDashboard.builder().publisher(...)`), the dashboard does not bind a
+> port and these REST endpoints are not exposed by that process. Run submission, REST review,
+> and inject endpoints can be deployed on the hub host (where a separate embedded
+> `WebDashboard` may run) or on any single ensemble process that retains embedded mode.
+> See the [Distributed Dashboard guide](distributed-dashboard.md).
+
 ## Setup
 
 ### 1. Configure the dashboard

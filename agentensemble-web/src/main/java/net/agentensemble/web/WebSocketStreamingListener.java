@@ -48,17 +48,18 @@ public final class WebSocketStreamingListener implements EnsembleListener {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketStreamingListener.class);
 
-    private final ConnectionManager connectionManager;
+    private final LiveEventSink sink;
     private final MessageSerializer serializer;
 
     /**
      * Package-private constructor; instantiated exclusively by {@link WebDashboard}.
      *
-     * @param connectionManager the session registry and broadcast hub
-     * @param serializer        the JSON serializer for protocol messages
+     * @param sink       the event sink (local {@link ConnectionManager} in embedded mode,
+     *                   a remote-shipping adapter in publisher mode); must not be null
+     * @param serializer the JSON serializer for protocol messages
      */
-    WebSocketStreamingListener(ConnectionManager connectionManager, MessageSerializer serializer) {
-        this.connectionManager = connectionManager;
+    WebSocketStreamingListener(LiveEventSink sink, MessageSerializer serializer) {
+        this.sink = sink;
         this.serializer = serializer;
     }
 
@@ -217,7 +218,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
 
         // Record in the iteration ring buffer for late-join snapshot hydration.
         String key = event.agentRole() + ":" + event.taskDescription();
-        connectionManager.recordIterationStarted(key, msg);
+        sink.recordIterationStarted(key, msg);
     }
 
     @Override
@@ -242,7 +243,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
 
         // Record in the iteration ring buffer for late-join snapshot hydration.
         String key = event.agentRole() + ":" + event.taskDescription();
-        connectionManager.recordIterationCompleted(key, msg);
+        sink.recordIterationCompleted(key, msg);
     }
 
     // ========================
@@ -284,10 +285,10 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     private void broadcast(Object message) {
         try {
             String json = serializer.toJson(message);
-            connectionManager.broadcast(json);
+            sink.accept(json);
             // Append to the late-join snapshot so clients that connect mid-run receive
             // all past events in the hello message and can reconstruct the current state.
-            connectionManager.appendToSnapshot(json);
+            sink.appendToSnapshot(json);
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Failed to serialize and broadcast protocol message: {}", e.getMessage(), e);
@@ -304,7 +305,7 @@ public final class WebSocketStreamingListener implements EnsembleListener {
     private void broadcastEphemeral(Object message) {
         try {
             String json = serializer.toJson(message);
-            connectionManager.broadcast(json);
+            sink.accept(json);
             // Intentionally not calling appendToSnapshot -- tokens are ephemeral
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
