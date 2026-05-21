@@ -80,12 +80,25 @@ describe('hubReducer', () => {
     expect(next.perProducer.p1.ensembleId).toBe('run-1');
   });
 
-  it('drops producer state on producer_left', () => {
-    const seeded = hubReducer(initialHubState, {
+  it('producer_left removes identity but retains LiveState for reconnect continuity', () => {
+    let state = hubReducer(initialHubState, {
       type: 'producer_joined',
       producer: { producerId: 'p1', serviceName: 'svc' },
       joinedAt: '2026-05-21T10:00:00Z',
     } as ProducerJoinedMessage);
+    state = hubReducer(state, {
+      type: 'event',
+      producer: { producerId: 'p1', serviceName: 'svc' },
+      sequence: 1,
+      receivedAt: '2026-05-21T10:00:01Z',
+      message: {
+        type: 'ensemble_started',
+        ensembleId: 'run-1',
+        startedAt: '2026-05-21T10:00:01Z',
+        totalTasks: 1,
+        workflow: 'SEQUENTIAL',
+      },
+    } as LiveEventEnvelope);
 
     const left: ProducerLeftMessage = {
       type: 'producer_left',
@@ -93,9 +106,23 @@ describe('hubReducer', () => {
       leftAt: '2026-05-21T10:01:00Z',
       reason: 'disconnected',
     };
-    const next = hubReducer(seeded, left);
-    expect(next.producers.p1).toBeUndefined();
-    expect(next.perProducer.p1).toBeUndefined();
+    const afterLeft = hubReducer(state, left);
+    expect(afterLeft.producers.p1).toBeUndefined();
+    // LiveState is kept so a re-join resumes against existing history.
+    expect(afterLeft.perProducer.p1).toBeDefined();
+    expect(afterLeft.perProducer.p1.ensembleId).toBe('run-1');
+    expect(afterLeft.inactiveProducers.has('p1')).toBe(true);
+
+    // Rejoining clears the inactive flag and refreshes producer metadata; LiveState
+    // continues from where it left off.
+    const rejoined = hubReducer(afterLeft, {
+      type: 'producer_joined',
+      producer: { producerId: 'p1', serviceName: 'svc', version: 'v2' },
+      joinedAt: '2026-05-21T10:02:00Z',
+    } as ProducerJoinedMessage);
+    expect(rejoined.producers.p1.version).toBe('v2');
+    expect(rejoined.inactiveProducers.has('p1')).toBe(false);
+    expect(rejoined.perProducer.p1.ensembleId).toBe('run-1');
   });
 
   it('producer metadata refreshes on reconnect without losing live state', () => {

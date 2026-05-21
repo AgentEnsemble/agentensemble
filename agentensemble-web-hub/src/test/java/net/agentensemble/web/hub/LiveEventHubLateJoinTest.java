@@ -92,6 +92,17 @@ class LiveEventHubLateJoinTest {
         assertThat(hello).contains("\"T2\"");
         assertThat(hello).contains("\"T3\"");
 
+        // Cross-producer order must follow the hub-side receivedAt timestamps, so a
+        // browser replaying the snapshotTrace sees envelopes in the same chronological
+        // sequence the hub observed them. T1 was ingested before T2 before T3, so their
+        // appearances in the snapshot JSON must be in that order regardless of the
+        // ConcurrentHashMap iteration order of the producer registry.
+        int idxT1 = hello.indexOf("\"T1\"");
+        int idxT2 = hello.indexOf("\"T2\"");
+        int idxT3 = hello.indexOf("\"T3\"");
+        assertThat(idxT1).isLessThan(idxT2);
+        assertThat(idxT2).isLessThan(idxT3);
+
         p1.stop();
         p2.stop();
         p3.stop();

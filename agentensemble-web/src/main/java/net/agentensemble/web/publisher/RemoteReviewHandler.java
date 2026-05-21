@@ -97,14 +97,14 @@ public final class RemoteReviewHandler implements ReviewHandler {
                 raw = future.get(effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
             }
             if (raw == null || raw.isEmpty()) {
-                return applyTimeoutAction(request);
+                return applyTimeoutAction(request, effectiveTimeout, effectiveOnTimeout);
             }
             ReviewDecisionMessage decision = serializer.fromJson(raw, ReviewDecisionMessage.class);
             return mapDecision(decision);
         } catch (TimeoutException e) {
             log.info("Remote review {} timed out after {}", reviewId, effectiveTimeout);
             pending.remove(reviewId);
-            return applyTimeoutAction(request);
+            return applyTimeoutAction(request, effectiveTimeout, effectiveOnTimeout);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Remote review {} interrupted", reviewId);
@@ -113,7 +113,7 @@ public final class RemoteReviewHandler implements ReviewHandler {
         } catch (ExecutionException e) {
             log.warn("Remote review {} future completed exceptionally", reviewId, e);
             pending.remove(reviewId);
-            return applyTimeoutAction(request);
+            return applyTimeoutAction(request, effectiveTimeout, effectiveOnTimeout);
         }
     }
 
@@ -140,12 +140,13 @@ public final class RemoteReviewHandler implements ReviewHandler {
         };
     }
 
-    private ReviewDecision applyTimeoutAction(ReviewRequest request) {
-        return switch (onTimeout) {
+    private ReviewDecision applyTimeoutAction(
+            ReviewRequest request, Duration effectiveTimeout, OnTimeoutAction effectiveOnTimeout) {
+        return switch (effectiveOnTimeout) {
             case CONTINUE -> ReviewDecision.continueExecution();
             case EXIT_EARLY -> ReviewDecision.exitEarlyTimeout();
             case FAIL -> throw new ReviewTimeoutException(
-                    "Remote review timed out after " + reviewTimeout + " on task: " + request.taskDescription());
+                    "Remote review timed out after " + effectiveTimeout + " on task: " + request.taskDescription());
         };
     }
 }

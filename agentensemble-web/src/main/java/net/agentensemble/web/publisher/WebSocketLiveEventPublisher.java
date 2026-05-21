@@ -1,8 +1,10 @@
 package net.agentensemble.web.publisher;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -43,14 +45,17 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
 
     private final URI hubUri;
     private final int queueCapacity;
-    private final HttpClient httpClient;
+    private final ProducerInfo info;
     private final BlockingQueue<String> outbound;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicReference<WebSocket> socket = new AtomicReference<>();
     private final AtomicReference<Consumer<ReviewDecisionForwardMessage>> reviewSubscriber = new AtomicReference<>();
-    private final ScheduledExecutorService scheduler;
     private final MessageSerializer messageSerializer;
-    private final StringBuilder inboundBuffer = new StringBuilder();
+    // HttpClient and scheduler are reset on each start() so the publisher can cycle through
+    // start/stop pairs. start() also resets the reconnect-attempt counter. Guarded by the
+    // synchronized start()/stop() pair.
+    private HttpClient httpClient;
+    private ScheduledExecutorService scheduler;
     private int reconnectAttempt = 0;
 
     /**
@@ -63,6 +68,7 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
 
     public WebSocketLiveEventPublisher(URI hubUri, ProducerInfo info, MessageSerializer serializer, int queueCapacity) {
         super(info, serializer);
+        this.info = info;
         this.messageSerializer = serializer;
         this.hubUri = Objects.requireNonNull(hubUri, "hubUri must not be null");
         if (queueCapacity < 1) {
@@ -70,17 +76,21 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
         }
         this.queueCapacity = queueCapacity;
         this.outbound = new ArrayBlockingQueue<>(queueCapacity);
-        this.httpClient = HttpClient.newHttpClient();
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "agentensemble-publisher-ws-" + info.producerId());
-            t.setDaemon(true);
-            return t;
-        });
     }
 
     @Override
     public synchronized void start() {
         if (running.compareAndSet(false, true)) {
+            // Recreate the per-cycle resources so start() after stop() works. Constructors that
+            // ran once at instantiation would leave a shut-down scheduler in place; rebuilding
+            // here keeps the publisher restartable across an arbitrary number of cycles.
+            this.httpClient = HttpClient.newHttpClient();
+            this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "agentensemble-publisher-ws-" + info.producerId());
+                t.setDaemon(true);
+                return t;
+            });
+            this.reconnectAttempt = 0;
             connectAndDrain();
         }
     }
@@ -92,22 +102,30 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
             if (ws != null) {
                 ws.sendClose(WebSocket.NORMAL_CLOSURE, "stopped");
             }
-            scheduler.shutdownNow();
-            try {
-                if (!scheduler.awaitTermination(200, TimeUnit.MILLISECONDS)) {
-                    log.debug("Publisher scheduler did not shut down within 200ms");
+            ScheduledExecutorService current = scheduler;
+            if (current != null) {
+                current.shutdownNow();
+                try {
+                    if (!current.awaitTermination(200, TimeUnit.MILLISECONDS)) {
+                        log.debug("Publisher scheduler did not shut down within 200ms");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                scheduler = null;
             }
             // Drop anything still in the outbound queue: it cannot reach the hub now that
             // the transport is shutting down, and retaining it would pin envelopes in
             // memory for the lifetime of the JVM.
             outbound.clear();
-            try {
-                httpClient.close();
-            } catch (Exception e) {
-                log.debug("Publisher {} httpClient.close() failed: {}", info().producerId(), e.getMessage());
+            HttpClient currentClient = httpClient;
+            if (currentClient != null) {
+                try {
+                    currentClient.close();
+                } catch (Exception e) {
+                    log.debug("Publisher {} httpClient.close() failed: {}", info().producerId(), e.getMessage());
+                }
+                httpClient = null;
             }
         }
     }
@@ -143,10 +161,14 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
 
     private void connectAndDrain() {
         if (!running.get()) return;
+        HttpClient client = httpClient;
+        if (client == null) return;
+        // Percent-encode the producerId so identifiers with `&`, `?`, spaces, or other
+        // reserved characters travel safely as a query parameter.
+        String encodedProducerId = URLEncoder.encode(info().producerId(), StandardCharsets.UTF_8);
         URI target = URI.create(
-                hubUri.toString() + (hubUri.getQuery() == null ? "?" : "&") + "producerId=" + info().producerId());
-        CompletableFuture<WebSocket> future = httpClient
-                .newWebSocketBuilder()
+                hubUri.toString() + (hubUri.getQuery() == null ? "?" : "&") + "producerId=" + encodedProducerId);
+        CompletableFuture<WebSocket> future = client.newWebSocketBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .buildAsync(target, new WsListener());
         try {
@@ -163,6 +185,8 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
 
     private void scheduleReconnect() {
         if (!running.get()) return;
+        ScheduledExecutorService current = scheduler;
+        if (current == null || current.isShutdown()) return;
         int idx = Math.min(reconnectAttempt++, BACKOFF_SECONDS.length - 1);
         int delay = BACKOFF_SECONDS[idx];
         log.debug(
@@ -171,7 +195,12 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
                 hubUri,
                 delay,
                 reconnectAttempt);
-        scheduler.schedule(this::connectAndDrain, delay, TimeUnit.SECONDS);
+        try {
+            current.schedule(this::connectAndDrain, delay, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // Concurrent stop() raced with us; safe to drop, the publisher is going down.
+            log.debug("Publisher {} reconnect rejected (scheduler shutting down)", info().producerId());
+        }
     }
 
     private void drainOutbound() {
@@ -192,7 +221,13 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
         }
     }
 
+    /**
+     * Listener for a single WebSocket session. Each session gets its own listener instance,
+     * and so its own {@link #buffer}; this prevents reconnects from interleaving partial
+     * frames from an old socket into the new socket's accumulation state.
+     */
     private final class WsListener implements WebSocket.Listener {
+        private final StringBuilder buffer = new StringBuilder();
 
         @Override
         public void onOpen(WebSocket webSocket) {
@@ -201,10 +236,10 @@ public final class WebSocketLiveEventPublisher extends AbstractLiveEventPublishe
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-            inboundBuffer.append(data);
+            buffer.append(data);
             if (last) {
-                String json = inboundBuffer.toString();
-                inboundBuffer.setLength(0);
+                String json = buffer.toString();
+                buffer.setLength(0);
                 handleInbound(json);
             }
             webSocket.request(1);

@@ -6,6 +6,7 @@ import io.javalin.websocket.WsContext;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -208,11 +209,14 @@ public final class LiveEventHub {
     }
 
     /**
-     * Returns the actual port the hub is bound to, or -1 when not running. Useful for tests
-     * that build with {@code port(0)} and need the OS-assigned port.
+     * Returns the actual port the hub is bound to, or {@code -1} when not running. Useful for
+     * tests that build with {@code port(0)} and need the OS-assigned port after start.
      */
     public int actualPort() {
-        return boundPort > 0 ? boundPort : port;
+        if (!running.get()) {
+            return -1;
+        }
+        return boundPort;
     }
 
     public boolean isRunning() {
@@ -297,12 +301,26 @@ public final class LiveEventHub {
                 /* nothing extra to do */
             }
         }
-        // Append inner message to the per-producer snapshot. ConnectionManager silently drops
-        // pre-ensemble-started messages, which is the desired behaviour.
-        state.snapshot().appendToSnapshot(innerJson);
+        // Append inner message to the per-producer snapshot, except for explicitly ephemeral
+        // types (tokens, heartbeats). The embedded streaming listener's broadcastEphemeral
+        // path already skips snapshot append; the hub must mirror that policy on the receive
+        // side so token storms do not bloat the per-producer snapshot or noisy-up late-join
+        // replays.
+        if (!isEphemeralType(innerType)) {
+            state.snapshot().appendToSnapshot(innerJson);
+            // Log the envelope JSON + its receivedAt for deterministic flattened-snapshot
+            // replay. Ephemeral types are intentionally excluded here too.
+            String envelopeJson = serializer.toJson(envelope);
+            state.appendEnvelope(envelope.receivedAt(), envelopeJson);
+        }
 
-        // Re-broadcast the whole envelope to browsers.
+        // Re-broadcast the whole envelope to browsers regardless of ephemeral status — live
+        // token streaming still needs to reach connected browsers.
         broadcaster.broadcast(serializer.toJson(envelope));
+    }
+
+    private static boolean isEphemeralType(String type) {
+        return "token".equals(type) || "heartbeat".equals(type);
     }
 
     private void handleEnsembleStarted(ProducerState state, JsonNode payload) {
@@ -462,41 +480,26 @@ public final class LiveEventHub {
     // ========================
 
     private JsonNode buildFlattenedSnapshot() {
-        // Collect envelopes from all producers, sorted by receivedAt. We build envelopes lazily
-        // from each producer's stored per-run snapshot of inner messages by re-wrapping them
-        // with the producer info and the receivedAt clock — but we did not store original
-        // receivedAt timestamps for replay. Instead we approximate by walking each producer's
-        // ConnectionManager snapshot in insertion order and stamping a fresh receivedAt of
-        // 'now', then merging by interleaving producers. For browsers the relative ordering
-        // within a producer is what matters; absolute timestamps in the late-join replay are
-        // best-effort and overridden once live envelopes resume.
-        List<String> envelopeJsons = new ArrayList<>();
-        Instant now = Instant.now();
+        // Collect each producer's retained envelope log and merge by the original receivedAt
+        // stamped at ingest. This gives a stable, chronologically-correct late-join trace
+        // across all producers — independent of the (non-deterministic) ConcurrentHashMap
+        // iteration order of the registry. Ephemeral types (token, heartbeat) are excluded
+        // because ingest() does not log them.
+        List<ProducerState.EnvelopeLogEntry> merged = new ArrayList<>();
         for (ProducerState state : registry.states()) {
-            ProducerInfo info = state.info();
-            List<String> innerMessages = readProducerSnapshot(state);
-            long seq = 0;
-            for (String inner : innerMessages) {
-                JsonNode innerNode = serializer.toJsonNode(inner);
-                if (innerNode == null) continue;
-                LiveEventEnvelope envelope = new LiveEventEnvelope(info, seq++, now, innerNode);
-                envelopeJsons.add(serializer.toJson(envelope));
-            }
+            merged.addAll(state.snapshotEnvelopes());
         }
-        if (envelopeJsons.isEmpty()) {
+        if (merged.isEmpty()) {
             return null;
         }
+        merged.sort(Comparator.comparing(ProducerState.EnvelopeLogEntry::receivedAt));
         StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < envelopeJsons.size(); i++) {
+        for (int i = 0; i < merged.size(); i++) {
             if (i > 0) sb.append(',');
-            sb.append(envelopeJsons.get(i));
+            sb.append(merged.get(i).envelopeJson());
         }
         sb.append(']');
         return serializer.toJsonNode(sb.toString());
-    }
-
-    private List<String> readProducerSnapshot(ProducerState state) {
-        return state.snapshot().flattenedSnapshotMessages();
     }
 
     private Map<String, List<IterationSnapshot>> collectIterationsByProducer() {

@@ -65,6 +65,12 @@ export interface HubState {
   serverUrl: string | null;
   /** Roster of currently known producers, keyed by producerId. */
   producers: Record<string, ProducerInfo>;
-  /** Per-producer single-producer live state, keyed by producerId. */
+  /** Per-producer single-producer live state, keyed by producerId. Retained across
+   * {@code producer_left} so a reconnecting producer resumes against existing history;
+   * pair with {@link inactiveProducers} to render disconnected state in the UI. */
   perProducer: Record<string, LiveState>;
+  /** producerIds the hub has marked as disconnected/evicted. Producer metadata in
+   * {@link producers} is removed on {@code producer_left}; the per-producer LiveState in
+   * {@link perProducer} is retained for the session so reconnects keep their history. */
+  inactiveProducers: Set<string>;
 }

@@ -21,6 +21,7 @@ export const initialHubState: HubState = {
   serverUrl: null,
   producers: {},
   perProducer: {},
+  inactiveProducers: new Set<string>(),
 };
 
 /** Action surface for the hub UI's reducer; mirrors LiveAction for symmetry. */
@@ -33,11 +34,16 @@ export type HubAction =
   | { type: 'MESSAGE'; message: HubServerMessage };
 
 function ensureProducer(state: HubState, info: ProducerInfo): HubState {
+  // A reconnecting producer clears its disconnected flag and refreshes its metadata, but
+  // keeps any prior per-producer LiveState so the UI does not lose history. New producers
+  // get a fresh LiveState.
+  const nextInactive = new Set(state.inactiveProducers);
+  nextInactive.delete(info.producerId);
   if (state.producers[info.producerId] && state.perProducer[info.producerId]) {
-    // Refresh the info in case metadata changed (e.g. new tags after reconnect).
     return {
       ...state,
       producers: { ...state.producers, [info.producerId]: info },
+      inactiveProducers: nextInactive,
     };
   }
   return {
@@ -48,6 +54,7 @@ function ensureProducer(state: HubState, info: ProducerInfo): HubState {
       [info.producerId]:
         state.perProducer[info.producerId] ?? { ...initialLiveState, connectionStatus: 'connected' },
     },
+    inactiveProducers: nextInactive,
   };
 }
 
@@ -68,6 +75,7 @@ export function hubReducer(state: HubState, message: HubServerMessage): HubState
         connectionStatus: 'connected',
         producers: {},
         perProducer: {},
+        inactiveProducers: new Set<string>(),
       };
       if (Array.isArray(message.producers)) {
         for (const p of message.producers) {
@@ -92,9 +100,14 @@ export function hubReducer(state: HubState, message: HubServerMessage): HubState
       return ensureProducer(state, message.producer);
     }
     case 'producer_left': {
+      // Drop the producer identity (the hub forgets it) but RETAIN perProducer[id] so a
+      // reconnect resumes against the same timeline. Mark the producerId as inactive so the
+      // page can render a disconnected badge. If the user later refreshes, the hub_hello
+      // path rebuilds from the current registry.
       const { [message.producerId]: _droppedProducer, ...remainingProducers } = state.producers;
-      const { [message.producerId]: _droppedLive, ...remainingLive } = state.perProducer;
-      return { ...state, producers: remainingProducers, perProducer: remainingLive };
+      const nextInactive = new Set(state.inactiveProducers);
+      nextInactive.add(message.producerId);
+      return { ...state, producers: remainingProducers, inactiveProducers: nextInactive };
     }
     default:
       return state;

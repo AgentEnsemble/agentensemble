@@ -1,6 +1,10 @@
 package net.agentensemble.web.hub;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -21,6 +25,12 @@ import net.agentensemble.web.protocol.ProducerInfo;
  */
 final class ProducerState {
 
+    /** Bound on retained envelope-log entries per producer; chosen large enough to cover a
+     * deep run without dominating memory. The per-run inner-message snapshot in
+     * {@link ConnectionManager} provides the primary retention semantics; this log is
+     * strictly for deterministic ordering across producers in {@code hub_hello}. */
+    private static final int ENVELOPE_LOG_CAP = 2000;
+
     private volatile ProducerInfo info;
     private volatile Instant lastSeenAt;
     private final AtomicLong lastSequence = new AtomicLong(-1L);
@@ -28,11 +38,41 @@ final class ProducerState {
     private final AtomicBoolean active = new AtomicBoolean(true);
     private final Set<String> pendingReviewIds = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Ring of envelope JSON payloads in arrival order, paired with the receivedAt timestamp
+     * stamped at ingest. Used by {@code LiveEventHub.buildFlattenedSnapshot} to produce a
+     * deterministically-ordered late-join trace across all producers.
+     */
+    private final Deque<EnvelopeLogEntry> envelopeLog = new ArrayDeque<>();
+
     ProducerState(ProducerInfo info, ConnectionManager snapshot) {
         this.info = info;
         this.snapshot = snapshot;
         this.lastSeenAt = Instant.now();
     }
+
+    /**
+     * Append the given envelope JSON + receivedAt to the per-producer log. Caller is expected
+     * to hold ingest-time happens-before via the registry; the deque is guarded internally so
+     * concurrent reads (e.g. snapshotEnvelopes from a browser-connect path) see a consistent
+     * view.
+     */
+    synchronized void appendEnvelope(Instant receivedAt, String envelopeJson) {
+        envelopeLog.addLast(new EnvelopeLogEntry(receivedAt, envelopeJson));
+        while (envelopeLog.size() > ENVELOPE_LOG_CAP) {
+            envelopeLog.removeFirst();
+        }
+    }
+
+    /**
+     * Returns a defensive copy of the envelope log. Each entry pairs the receivedAt with the
+     * serialized envelope JSON.
+     */
+    synchronized List<EnvelopeLogEntry> snapshotEnvelopes() {
+        return new ArrayList<>(envelopeLog);
+    }
+
+    record EnvelopeLogEntry(Instant receivedAt, String envelopeJson) {}
 
     ProducerInfo info() {
         return info;
