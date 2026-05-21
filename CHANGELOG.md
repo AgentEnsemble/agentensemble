@@ -37,6 +37,13 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.6.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.5.1...v3.6.0) (2026-05-21)
+
+
+### Features
+
+* distributed live observability hub (agentensemble-web-hub) ([#338](https://github.com/AgentEnsemble/agentensemble/issues/338)) ([bf842ce](https://github.com/AgentEnsemble/agentensemble/commit/bf842ce9c6a5f6dd7420c3ada4663bf0cd1f32b6))
+
 ## [3.5.1](https://github.com/AgentEnsemble/agentensemble/compare/v3.5.0...v3.5.1) (2026-05-16)
 
 
