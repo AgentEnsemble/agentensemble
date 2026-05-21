@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
  * late-joining browsers in the {@code hello} message so they can replay the full history.
  * When the number of retained runs exceeds the cap, the oldest run's inner list is evicted.
  */
-class ConnectionManager {
+public class ConnectionManager implements LiveEventSink {
 
     private static final Logger log = LoggerFactory.getLogger(ConnectionManager.class);
 
@@ -130,7 +130,7 @@ class ConnectionManager {
      *
      * @param serializer the message serializer; must not be null
      */
-    ConnectionManager(MessageSerializer serializer) {
+    public ConnectionManager(MessageSerializer serializer) {
         this(serializer, DEFAULT_MAX_RETAINED_RUNS, DEFAULT_MAX_SNAPSHOT_ITERATIONS);
     }
 
@@ -144,7 +144,7 @@ class ConnectionManager {
      * @throws NullPointerException     when {@code serializer} is null
      * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1
      */
-    ConnectionManager(MessageSerializer serializer, int maxRetainedRuns) {
+    public ConnectionManager(MessageSerializer serializer, int maxRetainedRuns) {
         this(serializer, maxRetainedRuns, DEFAULT_MAX_SNAPSHOT_ITERATIONS);
     }
 
@@ -160,7 +160,7 @@ class ConnectionManager {
      * @throws IllegalArgumentException when {@code maxRetainedRuns} is less than 1 or
      *                                  {@code maxSnapshotIterations} is negative
      */
-    ConnectionManager(MessageSerializer serializer, int maxRetainedRuns, int maxSnapshotIterations) {
+    public ConnectionManager(MessageSerializer serializer, int maxRetainedRuns, int maxSnapshotIterations) {
         if (serializer == null) {
             throw new NullPointerException("serializer must not be null");
         }
@@ -243,6 +243,11 @@ class ConnectionManager {
      *
      * @param json the JSON text to broadcast; must not be null
      */
+    @Override
+    public void accept(String json) {
+        broadcast(json);
+    }
+
     void broadcast(String json) {
         SubscriptionManager sm = subscriptionManager;
         if (sm == null) {
@@ -340,7 +345,8 @@ class ConnectionManager {
      *
      * @param messageJson the serialized JSON message that was just broadcast; must not be null
      */
-    void appendToSnapshot(String messageJson) {
+    @Override
+    public void appendToSnapshot(String messageJson) {
         List<String> current = currentRunMessages;
         if (current == null) {
             // noteEnsembleStarted has not been called yet; silently drop the message.
@@ -361,7 +367,8 @@ class ConnectionManager {
      * @param ensembleId the UUID identifying this run
      * @param startedAt  when this run began
      */
-    void noteEnsembleStarted(String ensembleId, Instant startedAt) {
+    @Override
+    public void noteEnsembleStarted(String ensembleId, Instant startedAt) {
         this.currentEnsembleId = ensembleId;
         this.ensembleStartedAt = startedAt;
 
@@ -394,7 +401,8 @@ class ConnectionManager {
      * @param key the task key ({@code agentRole + ":" + taskDescription})
      * @param msg the iteration-started message
      */
-    void recordIterationStarted(String key, LlmIterationStartedMessage msg) {
+    @Override
+    public void recordIterationStarted(String key, LlmIterationStartedMessage msg) {
         if (maxSnapshotIterations == 0) {
             return;
         }
@@ -413,7 +421,8 @@ class ConnectionManager {
      * @param key the task key ({@code agentRole + ":" + taskDescription})
      * @param msg the iteration-completed message
      */
-    void recordIterationCompleted(String key, LlmIterationCompletedMessage msg) {
+    @Override
+    public void recordIterationCompleted(String key, LlmIterationCompletedMessage msg) {
         if (maxSnapshotIterations == 0) {
             return;
         }
@@ -439,7 +448,8 @@ class ConnectionManager {
      * run starts so that stale iteration data from a previous run is not included in the
      * hello message for the new run.
      */
-    void clearIterationSnapshots() {
+    @Override
+    public void clearIterationSnapshots() {
         pendingIterationStarts.clear();
         iterationSnapshots.clear();
     }
@@ -588,6 +598,33 @@ class ConnectionManager {
      */
     int sessionCount() {
         return sessions.size();
+    }
+
+    /**
+     * Returns the chronological flattened list of all retained broadcast JSON strings across
+     * all retained runs. Used by aggregators (e.g. {@code LiveEventHub}) that need to read out
+     * a producer's late-join state.
+     *
+     * <p>Returns an empty list when no broadcasts have been recorded.
+     */
+    public List<String> flattenedSnapshotMessages() {
+        List<List<String>> runsCopy;
+        synchronized (runSnapshots) {
+            runsCopy = new ArrayList<>(runSnapshots);
+        }
+        List<String> all = new ArrayList<>();
+        for (List<String> runList : runsCopy) {
+            all.addAll(runList);
+        }
+        return all;
+    }
+
+    /**
+     * Public alias for {@link #getRecentIterations()} so external aggregators can hydrate
+     * conversation panels from a producer's iteration ring buffer.
+     */
+    public List<IterationSnapshot> recentIterationsList() {
+        return getRecentIterations();
     }
 
     /**

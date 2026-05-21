@@ -189,3 +189,8 @@ WebDashboard dashboard = WebDashboard.builder()
 | `traceExportDir` | `Path` | `null` | Directory for automatic per-run trace export. Null disables export. |
 
 See `docs/guides/live-dashboard.md` for the full configuration reference.
+
+## See also
+
+- [Distributed Dashboard Example](distributed-dashboard.md) -- two publishers feeding one hub
+- [Distributed Dashboard Guide](../guides/distributed-dashboard.md) -- when to use the hub vs the embedded path

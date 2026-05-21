@@ -1,5 +1,55 @@
 # Progress
 
+## What Works (as of 2026-05-21 -- Distributed Live Event Hub)
+
+**`agentensemble-web-hub` module:**
+- `LiveEventHub` -- central aggregator. Browser-facing `ws://host:port/ws`, publisher-facing
+  `ws://host:port/ingress`, HTTP ingress `POST /api/hub/ingress`, REST `GET /api/hub/producers`
+- `ProducerRegistry` -- concurrent registry keyed by `producerId` with capacity + idle eviction
+- `ProducerState` -- per-producer state holding a `ConnectionManager` for late-join snapshot
+- `InMemoryLiveEventPublisher` -- in-JVM publisher; used by tests and same-JVM hub setups
+- `IngressChannel` (SPI) -- internal abstraction for routing review decisions back to the
+  originating publisher whether in-memory or over WS
+
+**Publisher SPI (`agentensemble-web/publisher`):**
+- `LiveEventPublisher` interface (extends `LiveEventSink`)
+- `AbstractLiveEventPublisher` -- envelope construction, sequence numbering, JSON serialization
+- `WebSocketLiveEventPublisher` -- bidirectional client over `java.net.http.WebSocket`,
+  auto-reconnect with exponential backoff, bounded outbound queue (drop-oldest), supports
+  review fan-in
+- `HttpLiveEventPublisher` -- one-way `POST /api/hub/ingress`. No review fan-in
+- `RemoteReviewHandler` -- mirror of `WebReviewHandler` semantics over a remote channel
+
+**`agentensemble-web` refactor:**
+- `LiveEventSink` interface extracted; `ConnectionManager implements LiveEventSink`
+- `WebSocketStreamingListener` constructor takes a `LiveEventSink` (was `ConnectionManager`)
+- `WebDashboard.Builder.publisher(LiveEventPublisher)` puts the dashboard in publisher mode
+- `WebDashboard` `onEnsembleStarted/Completed`, `start`, `stop`, `isRunning`, `actualPort`
+  are mode-aware via the active sink (embedded vs publisher)
+
+**Wire protocol additions (additive, `@JsonInclude(NON_NULL)`):**
+- Browser-bound: `LiveEventEnvelope`, `HubHelloMessage`, `ProducerJoinedMessage`,
+  `ProducerLeftMessage` (added to `ServerMessage` sealed `permits` + `@JsonSubTypes`)
+- Hub ↔ publisher internal: `ReviewRequestedForwardMessage`, `ReviewDecisionForwardMessage`
+
+**Viz:**
+- New `/hub` route registered in `src/main.tsx`
+- `src/types/hub.ts`, `src/utils/hubReducer.ts`, `src/contexts/HubServerContext.tsx`,
+  `src/pages/HubPage.tsx`
+- `hubReducer` reuses the existing `liveReducer` per producer
+- Existing `/live` and `/network` routes untouched
+
+**Examples:**
+- `DistributedDashboardHubMain` (Gradle task `runDistributedDashboardHub`)
+- `DistributedDashboardPublisherMain` (Gradle task `runDistributedDashboardPublisher`)
+
+**Tests added:**
+- `LiveEventHubIngestionTest`, `LiveEventHubLateJoinTest`, `HubReviewFanInTest`,
+  `ProducerRegistryTest`
+- `WebDashboardPublisherModeTest`
+- `hubReducer.test.ts`
+- All existing `agentensemble-web` Java tests and all 383 viz tests continue to pass
+
 ## What Works (as of 2026-04-10 -- Ensemble Control API Phases 3/4/5, GH #301/302/303)
 
 **Ensemble Control API Phase 3 -- Run Control:**

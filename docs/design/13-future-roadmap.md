@@ -440,6 +440,7 @@ See [Built-in Tools guide](../guides/built-in-tools.md) for usage.
 | Phase 9 | v1.0.0 | Streaming, built-in tools |
 | Phase 10 | v2.0.0 | MapReduceEnsemble (static + adaptive + short-circuit) |
 | Phase 11 | v2.1.0 | Live Execution Dashboard (COMPLETE) |
+| Phase 12 | v3.x   | Distributed Live Event Hub (COMPLETE) -- many publishers, one merged browser view |
 
 ---
 

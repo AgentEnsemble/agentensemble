@@ -41,6 +41,8 @@ import net.agentensemble.web.protocol.TaskRequestMessage;
 import net.agentensemble.web.protocol.TaskResponseMessage;
 import net.agentensemble.web.protocol.ToolRequestMessage;
 import net.agentensemble.web.protocol.ToolResponseMessage;
+import net.agentensemble.web.publisher.LiveEventPublisher;
+import net.agentensemble.web.publisher.RemoteReviewHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,7 +162,15 @@ public final class WebDashboard implements EnsembleDashboard {
     private final ScheduledExecutorService heartbeatScheduler;
     private final WebSocketServer server;
     private final WebSocketStreamingListener streamingListener;
-    private final WebReviewHandler reviewHandler;
+    private final ReviewHandler reviewHandler;
+
+    /**
+     * Optional remote event publisher. When non-null the dashboard runs in publisher mode: it
+     * does not bind a port, the streaming listener targets the publisher as its sink, and the
+     * review handler is a {@link RemoteReviewHandler} that round-trips review decisions through
+     * the publisher's reverse channel.
+     */
+    private final LiveEventPublisher publisher;
 
     private final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
 
@@ -253,8 +263,16 @@ public final class WebDashboard implements EnsembleDashboard {
         this.server.setSseHandler(sseHandler);
         // Provide a supplier so routes can access the template ensemble set via setEnsemble()
         this.server.setEnsembleSupplier(() -> this.ensemble);
-        this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
-        this.reviewHandler = new WebReviewHandler(connectionManager, serializer, reviewTimeout, onTimeout);
+        this.publisher = builder.publisher;
+        if (publisher != null) {
+            // Publisher mode: stream events to a remote hub instead of an in-process WS server.
+            this.streamingListener = new WebSocketStreamingListener(publisher, serializer);
+            this.reviewHandler = new RemoteReviewHandler(publisher, serializer, reviewTimeout, onTimeout);
+        } else {
+            // Embedded mode: local broadcast via the ConnectionManager (default behavior).
+            this.streamingListener = new WebSocketStreamingListener(connectionManager, serializer);
+            this.reviewHandler = new WebReviewHandler(connectionManager, serializer, reviewTimeout, onTimeout);
+        }
     }
 
     // ========================
@@ -297,6 +315,15 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     @Override
     public void start() {
+        if (publisher != null) {
+            if (!publisher.isConnected()) {
+                publisher.start();
+            }
+            if (shutdownHookRegistered.compareAndSet(false, true)) {
+                Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "agentensemble-web-shutdown"));
+            }
+            return;
+        }
         if (server.isRunning()) {
             return;
         }
@@ -347,6 +374,14 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     @Override
     public void stop() {
+        if (publisher != null) {
+            try {
+                publisher.stop();
+            } catch (RuntimeException e) {
+                log.warn("Publisher stop failed: {}", e.getMessage());
+            }
+            return;
+        }
         boolean wasRunning = server.isRunning();
         server.stop();
         if (wasRunning) {
@@ -372,6 +407,9 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     @Override
     public boolean isRunning() {
+        if (publisher != null) {
+            return publisher.isConnected();
+        }
         return server.isRunning();
     }
 
@@ -388,18 +426,24 @@ public final class WebDashboard implements EnsembleDashboard {
      */
     @Override
     public void onEnsembleStarted(String ensembleId, Instant startedAt, int totalTasks, String workflow) {
-        connectionManager.noteEnsembleStarted(ensembleId, startedAt);
-        connectionManager.clearIterationSnapshots();
+        LiveEventSink sink = activeSink();
+        sink.noteEnsembleStarted(ensembleId, startedAt);
+        sink.clearIterationSnapshots();
         try {
             EnsembleStartedMessage msg = new EnsembleStartedMessage(ensembleId, startedAt, totalTasks, workflow);
             String json = serializer.toJson(msg);
-            connectionManager.broadcast(json);
-            connectionManager.appendToSnapshot(json);
+            sink.accept(json);
+            sink.appendToSnapshot(json);
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Failed to broadcast ensemble_started message: {}", e.getMessage(), e);
             }
         }
+    }
+
+    /** Returns the active sink for lifecycle hooks; the publisher in publisher mode, else the local ConnectionManager. */
+    private LiveEventSink activeSink() {
+        return publisher != null ? publisher : connectionManager;
     }
 
     /**
@@ -415,12 +459,13 @@ public final class WebDashboard implements EnsembleDashboard {
             String exitReason,
             long totalTokens,
             int totalToolCalls) {
+        LiveEventSink sink = activeSink();
         try {
             EnsembleCompletedMessage msg = new EnsembleCompletedMessage(
                     ensembleId, completedAt, durationMs, exitReason, totalTokens, totalToolCalls);
             String json = serializer.toJson(msg);
-            connectionManager.broadcast(json);
-            connectionManager.appendToSnapshot(json);
+            sink.accept(json);
+            sink.appendToSnapshot(json);
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Failed to broadcast ensemble_completed message: {}", e.getMessage(), e);
@@ -1001,7 +1046,20 @@ public final class WebDashboard implements EnsembleDashboard {
      * @return the actual listening port, or -1 if not running
      */
     public int actualPort() {
+        if (publisher != null) {
+            return -1;
+        }
         return server.port();
+    }
+
+    /**
+     * Returns the {@link LiveEventPublisher} configured on this dashboard, or {@code null} when
+     * running in embedded mode.
+     *
+     * @return the configured publisher; null in embedded mode
+     */
+    public LiveEventPublisher getPublisher() {
+        return publisher;
     }
 
     // ========================
@@ -1037,6 +1095,13 @@ public final class WebDashboard implements EnsembleDashboard {
         private ModelCatalog modelCatalog = null;
         private int maxConcurrentRuns = 5;
         private int maxRetainedCompletedRuns = 100;
+
+        /**
+         * Optional {@link LiveEventPublisher}. When set, the dashboard runs in publisher mode:
+         * no port is bound; events stream to the configured publisher (typically wired into a
+         * remote {@code LiveEventHub}).
+         */
+        private LiveEventPublisher publisher = null;
 
         private Builder() {}
 
@@ -1248,6 +1313,29 @@ public final class WebDashboard implements EnsembleDashboard {
          */
         public Builder maxRetainedCompletedRuns(int maxRetainedCompletedRuns) {
             this.maxRetainedCompletedRuns = maxRetainedCompletedRuns;
+            return this;
+        }
+
+        /**
+         * Configure this dashboard to run in <em>publisher mode</em>: instead of binding a
+         * browser-facing WebSocket port, stream lifecycle events through the given
+         * {@link LiveEventPublisher}. Use this in distributed deployments where a central
+         * {@code LiveEventHub} aggregates events from multiple producer processes.
+         *
+         * <p>When the publisher supports a bidirectional return channel, the configured
+         * {@code reviewTimeout} / {@code onTimeout} apply to a
+         * {@link RemoteReviewHandler} that round-trips review gates through the hub. When the
+         * publisher does not (HTTP), {@link #build()} rejects the combination if the dashboard
+         * is wired into an ensemble whose review handler is non-default.
+         *
+         * <p>In publisher mode, {@link WebDashboard#actualPort()} returns {@code -1} and the
+         * embedded Control API endpoints (run submission, REST review, etc.) are not exposed.
+         *
+         * @param publisher the event publisher; may be {@code null} to keep embedded mode
+         * @return this builder
+         */
+        public Builder publisher(LiveEventPublisher publisher) {
+            this.publisher = publisher;
             return this;
         }
 

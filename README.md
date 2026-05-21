@@ -93,6 +93,11 @@ dependencies {
     // Add agentensemble-review if you also want browser-based review approval.
     implementation("net.agentensemble:agentensemble-web:2.1.0")           // optional
 
+    // Optional: distributed live observability hub (v3.x+) -- a central process aggregates
+    // live events from many publisher dashboards into one merged browser view. See the
+    // Distributed Dashboard guide for setup. Producer processes only need agentensemble-web.
+    implementation("net.agentensemble:agentensemble-web-hub")             // optional
+
     // Add your preferred LangChain4j model provider:
     implementation("dev.langchain4j:langchain4j-open-ai:1.11.0")
 }
