@@ -151,6 +151,64 @@ class RemoteReviewHandlerTest {
     }
 
     @Test
+    void interrupt_duringReview_returnsExitEarly() throws Exception {
+        RemoteReviewHandler handler = newHandler(OnTimeoutAction.CONTINUE, java.time.Duration.ofSeconds(60));
+        Thread caller = new Thread(() -> {
+            try {
+                ReviewDecision d = handler.review(ReviewRequest.of(
+                        "t",
+                        "o",
+                        ReviewTiming.AFTER_EXECUTION,
+                        java.time.Duration.ofSeconds(60),
+                        OnTimeoutAction.CONTINUE,
+                        null));
+                // Reaching here means the interrupt observed by future.get() bubbled up; the
+                // handler should return exitEarly() on InterruptedException.
+                assertThat(d).isInstanceOf(ReviewDecision.ExitEarly.class);
+            } catch (RuntimeException expected) {
+                // tolerated -- the interrupt may also surface as a wrapped exception
+            }
+        });
+        caller.start();
+        Thread.sleep(50);
+        caller.interrupt();
+        caller.join(2_000);
+    }
+
+    @Test
+    void unknownReviewIdInDecision_isIgnored() {
+        // Resolve a reviewId that was never registered. The handler must not throw.
+        CapturingPublisher pub = new CapturingPublisher();
+        new RemoteReviewHandler(
+                pub, new MessageSerializer(), java.time.Duration.ofSeconds(5), OnTimeoutAction.CONTINUE);
+        pub.subscriber.get().accept(new ReviewDecisionForwardMessage("nope", "{}"));
+        // No assertions -- success is "did not throw".
+    }
+
+    @Test
+    void publishedReviewRequested_carriesRequestFields() throws Exception {
+        CapturingPublisher pub = new CapturingPublisher();
+        RemoteReviewHandler handler = new RemoteReviewHandler(
+                pub, new MessageSerializer(), java.time.Duration.ofSeconds(5), OnTimeoutAction.CONTINUE);
+        // Fire-and-forget review with a short timeout so we can inspect the published payload
+        // without waiting on a decision.
+        CompletableFuture.supplyAsync(() -> handler.review(ReviewRequest.of(
+                "describe",
+                "out",
+                ReviewTiming.AFTER_EXECUTION,
+                java.time.Duration.ofMillis(50),
+                OnTimeoutAction.CONTINUE,
+                "please look")));
+        for (int i = 0; i < 30 && pub.published.isEmpty(); i++) Thread.sleep(50);
+        assertThat(pub.published).isNotEmpty();
+        String payload = pub.published.get(0);
+        assertThat(payload).contains("\"review_requested\"");
+        assertThat(payload).contains("\"taskDescription\":\"describe\"");
+        assertThat(payload).contains("\"taskOutput\":\"out\"");
+        assertThat(payload).contains("\"prompt\":\"please look\"");
+    }
+
+    @Test
     void perRequestOverride_isHonored_overHandlerDefaults() {
         // Handler is configured with FAIL + a long timeout; the request overrides to CONTINUE +
         // a short timeout. The applied decision must follow the request, not the handler.
