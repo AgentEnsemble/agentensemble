@@ -58,3 +58,20 @@ provides late-join support for each connection.
 
 Status polling (every 5s) fetches `/api/status` from each ensemble's HTTP endpoint
 for queue depth and lifecycle state information.
+
+---
+
+## Network Dashboard vs Distributed Hub
+
+Both routes show many ensembles in one browser, but the boundary is different:
+
+| | `/network` (this guide) | `/hub` ([Distributed Dashboard](distributed-dashboard.md)) |
+|---|---|---|
+| Aggregation | Browser-side | Server-side |
+| WS connections | One per ensemble | One total |
+| Each producer requires | A reachable embedded `WebDashboard` port | Just a `LiveEventPublisher` |
+| Late-join across all producers | Independent per ensemble | Single merged `hub_hello` snapshot |
+| Producer auth | Per-ensemble | Single hub boundary |
+| Survives port conflicts | No — distinct ports required | Yes — publishers don't bind ports |
+
+Use `/network` when each ensemble already exposes its own embedded dashboard and you just want to view a few in parallel. Use `/hub` when you have many publisher processes (or replicas), or when the central late-join story matters.

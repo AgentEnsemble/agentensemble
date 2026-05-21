@@ -375,6 +375,8 @@ Ensemble.builder()
     .run();
 ```
 
+In publisher mode (`WebDashboard.builder().publisher(...)`), token streaming behaves identically — the publisher wraps each `TokenMessage` in a `LiveEventEnvelope` and ships it to the hub, which fans it out to browsers. See the [Distributed Dashboard guide](distributed-dashboard.md).
+
 ### Thread safety note
 
 In a parallel workflow, `onToken` may be called concurrently from multiple virtual threads

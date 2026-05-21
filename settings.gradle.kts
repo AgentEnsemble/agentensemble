@@ -37,6 +37,9 @@ include("agentensemble-tools:bom")
 // Web module (WebSocket server + live dashboard -- optional)
 include("agentensemble-web")
 
+// Distributed live observability hub (server-side aggregation across publisher processes -- optional)
+include("agentensemble-web-hub")
+
 // Network module (NetworkTask, NetworkTool, cross-ensemble communication -- optional)
 include("agentensemble-network")
 
