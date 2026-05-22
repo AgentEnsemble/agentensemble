@@ -37,6 +37,13 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.6.1](https://github.com/AgentEnsemble/agentensemble/compare/v3.6.0...v3.6.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **viz:** scroll vertically through tall completed-run timeline sections ([#340](https://github.com/AgentEnsemble/agentensemble/issues/340)) ([9d489b0](https://github.com/AgentEnsemble/agentensemble/commit/9d489b09bda07fd81e5dfd2b50a07daa7a01a3de))
+
 ## [3.6.0](https://github.com/AgentEnsemble/agentensemble/compare/v3.5.1...v3.6.0) (2026-05-21)
 
 
