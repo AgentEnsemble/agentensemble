@@ -1154,9 +1154,15 @@ function LiveTimelineView() {
           className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
           data-testid="live-timeline-vscroll"
         >
-          <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
-          <div className="flex items-center justify-center py-8 text-sm text-gray-400 dark:text-gray-500">
-            Waiting for tasks to start...
+          {/* Inner flex column with min-h-full lets the "Waiting..." message
+              take all remaining space (and stay vertically centered) when
+              there are no completed runs, while still allowing the wrapper
+              to scroll once stacked completed runs exceed its height. */}
+          <div className="flex min-h-full flex-col">
+            <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
+            <div className="flex flex-1 items-center justify-center py-8 text-sm text-gray-400 dark:text-gray-500">
+              Waiting for tasks to start...
+            </div>
           </div>
         </div>
       </div>
