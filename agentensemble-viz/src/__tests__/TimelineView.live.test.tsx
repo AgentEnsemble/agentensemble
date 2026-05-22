@@ -567,6 +567,54 @@ describe('TimelineView live mode', () => {
       // DOCUMENT_POSITION_FOLLOWING = 4 (liveScroll follows section)
       expect(sectionPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
+
+    // Regression: with many tasks per completed run, lower lanes used to render
+    // off the bottom of the column with no way to scroll to them. The fix wraps
+    // CompletedRunList + the active scroll in a single vertically scrollable
+    // container (data-testid="live-timeline-vscroll") that contains both
+    // every completed-run-section and the live-timeline-scroll, so the user can
+    // scroll the whole stack vertically.
+    it('wraps completed runs and the active run in a single vertical-scroll container', () => {
+      const state = makeLiveState({
+        tasks: [makeRunningTask(0)],
+        completedRuns: [
+          makeCompletedRunFixture(2, 30), // many tasks
+          makeCompletedRunFixture(1, 30),
+        ],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+
+      const vScroll = screen.getByTestId('live-timeline-vscroll');
+      expect(vScroll.className).toMatch(/overflow-y-auto/);
+      // Both completed-run sections and the active live-timeline-scroll
+      // must live inside this single vertical-scroll wrapper.
+      const sections = screen.getAllByTestId('completed-run-section');
+      expect(sections.length).toBe(2);
+      for (const section of sections) {
+        expect(vScroll.contains(section)).toBe(true);
+      }
+      const liveScroll = screen.getByTestId('live-timeline-scroll');
+      expect(vScroll.contains(liveScroll)).toBe(true);
+      // The active-run inner container is horizontal-only now (vertical scroll
+      // is owned by the wrapper above); jsdom doesn't lay out, so we just
+      // assert the class string.
+      expect(liveScroll.className).toMatch(/overflow-x-auto/);
+      expect(liveScroll.className).not.toMatch(/\boverflow-auto\b/);
+    });
+
+    it('shows the vertical-scroll wrapper even in the empty-tasks state when there are completed runs', () => {
+      const state = makeLiveState({
+        tasks: [],
+        completedRuns: [makeCompletedRunFixture(1, 30)],
+      });
+      mockLiveServer(state);
+      renderLiveTimeline();
+      const vScroll = screen.getByTestId('live-timeline-vscroll');
+      expect(vScroll.className).toMatch(/overflow-y-auto/);
+      const section = screen.getByTestId('completed-run-section');
+      expect(vScroll.contains(section)).toBe(true);
+    });
   });
 
   describe('HIERARCHICAL delegation lanes', () => {
