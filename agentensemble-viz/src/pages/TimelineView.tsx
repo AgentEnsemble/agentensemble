@@ -878,7 +878,7 @@ function CompletedRunSection({
       </div>
 
       {/* Read-only SVG timeline */}
-      <div className="overflow-auto scrollbar-thin">
+      <div className="overflow-x-auto scrollbar-thin">
         <svg
           width={Math.max(svgWidth, LABEL_WIDTH + chartWidth + 40)}
           height={svgHeight}
@@ -1150,9 +1150,20 @@ function LiveTimelineView() {
           groupBy={groupBy}
           onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
-        <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
-        <div className="flex flex-1 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
-          Waiting for tasks to start...
+        <div
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
+          data-testid="live-timeline-vscroll"
+        >
+          {/* Inner flex column with min-h-full lets the "Waiting..." message
+              take all remaining space (and stay vertically centered) when
+              there are no completed runs, while still allowing the wrapper
+              to scroll once stacked completed runs exceed its height. */}
+          <div className="flex min-h-full flex-col">
+            <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
+            <div className="flex flex-1 items-center justify-center py-8 text-sm text-gray-400 dark:text-gray-500">
+              Waiting for tasks to start...
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1172,13 +1183,21 @@ function LiveTimelineView() {
           onToggleGroupBy={() => setGroupBy((g) => (g === 'task' ? 'agent' : 'task'))}
         />
 
+        {/* Unified vertical scroll across completed runs and the active run.
+            min-h-0 lets this flex child shrink below content height so the
+            scrollbar actually appears. */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
+          data-testid="live-timeline-vscroll"
+        >
         {/* Stacked completed run sections above the active run */}
         <CompletedRunList completedRuns={completedRuns} groupBy={groupBy} />
 
-        {/* Active run scrollable SVG */}
+        {/* Active run scrollable SVG (horizontal time-axis scroll only;
+            vertical scroll is owned by the wrapper above). */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-auto scrollbar-thin"
+          className="overflow-x-auto scrollbar-thin"
           onScroll={handleScroll}
           data-testid="live-timeline-scroll"
         >
@@ -1317,6 +1336,7 @@ function LiveTimelineView() {
               <LegendItem x={240} color="#22C55E" label="Tool call" />
             </g>
           </svg>
+        </div>
         </div>
       </div>
 
