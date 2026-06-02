@@ -8,7 +8,7 @@ pluginManagement {
     // their own classpath; aligning the versions here prevents compatibility errors.
     plugins {
         id("com.vanniktech.maven.publish") version "0.36.0"
-        id("com.diffplug.spotless") version "8.5.1"
+        id("com.diffplug.spotless") version "8.6.0"
         id("net.ltgt.errorprone") version "5.1.0"
     }
 }
