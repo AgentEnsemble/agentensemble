@@ -7,8 +7,8 @@ pluginManagement {
     // re-specifying the version. buildSrc precompiled plugins resolve versions via
     // their own classpath; aligning the versions here prevents compatibility errors.
     plugins {
-        id("com.vanniktech.maven.publish") version "0.36.0"
-        id("com.diffplug.spotless") version "8.6.0"
+        id("com.vanniktech.maven.publish") version "0.37.0"
+        id("com.diffplug.spotless") version "8.7.0"
         id("net.ltgt.errorprone") version "5.1.0"
     }
 }
