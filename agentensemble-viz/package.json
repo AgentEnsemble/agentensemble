@@ -31,8 +31,8 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@xyflow/react": "^12.11.0",
-    "react-resizable-panels": "^4.11.2",
+    "@xyflow/react": "^12.11.1",
+    "react-resizable-panels": "^4.12.0",
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
