@@ -14,7 +14,7 @@ jobs:
     name: Create Release PR
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           release-type: simple
           token: ${{ secrets.ORG_RELEASE_PLEASE_TOKEN }}
