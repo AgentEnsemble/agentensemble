@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     name: Build and Test
-    runs-on: ubicloud-standard-4
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       checks: write
