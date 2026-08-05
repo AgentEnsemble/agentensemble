@@ -171,3 +171,5 @@ nav:
     - Viz Observability: design/27-viz-observability.md
     - Loops: design/29-loops.md
     - Graphs (state machines): design/30-graphs.md
+    - OpenTelemetry Tracing Fidelity: design/31-otel-tracing-fidelity.md
+    - Behavioral Metrics: design/32-behavioral-metrics.md
