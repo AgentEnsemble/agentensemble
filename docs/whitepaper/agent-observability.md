@@ -546,16 +546,43 @@ Session transcripts are governed by `history.persistence` (`save-all` \| `none`)
 `history.max_bytes`; `log_dir` defaults to `$CODEX_HOME/log`; and `notify` registers a
 command that receives a JSON payload for notification events.
 
-Two differences from Claude Code deserve emphasis. First, `metrics_exporter` defaults to
+**Metrics** are where Codex is strongest, and where a first reading of its documentation
+understates it. The inventory is broad and dimensional [13]:
+
+| Area | Metrics |
+|------|---------|
+| Turn | `codex.turn.e2e_duration_ms`, `codex.turn.ttft.duration_ms` (time to first token), `codex.turn.ttfm.duration_ms`, `codex.turn.token_usage` (by `token_type`: total, input, `cached_input`, output, reasoning_output) |
+| Tools | `codex.tool.call` and `.duration_ms` (tool, success), `codex.approval.requested` (tool, approved/denied/amended/session/abort) |
+| Transport | `codex.api_request`, `codex.sse_event`, `codex.websocket.request`/`.event`, each with a paired duration histogram |
+| MCP / Skills / Hooks | `codex.mcp.call` (+`.duration_ms`), `codex.skill.injected`, `codex.hooks.run` (+`.duration_ms`, tagged `hook_name`/`source`/`status`) |
+| Memory | `codex.memory.phase1`/`phase2` with paired token-usage and end-to-end histograms |
+
+Every metric carries `auth_mode`, `model`, and `app.version`, and many add `originator`,
+`session_source`, and `conversation_id` [13]. Two entries deserve particular note.
+`codex.turn.token_usage` breaks out `cached_input`, which yields prompt-cache effectiveness
+directly -- the quantity that usually dominates marginal cost. And `codex.approval.requested`,
+tagged approved or denied, exposes a human-judgment signal as a first-class metric -- an
+outcome signal in the sense of Section 3.3, shipped as a counter rather than left to be built
+by hand.
+
+Against that inventory, the "thinner than Claude Code" reading is wrong on metrics
+specifically: Codex emits roughly twice as many, with richer dimensions. Claude Code leads on
+event breadth, hook coverage, and the nested span tree; Codex leads on metrics. The two are
+not ordered.
+
+Two differences from Claude Code do deserve emphasis. First, `metrics_exporter` defaults to
 `statsig` rather than OTLP, so an operator who configures `otel.exporter` for logs and
 assumes metrics follow will silently receive no metrics at their collector -- it must be set
-explicitly. Second, and more consequentially, telemetry coverage is uneven across
-entrypoints: the `[otel]` configuration is honored by the interactive CLI, while `codex exec`
-and `codex mcp-server` have documented gaps in metrics and trace emission [8]. Since
-`codex exec` is the headless entrypoint used in CI and automation, this is precisely the
-inversion of where telemetry is most needed -- an unattended agent has no human observer to
-compensate for missing instrumentation. Operators building on Codex in CI should verify
-current emission empirically rather than assuming parity with the interactive path.
+explicitly. Second, the gaps that matter have shifted. An earlier documented gap, in which
+`codex exec` emitted no metrics and `codex mcp-server` emitted no telemetry at all, was
+closed as completed in February 2026 with a fix committed for the following release [8]; the
+headless entrypoint is no longer dark, and any analysis resting on that gap is out of date.
+What remains open is a different set: custom OTel *resource* attributes are unsupported, so
+telemetry cannot be tagged by team, deployment tier, or cost center [14], and exported OTLP
+log records carry `timeUnixNano = 0`, causing collectors to drop them while traces and
+metrics from the same exporter arrive normally [15]. Operators should verify emission
+empirically against the version they run rather than against any published gap list,
+including this one.
 
 **Hooks** are available and structurally similar to Claude Code's [9], configured in
 `~/.codex/hooks.json`, `<repo>/.codex/hooks.json`, or inline `[[hooks.EventName]]` tables in
@@ -788,8 +815,12 @@ the tool endpoint observes it completely.
 and with them every Layer 3 signal of Section 5.4 -- no interruptions, no permission
 decisions, no immediate manual edits. What remains is a black-box agent with no evaluator,
 which is strictly worse than either regime alone: framework-grade instrumentation is
-required and out-of-process constraints prevent it. That this is also where Codex's
-telemetry coverage is weakest [8] compounds the difficulty. Our position is that
+required and out-of-process constraints prevent it. What compounds the difficulty is subtler
+than a telemetry gap: the vendor signals that best approximate a quality judgment are the
+ones that go inert without a human. `codex.approval.requested` [13] and Claude Code's
+`code_edit_tool.decision` [5] both record a person's verdict, and in CI nobody is deciding,
+so the metrics still report but report nothing. The instrumentation remains; the judgment it
+encoded does not. Our position is that
 production-critical unattended work belongs in a framework whose loop you own, and that CLI
 agents in CI should be restricted to work whose output is verified deterministically -- tests
 that must pass, builds that must succeed.
@@ -874,7 +905,8 @@ https://opentelemetry.io/docs/specs/semconv/gen-ai/
 https://developers.openai.com/codex/config-reference
 
 [8] OpenAI, *codex exec emits no OTel metrics; codex mcp-server emits no OTel telemetry at
-all*, Issue #12913. https://github.com/openai/codex/issues/12913
+all*, Issue #12913. Closed as completed 2026-02-28.
+https://github.com/openai/codex/issues/12913
 
 [9] OpenAI, *Codex: Hooks*. https://developers.openai.com/codex/hooks
 
@@ -883,3 +915,12 @@ all*, Issue #12913. https://github.com/openai/codex/issues/12913
 [11] AgentEnsemble, *Metrics and Observability guide*. `docs/guides/metrics.md`
 
 [12] AgentEnsemble, *CaptureMode guide*. `docs/guides/capture-mode.md`
+
+[13] OpenAI, *Codex advanced configuration* (OTel metric and event reference).
+https://developers.openai.com/codex/config-advanced
+
+[14] OpenAI, *Support custom OTEL resource attributes*, Issue #30987. Open as of 2026-08-05.
+https://github.com/openai/codex/issues/30987
+
+[15] OpenAI, *otel: exported OTLP logs have timeUnixNano=0, causing collectors to drop them*,
+Issue #30936. Open as of 2026-08-05. https://github.com/openai/codex/issues/30936
