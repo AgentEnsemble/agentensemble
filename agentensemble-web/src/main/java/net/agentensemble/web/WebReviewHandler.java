@@ -232,9 +232,10 @@ public final class WebReviewHandler implements ReviewHandler {
         return switch (onTimeout) {
             case CONTINUE -> ReviewDecision.continueExecution();
             case EXIT_EARLY -> ReviewDecision.exitEarlyTimeout();
-            case FAIL -> throw new ReviewTimeoutException("Review gate timed out after " + reviewTimeout
-                    + " waiting for browser decision on task: "
-                    + truncate(request.taskDescription(), 120));
+            case FAIL ->
+                throw new ReviewTimeoutException("Review gate timed out after " + reviewTimeout
+                        + " waiting for browser decision on task: "
+                        + truncate(request.taskDescription(), 120));
         };
     }
 

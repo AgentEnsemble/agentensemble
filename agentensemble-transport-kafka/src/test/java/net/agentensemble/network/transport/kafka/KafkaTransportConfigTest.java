@@ -28,16 +28,18 @@ class KafkaTransportConfigTest {
 
     @Test
     void nullBootstrapServers_throws() {
-        assertThatNullPointerException().isThrownBy(() -> KafkaTransportConfig.builder()
-                .consumerGroupId("test-group")
-                .build());
+        assertThatNullPointerException()
+                .isThrownBy(() -> KafkaTransportConfig.builder()
+                        .consumerGroupId("test-group")
+                        .build());
     }
 
     @Test
     void nullConsumerGroupId_throws() {
-        assertThatNullPointerException().isThrownBy(() -> KafkaTransportConfig.builder()
-                .bootstrapServers("localhost:9092")
-                .build());
+        assertThatNullPointerException()
+                .isThrownBy(() -> KafkaTransportConfig.builder()
+                        .bootstrapServers("localhost:9092")
+                        .build());
     }
 
     @Test

@@ -19,9 +19,12 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Execute git operations in the workspace repository")
 public record GitInput(
         @ToolParam(
-                        description =
-                                "Git command: status, diff, log, commit, add, branch, stash, checkout, show, tag, merge, fetch, pull, push, reset")
-                String command,
+                description =
+                        "Git command: status, diff, log, commit, add, branch, stash, checkout, show, tag, merge, fetch, pull, push, reset")
+        String command,
+
         @ToolParam(description = "Additional arguments (file paths, branch names, flags)", required = false)
-                String args,
-        @ToolParam(description = "Commit message (used with the commit command)", required = false) String message) {}
+        String args,
+
+        @ToolParam(description = "Commit message (used with the commit command)", required = false)
+        String message) {}

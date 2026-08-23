@@ -22,13 +22,13 @@ repositories {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 configure<com.diffplug.gradle.spotless.SpotlessExtension> {
     java {
-        palantirJavaFormat("2.47.0")
+        palantirJavaFormat("2.97.0")
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -88,7 +88,7 @@ tasks.named("check") {
 }
 
 pmd {
-    toolVersion = "7.9.0"
+    toolVersion = "7.26.0"
     isConsoleOutput = true
     isIgnoreFailures = true
     ruleSetConfig = resources.text.fromFile("${rootProject.projectDir}/config/pmd/ruleset.xml")

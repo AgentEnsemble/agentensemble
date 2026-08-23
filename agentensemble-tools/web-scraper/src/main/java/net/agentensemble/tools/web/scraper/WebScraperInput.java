@@ -14,6 +14,6 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Parameters for scraping a web page")
 public record WebScraperInput(
         @ToolParam(
-                        description = "Full URL of the web page to fetch and extract text from, "
-                                + "e.g. 'https://example.com/article'")
-                String url) {}
+                description = "Full URL of the web page to fetch and extract text from, "
+                        + "e.g. 'https://example.com/article'")
+        String url) {}

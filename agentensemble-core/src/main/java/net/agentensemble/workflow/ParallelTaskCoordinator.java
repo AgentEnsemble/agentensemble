@@ -437,9 +437,9 @@ class ParallelTaskCoordinator {
         return switch (policy) {
             case NEVER -> false;
             case AFTER_EVERY_TASK -> true;
-                // AFTER_LAST_TASK is undefined in parallel: tasks complete in DAG order,
-                // not declaration order. Always return false; use Review.required() on the
-                // intended terminal task instead.
+            // AFTER_LAST_TASK is undefined in parallel: tasks complete in DAG order,
+            // not declaration order. Always return false; use Review.required() on the
+            // intended terminal task instead.
             case AFTER_LAST_TASK -> false;
         };
     }

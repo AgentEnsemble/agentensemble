@@ -21,8 +21,10 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Parameters for writing a file within the sandbox directory")
 public record FileWriteInput(
         @ToolParam(
-                        description = "Relative file path within the sandbox directory, "
-                                + "e.g. 'report.txt' or 'subdir/output.txt'. "
-                                + "Path traversal (../) is not permitted.")
-                String path,
-        @ToolParam(description = "Text content to write to the file") String content) {}
+                description = "Relative file path within the sandbox directory, "
+                        + "e.g. 'report.txt' or 'subdir/output.txt'. "
+                        + "Path traversal (../) is not permitted.")
+        String path,
+
+        @ToolParam(description = "Text content to write to the file")
+        String content) {}

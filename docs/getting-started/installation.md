@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Java 21 or later
+- Java 25 or later
 - Gradle or Maven build tool
 - A LangChain4j-supported LLM provider (OpenAI, Anthropic, Ollama, etc.)
 

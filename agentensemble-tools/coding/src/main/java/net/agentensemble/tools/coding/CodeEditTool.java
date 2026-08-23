@@ -126,8 +126,8 @@ public final class CodeEditTool extends AbstractTypedAgentTool<CodeEditInput> {
             case "replace_lines" -> executeReplaceLines(input, resolved, relativePath);
             case "find_replace" -> executeFindReplace(input, resolved, relativePath, content);
             case "write" -> executeWrite(resolved, relativePath, content);
-            default -> ToolResult.failure(
-                    "Unknown command: " + command + ". Expected: replace_lines, find_replace, or write");
+            default ->
+                ToolResult.failure("Unknown command: " + command + ". Expected: replace_lines, find_replace, or write");
         };
     }
 

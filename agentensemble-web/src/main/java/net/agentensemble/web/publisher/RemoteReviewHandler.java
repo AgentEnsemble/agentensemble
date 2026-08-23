@@ -145,8 +145,9 @@ public final class RemoteReviewHandler implements ReviewHandler {
         return switch (effectiveOnTimeout) {
             case CONTINUE -> ReviewDecision.continueExecution();
             case EXIT_EARLY -> ReviewDecision.exitEarlyTimeout();
-            case FAIL -> throw new ReviewTimeoutException(
-                    "Remote review timed out after " + effectiveTimeout + " on task: " + request.taskDescription());
+            case FAIL ->
+                throw new ReviewTimeoutException(
+                        "Remote review timed out after " + effectiveTimeout + " on task: " + request.taskDescription());
         };
     }
 }

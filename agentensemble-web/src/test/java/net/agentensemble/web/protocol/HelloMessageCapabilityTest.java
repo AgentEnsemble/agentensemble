@@ -42,8 +42,7 @@ class HelloMessageCapabilityTest {
 
     @Test
     void deserializeHelloWithCapabilities() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                     "type": "hello",
                     "ensembleId": "run-1",
@@ -91,8 +90,7 @@ class HelloMessageCapabilityTest {
     @Test
     void forwardCompatibilityIgnoresUnknownFields() throws Exception {
         // Simulate a future version that adds extra fields to HelloMessage
-        String json =
-                """
+        String json = """
                 {
                     "type": "hello",
                     "ensembleId": "run-42",
@@ -114,8 +112,7 @@ class HelloMessageCapabilityTest {
     @Test
     void forwardCompatibilityInCapabilityInfoIgnoresUnknownFields() throws Exception {
         // Simulate a future version that adds extra fields to SharedCapabilityInfo
-        String json =
-                """
+        String json = """
                 {
                     "type": "hello",
                     "sharedCapabilities": [

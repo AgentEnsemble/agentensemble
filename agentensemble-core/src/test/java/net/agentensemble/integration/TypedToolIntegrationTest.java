@@ -33,7 +33,9 @@ class TypedToolIntegrationTest {
     @ToolInput(description = "Parameters for the greeting tool")
     record GreetInput(
             @ToolParam(description = "Name to greet") String name,
-            @ToolParam(description = "Language code", required = false) String language) {}
+
+            @ToolParam(description = "Language code", required = false)
+            String language) {}
 
     static final class GreetingTool extends AbstractTypedAgentTool<GreetInput> {
         @Override

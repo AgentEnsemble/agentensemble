@@ -20,6 +20,8 @@ import net.agentensemble.tool.ToolParam;
  */
 @ToolInput(description = "Find files matching a glob pattern within the workspace")
 public record GlobInput(
-        @ToolParam(description = "Glob pattern, e.g. '**/*.java' or 'src/**/*.ts'") String pattern,
+        @ToolParam(description = "Glob pattern, e.g. '**/*.java' or 'src/**/*.ts'")
+        String pattern,
+
         @ToolParam(description = "Subdirectory to search within (relative to workspace root)", required = false)
-                String path) {}
+        String path) {}
