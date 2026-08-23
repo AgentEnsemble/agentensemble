@@ -376,6 +376,33 @@ class PhaseIntegrationTest {
     }
 
     @Test
+    void phaseInheritsHierarchicalEnsembleWorkflow_throwsValidationException() {
+        // Phase.builder().workflow(HIERARCHICAL) is rejected at Phase construction time
+        // (see PhaseTest), so the only way to reach this guard is a phase with no
+        // per-phase override inheriting an ensemble-level Workflow.HIERARCHICAL default.
+        Phase noOverride = Phase.of(
+                "hierarchical-phase",
+                Task.builder()
+                        .description("Task")
+                        .expectedOutput("out")
+                        .handler(ctx -> ToolResult.success("done"))
+                        .build());
+
+        // PhaseDagExecutor wraps the per-phase failure in a TaskExecutionException;
+        // the ValidationException from Ensemble.executePhases() is the cause.
+        assertThatThrownBy(() -> Ensemble.builder()
+                        .workflow(Workflow.HIERARCHICAL)
+                        .phase(noOverride)
+                        .build()
+                        .run())
+                .isInstanceOf(net.agentensemble.exception.TaskExecutionException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .cause()
+                .hasMessageContaining("hierarchical-phase")
+                .hasMessageContaining("not supported at the phase");
+    }
+
+    @Test
     void parallelPhaseWorkflow_crossPhaseContext_resolvesFromPriorPhase() {
         // Verifies that ParallelWorkflowExecutor.executeSeeded() correctly injects
         // prior-phase outputs so that a task in a PARALLEL phase can reference a task

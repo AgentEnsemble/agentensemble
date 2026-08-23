@@ -2348,9 +2348,8 @@ public class Ensemble {
             net.agentensemble.workflow.graph.Graph resolvedGraph,
             List<Agent> derivedAgents,
             ExecutionContext executionContext) {
-        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         SequentialWorkflowExecutor bodyRunner =
-                new SequentialWorkflowExecutor(derivedAgents, Math.max(maxDelegationDepth, 1), policies);
+                new SequentialWorkflowExecutor(derivedAgents, Math.max(maxDelegationDepth, 1), delegationPolicies);
         net.agentensemble.workflow.graph.GraphExecutor executor =
                 new net.agentensemble.workflow.graph.GraphExecutor(bodyRunner);
 
@@ -2468,8 +2467,6 @@ public class Ensemble {
         // For phases, SEQUENTIAL is the safe default when no context deps are declared.
         Workflow ensembleEffectiveWorkflow = workflow != null ? workflow : Workflow.SEQUENTIAL;
 
-        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
-
         // Collect per-phase outputs for the phaseOutputs map on the final EnsembleOutput.
         ConcurrentHashMap<String, List<TaskOutput>> phaseResultsMap = new ConcurrentHashMap<>();
 
@@ -2581,11 +2578,11 @@ public class Ensemble {
             EnsembleOutput phaseOutput =
                     switch (phaseWorkflow) {
                         case SEQUENTIAL ->
-                            new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
+                            new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, delegationPolicies)
                                     .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
                         case PARALLEL ->
                             new ParallelWorkflowExecutor(
-                                            phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
+                                            phaseAgents, maxDelegationDepth, parallelErrorStrategy, delegationPolicies)
                                     .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
                         case HIERARCHICAL ->
                             throw new ValidationException("Phase '"
@@ -2667,9 +2664,8 @@ public class Ensemble {
     }
 
     private WorkflowExecutor selectExecutor(Workflow effectiveWorkflow, List<Agent> derivedAgents) {
-        List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         return switch (effectiveWorkflow) {
-            case SEQUENTIAL -> new SequentialWorkflowExecutor(derivedAgents, maxDelegationDepth, policies);
+            case SEQUENTIAL -> new SequentialWorkflowExecutor(derivedAgents, maxDelegationDepth, delegationPolicies);
             case HIERARCHICAL ->
                 new HierarchicalWorkflowExecutor(
                         resolveManagerLlm(derivedAgents),
@@ -2677,10 +2673,11 @@ public class Ensemble {
                         managerMaxIterations,
                         maxDelegationDepth,
                         managerPromptStrategy,
-                        policies,
+                        delegationPolicies,
                         hierarchicalConstraints);
             case PARALLEL ->
-                new ParallelWorkflowExecutor(derivedAgents, maxDelegationDepth, parallelErrorStrategy, policies);
+                new ParallelWorkflowExecutor(
+                        derivedAgents, maxDelegationDepth, parallelErrorStrategy, delegationPolicies);
         };
     }
 
