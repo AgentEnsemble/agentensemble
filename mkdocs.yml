@@ -1,7 +1,7 @@
 site_name: AgentEnsemble
 site_url: https://agentensemble.github.io/agentensemble/
 site_description: >-
-  Java 21 framework for orchestrating teams of AI agents that collaborate
+  Java 25 framework for orchestrating teams of AI agents that collaborate
   to accomplish complex tasks. Built on LangChain4j.
 site_author: AgentEnsemble
 

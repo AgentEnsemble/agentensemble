@@ -151,8 +151,8 @@ class DelegationPolicyResultTest {
                 switch (result) {
                     case DelegationPolicyResult.Allow a -> "allowed";
                     case DelegationPolicyResult.Reject r -> "rejected";
-                    case DelegationPolicyResult.Modify m -> "modified:"
-                            + m.modifiedRequest().getAgentRole();
+                    case DelegationPolicyResult.Modify m ->
+                        "modified:" + m.modifiedRequest().getAgentRole();
                 };
 
         assertThat(outcome).isEqualTo("modified:Analyst");

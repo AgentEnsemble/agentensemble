@@ -84,8 +84,7 @@ class WorkResponseTest {
         ObjectMapper mapper = new ObjectMapper();
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-        String json =
-                """
+        String json = """
                 {
                     "requestId": "req-99",
                     "status": "FAILED",

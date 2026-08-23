@@ -2,7 +2,7 @@
 
 ## What is AgentEnsemble?
 
-**AgentEnsemble** is an open-source Java 21 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks. It provides a clean, idiomatic Java API for defining agents with distinct roles, assigning them tasks, and running them together as an ensemble.
+**AgentEnsemble** is an open-source Java 25 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks. It provides a clean, idiomatic Java API for defining agents with distinct roles, assigning them tasks, and running them together as an ensemble.
 
 Built on [LangChain4j](https://github.com/langchain4j/langchain4j) for LLM integration, AgentEnsemble supports any LLM provider that LangChain4j supports (OpenAI, Anthropic, Ollama, Azure OpenAI, Amazon Bedrock, Google Vertex AI, and more).
 

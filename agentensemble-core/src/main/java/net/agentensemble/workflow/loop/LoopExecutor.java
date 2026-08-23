@@ -96,8 +96,8 @@ public class LoopExecutor {
                         // No-op: prior outputs naturally remain in the scope.
                     }
                     case FRESH_PER_ITERATION -> clearBodyMemoryScopes(loop, context, bodyScopeNames);
-                    case WINDOW -> evictBodyMemoryScopesToWindow(
-                            loop, context, bodyScopeNames, loop.getMemoryWindowSize());
+                    case WINDOW ->
+                        evictBodyMemoryScopesToWindow(loop, context, bodyScopeNames, loop.getMemoryWindowSize());
                 }
             }
 

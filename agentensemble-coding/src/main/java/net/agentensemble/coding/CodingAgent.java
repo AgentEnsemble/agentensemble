@@ -159,15 +159,15 @@ public final class CodingAgent {
             switch (resolved) {
                 case MINIMAL -> tools.add(FileReadTool.of(baseDir));
                 case JAVA ->
-                // When agentensemble-tools-coding ships, wire real Java tools here.
-                // Until then, fail fast rather than silently degrading to MINIMAL.
-                throw new UnsupportedOperationException("ToolBackend.JAVA is not yet implemented: "
-                        + "Java-specific coding tools are not wired in this build");
+                    // When agentensemble-tools-coding ships, wire real Java tools here.
+                    // Until then, fail fast rather than silently degrading to MINIMAL.
+                    throw new UnsupportedOperationException("ToolBackend.JAVA is not yet implemented: "
+                            + "Java-specific coding tools are not wired in this build");
                 case MCP ->
-                // When agentensemble-mcp ships, wire real MCP tools here.
-                // Until then, fail fast rather than silently degrading to MINIMAL.
-                throw new UnsupportedOperationException(
-                        "ToolBackend.MCP is not yet implemented: " + "MCP tools are not wired in this build");
+                    // When agentensemble-mcp ships, wire real MCP tools here.
+                    // Until then, fail fast rather than silently degrading to MINIMAL.
+                    throw new UnsupportedOperationException(
+                            "ToolBackend.MCP is not yet implemented: " + "MCP tools are not wired in this build");
                 default -> tools.add(FileReadTool.of(baseDir));
             }
 

@@ -160,8 +160,7 @@ public class DeterministicTaskExample {
                 .expectedOutput("Normalized product summary with key metrics")
                 .handler(ctx -> {
                     // Simulate calling a REST API and normalizing the response
-                    String normalized =
-                            """
+                    String normalized = """
                             Product: Widget Pro
                             Base Price: $149.99
                             Discounted Price: $134.99 (10% off)

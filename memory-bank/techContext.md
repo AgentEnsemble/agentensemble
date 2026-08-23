@@ -22,7 +22,7 @@
 
 - Gradle wrapper (`./gradlew`)
 - Version catalog at `gradle/libs.versions.toml`
-- Java 21 required
+- Java 25 required
 - No external services needed for development (all LLM calls mocked in tests)
 - Git hooks: run `./gradlew setupGitHooks` after cloning to enable the pre-commit hook
 - Pre-commit hook: `.githooks/pre-commit` -- runs `spotlessApply` and re-stages reformatted files automatically
@@ -40,7 +40,7 @@
 
 ## Technical Constraints
 
-- Java 21 minimum (uses records, sealed classes, virtual threads support)
+- Java 25 minimum (uses records, sealed classes, virtual threads support)
 - No SLF4J implementation in core (users bring their own)
 - LangChain4j's `ChatLanguageModel` is the LLM abstraction (no custom LLM interface)
 - All domain objects must be immutable

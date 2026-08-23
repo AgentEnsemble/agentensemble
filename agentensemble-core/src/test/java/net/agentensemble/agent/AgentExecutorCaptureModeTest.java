@@ -127,8 +127,9 @@ class AgentExecutorCaptureModeTest {
         TaskOutput output = executor.execute(task, List.of(), contextWithCaptureMode(CaptureMode.OFF));
 
         // Verify no messages in any iteration
-        output.getTrace().getLlmInteractions().forEach(i -> assertThat(i.getMessages())
-                .isEmpty());
+        output.getTrace()
+                .getLlmInteractions()
+                .forEach(i -> assertThat(i.getMessages()).isEmpty());
 
         // Verify parsedInput is null on tool call trace
         ToolCallTrace toolCall =

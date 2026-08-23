@@ -2,7 +2,7 @@
   <img src="assets/brand/agentensemble-logo-horizontal.svg" alt="AgentEnsemble" width="420">
 </p>
 
-<p align="center">An open-source Java 21 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks.</p>
+<p align="center">An open-source Java 25 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks.</p>
 
 ---
 
@@ -25,9 +25,9 @@ LangChain4j gives you excellent building blocks. But stitching multiple agents t
 
 ### Why JVM teams need a production-minded agent framework
 
-Python agent frameworks are not designed for Java engineering constraints. AgentEnsemble is written in Java 21, distributed as standard Maven/Gradle artifacts, and fits directly into the toolchains, testing practices, and deployment pipelines that JVM teams already use.
+Python agent frameworks are not designed for Java engineering constraints. AgentEnsemble is written in Java 25, distributed as standard Maven/Gradle artifacts, and fits directly into the toolchains, testing practices, and deployment pipelines that JVM teams already use.
 
-- **Idiomatic Java 21** -- Fluent builders, records for structured output, sealed interfaces, and Java virtual threads for concurrent execution. No reflection tricks, no annotation processors, no runtime surprises.
+- **Idiomatic Java 25** -- Fluent builders, records for structured output, sealed interfaces, and Java virtual threads for concurrent execution. No reflection tricks, no annotation processors, no runtime surprises.
 - **Gradle and Maven with a BOM** -- Add the BOM and pull the modules you need. Versions align automatically. The same dependency management your team uses for every other library.
 - **Plugs into your existing stack** -- Micrometer metrics integrate with Prometheus and Grafana. SLF4J logging works with Logback and Log4j2. The live dashboard is a plain embedded WebSocket server -- no Docker, no npm, no sidecar process.
 - **Type-safe from input to output** -- Declare `outputType(MyRecord.class)` on a task and receive a fully typed, schema-validated Java object. Parse failures trigger automatic correction prompts before any exception is thrown.

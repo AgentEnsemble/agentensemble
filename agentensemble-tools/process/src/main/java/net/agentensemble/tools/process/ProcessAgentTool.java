@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import net.agentensemble.exception.ToolConfigurationException;
 import net.agentensemble.review.ReviewDecision;
 import net.agentensemble.tool.AbstractAgentTool;
@@ -199,7 +198,7 @@ public final class ProcessAgentTool extends AbstractAgentTool {
         });
 
         // Wait for completion with timeout
-        boolean completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = process.waitFor(timeout);
         if (!completed) {
             process.destroyForcibly();
             stdoutDrain.join();

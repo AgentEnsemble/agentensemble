@@ -14,7 +14,7 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Parameters for reading a file within the sandbox directory")
 public record FileReadInput(
         @ToolParam(
-                        description = "Relative file path within the sandbox directory, "
-                                + "e.g. 'report.txt' or 'data/notes.txt'. "
-                                + "Path traversal (../) is not permitted.")
-                String path) {}
+                description = "Relative file path within the sandbox directory, "
+                        + "e.g. 'report.txt' or 'data/notes.txt'. "
+                        + "Path traversal (../) is not permitted.")
+        String path) {}

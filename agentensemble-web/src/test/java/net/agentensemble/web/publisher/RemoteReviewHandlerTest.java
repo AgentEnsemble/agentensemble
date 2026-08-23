@@ -101,8 +101,10 @@ class RemoteReviewHandlerTest {
                         reviewId,
                         new MessageSerializer().toJson(new ReviewDecisionMessage(reviewId, "edit", "revised"))));
         ReviewDecision decision = result.get(2, TimeUnit.SECONDS);
-        assertThat(decision).isInstanceOfSatisfying(ReviewDecision.Edit.class, e -> assertThat(e.revisedOutput())
-                .isEqualTo("revised"));
+        assertThat(decision)
+                .isInstanceOfSatisfying(
+                        ReviewDecision.Edit.class,
+                        e -> assertThat(e.revisedOutput()).isEqualTo("revised"));
     }
 
     @Test
@@ -137,8 +139,10 @@ class RemoteReviewHandlerTest {
         RemoteReviewHandler handler = newHandler(OnTimeoutAction.EXIT_EARLY);
         ReviewDecision decision = handler.review(ReviewRequest.of(
                 "t", "o", ReviewTiming.AFTER_EXECUTION, Duration.ofMillis(50), OnTimeoutAction.EXIT_EARLY, null));
-        assertThat(decision).isInstanceOfSatisfying(ReviewDecision.ExitEarly.class, e -> assertThat(e.timedOut())
-                .isTrue());
+        assertThat(decision)
+                .isInstanceOfSatisfying(
+                        ReviewDecision.ExitEarly.class,
+                        e -> assertThat(e.timedOut()).isTrue());
     }
 
     @Test

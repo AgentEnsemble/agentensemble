@@ -36,8 +36,7 @@ class RunRequestMessageTest {
 
     @Test
     void deserialize_asClientMessage_givesRunRequestMessage() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                   "type": "run_request",
                   "requestId": "req-42",
@@ -57,8 +56,7 @@ class RunRequestMessageTest {
 
     @Test
     void deserialize_withTasks_parsesTaskList() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                   "type": "run_request",
                   "requestId": "req-3",
@@ -92,8 +90,7 @@ class RunRequestMessageTest {
 
     @Test
     void deserialize_withTaskOverrides_parsesOverrideMap() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                   "type": "run_request",
                   "requestId": "req-4",
@@ -119,8 +116,7 @@ class RunRequestMessageTest {
 
     @Test
     void deserialize_withOptions_parsesOptionsMap() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                   "type": "run_request",
                   "inputs": {},
@@ -140,8 +136,7 @@ class RunRequestMessageTest {
 
     @Test
     void deserialize_withTags_parsesTagsMap() throws Exception {
-        String json =
-                """
+        String json = """
                 {
                   "type": "run_request",
                   "inputs": {},
