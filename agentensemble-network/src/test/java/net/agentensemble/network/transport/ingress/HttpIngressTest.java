@@ -58,8 +58,7 @@ class HttpIngressTest {
 
         int port = ingress.boundPort();
 
-        String json =
-                """
+        String json = """
                 {
                     "requestId": "req-42",
                     "from": "test-ensemble",

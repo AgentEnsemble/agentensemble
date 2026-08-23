@@ -24,7 +24,9 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Parameters for extracting a value from JSON using a path expression")
 public record JsonParserInput(
         @ToolParam(
-                        description = "Dot-notation path expression to extract, "
-                                + "e.g. 'user.name', 'items[0].title', or 'users[1].address.city'")
-                String jsonPath,
-        @ToolParam(description = "The JSON content to parse") String json) {}
+                description = "Dot-notation path expression to extract, "
+                        + "e.g. 'user.name', 'items[0].title', or 'users[1].address.city'")
+        String jsonPath,
+
+        @ToolParam(description = "The JSON content to parse")
+        String json) {}

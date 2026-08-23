@@ -38,8 +38,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_extractsRefinedDescription() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Write a detailed quarterly report with executive summary and KPI tables
 
@@ -61,8 +60,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_extractsRefinedExpectedOutput() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Improved description
 
@@ -84,8 +82,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_extractsBulletObservations() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Improved description
 
@@ -108,8 +105,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_extractsBulletSuggestions() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Improved description
 
@@ -132,8 +128,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_withMissingRefinedDescription_fallsBackToOriginal() {
-        String response =
-                """
+        String response = """
                 REFINED_EXPECTED_OUTPUT:
                 Improved output
 
@@ -153,8 +148,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_setsRunCountToOneForFirstRun() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Improved description
 
@@ -178,8 +172,7 @@ class LlmReflectionStrategyParseTest {
     void parse_withPriorReflection_incrementsRunCount() {
         TaskReflection prior = TaskReflection.ofFirstRun("old desc", "old output", List.of(), List.of());
 
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Further improved description
 
@@ -216,8 +209,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void reflect_withWellFormedResponse_producesValidReflection() {
-        String wellFormedResponse =
-                """
+        String wellFormedResponse = """
                 REFINED_DESCRIPTION:
                 Write a comprehensive quarterly report focusing on KPIs and trends
 
@@ -250,8 +242,7 @@ class LlmReflectionStrategyParseTest {
 
     @Test
     void parse_withStarBullets_extractsThemToo() {
-        String response =
-                """
+        String response = """
                 REFINED_DESCRIPTION:
                 Improved description
 

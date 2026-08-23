@@ -236,8 +236,9 @@ public final class DateTimeTool extends AbstractAgentTool {
             case "week", "weeks" -> date.plusWeeks(amount);
             case "month", "months" -> date.plusMonths(amount);
             case "year", "years" -> date.plusYears(amount);
-            default -> throw new IllegalArgumentException(
-                    "Unsupported date unit: '" + unit + "'. Use days, weeks, months, or years");
+            default ->
+                throw new IllegalArgumentException(
+                        "Unsupported date unit: '" + unit + "'. Use days, weeks, months, or years");
         };
     }
 

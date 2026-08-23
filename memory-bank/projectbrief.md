@@ -2,7 +2,7 @@
 
 ## Overview
 
-AgentEnsemble is an open-source Java 21 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks. It is hosted at github.com/AgentEnsemble/agentensemble under the MIT license.
+AgentEnsemble is an open-source Java 25 framework for orchestrating teams of AI agents that collaborate to accomplish complex tasks. It is hosted at github.com/AgentEnsemble/agentensemble under the MIT license.
 
 ## Core Requirements
 
@@ -24,7 +24,7 @@ AgentEnsemble is an open-source Java 21 framework for orchestrating teams of AI 
 
 ## Tech Stack
 
-- Java 21
+- Java 25
 - Gradle with Kotlin DSL
 - LangChain4j (core LLM integration)
 - Lombok (builders, value objects)

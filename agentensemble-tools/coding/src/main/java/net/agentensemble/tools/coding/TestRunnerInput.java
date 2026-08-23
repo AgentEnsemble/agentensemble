@@ -18,7 +18,10 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Run tests and parse the results")
 public record TestRunnerInput(
         @ToolParam(description = "Test command to execute, e.g. 'gradle test' or 'mvn test' or 'npm test'")
-                String command,
+        String command,
+
         @ToolParam(description = "Test filter appended to the command, e.g. '--tests FooTest'", required = false)
-                String testFilter,
-        @ToolParam(description = "Working directory relative to workspace root", required = false) String workingDir) {}
+        String testFilter,
+
+        @ToolParam(description = "Working directory relative to workspace root", required = false)
+        String workingDir) {}

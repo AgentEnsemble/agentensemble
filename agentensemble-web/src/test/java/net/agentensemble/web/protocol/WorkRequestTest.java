@@ -118,8 +118,7 @@ class WorkRequestTest {
         mapper.registerModule(new JavaTimeModule());
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-        String json =
-                """
+        String json = """
                 {
                     "requestId": "req-99",
                     "from": "ensemble-x",

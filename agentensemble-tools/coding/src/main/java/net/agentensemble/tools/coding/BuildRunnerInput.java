@@ -16,5 +16,8 @@ import net.agentensemble.tool.ToolParam;
  */
 @ToolInput(description = "Run a build command and parse the results")
 public record BuildRunnerInput(
-        @ToolParam(description = "Build command to execute, e.g. 'gradle build' or 'mvn compile'") String command,
-        @ToolParam(description = "Working directory relative to workspace root", required = false) String workingDir) {}
+        @ToolParam(description = "Build command to execute, e.g. 'gradle build' or 'mvn compile'")
+        String command,
+
+        @ToolParam(description = "Working directory relative to workspace root", required = false)
+        String workingDir) {}

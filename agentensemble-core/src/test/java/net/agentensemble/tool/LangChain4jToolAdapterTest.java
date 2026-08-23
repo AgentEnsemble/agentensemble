@@ -150,7 +150,9 @@ class LangChain4jToolAdapterTest {
     @ToolInput(description = "Test input")
     record TestInput(
             @ToolParam(description = "A required field") String required,
-            @ToolParam(description = "An optional field", required = false) String optional) {}
+
+            @ToolParam(description = "An optional field", required = false)
+            String optional) {}
 
     private static final class TestTypedTool extends AbstractTypedAgentTool<TestInput> {
         @Override

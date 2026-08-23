@@ -140,19 +140,22 @@ class WorkflowInferenceIntegrationTest {
 
         // Variable names corrected: llmA/B/C (not lmmA/B/C)
         ChatModel llmA = mock(ChatModel.class);
-        when(llmA.chat(any(ChatRequest.class))).thenAnswer(inv -> ChatResponse.builder()
-                .aiMessage(new AiMessage("A-" + completionOrder.incrementAndGet()))
-                .build());
+        when(llmA.chat(any(ChatRequest.class)))
+                .thenAnswer(inv -> ChatResponse.builder()
+                        .aiMessage(new AiMessage("A-" + completionOrder.incrementAndGet()))
+                        .build());
 
         ChatModel llmB = mock(ChatModel.class);
-        when(llmB.chat(any(ChatRequest.class))).thenAnswer(inv -> ChatResponse.builder()
-                .aiMessage(new AiMessage("B-" + completionOrder.incrementAndGet()))
-                .build());
+        when(llmB.chat(any(ChatRequest.class)))
+                .thenAnswer(inv -> ChatResponse.builder()
+                        .aiMessage(new AiMessage("B-" + completionOrder.incrementAndGet()))
+                        .build());
 
         ChatModel llmC = mock(ChatModel.class);
-        when(llmC.chat(any(ChatRequest.class))).thenAnswer(inv -> ChatResponse.builder()
-                .aiMessage(new AiMessage("C-" + completionOrder.incrementAndGet()))
-                .build());
+        when(llmC.chat(any(ChatRequest.class)))
+                .thenAnswer(inv -> ChatResponse.builder()
+                        .aiMessage(new AiMessage("C-" + completionOrder.incrementAndGet()))
+                        .build());
 
         Agent a = Agent.builder().role("AgentA").goal("A work").llm(llmA).build();
         Agent b = Agent.builder().role("AgentB").goal("B work").llm(llmB).build();

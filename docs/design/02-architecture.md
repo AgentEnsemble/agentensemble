@@ -128,5 +128,5 @@ net.agentensemble
 - **Version catalog** (`gradle/libs.versions.toml`) for centralized dependency management
 - `java-library` plugin for `agentensemble-core` (proper `api` vs `implementation` separation)
 - `application` plugin for `agentensemble-examples`
-- Java 21 target
+- Java 25 target
 - Lombok annotation processor configured via Gradle

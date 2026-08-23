@@ -13,4 +13,5 @@ import net.agentensemble.tool.ToolParam;
  */
 @ToolInput(description = "Parameters for a web search")
 public record WebSearchInput(
-        @ToolParam(description = "Search query string, e.g. 'Java 21 virtual threads'") String query) {}
+        @ToolParam(description = "Search query string, e.g. 'Java 21 virtual threads'")
+        String query) {}
