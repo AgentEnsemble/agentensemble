@@ -2580,15 +2580,18 @@ public class Ensemble {
             //    agent synthesis transformed the referenced task's identity.
             EnsembleOutput phaseOutput =
                     switch (phaseWorkflow) {
-                        case SEQUENTIAL -> new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
-                                .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
-                        case PARALLEL -> new ParallelWorkflowExecutor(
-                                        phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
-                                .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
-                        case HIERARCHICAL -> throw new ValidationException("Phase '"
-                                + phase.getName()
-                                + "': Workflow.HIERARCHICAL is not supported at the phase "
-                                + "level. Use HIERARCHICAL at the ensemble level (without phases).");
+                        case SEQUENTIAL ->
+                            new SequentialWorkflowExecutor(phaseAgents, maxDelegationDepth, policies)
+                                    .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
+                        case PARALLEL ->
+                            new ParallelWorkflowExecutor(
+                                            phaseAgents, maxDelegationDepth, parallelErrorStrategy, policies)
+                                    .executeSeeded(agentResolved, executionContext, augmentedPriorOutputs);
+                        case HIERARCHICAL ->
+                            throw new ValidationException("Phase '"
+                                    + phase.getName()
+                                    + "': Workflow.HIERARCHICAL is not supported at the phase "
+                                    + "level. Use HIERARCHICAL at the ensemble level (without phases).");
                     };
 
             // 8. Record phase outputs for EnsembleOutput.getPhaseOutputs()
@@ -2667,16 +2670,17 @@ public class Ensemble {
         List<DelegationPolicy> policies = delegationPolicies != null ? delegationPolicies : List.of();
         return switch (effectiveWorkflow) {
             case SEQUENTIAL -> new SequentialWorkflowExecutor(derivedAgents, maxDelegationDepth, policies);
-            case HIERARCHICAL -> new HierarchicalWorkflowExecutor(
-                    resolveManagerLlm(derivedAgents),
-                    derivedAgents,
-                    managerMaxIterations,
-                    maxDelegationDepth,
-                    managerPromptStrategy,
-                    policies,
-                    hierarchicalConstraints);
-            case PARALLEL -> new ParallelWorkflowExecutor(
-                    derivedAgents, maxDelegationDepth, parallelErrorStrategy, policies);
+            case HIERARCHICAL ->
+                new HierarchicalWorkflowExecutor(
+                        resolveManagerLlm(derivedAgents),
+                        derivedAgents,
+                        managerMaxIterations,
+                        maxDelegationDepth,
+                        managerPromptStrategy,
+                        policies,
+                        hierarchicalConstraints);
+            case PARALLEL ->
+                new ParallelWorkflowExecutor(derivedAgents, maxDelegationDepth, parallelErrorStrategy, policies);
         };
     }
 

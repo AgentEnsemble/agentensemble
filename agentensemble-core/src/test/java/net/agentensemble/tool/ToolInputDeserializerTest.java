@@ -13,13 +13,18 @@ class ToolInputDeserializerTest {
 
     record MultiInput(
             @ToolParam(description = "Name") String name,
-            @ToolParam(description = "Age", required = false) Integer age) {}
+
+            @ToolParam(description = "Age", required = false)
+            Integer age) {}
 
     record IntInput(@ToolParam(description = "Count") int count) {}
 
     record AllOptionalInput(
-            @ToolParam(description = "Field A", required = false) String a,
-            @ToolParam(description = "Field B", required = false) String b) {}
+            @ToolParam(description = "Field A", required = false)
+            String a,
+
+            @ToolParam(description = "Field B", required = false)
+            String b) {}
 
     record ListInput(@ToolParam(description = "Tags") List<String> tags) {}
 

@@ -18,5 +18,9 @@ import net.agentensemble.tool.ToolParam;
 @ToolInput(description = "Execute a shell command in the workspace")
 public record ShellInput(
         @ToolParam(description = "Shell command to execute") String command,
-        @ToolParam(description = "Working directory relative to workspace root", required = false) String workingDir,
-        @ToolParam(description = "Timeout in seconds (default: 60)", required = false) Integer timeoutSeconds) {}
+
+        @ToolParam(description = "Working directory relative to workspace root", required = false)
+        String workingDir,
+
+        @ToolParam(description = "Timeout in seconds (default: 60)", required = false)
+        Integer timeoutSeconds) {}

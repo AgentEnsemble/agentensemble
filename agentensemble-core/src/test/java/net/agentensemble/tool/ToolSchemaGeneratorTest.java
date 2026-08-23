@@ -19,7 +19,8 @@ class ToolSchemaGeneratorTest {
     // --- test record types ---
 
     @ToolInput(description = "Single string")
-    record SingleStringInput(@ToolParam(description = "A text value") String text) {}
+    record SingleStringInput(
+            @ToolParam(description = "A text value") String text) {}
 
     record IntegerInput(@ToolParam(description = "An int") int count) {}
 
@@ -48,7 +49,8 @@ class ToolSchemaGeneratorTest {
         }
     }
 
-    record CustomToStringEnumInput(@ToolParam(description = "Status") StatusWithCustomToString status) {}
+    record CustomToStringEnumInput(
+            @ToolParam(description = "Status") StatusWithCustomToString status) {}
 
     record ListStringInput(@ToolParam(description = "Tags") List<String> tags) {}
 
@@ -58,7 +60,9 @@ class ToolSchemaGeneratorTest {
 
     record MultiInput(
             @ToolParam(description = "Required field") String required,
-            @ToolParam(description = "Optional field", required = false) String optional) {}
+
+            @ToolParam(description = "Optional field", required = false)
+            String optional) {}
 
     record NoAnnotationInput(String field) {}
 

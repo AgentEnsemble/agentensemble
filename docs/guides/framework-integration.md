@@ -1,7 +1,7 @@
 # Framework Integration
 
 AgentEnsemble is a plain Java library with no framework dependencies. It works in any
-Java 21+ environment -- Spring Boot, Micronaut, Quarkus, Jakarta EE, AWS Lambda, or a
+Java 25+ environment -- Spring Boot, Micronaut, Quarkus, Jakarta EE, AWS Lambda, or a
 plain `main()` method.
 
 This guide shows how to wire AgentEnsemble into popular frameworks using their native

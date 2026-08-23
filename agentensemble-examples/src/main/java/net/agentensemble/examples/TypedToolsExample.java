@@ -31,10 +31,17 @@ public final class TypedToolsExample {
 
     @ToolInput(description = "Parameters for a product search")
     public record ProductSearchInput(
-            @ToolParam(description = "Search query for the product name or description") String query,
-            @ToolParam(description = "Product category to filter results", required = false) String category,
-            @ToolParam(description = "Maximum price in USD", required = false) Double maxPrice,
-            @ToolParam(description = "Maximum number of results to return", required = false) Integer limit) {}
+            @ToolParam(description = "Search query for the product name or description")
+            String query,
+
+            @ToolParam(description = "Product category to filter results", required = false)
+            String category,
+
+            @ToolParam(description = "Maximum price in USD", required = false)
+            Double maxPrice,
+
+            @ToolParam(description = "Maximum number of results to return", required = false)
+            Integer limit) {}
 
     static final class ProductSearchTool extends AbstractTypedAgentTool<ProductSearchInput> {
 
@@ -76,7 +83,9 @@ public final class TypedToolsExample {
 
     @ToolInput(description = "Parameters for sorting a list")
     public record SortInput(
-            @ToolParam(description = "Comma-separated list of items to sort") String items,
+            @ToolParam(description = "Comma-separated list of items to sort")
+            String items,
+
             @ToolParam(description = "Sort order") SortOrder order) {}
 
     static final class SortTool extends AbstractTypedAgentTool<SortInput> {

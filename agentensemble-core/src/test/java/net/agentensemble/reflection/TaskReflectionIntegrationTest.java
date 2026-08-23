@@ -127,8 +127,9 @@ class TaskReflectionIntegrationTest {
         }
 
         String identity = TaskIdentity.of(task);
-        assertThat(store.retrieve(identity)).isPresent().hasValueSatisfying(r -> assertThat(r.runCount())
-                .isEqualTo(3));
+        assertThat(store.retrieve(identity))
+                .isPresent()
+                .hasValueSatisfying(r -> assertThat(r.runCount()).isEqualTo(3));
     }
 
     @Test

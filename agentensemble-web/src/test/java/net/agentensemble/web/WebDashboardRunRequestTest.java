@@ -88,8 +88,7 @@ class WebDashboardRunRequestTest {
         assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Send a run_request; no ensemble is configured so it should be REJECTED
-        String runRequest =
-                """
+        String runRequest = """
                 {
                   "type": "run_request",
                   "requestId": "test-req-1",
@@ -238,8 +237,7 @@ class WebDashboardRunRequestTest {
         assertThat(helloLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
         // Level 3: provide a dynamic task list
-        String runRequest =
-                """
+        String runRequest = """
                 {
                   "type": "run_request",
                   "requestId": "l3-req",

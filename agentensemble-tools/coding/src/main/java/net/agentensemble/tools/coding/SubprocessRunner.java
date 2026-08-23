@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 
 /**
@@ -73,7 +72,7 @@ final class SubprocessRunner {
             }
         });
 
-        boolean completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = process.waitFor(timeout);
         if (!completed) {
             process.destroyForcibly();
             stdoutDrain.join();

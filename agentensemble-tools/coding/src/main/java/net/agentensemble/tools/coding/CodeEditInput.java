@@ -26,11 +26,23 @@ import net.agentensemble.tool.ToolParam;
  */
 @ToolInput(description = "Edit code files with surgical precision")
 public record CodeEditInput(
-        @ToolParam(description = "File path relative to workspace") String path,
-        @ToolParam(description = "Edit mode: replace_lines, find_replace, or write") String command,
-        @ToolParam(description = "Start line (1-based) for replace_lines mode", required = false) Integer startLine,
+        @ToolParam(description = "File path relative to workspace")
+        String path,
+
+        @ToolParam(description = "Edit mode: replace_lines, find_replace, or write")
+        String command,
+
+        @ToolParam(description = "Start line (1-based) for replace_lines mode", required = false)
+        Integer startLine,
+
         @ToolParam(description = "End line (1-based, inclusive) for replace_lines mode", required = false)
-                Integer endLine,
-        @ToolParam(description = "New content or replacement text") String content,
-        @ToolParam(description = "Text or regex to find for find_replace mode", required = false) String find,
-        @ToolParam(description = "Use regex matching for find_replace mode", required = false) Boolean regex) {}
+        Integer endLine,
+
+        @ToolParam(description = "New content or replacement text")
+        String content,
+
+        @ToolParam(description = "Text or regex to find for find_replace mode", required = false)
+        String find,
+
+        @ToolParam(description = "Use regex matching for find_replace mode", required = false)
+        Boolean regex) {}
