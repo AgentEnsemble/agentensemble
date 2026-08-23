@@ -157,6 +157,37 @@ class HierarchicalEnsembleIntegrationTest {
     }
 
     @Test
+    void testHierarchicalWorkflow_noManagerLlm_usesEnsembleChatLanguageModel() {
+        ChatModel ensembleModel = mock(ChatModel.class);
+        ChatModel workerModel = mock(ChatModel.class);
+
+        when(workerModel.chat(any(ChatRequest.class))).thenReturn(textResponse("Worker result"));
+        when(ensembleModel.chat(any(ChatRequest.class)))
+                .thenReturn(delegateCallResponse("Worker", "Do the work"))
+                .thenReturn(textResponse("Manager synthesized"));
+
+        Agent worker =
+                Agent.builder().role("Worker").goal("Do work").llm(workerModel).build();
+        Task task = Task.builder()
+                .description("Do the work")
+                .expectedOutput("Work done")
+                .agent(worker)
+                .build();
+
+        // No managerLlm set, but an ensemble-level chatLanguageModel is -- resolveManagerLlm()
+        // should use it (via getActiveModel()) rather than falling through to the first
+        // derived agent's LLM.
+        EnsembleOutput output = Ensemble.builder()
+                .task(task)
+                .workflow(Workflow.HIERARCHICAL)
+                .chatLanguageModel(ensembleModel)
+                .build()
+                .run();
+
+        assertThat(output.getRaw()).isEqualTo("Manager synthesized");
+    }
+
+    @Test
     void testHierarchicalWorkflow_withExplicitManagerLlm_usesManagerLlm() {
         ChatModel managerModel = mock(ChatModel.class);
         ChatModel workerModel = mock(ChatModel.class);
