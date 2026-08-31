@@ -41,3 +41,6 @@ out/
 hs_err_pid*
 replay_pid*
 .claude/
+
+# Codex local configuration
+/.codex/
