@@ -9,6 +9,6 @@ repositories {
 
 dependencies {
     implementation("com.vanniktech.maven.publish:com.vanniktech.maven.publish.gradle.plugin:0.37.0")
-    implementation("com.diffplug.spotless:com.diffplug.spotless.gradle.plugin:8.3.0")
+    implementation("com.diffplug.spotless:com.diffplug.spotless.gradle.plugin:8.10.3")
     implementation("net.ltgt.gradle:gradle-errorprone-plugin:5.1.0")
 }
