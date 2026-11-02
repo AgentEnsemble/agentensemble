@@ -37,6 +37,16 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.6.3](https://github.com/AgentEnsemble/agentensemble/compare/v3.6.2...v3.6.3) (2026-10-31)
+
+
+### Miscellaneous Chores
+
+* bump the minor-and-patch group ([9a4c845](https://github.com/AgentEnsemble/agentensemble/commit/9a4c845c85a79e256611244389d917e5bd3806a5))
+* bump the minor-and-patch group in /agentensemble-viz with 2 updates ([#423](https://github.com/AgentEnsemble/agentensemble/issues/423)) ([9a4c845](https://github.com/AgentEnsemble/agentensemble/commit/9a4c845c85a79e256611244389d917e5bd3806a5))
+* bump the minor-and-patch group with 5 updates ([#424](https://github.com/AgentEnsemble/agentensemble/issues/424)) ([c85577f](https://github.com/AgentEnsemble/agentensemble/commit/c85577fc9662dc4e046b9171a1e265775b6fd379))
+* bump version to 3.6.3-SNAPSHOT [skip ci] ([26031e0](https://github.com/AgentEnsemble/agentensemble/commit/26031e0391fa59b4efa91c068b6ac5b467e74499))
+
 ## [3.6.2](https://github.com/AgentEnsemble/agentensemble/compare/v3.6.1...v3.6.2) (2026-10-22)
 
 
