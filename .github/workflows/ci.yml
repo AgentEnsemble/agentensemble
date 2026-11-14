@@ -76,7 +76,8 @@ jobs:
 
   e2e:
     name: E2E Tests (Playwright)
-    runs-on: ubuntu-latest
+    # Pinned: Playwright does not yet support ubuntu-latest (26.04). Revert once it does.
+    runs-on: ubuntu-24.04
     # Run after unit tests pass -- no point running E2E if the build is broken.
     needs: [build, build-viz]
     steps:
