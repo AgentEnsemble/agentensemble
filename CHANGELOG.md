@@ -37,6 +37,17 @@
   edge labels and post-execution fired/unfired styling. Two runnable examples:
   `runGraphRouter` and `runGraphRetryWithFallback`. See the [Graphs guide](docs/guides/graphs.md).
 
+## [3.6.4](https://github.com/AgentEnsemble/agentensemble/compare/v3.6.3...v3.6.4) (2026-11-14)
+
+
+### Miscellaneous Chores
+
+* bump gradle/actions ([0e7adce](https://github.com/AgentEnsemble/agentensemble/commit/0e7adce6e82acf84ed10d564f2a17390fc2194a7))
+* bump gradle/actions from 6.4.0 to 6.4.1 in the minor-and-patch group across 1 directory ([#428](https://github.com/AgentEnsemble/agentensemble/issues/428)) ([0e7adce](https://github.com/AgentEnsemble/agentensemble/commit/0e7adce6e82acf84ed10d564f2a17390fc2194a7))
+* bump the minor-and-patch group across 1 directory with 10 updates ([#430](https://github.com/AgentEnsemble/agentensemble/issues/430)) ([1ee7947](https://github.com/AgentEnsemble/agentensemble/commit/1ee79473c89780056bf9571d1d96c7cecf54d0fa))
+* bump the minor-and-patch group with 9 updates ([#429](https://github.com/AgentEnsemble/agentensemble/issues/429)) ([985e826](https://github.com/AgentEnsemble/agentensemble/commit/985e826433520950ba844d72cfe0a7e80d05f380))
+* bump version to 3.6.4-SNAPSHOT [skip ci] ([624a771](https://github.com/AgentEnsemble/agentensemble/commit/624a771abf48276e62e0a27fe9d8f4ae42059af8))
+
 ## [3.6.3](https://github.com/AgentEnsemble/agentensemble/compare/v3.6.2...v3.6.3) (2026-10-31)
 
 
